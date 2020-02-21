@@ -1,0 +1,7 @@
+apiVersion: wmc.openshift.io/v1alpha1
+kind: WindowsMachineConfig
+metadata:
+  name: example-windowsmachineconfig
+spec:
+  # Add fields here
+  size: 3
