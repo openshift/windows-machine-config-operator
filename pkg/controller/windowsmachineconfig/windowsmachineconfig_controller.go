@@ -2,13 +2,12 @@ package windowsmachineconfig
 
 import (
 	"context"
+	"errors"
 
 	wmcv1alpha1 "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -75,6 +74,11 @@ type ReconcileWindowsMachineConfig struct {
 	scheme *runtime.Scheme
 }
 
+// cloudProvider holds information related to cloud provider
+type cloudProvider struct {
+
+}
+
 // Reconcile reads that state of the cluster for a WindowsMachineConfig object and makes changes based on the state read
 // and what is in the WindowsMachineConfig.Spec
 // TODO(user): Modify this Reconcile function to implement your Controller logic.  This example creates
@@ -90,7 +94,7 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 	instance := &wmcv1alpha1.WindowsMachineConfig{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, instance)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
@@ -100,54 +104,46 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Pod object
-	pod := newPodForCR(instance)
-
-	// Set WindowsMachineConfig instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
-		return reconcile.Result{}, err
+	// Get cloud provider specific info.
+	// TODO: This should be moved to validation section.
+	if instance.Spec.AWS == nil && instance.Spec.Azure == nil {
+		return reconcile.Result{}, errors.New("both the supported cloud providers are nil")
 	}
 
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
-		err = r.client.Create(context.TODO(), pod)
-		if err != nil {
+	// Get the current count of required number of Windows VMs
+	currentCountOfWindowsVMs := 1 // As of now hardcoded to 1. We need to get the number of Windows VM node objects
+	if instance.Spec.Replicas != currentCountOfWindowsVMs {
+		if err := r.reconcileWindowsNodes(instance.Spec.Replicas, currentCountOfWindowsVMs); err != nil {
 			return reconcile.Result{}, err
 		}
+	}
 
-		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
-	} else if err != nil {
+	// Set WindowsMachineConfig instance as the owner and controller
+	if err := controllerutil.SetControllerReference(instance, nil, r.scheme); err != nil {
 		return reconcile.Result{}, err
 	}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
 	return reconcile.Result{}, nil
 }
 
-// newPodForCR returns a busybox pod with the same name/namespace as the cr
-func newPodForCR(cr *wmcv1alpha1.WindowsMachineConfig) *corev1.Pod {
-	labels := map[string]string{
-		"app": cr.Name,
+func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current int)  error {
+	if desired < current {
+		deleteWindowsVMs(current - desired)
+	} else if desired > current {
+		createWindowsVMs(desired - current)
 	}
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name + "-pod",
-			Namespace: cr.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:    "busybox",
-					Image:   "busybox",
-					Command: []string{"sleep", "3600"},
-				},
-			},
-		},
+	return nil
+}
+
+func deleteWindowsVMs(count int) {
+	// From the list of Windows VMs choose randomly count number of VMs
+	for i := 0; i < count; i++ {
+		// Create Windows VM
+	}
+}
+
+func createWindowsVMs(count int) []{
+	for i := 0; i < count; i++ {
+		// Create Windows VM
 	}
 }
