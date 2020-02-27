@@ -1,18 +1,16 @@
 # build stage for building binaries
-FROM registry.access.redhat.com/ubi8/go-toolset:1.12.8-32 as build
+FROM golang:1.13.8 as build
 LABEL stage=build
 
 # Build WMCB
-# WORKDIR is not resulting in creating this directory, so we are forcing it to happen. The image does not allow us to
-# create /build/, forcing us to use $HOME which is /opt/app-root/src/
-RUN mkdir $HOME/build/
-WORKDIR $HOME/build/
+RUN mkdir /build/
+WORKDIR /build/
 RUN git clone https://github.com/openshift/windows-machine-config-bootstrapper.git
 WORKDIR windows-machine-config-bootstrapper
 RUN make build
 
 # Build hybrid-overlay
-WORKDIR $HOME/build/
+WORKDIR /build/
 RUN git clone https://github.com/openshift/ovn-kubernetes/
 WORKDIR ovn-kubernetes/go-controller/
 RUN make windows
@@ -56,10 +54,10 @@ LABEL stage=operator
 
 # Copy wmcb.exe
 WORKDIR /payload/
-COPY --from=build /opt/app-root/src/build/windows-machine-config-bootstrapper/wmcb.exe .
+COPY --from=build /build/windows-machine-config-bootstrapper/wmcb.exe .
 
 # Copy hybrid-overlay.exe
-COPY --from=build /opt/app-root/src/build/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay.exe .
+COPY --from=build /build/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay.exe .
 
 # Copy kubelet.exe and kube-proxy.exe
 WORKDIR /payload/kube-node/
