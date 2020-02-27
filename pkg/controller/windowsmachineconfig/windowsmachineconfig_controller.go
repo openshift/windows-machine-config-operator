@@ -3,7 +3,10 @@ package windowsmachineconfig
 import (
 	"context"
 	"errors"
+	"os"
 
+	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/cloudprovider"
+	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	wmcv1alpha1 "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -72,11 +75,7 @@ type ReconcileWindowsMachineConfig struct {
 	// that reads objects from the cache and writes to the apiserver
 	client client.Client
 	scheme *runtime.Scheme
-}
-
-// cloudProvider holds information related to cloud provider
-type cloudProvider struct {
-
+	cloudProvider  cloudprovider.Cloud
 }
 
 // Reconcile reads that state of the cluster for a WindowsMachineConfig object and makes changes based on the state read
@@ -103,12 +102,20 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
-
-	// Get cloud provider specific info.
-	// TODO: This should be moved to validation section.
-	if instance.Spec.AWS == nil && instance.Spec.Azure == nil {
-		return reconcile.Result{}, errors.New("both the supported cloud providers are nil")
+	if r.cloudProvider == nil {
+		// Get cloud provider specific info.
+		// TODO: This should be moved to validation section.
+		if instance.Spec.AWS == nil && instance.Spec.Azure == nil {
+			return reconcile.Result{}, errors.New("both the supported cloud providers are nil")
+		}
+		// As of now think of AWS implementation.
+		if instance.Spec.AWS != nil {
+			// We assume the cloud provider secret has been mounted to "~/.awscredentials` path
+			cloudprovider.CloudProviderFactory(os.Getenv("KUBECONFIG"), "~/awscredentials",
+				instance.Spec.AWS.CredentialAccountID, "", imageID, instance.Spec.InstanceType, instance.Spec.AWS.SSHKeyPair, )
+		}
 	}
+
 
 	// Get the current count of required number of Windows VMs
 	currentCountOfWindowsVMs := 1 // As of now hardcoded to 1. We need to get the number of Windows VM node objects
@@ -118,7 +125,8 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 		}
 	}
 
-	// Set WindowsMachineConfig instance as the owner and controller
+	// Set WindowsMachineConfig instance as the owner and controller.
+	// TODO: Check and remove this
 	if err := controllerutil.SetControllerReference(instance, nil, r.scheme); err != nil {
 		return reconcile.Result{}, err
 	}
@@ -126,24 +134,27 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 	return reconcile.Result{}, nil
 }
 
-func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current int)  error {
+func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current int) error {
 	if desired < current {
-		deleteWindowsVMs(current - desired)
+		return deleteWindowsVMs(current - desired)
 	} else if desired > current {
 		createWindowsVMs(desired - current)
+
 	}
 	return nil
 }
 
-func deleteWindowsVMs(count int) {
+func deleteWindowsVMs(count int) error {
 	// From the list of Windows VMs choose randomly count number of VMs
 	for i := 0; i < count; i++ {
-		// Create Windows VM
+		// Delete the Windows VM here. Make a call to the Windows
 	}
 }
 
-func createWindowsVMs(count int) []{
+func createWindowsVMs(count int) []*types.Credentials {
+	var vmCredentials = make([]*types.Credentials, count)
 	for i := 0; i < count; i++ {
 		// Create Windows VM
+
 	}
 }
