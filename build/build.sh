@@ -3,10 +3,15 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+OUTPUT_DIR=${1:-}
+if [[ -z "$OUTPUT_DIR" ]]; then
+    echo "usage: $0 OUTPUT_DIR"
+    exit 1
+fi
+
 PACKAGE="github.com/openshift/windows-machine-config-operator"
 MAIN_PACKAGE="${PACKAGE}/cmd/manager"
 BIN_NAME="windows-machine-config-operator"
-OUTPUT_DIR="build/_output"
 BIN_DIR="${OUTPUT_DIR}/bin"
 
 echo "building ${BIN_NAME}..."
