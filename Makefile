@@ -1,4 +1,4 @@
-all: lint build
+all: lint build unit
 
 .PHONY: build
 build:
@@ -7,6 +7,10 @@ build:
 .PHONY: lint
 lint:
 	hack/lint-gofmt.sh
+
+.PHONY: unit
+unit:
+	hack/unit.sh
 
 .PHONY: run-ci-e2e-test
 run-ci-e2e-test:
