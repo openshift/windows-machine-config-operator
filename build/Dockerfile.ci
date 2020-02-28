@@ -23,7 +23,8 @@ RUN make windows
 
 # Build WMCO
 # The source here corresponds to the code in the PR and is placed here by the CI infrastructure.
-WORKDIR /go/src/github.com/openshift/windows-machine-config-operator
+RUN mkdir /build/windows-machine-config-operator
+WORKDIR /build/windows-machine-config-operator
 COPY . .
 RUN make build
 
@@ -92,8 +93,8 @@ ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
     USER_NAME=windows-machine-config-operator
 
 # install operator binary
-COPY --from=download /go/src/github.com/openshift/windows-machine-config-operator/build/_output/bin/windows-machine-config-operator ${OPERATOR}
-COPY --from=download /go/src/github.com/openshift/windows-machine-config-operator/build/bin /usr/local/bin
+COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-machine-config-operator ${OPERATOR}
+COPY --from=build /build/windows-machine-config-operator/build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
