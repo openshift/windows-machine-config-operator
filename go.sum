@@ -569,8 +569,6 @@ github.com/openshift/client-go v0.0.0-20191125132246-f6563a70e19a h1:Otk3CuCAEHi
 github.com/openshift/client-go v0.0.0-20191125132246-f6563a70e19a/go.mod h1:6rzn+JTr7+WYS2E1TExP4gByoABxMznR6y2SnUIkmxk=
 github.com/openshift/origin v0.0.0-20160503220234-8f127d736703/go.mod h1:0Rox5r9C8aQn6j1oAOQ0c1uC86mYbUFObzjBRvUKHII=
 github.com/openshift/prom-label-proxy v0.1.1-0.20191016113035-b8153a7f39f1/go.mod h1:p5MuxzsYP1JPsNGwtjtcgRHHlGziCJJfztff91nNixw=
-github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200225013401-cc0efc3f4ecf h1:dWsczm7PdstLPKgtYPJxMru1Oqm60BByZyY/L9H8II8=
-github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200225013401-cc0efc3f4ecf/go.mod h1:QZWD9cvvClAtVEe8UqFM7q0cgg6GtHpo8AqhQaj6Lz0=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/openzipkin/zipkin-go v0.1.6/go.mod h1:QgAqvLzwWbR/WpD4A3cGpPtJrZXNIiJc5AZX7/PBEpw=
 github.com/operator-framework/api v0.0.0-20200120235816-80fd2f1a09c9/go.mod h1:S5IdlJvmKkF84K2tBvsrqJbI2FVy03P88R75snpRxJo=
@@ -642,6 +640,8 @@ github.com/prometheus/prometheus v2.3.2+incompatible/go.mod h1:oAIUtOny2rjMX0OWN
 github.com/prometheus/tsdb v0.7.1/go.mod h1:qhTCs0VvXwvX/y3TZrWD7rabWM+ijKTux40TwIPHuXU=
 github.com/prometheus/tsdb v0.8.0/go.mod h1:fSI0j+IUQrDd7+ZtR9WKIGtoYAYAJUKcKhYLG25tN4g=
 github.com/quobyte/api v0.1.2/go.mod h1:jL7lIHrmqQ7yh05OJ+eEEdHr0u/kmT1Ff9iHd+4H6VI=
+github.com/ravisantoshgudimetla/windows-machine-config-operator/tools/windows-node-installer v0.0.0-20200227194518-855d8c68bfd9 h1:5Nbd5GTthNmzHoIJoGyGtG57XUA8ONaQI/Bes58VPT4=
+github.com/ravisantoshgudimetla/windows-machine-config-operator/tools/windows-node-installer v0.0.0-20200227194518-855d8c68bfd9/go.mod h1:QZWD9cvvClAtVEe8UqFM7q0cgg6GtHpo8AqhQaj6Lz0=
 github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/remyoudompheng/bigfft v0.0.0-20170806203942-52369c62f446/go.mod h1:uYEyJGbgTkfkS4+E/PavXkNJcbFIpEtjt2B0KDQ5+9M=
 github.com/robfig/cron v0.0.0-20170526150127-736158dc09e1/go.mod h1:JGuDeoQd7Z6yL4zQhZ3OPEVHB7fL6Ka6skscFHfmt2k=

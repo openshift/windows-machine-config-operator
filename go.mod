@@ -8,6 +8,7 @@ replace (
 	github.com/coreos/prometheus-operator => github.com/coreos/prometheus-operator v0.34.0
 	github.com/openshift/api => github.com/openshift/api v0.0.0-20200205145930-e9d93e317dd1 // OpenShift 4.3
 	github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20191125132246-f6563a70e19a // OpenShift 4.3
+	github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer => github.com/ravisantoshgudimetla/windows-machine-config-operator/tools/windows-node-installer v0.0.0-20200227194518-855d8c68bfd9
 	k8s.io/api => k8s.io/api v0.16.7
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.16.7
 	k8s.io/apimachinery => k8s.io/apimachinery v0.16.7
