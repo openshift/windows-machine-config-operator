@@ -1,8 +1,10 @@
 all: lint build unit
 
+OUTPUT_DIR="build/_output"
+
 .PHONY: build
 build:
-	build/build.sh
+	build/build.sh ${OUTPUT_DIR}
 
 .PHONY: lint
 lint:
