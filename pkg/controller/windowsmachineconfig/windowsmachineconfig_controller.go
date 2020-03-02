@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
+	"k8s.io/client-go/util/retry"
+	"k8s.io/client-go/kubernetes"
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/cloudprovider"
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	wmcv1alpha1 "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
+	certificates "k8s.io/api/certificates/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -44,6 +49,10 @@ const (
 	hybridOverlayName = "hybrid-overlay.exe"
 	// hybridOverExecutable is the remote location of the hybrid overlay binary
 	hybridOverlayExecutable = remoteDir + hybridOverlayName
+	// RetryCount is the amount of times we will retry an api operation
+	RetryCount = 20
+	// RetryInterval is the interval of time until we retry after a failure
+	RetryInterval = 5 * time.Second
 )
 
 var log = logf.Log.WithName("controller_windowsmachineconfig")
@@ -61,7 +70,12 @@ func Add(mgr manager.Manager) error {
 
 // newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
-	return &ReconcileWindowsMachineConfig{client: mgr.GetClient(), scheme: mgr.GetScheme()}
+	// TODO: This should be moved out to validation
+	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		log.Error(err, "error while getting clientset")
+	}
+	return &ReconcileWindowsMachineConfig{client: mgr.GetClient(), scheme: mgr.GetScheme(), k8sclientset: clientset}
 }
 
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
@@ -102,6 +116,7 @@ type ReconcileWindowsMachineConfig struct {
 	scheme        *runtime.Scheme
 	cloudProvider cloudprovider.Cloud
 	windowsVM     map[types.WindowsVM]bool
+	k8sclientset  *kubernetes.Clientset
 }
 
 // windowsVM is a wrapper for the WindowsVM interface
@@ -157,7 +172,7 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 			"~/.aws/credentials",
 			"default",
 			"", "", instance.Spec.InstanceType,
-			"openshift-dev", "/home/ravig/.ssh/openshift-dev.pem")
+			"", "")
 		//}
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("error instantianting cloud provider: %v", err)
@@ -167,8 +182,16 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 		// populate the windowsVM map here from configmap as source of truth
 		r.windowsVM = make(map[types.WindowsVM]bool)
 	}
+	if r.k8sclientset == nil {
+		return reconcile.Result{}, nil
+	}
+	nodes, err := r.k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: "node.openshift.io/os_id=Windows"})
+	if err != nil {
+		return reconcile.Result{}, nil
+	}
+	fmt.Println(len(nodes.Items))
 	// Get the current count of required number of Windows VMs
-	currentCountOfWindowsVMs := 1 // As of now hardcoded to 1. We need to get the number of Windows VM node objects
+	currentCountOfWindowsVMs := len(nodes.Items) // As of now hardcoded to 1. We need to get the number of Windows VM node objects
 	if instance.Spec.Replicas != currentCountOfWindowsVMs {
 		if instance.Spec.Replicas == 0 {
 			instance.Spec.Replicas = 2
@@ -239,6 +262,7 @@ func (r *ReconcileWindowsMachineConfig) deleteWindowsVMs(count int) {
 	}
 }
 
+// TODO: Take this out, this is not needed, we assume kubelet is already available to be transferred.
 var (
 	// kubeNode contains the information about  the kubernetes node package for Windows
 	kubeNode = pkgInfo{
@@ -261,6 +285,12 @@ func (r *ReconcileWindowsMachineConfig) createWindowsVMs(count int) {
 		// Copy paste wmcb e2e code for prepping the node :)
 		vm := &windowsVM{createdVM}
 		vm.configureWindowsVM()
+
+		// Approve CSRs associated with the configured Windows VM.
+		err = r.handleCSRs()
+		if err != nil {
+			log.Error(err, "error handling csr for the node")
+		}
 
 		// update the windowsVM interface
 		if _, ok := r.windowsVM[createdVM]; !ok {
@@ -296,6 +326,114 @@ func (vm *windowsVM) runBootstrapper() {
 	if err != nil {
 		log.Error(err, "error running bootstrapper")
 	}
+}
+
+// handleCSRs handles the approval of bootstrap and node CSRs
+func (r *ReconcileWindowsMachineConfig) handleCSRs() error {
+	// Handle the bootstrap CSR
+	err := r.handleCSR("system:serviceaccount:openshift-machine-config-operator:node-bootstrapper")
+	if err != nil {
+		return fmt.Errorf("unable to handle bootstrap CSR: %v", err)
+	}
+
+	// Handle the node CSR
+	// Note: for the product we want to get the node name from the instance information
+	err = r.handleCSR("system:node:")
+	if err != nil {
+		return fmt.Errorf("unable to handle node CSR: %v", err)
+	}
+
+	return nil
+}
+
+//findCSR finds the CSR that matches the requestor filter
+func (r *ReconcileWindowsMachineConfig) findCSR(requestor string) (*certificates.CertificateSigningRequest, error) {
+	var foundCSR *certificates.CertificateSigningRequest
+	// Find the CSR
+	for retries := 0; retries < RetryCount; retries++ {
+		csrs, err := r.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().List(metav1.ListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("unable to get CSR list: %v", err)
+		}
+		if csrs == nil {
+			time.Sleep(RetryInterval)
+			continue
+		}
+
+		for _, csr := range csrs.Items {
+			if !strings.Contains(csr.Spec.Username, requestor) {
+				continue
+			}
+			var handledCSR bool
+			for _, c := range csr.Status.Conditions {
+				if c.Type == certificates.CertificateApproved || c.Type == certificates.CertificateDenied {
+					handledCSR = true
+					break
+				}
+			}
+			if handledCSR {
+				continue
+			}
+			foundCSR = &csr
+			break
+		}
+
+		if foundCSR != nil {
+			break
+		}
+		time.Sleep(RetryInterval)
+	}
+
+	if foundCSR == nil {
+		return nil, fmt.Errorf("unable to find CSR with requestor %s", requestor)
+	}
+	return foundCSR, nil
+}
+// approve approves the given CSR if it has not already been approved
+// Based on https://github.com/kubernetes/kubectl/blob/master/pkg/cmd/certificates/certificates.go#L237
+func (r *ReconcileWindowsMachineConfig) approve(csr *certificates.CertificateSigningRequest) error {
+	// Check if the certificate has already been approved
+	for _, c := range csr.Status.Conditions {
+		if c.Type == certificates.CertificateApproved {
+			return nil
+		}
+	}
+
+	// Approve the CSR
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Ensure we get the current version
+		csr, err := r.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().Get(
+			csr.GetName(), metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		// Add the approval status condition
+		csr.Status.Conditions = append(csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
+			Type:           certificates.CertificateApproved,
+			Reason:         "WMCBe2eTestRunnerApprove",
+			Message:        "This CSR was approved by WMCB e2e test runner",
+			LastUpdateTime: metav1.Now(),
+		})
+
+		_, err = r.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(csr)
+		return err
+	})
+}
+
+
+// handleCSR finds the CSR based on the requestor filter and approves it
+func (r *ReconcileWindowsMachineConfig) handleCSR(requestorFilter string) error {
+	csr, err := r.findCSR(requestorFilter)
+	if err != nil {
+		return fmt.Errorf("error finding CSR for %s: %v", requestorFilter, err)
+	}
+
+	if err = r.approve(csr); err != nil {
+		return fmt.Errorf("error approving CSR for %s: %v", requestorFilter, err)
+	}
+
+	return nil
 }
 
 // initializeTestBootstrapperFiles initializes the files required for initialize-kubelet
