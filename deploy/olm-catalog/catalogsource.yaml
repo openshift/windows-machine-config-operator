@@ -1,0 +1,14 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: wmco
+  # Deploying the openshift-marketplace namespace as it is the global catalog namespace
+  # a subscription in any namespace can refer to catalogsources in this namespace without error.
+  namespace: openshift-marketplace
+spec:
+  displayName: Windows Machine Config operators
+  sourceType: grpc
+  image: REPLACE_IMAGE
+  updateStrategy:
+    registryPoll:
+      interval: 5m
