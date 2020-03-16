@@ -69,6 +69,11 @@ COPY --from=download /download/kubernetes/node/bin/kube-proxy.exe .
 WORKDIR /payload/cni-plugins/
 COPY --from=download /download/cni-plugins/* .
 
+# Copy wget-ignore-cert powershell script
+RUN mkdir /payload/powershell/
+WORKDIR /payload/powershell/
+COPY --from=build /build/windows-machine-config-operator/pkg/internal/wget-ignore-cert.ps1 .
+
 WORKDIR /
 
 ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
@@ -80,6 +85,9 @@ COPY build/_output/bin/windows-machine-config-operator ${OPERATOR}
 
 COPY build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
+
+# Copy the wget-ignore-powershell script needed to execute wget commands remotely
+COPY pkg/internal/wget-ignore-cert.ps1 /payload/powershell/
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
 

@@ -114,6 +114,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// TODO: Add checks for the existence of well known paths likes
+	// 		/payload/bin/, /etc/cloud/credentials etc.
+
 	// Add the Metrics Service
 	addMetrics(ctx, cfg, namespace)
 
