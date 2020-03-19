@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
@@ -63,7 +64,7 @@ func NewTestContext(t *testing.T) (*testContext, error) {
 	}
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{osdkTestCtx: fmwkTestContext, kubeclient: framework.Global.KubeClient,
-		timeout: time.Minute * 15, retryInterval: time.Second * 5, nodes: make([]v1.Node, 0, gc.numberOfNodes),
+		timeout: retry.Timeout, retryInterval: retry.Interval, nodes: make([]v1.Node, 0, gc.numberOfNodes),
 		namespace: namespace}, nil
 }
 

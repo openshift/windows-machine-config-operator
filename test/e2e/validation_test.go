@@ -3,12 +3,12 @@ package e2e
 import (
 	"context"
 	"encoding/json"
-	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	"log"
 	"strings"
 	"testing"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
+	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
@@ -25,7 +25,7 @@ import (
 // waitForTrackerConfigMap waits for the Windows tracker configmap to be created with appropriate values
 func (tc *testContext) waitForTrackerConfigMap() error {
 	var trackerConfigMap *corev1.ConfigMap
-	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+	err := wait.Poll(tc.retryInterval, tc.timeout, func() (done bool, err error) {
 		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(tracker.StoreName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -144,7 +144,7 @@ func (tc *testContext) getInstanceIP(instanceID string) (string, error) {
 // getCredsFromSecret gets the credentials associated with the instance.
 func (tc *testContext) getCredsFromSecret(instanceID string) (tracker.Credentials, error) {
 	var creds tracker.Credentials
-	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+	err := wait.Poll(tc.retryInterval, tc.timeout, func() (done bool, err error) {
 		instanceSecret, err := tc.kubeclient.CoreV1().Secrets(tc.namespace).Get(instanceID, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {

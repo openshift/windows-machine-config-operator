@@ -6,20 +6,17 @@ import (
 	"time"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/windows"
 	"github.com/pkg/errors"
 	certificates "k8s.io/api/certificates/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/util/retry"
+	kretry "k8s.io/client-go/util/retry"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
-	// RetryCount is the amount of times we will retry an api operation
-	RetryCount = 20
-	// RetryInterval is the interval of time until we retry after a failure
-	RetryInterval = 5 * time.Second
 	// bootstrapCSR is the CSR name associated with a worker node that just got bootstrapped.
 	bootstrapCSR = "system:serviceaccount:openshift-machine-config-operator:node-bootstrapper"
 )
@@ -73,13 +70,13 @@ func (nc *nodeConfig) handleCSRs() error {
 func (nc *nodeConfig) findCSR(requestor string) (*certificates.CertificateSigningRequest, error) {
 	var foundCSR *certificates.CertificateSigningRequest
 	// Find the CSR
-	for retries := 0; retries < RetryCount; retries++ {
+	for retries := 0; retries < retry.Count; retries++ {
 		csrs, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().List(metav1.ListOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("unable to get CSR list: %v", err)
 		}
 		if csrs == nil {
-			time.Sleep(RetryInterval)
+			time.Sleep(retry.Interval)
 			continue
 		}
 
@@ -104,7 +101,7 @@ func (nc *nodeConfig) findCSR(requestor string) (*certificates.CertificateSignin
 		if foundCSR != nil {
 			break
 		}
-		time.Sleep(RetryInterval)
+		time.Sleep(retry.Interval)
 	}
 
 	if foundCSR == nil {
@@ -124,7 +121,7 @@ func (nc *nodeConfig) approve(csr *certificates.CertificateSigningRequest) error
 	}
 
 	// Approve the CSR
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	return kretry.RetryOnConflict(kretry.DefaultRetry, func() error {
 		// Ensure we get the current version
 		csr, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().Get(
 			csr.GetName(), metav1.GetOptions{})

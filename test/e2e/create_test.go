@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"testing"
+	"time"
 
 	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
@@ -53,8 +54,6 @@ func testWindowsNodeCreation(t *testing.T) {
 			Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval}); err != nil {
 		t.Fatalf("error creating wcmo custom resource  %v", err)
 	}
-	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster, so to be on safe
-	// side, let's make it as 60 minutes. The value comes from timeout variable
 	err = testCtx.waitForWindowsNode()
 	if err != nil {
 		t.Fatalf("windows node creation failed  with %v", err)
@@ -64,7 +63,9 @@ func testWindowsNodeCreation(t *testing.T) {
 // waitForWindowsNode waits for the Windows node to be created by the operator.
 func (tc *testContext) waitForWindowsNode() error {
 	var nodes *v1.NodeList
-	err := wait.Poll(tc.retryInterval, tc.timeout, func() (done bool, err error) {
+	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster, so to be on safe
+	// side, let's make it as 20 minutes per node. The value comes from nodeCreationTime variable
+	err := wait.Poll(nodeRetryInterval, time.Duration(gc.numberOfNodes)*nodeCreationTime, func() (done bool, err error) {
 		nodes, err = tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: wmc.WindowsOSLabel})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
