@@ -72,7 +72,7 @@ COPY --from=download /download/cni-plugins/* .
 # Copy wget-ignore-cert powershell script
 RUN mkdir /payload/powershell/
 WORKDIR /payload/powershell/
-COPY --from=build /build/windows-machine-config-operator/pkg/internal/wget-ignore-cert.ps1 .
+COPY pkg/internal/wget-ignore-cert.ps1 .
 
 WORKDIR /
 
