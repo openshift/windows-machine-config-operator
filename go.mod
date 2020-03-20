@@ -36,6 +36,7 @@ require (
 	github.com/operator-framework/operator-sdk v0.15.2
 	github.com/pkg/errors v0.8.1
 	github.com/spf13/pflag v1.0.5
+	github.com/stretchr/testify v1.4.0
 	k8s.io/api v0.17.2
 	k8s.io/apimachinery v0.17.3
 	k8s.io/client-go v12.0.0+incompatible

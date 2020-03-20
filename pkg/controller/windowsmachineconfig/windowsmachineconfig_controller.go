@@ -10,6 +10,7 @@ import (
 	wmcapi "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -99,6 +100,8 @@ type ReconcileWindowsMachineConfig struct {
 	windowsVMs map[types.WindowsVM]bool
 	// k8sclientset holds the kube client that we can re-use for all kube objects other than custom resources.
 	k8sclientset *kubernetes.Clientset
+	// tracker is used to track all the Windows nodes created via WMCO
+	tracker *tracker.Tracker
 }
 
 // Reconcile reads that state of the cluster for a WindowsMachineConfig object and makes changes based on the state read
@@ -179,15 +182,27 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 // reconcileWindowsNodes reconciles the Windows nodes so that required number of the Windows nodes are present in the
 // cluster
 func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current int) bool {
+	if r.tracker == nil {
+		var err error
+		r.tracker, err = tracker.NewTracker(r.k8sclientset, r.windowsVMs)
+		if err != nil {
+			log.Error(err, "tracker instantiation failed")
+		}
+	}
+	var vmCount bool
 	if desired < current {
-		return r.deleteWindowsVMs(current - desired)
+		vmCount = r.deleteWindowsVMs(current - desired)
 	} else if desired > current {
-		// Let's not requeue the result for now. We can get the list of errors
-		return r.createWindowsWorkerNodes(desired - current)
+		vmCount = r.createWindowsWorkerNodes(desired - current)
 	} else if desired == current {
 		return true
 	}
-	return false
+	r.tracker.WindowsVMs(r.windowsVMs)
+	err := r.tracker.Reconcile()
+	if err != nil {
+		log.Error(err, "tracking Windows VMs via configmap failed")
+	}
+	return vmCount
 }
 
 // chooseRandomNode chooses one of the windows nodes randomly. The randomization is coming from golang maps since you
