@@ -33,7 +33,7 @@ spec:
           description: WindowsMachineConfigSpec defines the desired state of WindowsMachineConfig
           properties:
             aws:
-              description: AWS holds AWS specific cloud provider information.
+              description: AWS holds AWS specific cloud provider information
               properties:
                 credentialAccountId:
                   description: CredentialAccountID is account id associated with AWS
@@ -44,22 +44,13 @@ spec:
                     AWS asks a keypair to be present for encrypting the Windows VM
                     password
                   type: string
-                sshPrivateKey:
-                  description: SSHPrivateKey is the name of the secret which contains
-                    ssh key to decrypt the password
-                  type: string
               required:
               - credentialAccountId
               - sshKeyPair
-              - sshPrivateKey
               type: object
             azure:
               description: Azure holds Azure specific cloud provider information
               type: object
-            cloudProviderCredentials:
-              description: CloudProviderCredentials is the name of the secret which
-                contains the credentials of the cloud provider
-              type: string
             instanceType:
               description: InstanceType represents the flavor of instance to be used
                 while creating the virtual machines. Please note that this is common
@@ -70,8 +61,8 @@ spec:
                 the OpenShift cluster
               type: integer
           required:
-          - aws
-          - azure
+          - instanceType
+          - replicas
           type: object
         status:
           description: WindowsMachineConfigStatus defines the observed state of WindowsMachineConfig

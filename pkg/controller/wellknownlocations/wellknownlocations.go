@@ -6,6 +6,7 @@ const (
 	CloudCredentialsPath = "/etc/cloud/credentials"
 	// PrivateKeyPath contains the path to the private key which is used in decrypting password in case of AWS
 	// cloud provider. This would have been mounted as a secret by user
+	// TODO: Jira story for validation: https://issues.redhat.com/browse/WINC-316
 	PrivateKeyPath = "/etc/private-key/private-key.pem"
 	// WmcbPath contains the path of the Windows Machine Config Bootstrapper binary. The container image should already
 	// have this binary mounted

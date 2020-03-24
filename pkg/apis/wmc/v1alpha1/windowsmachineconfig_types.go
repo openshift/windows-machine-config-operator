@@ -11,18 +11,17 @@ import (
 type WindowsMachineConfigSpec struct {
 	// Replicas represent how many Windows nodes to be added to the
 	// OpenShift cluster
-	Replicas int `json:"replicas,omitempty"`
+	Replicas int `json:"replicas"`
 	// InstanceType represents the flavor of instance to be used while
 	// creating the virtual machines. Please note that this is common
 	// across all the Windows nodes in the cluster
-	InstanceType string `json:"instanceType,omitempty"`
-	// AWS holds AWS specific cloud provider information.
-	AWS *AWS `json:"aws"`
+	InstanceType string `json:"instanceType"`
+	// AWS holds AWS specific cloud provider information
+	// +optional
+	AWS *AWS `json:"aws,omitempty"`
 	// Azure holds Azure specific cloud provider information
-	Azure *Azure `json:"azure"`
-	// CloudProviderCredentials is the name of the secret which contains the
-	// credentials of the cloud provider
-	CloudProviderCredentials string `json:"cloudProviderCredentials,omitempty"`
+	// +optional
+	Azure *Azure `json:"azure,omitempty"`
 }
 
 // AWS holds the information related to AWS cloud provider
@@ -30,9 +29,6 @@ type AWS struct {
 	// SSHKeyPair is the sshKeyPair associated with cloudprovider. AWS
 	// asks a keypair to be present for encrypting the Windows VM password
 	SSHKeyPair string `json:"sshKeyPair"`
-	// SSHPrivateKey is the name of the secret which contains ssh key
-	// to decrypt the password
-	SSHPrivateKey string `json:"sshPrivateKey"`
 	// CredentialAccountID is account id associated with AWS provider
 	CredentialAccountID string `json:"credentialAccountId"`
 }
