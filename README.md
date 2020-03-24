@@ -21,6 +21,10 @@ export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
 export CLUSTER_ADDR=<cluster_name, eg: ravig211.devcluster.openshift.com>
 export KUBE_SSH_KEY_PATH=<path to ssh key>
 ```
+Update the keypair mentioned at [sshKeyPair](https://github.com/openshift/windows-machine-config-operator/blob/42593c5d2eb798b572c58b5debafc4c392d1f967/test/e2e/wmco_test.go#L59) to match with what 
+is being used in KUBE_SSH_KEY_PATH. Please note that we're using libra as keypair
+for our CI purposes.
+
 Once the above variables are set:
 ```shell script
 hack/run-ci-e2e-test.sh
