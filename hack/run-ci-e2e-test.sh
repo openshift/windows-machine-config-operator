@@ -3,6 +3,10 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+# Set up hybrid networking on the cluster, a requirement for Windows support in OpenShift
+# TODO: This needs to be removed as part of https://issues.redhat.com/browse/WINC-351
+oc patch network.operator cluster --type=merge -p '{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"hybridOverlayConfig":{"hybridClusterNetwork":[{"cidr":"10.132.0.0/14","hostPrefix":23}]}}}}}'
+
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 
 export CGO_ENABLED=0
