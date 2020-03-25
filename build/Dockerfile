@@ -40,16 +40,19 @@ RUN tar -zxf /download/cni-plugins-windows-amd64-v0.8.2.tgz
 
 # Build the operator image with following payload structure
 # /payload/
-# ├── cni-plugins
-# │   ├── flannel.exe
-# │   ├── host-local.exe
-# │   ├── win-bridge.exe
-# │   └── win-overlay.exe
-# ├── hybrid-overlay.exe
-# ├── kube-node
-# │   ├── kube-proxy.exe
-# │   └── kubelet.exe
-# └── wmcb.exe
+#├── cni-plugins
+#│   ├── flannel.exe
+#│   ├── host-local.exe
+#│   ├── win-bridge.exe
+#│   └── win-overlay.exe
+#├── hybrid-overlay.exe
+#├── kube-node
+#│   ├── kubelet.exe
+#│   └── kube-proxy.exe
+#├── powershell
+#│   └── wget-ignore-cert.ps1
+#└── wmcb.exe
+
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 LABEL stage=operator
 
