@@ -144,7 +144,7 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 			// We assume the credential path is `/etc/aws/credentials` mounted as a secret.
 			wkl.CloudCredentialsPath,
 			instance.Spec.AWS.CredentialAccountID,
-			"", "", instance.Spec.InstanceType,
+			"/tmp", "", instance.Spec.InstanceType,
 			instance.Spec.AWS.SSHKeyPair, wkl.PrivateKeyPath)
 
 		if err != nil {
