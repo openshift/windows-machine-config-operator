@@ -273,7 +273,7 @@ func (r *ReconcileWindowsMachineConfig) createWindowsWorkerNodes(count int) bool
 		if err := nc.Configure(); err != nil {
 			// TODO: Unwrap to extract correct error
 			errs = append(errs, errors.Wrap(err, "configuring Windows VM failed"))
-			log.Error(err, "configuring Windows VM failed", err)
+			log.Error(err, "configuring Windows VM failed")
 		}
 
 		// update the windowsVMs slice
