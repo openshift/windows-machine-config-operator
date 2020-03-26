@@ -11,6 +11,7 @@ import (
 type WindowsMachineConfigSpec struct {
 	// Replicas represent how many Windows nodes to be added to the
 	// OpenShift cluster
+	// +kubebuilder:validation:Minimum=0
 	Replicas int `json:"replicas"`
 	// InstanceType represents the flavor of instance to be used while
 	// creating the virtual machines. Please note that this is common

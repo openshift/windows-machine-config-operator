@@ -1,7 +1,9 @@
 package e2e
 
 import (
+	"context"
 	"encoding/json"
+	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	"log"
 	"strings"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
@@ -195,4 +198,79 @@ func testValidateSecrets(t *testing.T, nodeCount int) {
 			retryInterval, timeout)
 		assert.NoError(t, err, "error validating instance secret")
 	}
+}
+
+// testWMCValidation tests if validations of the fields of WindowsMachineConfigs CRD are working as expected
+// We are only checking negative test cases here, positive test cases would check if custom resource is getting created
+// as expected and they are handled in testWindowsNodeCreation function in test/e2e/create_test.go
+func testWMCValidation(t *testing.T) {
+	testCtx := framework.NewTestCtx(t)
+	defer testCtx.Cleanup()
+	namespace, err := testCtx.GetNamespace()
+	require.NoError(t, err, "Could not fetch a namespace")
+
+	var wmcReplicasFieldValidationTests = []struct {
+		name                       string
+		wmc                        *operator.WindowsMachineConfig
+		isTestExpectedToThrowError bool
+		expectedErrorInTest        string
+	}{
+		{
+			name:                       "replicas field absent",
+			wmc:                        createWindowsMachineConfig(namespace, false, 0),
+			isTestExpectedToThrowError: false,
+			expectedErrorInTest:        "",
+		},
+		{
+			name:                       "replicas field value less than 0",
+			wmc:                        createWindowsMachineConfig(namespace, true, -1),
+			isTestExpectedToThrowError: true,
+			expectedErrorInTest:        "spec.replicas in body should be greater than or equal to 0",
+		},
+	}
+
+	for _, test := range wmcReplicasFieldValidationTests {
+		t.Run(test.name, func(t *testing.T) {
+			// create WMC custom resource as per the test requirement
+			err = framework.Global.Client.Create(context.TODO(), test.wmc,
+				&framework.CleanupOptions{TestContext: testCtx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
+
+			if test.isTestExpectedToThrowError {
+				require.Error(t, err, "Creation of WMC custom resource did not throw an error when it was expected to")
+				assert.Contains(t, err.Error(), test.expectedErrorInTest,
+					"Creation of WMC custom resource threw an unexpected error")
+			} else {
+				require.NoError(t, err, "Creation of the WMC custom resource threw an error when it was expected not to")
+				// Fetching WMC persisted in etcd and checking if replicas field value is initialized as expected
+				actualWMC := &operator.WindowsMachineConfig{}
+				err = framework.Global.Client.Get(context.TODO(),
+					kubeTypes.NamespacedName{Name: wmcCRName, Namespace: namespace}, actualWMC)
+				require.NoError(t, err, "Could not get the WMC custom resource")
+				assert.Equal(t, test.wmc.Spec.Replicas, actualWMC.Spec.Replicas, "Replicas value of the  WMC custom "+
+					"resource is not as expected")
+			}
+		})
+	}
+}
+
+// createWindowsMachineConfig creates a WindowsMachineConfig object
+func createWindowsMachineConfig(namespace string, isReplicasFieldRequired bool, replicasFieldValue int) *operator.WindowsMachineConfig {
+	wmc := &operator.WindowsMachineConfig{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "WindowsMachineConfig",
+			APIVersion: "wmc.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      wmcCRName,
+			Namespace: namespace,
+		},
+		Spec: operator.WindowsMachineConfigSpec{
+			InstanceType: instanceType,
+			AWS:          &operator.AWS{CredentialAccountID: credentialAccountID, SSHKeyPair: SSHKeyPair},
+		},
+	}
+	if isReplicasFieldRequired {
+		wmc.Spec.Replicas = replicasFieldValue
+	}
+	return wmc
 }

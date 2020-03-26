@@ -25,6 +25,7 @@ func TestWMCO(t *testing.T) {
 	// TODO: In future, we'd like to skip the teardown for each test. As of now, since we just have deletion it should
 	// 		be ok to call destroy directly.
 	//		Jira Story: https://issues.redhat.com/browse/WINC-283
+	t.Run("WMC CR validation", testWMCValidation)
 	t.Run("create", creationTestSuite)
 	t.Run("destroy", deletionTestSuite)
 }
