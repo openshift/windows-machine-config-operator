@@ -87,7 +87,10 @@ COPY --from=download /download/kubernetes/node/bin/kube-proxy.exe .
 # Copy CNI plugin binaries
 RUN mkdir /payload/cni-plugins/
 WORKDIR /payload/cni-plugins/
-COPY --from=download /download/cni-plugins/* .
+COPY --from=download /download/cni-plugins/flannel.exe .
+COPY --from=download /download/cni-plugins/host-local.exe .
+COPY --from=download /download/cni-plugins/win-bridge.exe .
+COPY --from=download /download/cni-plugins/win-overlay.exe .
 
 # Copy wget-ignore-cert powershell script
 RUN mkdir /payload/powershell/
