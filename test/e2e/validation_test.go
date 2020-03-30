@@ -7,7 +7,6 @@ import (
 	"log"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
@@ -21,14 +20,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 )
 
-// waitForTrackerConfigMap to be created waits for the Windows tracker configmap to be created with appropriate values
-func waitForTrackerConfigMap(kubeclient kubernetes.Interface, namespace string, expectedNodesToBeTracked int,
-	retryInterval, timeout time.Duration) error {
+// waitForTrackerConfigMap waits for the Windows tracker configmap to be created with appropriate values
+func (tc *testContext) waitForTrackerConfigMap() error {
+	var trackerConfigMap *corev1.ConfigMap
 	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		trackerConfigMap, err := kubeclient.CoreV1().ConfigMaps(namespace).Get(tracker.StoreName, metav1.GetOptions{})
+		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(tracker.StoreName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("Waiting for availability of tracker configmap to be created: %s\n", tracker.StoreName)
@@ -36,15 +34,16 @@ func waitForTrackerConfigMap(kubeclient kubernetes.Interface, namespace string, 
 			}
 			return false, err
 		}
-		if len(trackerConfigMap.BinaryData) == expectedNodesToBeTracked {
+		if len(trackerConfigMap.BinaryData) == gc.numberOfNodes {
 			log.Println("Tracker configmap tracking required number of configmap")
 			return true, nil
 		}
 		log.Printf("still waiting for %d number of "+
-			"Windows worker nodes to be tracked but as of now we have %d\n", expectedNodesToBeTracked,
+			"Windows worker nodes to be tracked but as of now we have %d\n", gc.numberOfNodes,
 			len(trackerConfigMap.BinaryData))
 		return false, nil
 	})
+	tc.tracker = trackerConfigMap
 	return err
 }
 
@@ -55,14 +54,19 @@ func getInstanceID(providerID string) string {
 	return providerTokens[len(providerTokens)-1]
 }
 
-// getInstanceIDsOfNode returns the instanceIDs of all the Windows nodes created
-func getInstanceIDsOfNode(kubeclient kubernetes.Interface) ([]string, error) {
-	nodes, err := kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: wmc.WindowsOSLabel})
+// getInstanceIDsOfNodes returns the instanceIDs of all the Windows nodes created
+func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
+	nodes, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: wmc.WindowsOSLabel})
 	if err != nil {
 		return nil, errors.Wrap(err, "error while querying for Windows nodes")
 	}
-	instanceIDs := make([]string, 0, len(nodes.Items))
+
 	for _, node := range nodes.Items {
+		tc.nodes = append(tc.nodes, node)
+	}
+
+	instanceIDs := make([]string, 0, len(tc.nodes))
+	for _, node := range tc.nodes {
 		if len(node.Spec.ProviderID) > 0 {
 			instanceID := getInstanceID(node.Spec.ProviderID)
 			instanceIDs = append(instanceIDs, instanceID)
@@ -73,29 +77,23 @@ func getInstanceIDsOfNode(kubeclient kubernetes.Interface) ([]string, error) {
 
 // testConfigMapValidation ensures that the required configMap is created and is having appropriate
 // entries
-func testConfigMapValidation(t *testing.T, nodeCount int) {
-	testCtx := framework.NewTestCtx(t)
-	namespace, err := testCtx.GetNamespace()
-	require.NoError(t, err, "error while getting test namespace")
-
-	err = waitForTrackerConfigMap(framework.Global.KubeClient, namespace, nodeCount,
-		retryInterval, time.Minute*1)
+func testConfigMapValidation(t *testing.T) {
+	testCtx, err := NewTestContext(t)
+	require.NoError(t, err)
+	err = testCtx.waitForTrackerConfigMap()
 	require.NoError(t, err, "error waiting for tracker configmap")
 
 	// Get the instance id from the cloud provider for the windows Nodes created
-	instanceIDs, err := getInstanceIDsOfNode(framework.Global.KubeClient)
+	instanceIDs, err := testCtx.getInstanceIDsOfNodes()
 	require.NoError(t, err, "error while getting provider specific instanceIDs")
 
-	// check if those instances are present in the configmap
-	trackerConfigMap, err := framework.Global.KubeClient.CoreV1().ConfigMaps(namespace).Get(tracker.StoreName, metav1.GetOptions{})
-	require.NoError(t, err, "error while getting the tracker configmap")
 	for _, instanceID := range instanceIDs {
-		assert.Contains(t, trackerConfigMap.BinaryData, instanceID)
+		assert.Contains(t, testCtx.tracker.BinaryData, instanceID)
 	}
 }
 
 // getWindowsVM returns a windowsVM interface to be used for running commands against
-func getWindowsVM(ipAddress, instanceID string, credentials tracker.Credentials) (types.WindowsVM, error) {
+func (tc *testContext) getWindowsVM(ipAddress, instanceID string, credentials tracker.Credentials) (types.WindowsVM, error) {
 	winVM := &types.Windows{}
 	windowsCredentials := types.NewCredentials(instanceID, ipAddress, credentials.Password, credentials.Username)
 	winVM.Credentials = windowsCredentials
@@ -107,13 +105,8 @@ func getWindowsVM(ipAddress, instanceID string, credentials tracker.Credentials)
 	return winVM, nil
 }
 
-// validateConnectivity creates a Windows VM object and ensures that we have connectivity
-// for the Windows VM
-func validateConnectivity(ipAddress, instanceID string, credentials tracker.Credentials) error {
-	windowsVM, err := getWindowsVM(ipAddress, instanceID, credentials)
-	if err != nil {
-		return err
-	}
+// validateConnectivity ensures that we have connectivity for the Windows VM
+func (tc *testContext) validateConnectivity(windowsVM types.WindowsVM) error {
 	stdout, stderr, err := windowsVM.Run("dir", false)
 	if err != nil {
 		return errors.Wrap(err, "failed to run dir command on remote Windows VM")
@@ -131,8 +124,8 @@ func validateConnectivity(ipAddress, instanceID string, credentials tracker.Cred
 }
 
 // getInstanceIP gets the instance IP address associated with a node
-func getInstanceIP(instanceID string, kubeclient kubernetes.Interface) (string, error) {
-	nodes, err := kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: wmc.WindowsOSLabel})
+func (tc *testContext) getInstanceIP(instanceID string) (string, error) {
+	nodes, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: wmc.WindowsOSLabel})
 	if err != nil {
 		return "", errors.Wrap(err, "error while querying for Windows nodes")
 	}
@@ -148,15 +141,11 @@ func getInstanceIP(instanceID string, kubeclient kubernetes.Interface) (string, 
 	return "", errors.New("unable to find Windows Worker nodes")
 }
 
-// validateInstanceSecret validates the instance secret.
-func validateInstanceSecret(kubeclient kubernetes.Interface, namespace, instanceID string,
-	retryInterval, timeout time.Duration) error {
-	ipAddress, err := getInstanceIP(instanceID, kubeclient)
-	if err != nil {
-		return err
-	}
-	err = wait.Poll(retryInterval, timeout, func() (done bool, err error) {
-		instanceSecret, err := kubeclient.CoreV1().Secrets(namespace).Get(instanceID, metav1.GetOptions{})
+// getCredsFromSecret gets the credentials associated with the instance.
+func (tc *testContext) getCredsFromSecret(instanceID string) (tracker.Credentials, error) {
+	var creds tracker.Credentials
+	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+		instanceSecret, err := tc.kubeclient.CoreV1().Secrets(tc.namespace).Get(instanceID, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("Waiting for instance secret to be created: %s\n", instanceSecret.Name)
@@ -165,37 +154,46 @@ func validateInstanceSecret(kubeclient kubernetes.Interface, namespace, instance
 			return false, err
 		}
 		encodedCreds := instanceSecret.Data[instanceID]
-
-		var creds tracker.Credentials
 		if err := json.Unmarshal(encodedCreds, &creds); err != nil {
 			return false, errors.Wrap(err, "unmarshalling creds failed")
 		}
-
-		if err := validateConnectivity(ipAddress, instanceID, creds); err == nil {
-			log.Println("Successfully validated the SSH Connection")
-			return true, nil
-		}
-
-		log.Printf("failed with error for creds %v: %v", creds, err)
-		return false, nil
+		return true, nil
 	})
+	return creds, err
+}
+
+// validateInstanceSecret validates the instance secret.
+func (tc *testContext) validateInstanceSecret(instanceID string) error {
+	ipAddress, err := tc.getInstanceIP(instanceID)
+	if err != nil {
+		return err
+	}
+	creds, err := tc.getCredsFromSecret(instanceID)
+	if err != nil {
+		return err
+	}
+	if creds == (tracker.Credentials{}) {
+		return errors.New("expected credentials to be present but got a nil value")
+	}
+	windowsVM, err := tc.getWindowsVM(ipAddress, instanceID, creds)
+	if err != nil {
+		return err
+	}
+	err = tc.validateConnectivity(windowsVM)
 	return err
 }
 
 // testValidateSecrets ensures we've valid secrets in place to be used by trackerConfigmap to construct node objects
-func testValidateSecrets(t *testing.T, nodeCount int) {
-	testCtx := framework.NewTestCtx(t)
-	namespace, err := testCtx.GetNamespace()
-
-	require.NoError(t, err, "error while getting namespace")
+func testValidateSecrets(t *testing.T) {
+	testCtx, err := NewTestContext(t)
+	require.NoError(t, err)
 
 	// Get the instance id from the cloud provider for the windows Nodes created
-	instanceIDs, err := getInstanceIDsOfNode(framework.Global.KubeClient)
+	instanceIDs, err := testCtx.getInstanceIDsOfNodes()
 	require.NoError(t, err, "error while getting instance ids")
-	require.Equal(t, len(instanceIDs), nodeCount, "mismatched node count")
+	require.Equal(t, len(instanceIDs), gc.numberOfNodes, "mismatched node count")
 	for _, instanceID := range instanceIDs {
-		err := validateInstanceSecret(framework.Global.KubeClient, namespace, instanceID,
-			retryInterval, timeout)
+		err := testCtx.validateInstanceSecret(instanceID)
 		assert.NoError(t, err, "error validating instance secret")
 	}
 }
@@ -204,9 +202,10 @@ func testValidateSecrets(t *testing.T, nodeCount int) {
 // We are only checking negative test cases here, positive test cases would check if custom resource is getting created
 // as expected and they are handled in testWindowsNodeCreation function in test/e2e/create_test.go
 func testWMCValidation(t *testing.T) {
-	testCtx := framework.NewTestCtx(t)
-	defer testCtx.Cleanup()
-	namespace, err := testCtx.GetNamespace()
+	testCtx, err := NewTestContext(t)
+	require.NoError(t, err)
+	defer testCtx.cleanup()
+
 	require.NoError(t, err, "Could not fetch a namespace")
 
 	var wmcReplicasFieldValidationTests = []struct {
@@ -217,13 +216,13 @@ func testWMCValidation(t *testing.T) {
 	}{
 		{
 			name:                       "replicas field absent",
-			wmc:                        createWindowsMachineConfig(namespace, false, 0),
+			wmc:                        createWindowsMachineConfig(testCtx.namespace, false, 0),
 			isTestExpectedToThrowError: false,
 			expectedErrorInTest:        "",
 		},
 		{
 			name:                       "replicas field value less than 0",
-			wmc:                        createWindowsMachineConfig(namespace, true, -1),
+			wmc:                        createWindowsMachineConfig(testCtx.namespace, true, -1),
 			isTestExpectedToThrowError: true,
 			expectedErrorInTest:        "spec.replicas in body should be greater than or equal to 0",
 		},
@@ -233,7 +232,7 @@ func testWMCValidation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			// create WMC custom resource as per the test requirement
 			err = framework.Global.Client.Create(context.TODO(), test.wmc,
-				&framework.CleanupOptions{TestContext: testCtx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
+				&framework.CleanupOptions{TestContext: testCtx.osdkTestCtx, Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
 
 			if test.isTestExpectedToThrowError {
 				require.Error(t, err, "Creation of WMC custom resource did not throw an error when it was expected to")
@@ -244,7 +243,7 @@ func testWMCValidation(t *testing.T) {
 				// Fetching WMC persisted in etcd and checking if replicas field value is initialized as expected
 				actualWMC := &operator.WindowsMachineConfig{}
 				err = framework.Global.Client.Get(context.TODO(),
-					kubeTypes.NamespacedName{Name: wmcCRName, Namespace: namespace}, actualWMC)
+					kubeTypes.NamespacedName{Name: wmcCRName, Namespace: testCtx.namespace}, actualWMC)
 				require.NoError(t, err, "Could not get the WMC custom resource")
 				assert.Equal(t, test.wmc.Spec.Replicas, actualWMC.Spec.Replicas, "Replicas value of the  WMC custom "+
 					"resource is not as expected")
