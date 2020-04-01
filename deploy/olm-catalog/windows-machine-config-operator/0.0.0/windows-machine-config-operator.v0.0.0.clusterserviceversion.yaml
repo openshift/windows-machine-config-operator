@@ -1,0 +1,210 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "wmc.openshift.io/v1alpha1",
+          "kind": "WindowsMachineConfig",
+          "metadata": {
+            "name": "instance"
+          },
+          "spec": {
+            "aws": {
+              "credentialAccountId": "default",
+              "sshKeyPair": "openshift-dev"
+            },
+            "instanceType": "m5a.large",
+            "replicas": 1
+          }
+        }
+      ]
+    capabilities: Basic Install
+    operatorframework.io/cluster-monitoring: "true"
+    operatorframework.io/suggested-namespace: windows-machine-config-operator
+    repository: https://github.com/openshift/windows-machine-config-operator
+  name: windows-machine-config-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: WindowsMachineConfig is the Schema for the windowsmachineconfigs
+        API
+      kind: WindowsMachineConfig
+      name: windowsmachineconfigs.wmc.openshift.io
+      version: v1alpha1
+  description: Placeholder description
+  displayName: Windows Machine Config Operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - nodes
+          verbs:
+          - '*'
+        - apiGroups:
+          - config.openshift.io
+          resources:
+          - infrastructures
+          verbs:
+          - get
+        - apiGroups:
+          - certificates.k8s.io
+          resources:
+          - certificatesigningrequests
+          - certificatesigningrequests/approval
+          verbs:
+          - get
+          - list
+          - update
+        serviceAccountName: windows-machine-config-operator
+      deployments:
+      - name: windows-machine-config-operator
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              name: windows-machine-config-operator
+          strategy: {}
+          template:
+            metadata:
+              labels:
+                name: windows-machine-config-operator
+            spec:
+              containers:
+              - command:
+                - windows-machine-config-operator
+                env:
+                - name: WATCH_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['olm.targetNamespaces']
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: OPERATOR_NAME
+                  value: windows-machine-config-operator
+                - name: KUBECONFIG
+                  value: /etc/kubeconfig/kubeconfig
+                - name: CLUSTER_ADDR
+                  valueFrom:
+                    secretKeyRef:
+                      key: cluster-address
+                      name: cluster-address
+                image: REPLACE_IMAGE
+                imagePullPolicy: Always
+                name: windows-machine-config-operator
+                resources: {}
+                volumeMounts:
+                - mountPath: /etc/cloud/
+                  name: cloud-credentials
+                  readOnly: true
+                - mountPath: /etc/private-key/
+                  name: cloud-private-key
+                  readOnly: true
+                - mountPath: /etc/kubeconfig/
+                  name: kubeconfig
+                  readOnly: true
+              serviceAccountName: windows-machine-config-operator
+              volumes:
+              - name: cloud-credentials
+                secret:
+                  secretName: cloud-credentials
+              - name: cloud-private-key
+                secret:
+                  secretName: cloud-private-key
+              - name: kubeconfig
+                secret:
+                  secretName: kubeconfig
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - secrets
+          verbs:
+          - create
+          - delete
+          - get
+        - apiGroups:
+          - ""
+          resources:
+          - services
+          - services/finalizers
+          verbs:
+          - create
+          - delete
+          - get
+          - update
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - create
+          - get
+          - update
+        - apiGroups:
+          - monitoring.coreos.com
+          resources:
+          - servicemonitors
+          verbs:
+          - get
+          - create
+        - apiGroups:
+          - apps
+          resourceNames:
+          - windows-machine-config-operator
+          resources:
+          - deployments/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - replicasets
+          - deployments
+          verbs:
+          - get
+        - apiGroups:
+          - wmc.openshift.io
+          resources:
+          - '*'
+          verbs:
+          - '*'
+        serviceAccountName: windows-machine-config-operator
+    strategy: deployment
+  installModes:
+  - supported: true
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: false
+    type: AllNamespaces
+  keywords:
+  - windows
+  maintainers:
+  - {}
+  maturity: alpha
+  provider:
+    name: Red Hat
+  version: 0.0.0
