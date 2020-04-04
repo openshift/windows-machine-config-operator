@@ -51,7 +51,19 @@ func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating kubernetes clientset")
 	}
-	return &ReconcileWindowsMachineConfig{client: mgr.GetClient(), scheme: mgr.GetScheme(), k8sclientset: clientset},
+
+	windowsVMs := make(map[types.WindowsVM]bool)
+	vmTracker, err := tracker.NewTracker(clientset, windowsVMs)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to instantiate tracker")
+	}
+
+	return &ReconcileWindowsMachineConfig{client: mgr.GetClient(),
+			scheme:       mgr.GetScheme(),
+			k8sclientset: clientset,
+			tracker:      vmTracker,
+			windowsVMs:   windowsVMs,
+		},
 		nil
 }
 
@@ -150,10 +162,6 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 			return reconcile.Result{}, fmt.Errorf("error instantiating cloud provider: %v", err)
 		}
 	}
-	if r.windowsVMs == nil {
-		// populate the windowsVM map here from ConfigMap as source of truth
-		r.windowsVMs = make(map[types.WindowsVM]bool)
-	}
 	// Get the current number of Windows VMs created by WMCO.
 	// TODO: Get all the running Windows nodes in the cluster
 	//		jira story: https://issues.redhat.com/browse/WINC-280
@@ -179,14 +187,8 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 // cluster
 func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current int) bool {
 	log.Info("replicas", "current", current, "desired", desired)
-	if r.tracker == nil {
-		var err error
-		r.tracker, err = tracker.NewTracker(r.k8sclientset, r.windowsVMs)
-		if err != nil {
-			log.Error(err, "tracker instantiation failed")
-		}
-	}
 	var vmCount bool
+
 	if desired < current {
 		vmCount = r.deleteWindowsVMs(current - desired)
 	} else if desired > current {
