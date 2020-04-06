@@ -77,7 +77,7 @@ func main() {
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to get the config for talking to a Kubernetes API server")
 		os.Exit(1)
 	}
 
@@ -85,7 +85,7 @@ func main() {
 	// Become the leader before proceeding
 	err = leader.Become(ctx, "windows-machine-config-operator-lock")
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to become a leader within current namespace")
 		os.Exit(1)
 	}
 
@@ -95,7 +95,7 @@ func main() {
 		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 	})
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to create a new Manager")
 		os.Exit(1)
 	}
 
@@ -103,13 +103,13 @@ func main() {
 
 	// Setup Scheme for all resources
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to add all Resources to the Scheme")
 		os.Exit(1)
 	}
 
 	// Setup all Controllers
 	if err := controller.AddToManager(mgr); err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to add all Controllers to the Manager")
 		os.Exit(1)
 	}
 
