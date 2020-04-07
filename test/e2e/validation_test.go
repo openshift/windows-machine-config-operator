@@ -275,3 +275,12 @@ func createWindowsMachineConfig(namespace string, isReplicasFieldRequired bool, 
 	}
 	return wmc
 }
+
+// testWorkerLabel tests if the worker label has been applied properly
+func testWorkerLabel(t *testing.T) {
+	testCtx := framework.NewTestCtx(t)
+	defer testCtx.Cleanup()
+	for _, node := range gc.nodes {
+		assert.Contains(t, node.Labels, nc.WorkerLabel, "expected node label %s was not present on %s", nc.WorkerLabel, node.GetName())
+	}
+}

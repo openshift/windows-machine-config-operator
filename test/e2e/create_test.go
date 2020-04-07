@@ -34,6 +34,7 @@ func creationTestSuite(t *testing.T) {
 	t.Run("ConfigMap validation", func(t *testing.T) { testConfigMapValidation(t) })
 	t.Run("Secrets validation", func(t *testing.T) { testValidateSecrets(t) })
 	t.Run("Network validation", testNetwork)
+	t.Run("Label validation", func(t *testing.T) { testWorkerLabel(t) })
 }
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster

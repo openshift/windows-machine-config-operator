@@ -27,6 +27,8 @@ const (
 	HybridOverlayMac = "k8s.ovn.org/hybrid-overlay-distributed-router-gateway-mac"
 	// WindowsOSLabel is the label that is applied by WMCB to identify the Windows nodes bootstrapped via WMCB
 	WindowsOSLabel = "node.openshift.io/os_id=Windows"
+	// WorkerLabel is the label that needs to be applied to the Windows node to make it worker node
+	WorkerLabel = "node-role.kubernetes.io/worker"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
@@ -68,7 +70,10 @@ func (nc *nodeConfig) Configure() error {
 		return errors.Wrap(err, fmt.Sprintf("error getting node object for VM %s",
 			nc.GetCredentials().GetInstanceId()))
 	}
-
+	// Apply worker labels
+	if err := nc.applyWorkerLabel(); err != nil {
+		return errors.Wrap(err, "failed applying worker label")
+	}
 	// Now that basic kubelet configuration is complete, configure networking in the node
 	if err := nc.configureNetwork(); err != nil {
 		return errors.Wrap(err, "configuring node network failed")
@@ -101,6 +106,21 @@ func (nc *nodeConfig) configureNetwork() error {
 		return errors.Wrap(err, fmt.Sprintf("error waiting for %s node annotation for %s", HybridOverlayMac,
 			nc.node.GetName()))
 	}
+	return nil
+}
+
+// applyWorkerLabel applies the worker label to the Windows Node we created.
+func (nc *nodeConfig) applyWorkerLabel() error {
+	if _, found := nc.node.Labels[WorkerLabel]; found {
+		log.V(1).Info("worker label %s already present on node %s", WorkerLabel, nc.node.GetName())
+		return nil
+	}
+	nc.node.Labels[WorkerLabel] = ""
+	node, err := nc.k8sclientset.CoreV1().Nodes().Update(nc.node)
+	if err != nil {
+		return errors.Wrap(err, "error applying worker label to node object")
+	}
+	nc.node = node
 	return nil
 }
 
