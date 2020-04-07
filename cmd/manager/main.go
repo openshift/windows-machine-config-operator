@@ -40,10 +40,9 @@ var (
 var log = logf.Log.WithName("cmd")
 
 func printVersion() {
-	log.Info(fmt.Sprintf("Operator Version: %s", version.Version))
-	log.Info(fmt.Sprintf("Go Version: %s", runtime.Version()))
-	log.Info(fmt.Sprintf("Go OS/Arch: %s/%s", runtime.GOOS, runtime.GOARCH))
-	log.Info(fmt.Sprintf("Version of operator-sdk: %v", sdkVersion.Version))
+	log.Info("operator", "version", version.Version)
+	log.Info("go", "version", runtime.Version(), "os", runtime.GOOS, "arch", runtime.GOARCH)
+	log.Info("operator-sdk", "version", sdkVersion.Version)
 }
 
 func main() {
@@ -71,14 +70,14 @@ func main() {
 
 	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
-		log.Error(err, "Failed to get watch namespace")
+		log.Error(err, "failed to get watch namespace")
 		os.Exit(1)
 	}
 
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to get the config for talking to a Kubernetes API server")
 		os.Exit(1)
 	}
 
@@ -86,7 +85,7 @@ func main() {
 	// Become the leader before proceeding
 	err = leader.Become(ctx, "windows-machine-config-operator-lock")
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to become a leader within current namespace")
 		os.Exit(1)
 	}
 
@@ -96,21 +95,21 @@ func main() {
 		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 	})
 	if err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to create a new Manager")
 		os.Exit(1)
 	}
 
-	log.Info("Registering Components.")
+	log.Info("registering Components.")
 
 	// Setup Scheme for all resources
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to add all Resources to the Scheme")
 		os.Exit(1)
 	}
 
 	// Setup all Controllers
 	if err := controller.AddToManager(mgr); err != nil {
-		log.Error(err, "")
+		log.Error(err, "failed to add all Controllers to the Manager")
 		os.Exit(1)
 	}
 
@@ -120,11 +119,11 @@ func main() {
 	// Add the Metrics Service
 	addMetrics(ctx, cfg, namespace)
 
-	log.Info("Starting the Cmd.")
+	log.Info("starting the Cmd.")
 
 	// Start the Cmd
 	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
-		log.Error(err, "Manager exited non-zero")
+		log.Error(err, "manager exited non-zero")
 		os.Exit(1)
 	}
 }
@@ -134,10 +133,10 @@ func main() {
 func addMetrics(ctx context.Context, cfg *rest.Config, namespace string) {
 	if err := serveCRMetrics(cfg); err != nil {
 		if errors.Is(err, k8sutil.ErrRunLocal) {
-			log.Info("Skipping CR metrics server creation; not running in a cluster.")
+			log.Info("skipping CR metrics server creation; not running in a cluster.")
 			return
 		}
-		log.Info("Could not generate and serve custom resource metrics", "error", err.Error())
+		log.Info("could not generate and serve custom resource metrics", "error", err.Error())
 	}
 
 	// Add to the below struct any other metrics ports you want to expose.
@@ -149,7 +148,7 @@ func addMetrics(ctx context.Context, cfg *rest.Config, namespace string) {
 	// Create Service object to expose the metrics port(s).
 	service, err := metrics.CreateMetricsService(ctx, cfg, servicePorts)
 	if err != nil {
-		log.Info("Could not create metrics Service", "error", err.Error())
+		log.Info("could not create metrics Service", "error", err.Error())
 	}
 
 	// CreateServiceMonitors will automatically create the prometheus-operator ServiceMonitor resources
@@ -157,11 +156,11 @@ func addMetrics(ctx context.Context, cfg *rest.Config, namespace string) {
 	services := []*v1.Service{service}
 	_, err = metrics.CreateServiceMonitors(cfg, namespace, services)
 	if err != nil {
-		log.Info("Could not create ServiceMonitor object", "error", err.Error())
+		log.Info("could not create ServiceMonitor object", "error", err.Error())
 		// If this operator is deployed to a cluster without the prometheus-operator running, it will return
 		// ErrServiceMonitorNotPresent, which can be used to safely skip ServiceMonitor creation.
 		if err == metrics.ErrServiceMonitorNotPresent {
-			log.Info("Install prometheus-operator in your cluster to create ServiceMonitor objects", "error", err.Error())
+			log.Info("install prometheus-operator in your cluster to create ServiceMonitor objects", "error", err.Error())
 		}
 	}
 }

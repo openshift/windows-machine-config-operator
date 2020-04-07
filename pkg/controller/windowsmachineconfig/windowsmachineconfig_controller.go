@@ -111,7 +111,7 @@ type ReconcileWindowsMachineConfig struct {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("Reconciling WindowsMachineConfig")
+	reqLogger.Info("reconciling WindowsMachineConfig")
 
 	// Fetch the WindowsMachineConfig instance
 	instance := &wmcapi.WindowsMachineConfig{}
@@ -237,9 +237,9 @@ func (r *ReconcileWindowsMachineConfig) deleteWindowsVMs(count int) bool {
 		}
 
 		// Delete the Windows VM from cloud provider
-		log.Info(fmt.Sprintf("deleting the Windows VM: %s", instancedID))
+		log.Info("deleting the Windows VM", "instance", instancedID)
 		if err := r.cloudProvider.DestroyWindowsVM(instancedID); err != nil {
-			log.Error(err, "error while deleting windows VM: %s", instancedID)
+			log.Error(err, "error while deleting windows VM", "instance", instancedID)
 			errs = append(errs, errors.Wrap(err, "One of the VM deletions failed, will reconcile"))
 		}
 		delete(r.windowsVMs, vmTobeDeleted)
@@ -265,15 +265,15 @@ func (r *ReconcileWindowsMachineConfig) createWindowsWorkerNodes(count int) bool
 			errs = append(errs, errors.Wrap(err, "error creating windows VM"))
 			log.Error(err, "error creating windows VM")
 		}
-		log.V(5).Info(fmt.Sprintf("created the Windows VM: %s",
-			createdVM.GetCredentials().GetInstanceId()))
+		log.V(1).Info("created the Windows VM", "instance",
+			createdVM.GetCredentials().GetInstanceId())
 
 		// Make the Windows VM a Windows worker node.
 		nc := nodeconfig.NewNodeConfig(r.k8sclientset, createdVM)
 		if err := nc.Configure(); err != nil {
 			// TODO: Unwrap to extract correct error
 			errs = append(errs, errors.Wrap(err, "configuring Windows VM failed"))
-			log.Error(err, "configuring Windows VM failed", err)
+			log.Error(err, "configuring Windows VM failed")
 		}
 
 		// update the windowsVMs slice

@@ -59,7 +59,7 @@ func (vm *Windows) runBootstrapper() error {
 		return errors.Wrap(err, "error running bootstrapper")
 	}
 	if len(stderr) > 0 {
-		log.Info(stderr, "err", "bootstrapper initialization failed")
+		log.Info("bootstrapper initialization failed", "stderr", stderr)
 	}
 	log.V(5).Info("stdout from wmcb", "stdout", stdout)
 	return nil
@@ -84,7 +84,7 @@ func (vm *Windows) initializeBootstrapperFiles() error {
 
 	log.V(5).Info("stderr associated with the ignition file download", "stderr", stderr)
 	if len(stderr) > 0 {
-		log.Info(stderr, "err", "error while downloading the ignition file from cluster")
+		log.Info("error while downloading the ignition file from cluster", "stderr", stderr)
 	}
 	log.V(5).Info("stdout associated with the ignition file download", "stdout", stdout)
 	return nil

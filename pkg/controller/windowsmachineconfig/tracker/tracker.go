@@ -160,12 +160,12 @@ func (t *Tracker) syncNodeRecords() {
 		}
 		if credentials.GetInstanceId() == "" || credentials.GetIPAddress() == "" || credentials.GetPassword() == "" ||
 			credentials.GetUserName() == "" {
-			log.Info("ignoring VM with incomplete credentials: %v", credentials)
+			log.Info("ignoring VM with incomplete credentials", "credentials", credentials)
 			continue
 		}
 		if t.nodeRecords != nil {
 			if _, ok := t.nodeRecords[credentials.GetInstanceId()]; ok {
-				log.Info("Node records already exist for the given Windows VM")
+				log.Info("node records already exist for the given Windows VM")
 				continue
 			}
 		}
