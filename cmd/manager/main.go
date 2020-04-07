@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/apis"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller"
+	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/version"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
@@ -68,6 +70,25 @@ func main() {
 
 	printVersion()
 
+	// Checking if required files exist before starting the operator
+	requiredFiles := []string{
+		wkl.FlannelCNIPluginPath,
+		wkl.HostLocalCNIPlugin,
+		wkl.WinBridgeCNIPlugin,
+		wkl.WinOverlayCNIPlugin,
+		wkl.HybridOverlayPath,
+		wkl.KubeletPath,
+		wkl.KubeProxyPath,
+		wkl.IgnoreWgetPowerShellPath,
+		wkl.WmcbPath,
+		wkl.CloudCredentialsPath,
+		wkl.PrivateKeyPath,
+	}
+	if err := checkIfRequiredFilesExist(requiredFiles); err != nil {
+		log.Error(err, "could not start the operator")
+		os.Exit(1)
+	}
+
 	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
 		log.Error(err, "failed to get watch namespace")
@@ -112,9 +133,6 @@ func main() {
 		log.Error(err, "failed to add all Controllers to the Manager")
 		os.Exit(1)
 	}
-
-	// TODO: Add checks for the existence of well known paths likes
-	// 		/payload/bin/, /etc/cloud/credentials etc.
 
 	// Add the Metrics Service
 	addMetrics(ctx, cfg, namespace)
@@ -185,6 +203,25 @@ func serveCRMetrics(cfg *rest.Config) error {
 	err = kubemetrics.GenerateAndServeCRMetrics(cfg, ns, filteredGVK, metricsHost, operatorMetricsPort)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkIfRequiredFilesExist checks for the existence of required files and binaries before starting WMCO
+// sample error message: errors encountered with required files: could not stat /payload/hybrid-overlay.exe:
+// stat /payload/hybrid-overlay.exe: no such file or directory, could not stat /payload/wmcb.exe: stat /payload/wmcb.exe:
+// no such file or directory
+func checkIfRequiredFilesExist(requiredFiles []string) error {
+	var errorMessages []string
+	// Iterating through file paths and checking if they are present
+	for _, file := range requiredFiles {
+		if _, err := os.Stat(file); err != nil {
+			errorMessages = append(errorMessages, fmt.Sprintf("could not stat %s: %v", file, err))
+		}
+	}
+
+	if len(errorMessages) > 0 {
+		return fmt.Errorf("errors encountered with required files: %s", strings.Join(errorMessages, ", "))
 	}
 	return nil
 }
