@@ -51,6 +51,20 @@ func (vm *Windows) Configure() error {
 	return vm.runBootstrapper()
 }
 
+// validate the WindowsVM node object
+func (vm *Windows) Validate() error {
+	if vm.GetCredentials() == nil {
+		return fmt.Errorf("nil credentials for VM")
+	}
+	if vm.GetCredentials().GetIPAddress() == "" {
+		return fmt.Errorf("empty IP for VM: %v", vm.GetCredentials())
+	}
+	if vm.GetCredentials().GetInstanceId() == "" {
+		return fmt.Errorf("empty instance id for VM: %v", vm.GetCredentials())
+	}
+	return nil
+}
+
 // runBootstrapper copies the bootstrapper and runs the code on the remote Windows VM
 func (vm *Windows) runBootstrapper() error {
 	if err := vm.CopyFile(wkl.WmcbPath, remoteDir); err != nil {

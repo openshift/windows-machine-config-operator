@@ -25,6 +25,8 @@ const (
 	HybridOverlaySubnet = "k8s.ovn.org/hybrid-overlay-node-subnet"
 	// HybridOverlayMac is an annotation applied by the hybrid-overlay
 	HybridOverlayMac = "k8s.ovn.org/hybrid-overlay-distributed-router-gateway-mac"
+	// WindowsOSLabel is the label that is applied by WMCB to identify the Windows nodes bootstrapped via WMCB
+	WindowsOSLabel = "node.openshift.io/os_id=Windows"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
@@ -34,6 +36,8 @@ type nodeConfig struct {
 	k8sclientset *kubernetes.Clientset
 	// Windows holds the information related to the windows VM
 	*windows.Windows
+	// Node holds the information related to node object
+	node *v1.Node
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
@@ -45,11 +49,24 @@ var log = logf.Log.WithName("nodeconfig")
 
 // Configure configures the Windows VM to make it a Windows worker node
 func (nc *nodeConfig) Configure() error {
+	var err error
+	// Validate WindowsVM
+	if err := nc.Windows.Validate(); err != nil {
+		return errors.Wrap(err, "error validating Windows VM")
+	}
+
 	if err := nc.Windows.Configure(); err != nil {
 		return errors.Wrap(err, "configuring the Windows VM failed")
 	}
 	if err := nc.handleCSRs(); err != nil {
 		return errors.Wrap(err, "handling CSR for the given node failed")
+	}
+
+	// populate node object in nodeConfig
+	err = nc.getNode()
+	if err != nil {
+		return errors.Wrap(err, fmt.Sprintf("error getting node object for VM %s",
+			nc.GetCredentials().GetInstanceId()))
 	}
 
 	// Now that basic kubelet configuration is complete, configure networking in the node
@@ -61,43 +78,29 @@ func (nc *nodeConfig) Configure() error {
 }
 
 // configureNetwork configures k8s networking in the node
+// we are assuming that the WindowsVM and node objects are valid
 func (nc *nodeConfig) configureNetwork() error {
-	if nc.GetCredentials() == nil {
-		return fmt.Errorf("nil credentials for VM")
-	}
-
-	if nc.GetCredentials().GetIPAddress() == "" {
-		return fmt.Errorf("empty IP for VM: %v", nc.GetCredentials())
-	}
-
-	node, err := nc.getNode(nc.GetCredentials().GetIPAddress())
-	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("error getting node object for VM %s",
-			nc.GetCredentials().GetInstanceId()))
-	}
-
 	// Wait until the node object has the hybrid overlay subnet annotation. Otherwise the hybrid-overlay will fail to
 	// start
-	if err = nc.waitForNodeAnnotation(node.GetName(), HybridOverlaySubnet); err != nil {
+	if err := nc.waitForNodeAnnotation(HybridOverlaySubnet); err != nil {
 		return errors.Wrap(err, fmt.Sprintf("error waiting for %s node annotation for %s", HybridOverlaySubnet,
-			node.GetName()))
+			nc.node.GetName()))
 	}
 
 	// NOTE: Investigate if we need to introduce a interface wrt to the VM's networking configuration. This will
 	// become more clear with the outcome of https://issues.redhat.com/browse/WINC-343
 
 	// Configure the hybrid overlay in the Windows VM
-	if err = nc.Windows.ConfigureHybridOverlay(node.GetName()); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("error configuring hybrid overlay for %s", node.GetName()))
+	if err := nc.Windows.ConfigureHybridOverlay(nc.node.GetName()); err != nil {
+		return errors.Wrap(err, fmt.Sprintf("error configuring hybrid overlay for %s", nc.node.GetName()))
 	}
 
 	// Wait until the node object has the hybrid overlay MAC annotation. This is required for the CNI configuration to
 	// start.
-	if err = nc.waitForNodeAnnotation(node.GetName(), HybridOverlayMac); err != nil {
+	if err := nc.waitForNodeAnnotation(HybridOverlayMac); err != nil {
 		return errors.Wrap(err, fmt.Sprintf("error waiting for %s node annotation for %s", HybridOverlayMac,
-			node.GetName()))
+			nc.node.GetName()))
 	}
-
 	return nil
 }
 
@@ -209,39 +212,30 @@ func (nc *nodeConfig) handleCSR(requestorFilter string) error {
 	return nil
 }
 
-// GetNode returns a pointer to the node object associated with the external IP provided
-func (nc *nodeConfig) getNode(externalIP string) (*v1.Node, error) {
-	var matchedNode *v1.Node
-
-	nodes, err := nc.k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{})
+// getNode returns a pointer to the node object associated with the instance id provided
+func (nc *nodeConfig) getNode() error {
+	nodes, err := nc.k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: WindowsOSLabel})
 	if err != nil {
-		return nil, errors.Wrap(err, "could not get list of nodes")
+		return errors.Wrap(err, "could not get list of nodes")
 	}
 	if len(nodes.Items) == 0 {
-		return nil, fmt.Errorf("no nodes found")
+		return fmt.Errorf("no nodes found")
 	}
-
-	// Find the node that has the given IP
+	// get the node with given instance id
+	instanceID := nc.GetCredentials().GetInstanceId()
 	for _, node := range nodes.Items {
-		for _, address := range node.Status.Addresses {
-			if address.Type == "ExternalIP" && address.Address == externalIP {
-				matchedNode = &node
-				break
-			}
-		}
-		if matchedNode != nil {
-			break
+		if instanceID == getInstanceIDfromProviderID(node.Spec.ProviderID) {
+			nc.node = &node
+			return nil
 		}
 	}
-	if matchedNode == nil {
-		return nil, fmt.Errorf("could not find node with IP: %s", externalIP)
-	}
-	return matchedNode, nil
+	return errors.Errorf("unable to find node for instanceID %s", instanceID)
 }
 
 // waitForNodeAnnotation checks if the node object has the given annotation and waits for retry.Interval seconds and
 // returns an error if the annotation does not appear in that time frame.
-func (nc *nodeConfig) waitForNodeAnnotation(nodeName, annotation string) error {
+func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
+	nodeName := nc.node.GetName()
 	var found bool
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		node, err := nc.k8sclientset.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
@@ -250,6 +244,8 @@ func (nc *nodeConfig) waitForNodeAnnotation(nodeName, annotation string) error {
 		}
 		_, found := node.Annotations[annotation]
 		if found {
+			//update node to avoid staleness
+			nc.node = node
 			return true, nil
 		}
 		return false, nil
@@ -259,4 +255,11 @@ func (nc *nodeConfig) waitForNodeAnnotation(nodeName, annotation string) error {
 		return errors.Wrap(err, fmt.Sprintf("timeout waiting for %s node annotation", annotation))
 	}
 	return nil
+}
+
+// getInstanceIDfromProviderID gets the instanceID of VM for a given cloud provider ID
+// Ex: aws:///us-east-1e/i-078285fdadccb2eaa. We always want the last entry which is the instanceID
+func getInstanceIDfromProviderID(providerID string) string {
+	providerTokens := strings.Split(providerID, "/")
+	return providerTokens[len(providerTokens)-1]
 }

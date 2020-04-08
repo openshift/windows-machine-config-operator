@@ -10,7 +10,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
-	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
+	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
@@ -119,7 +119,7 @@ func (tc *testContext) validateConnectivity(windowsVM types.WindowsVM) error {
 
 // getInstanceIP gets the instance IP address associated with a node
 func (tc *testContext) getInstanceIP(instanceID string) (string, error) {
-	nodes, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: wmc.WindowsOSLabel})
+	nodes, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
 	if err != nil {
 		return "", errors.Wrap(err, "error while querying for Windows nodes")
 	}
