@@ -1,9 +1,13 @@
 package windows
 
 import (
+	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/pkg/errors"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -16,6 +20,10 @@ const (
 	winTemp = "C:\\Windows\\Temp\\"
 	// wgetIgnoreCertCmd is the remote location of the wget-ignore-cert.ps1 script
 	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
+	// logDir is the remote kubernetes log directory
+	logDir = "C:\\k\\log\\"
+	// HybridOverlayProcess is the process name of the hybrid-overlay.exe in the Windows VM
+	HybridOverlayProcess = "hybrid-overlay"
 )
 
 var log = logf.Log.WithName("windows")
@@ -88,6 +96,95 @@ func (vm *Windows) initializeBootstrapperFiles() error {
 	}
 	log.V(5).Info("stdout associated with the ignition file download", "stdout", stdout)
 	return nil
+}
+
+// ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
+func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
+	// Check if the hybrid-overlay is running
+	_, stderr, err := vm.Run("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
+
+	// stderr being empty implies that hybrid-overlay was running.
+	if err == nil || stderr == "" {
+		// Stop the hybrid-overlay
+		stopCmd := "Stop-Process -Name \"" + HybridOverlayProcess + "\""
+		_, stderr, err := vm.Run(stopCmd, true)
+		if err != nil || stderr != "" {
+			log.Info("unable to stop hybrid-overlay", "stop command", stopCmd, "stderr", stderr)
+			return errors.Wrap(err, "unable to stop hybrid-overlay")
+		}
+	}
+
+	_, stderr, err = vm.Run(mkdirCmd(logDir), false)
+	if err != nil {
+		return errors.Wrap(err, fmt.Sprintf("unable to create %s directory:\n%s", logDir, stderr))
+	}
+
+	if err := vm.CopyFile(wkl.HybridOverlayPath, remoteDir); err != nil {
+		return errors.Wrap(err, fmt.Sprintf("error copying %s-->%s", wkl.HybridOverlayPath,
+			remoteDir+wkl.HybridOverlayName))
+	}
+
+	// Start the hybrid-overlay in the background over ssh. We cannot use vm.Run() and by extension WinRM.Run() here as
+	// we observed WinRM.Run() returning before the commands completes execution. The reason for that is unclear and
+	// requires further investigation.
+	// TODO: This will be removed in https://issues.redhat.com/browse/WINC-353
+	go vm.RunOverSSH(remoteDir+wkl.HybridOverlayName+" --node "+nodeName+
+		" --k8s-kubeconfig c:\\k\\kubeconfig > "+logDir+"hybrid-overlay.log 2>&1", false)
+
+	if err = vm.waitForHybridOverlayToRun(); err != nil {
+		return errors.Wrap(err, fmt.Sprintf("error running %s", wkl.HybridOverlayName))
+	}
+
+	if err = vm.waitForOpenShiftHNSNetworks(); err != nil {
+		return errors.Wrap(err, "error waiting for OpenShift HNS networks to be created")
+	}
+
+	// Running the hybrid-overlay causes network reconfiguration in the Windows VM which results in the ssh connection
+	// being closed and the client is not smart enough to reconnect. We have observed that the WinRM connection does not
+	// get closed and does not need reinitialization.
+	if err = vm.Reinitialize(); err != nil {
+		return errors.Wrap(err, "error reinitializing VM after running hybrid-overlay")
+	}
+
+	return nil
+}
+
+// waitForOpenShiftHNSNetworks waits for the OpenShift HNS networks to be created until the timeout is reached
+func (vm *Windows) waitForOpenShiftHNSNetworks() error {
+	var stdout string
+	var err error
+	for retries := 0; retries < retry.Count; retries++ {
+		stdout, _, err = vm.Run("Get-HnsNetwork", true)
+		if err != nil {
+			// retry
+			continue
+		}
+
+		if strings.Contains(stdout, "BaseOpenShiftNetwork") &&
+			strings.Contains(stdout, "OpenShiftNetwork") {
+			return nil
+		}
+		time.Sleep(retry.Interval)
+	}
+
+	// OpenShift HNS networks were not found
+	log.Info("Get-HnsNetwork", "stdout", stdout)
+	return errors.Wrap(err, "timeout waiting for OpenShift HNS networks")
+}
+
+// waitForHybridOverlayToRun waits for the hybrid-overlay.exe to run until the timeout is reached
+func (vm *Windows) waitForHybridOverlayToRun() error {
+	var err error
+	for retries := 0; retries < retry.Count; retries++ {
+		_, _, err = vm.Run("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(retry.Interval)
+	}
+
+	// hybrid-overlay never started running
+	return fmt.Errorf("timeout waiting for hybrid-overlay: %v", err)
 }
 
 // mkdirCmd returns the Windows command to create a directory if it does not exists

@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
@@ -19,6 +21,11 @@ var (
 	gc = globalContext{numberOfNodes: numberOfNodes}
 )
 
+// testVM encapsulates a VM created by the test
+type testVM struct {
+	types.WindowsVM
+}
+
 // globalContext holds the information that we want to use across the test suites.
 // If you want to move item here make sure that
 // 1.) It is needed across test suites
@@ -27,6 +34,10 @@ var (
 type globalContext struct {
 	// numberOfNodes to be used for the test suite.
 	numberOfNodes int
+	// nodes are the Windows nodes created by the operator
+	nodes []v1.Node
+	// windowsVMs is used to interact with the Windows VMs created by the test suite
+	windowsVMs []testVM
 }
 
 // testContext holds the information related to the individual test suite. This data structure
@@ -40,8 +51,6 @@ type testContext struct {
 	namespace string
 	// osdkTestCtx is the operator sdk framework's test Context
 	osdkTestCtx *framework.TestCtx
-	// nodes is the list of Windows nodes created by operator
-	nodes []v1.Node
 	// credentials to be used to access the Windows nodes
 	credentials []tracker.Credentials
 	// kubeclient is the kube client
@@ -63,8 +72,7 @@ func NewTestContext(t *testing.T) (*testContext, error) {
 	}
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{osdkTestCtx: fmwkTestContext, kubeclient: framework.Global.KubeClient,
-		timeout: time.Minute * 15, retryInterval: time.Second * 5, nodes: make([]v1.Node, 0, gc.numberOfNodes),
-		namespace: namespace}, nil
+		timeout: retry.Timeout, retryInterval: retry.Interval, namespace: namespace}, nil
 }
 
 // cleanup cleans up the test context

@@ -6,22 +6,25 @@ import (
 	"time"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/windows"
 	"github.com/pkg/errors"
 	certificates "k8s.io/api/certificates/v1beta1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/util/retry"
+	kretry "k8s.io/client-go/util/retry"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
-	// RetryCount is the amount of times we will retry an api operation
-	RetryCount = 20
-	// RetryInterval is the interval of time until we retry after a failure
-	RetryInterval = 5 * time.Second
 	// bootstrapCSR is the CSR name associated with a worker node that just got bootstrapped.
 	bootstrapCSR = "system:serviceaccount:openshift-machine-config-operator:node-bootstrapper"
+	// HybridOverlaySubnet is an annotation applied by the cluster network operator which is used by the hybrid overlay
+	HybridOverlaySubnet = "k8s.ovn.org/hybrid-overlay-node-subnet"
+	// HybridOverlayMac is an annotation applied by the hybrid-overlay
+	HybridOverlayMac = "k8s.ovn.org/hybrid-overlay-distributed-router-gateway-mac"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
@@ -48,6 +51,53 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.handleCSRs(); err != nil {
 		return errors.Wrap(err, "handling CSR for the given node failed")
 	}
+
+	// Now that basic kubelet configuration is complete, configure networking in the node
+	if err := nc.configureNetwork(); err != nil {
+		return errors.Wrap(err, "configuring node network failed")
+	}
+	log.Info("VM has been configured as a worker node", "VM ID", nc.GetCredentials().GetInstanceId())
+	return nil
+}
+
+// configureNetwork configures k8s networking in the node
+func (nc *nodeConfig) configureNetwork() error {
+	if nc.GetCredentials() == nil {
+		return fmt.Errorf("nil credentials for VM")
+	}
+
+	if nc.GetCredentials().GetIPAddress() == "" {
+		return fmt.Errorf("empty IP for VM: %v", nc.GetCredentials())
+	}
+
+	node, err := nc.getNode(nc.GetCredentials().GetIPAddress())
+	if err != nil {
+		return errors.Wrap(err, fmt.Sprintf("error getting node object for VM %s",
+			nc.GetCredentials().GetInstanceId()))
+	}
+
+	// Wait until the node object has the hybrid overlay subnet annotation. Otherwise the hybrid-overlay will fail to
+	// start
+	if err = nc.waitForNodeAnnotation(node.GetName(), HybridOverlaySubnet); err != nil {
+		return errors.Wrap(err, fmt.Sprintf("error waiting for %s node annotation for %s", HybridOverlaySubnet,
+			node.GetName()))
+	}
+
+	// NOTE: Investigate if we need to introduce a interface wrt to the VM's networking configuration. This will
+	// become more clear with the outcome of https://issues.redhat.com/browse/WINC-343
+
+	// Configure the hybrid overlay in the Windows VM
+	if err = nc.Windows.ConfigureHybridOverlay(node.GetName()); err != nil {
+		return errors.Wrap(err, fmt.Sprintf("error configuring hybrid overlay for %s", node.GetName()))
+	}
+
+	// Wait until the node object has the hybrid overlay MAC annotation. This is required for the CNI configuration to
+	// start.
+	if err = nc.waitForNodeAnnotation(node.GetName(), HybridOverlayMac); err != nil {
+		return errors.Wrap(err, fmt.Sprintf("error waiting for %s node annotation for %s", HybridOverlayMac,
+			node.GetName()))
+	}
+
 	return nil
 }
 
@@ -73,13 +123,13 @@ func (nc *nodeConfig) handleCSRs() error {
 func (nc *nodeConfig) findCSR(requestor string) (*certificates.CertificateSigningRequest, error) {
 	var foundCSR *certificates.CertificateSigningRequest
 	// Find the CSR
-	for retries := 0; retries < RetryCount; retries++ {
+	for retries := 0; retries < retry.Count; retries++ {
 		csrs, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().List(metav1.ListOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("unable to get CSR list: %v", err)
 		}
 		if csrs == nil {
-			time.Sleep(RetryInterval)
+			time.Sleep(retry.Interval)
 			continue
 		}
 
@@ -104,7 +154,7 @@ func (nc *nodeConfig) findCSR(requestor string) (*certificates.CertificateSignin
 		if foundCSR != nil {
 			break
 		}
-		time.Sleep(RetryInterval)
+		time.Sleep(retry.Interval)
 	}
 
 	if foundCSR == nil {
@@ -124,7 +174,7 @@ func (nc *nodeConfig) approve(csr *certificates.CertificateSigningRequest) error
 	}
 
 	// Approve the CSR
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	return kretry.RetryOnConflict(kretry.DefaultRetry, func() error {
 		// Ensure we get the current version
 		csr, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().Get(
 			csr.GetName(), metav1.GetOptions{})
@@ -156,5 +206,57 @@ func (nc *nodeConfig) handleCSR(requestorFilter string) error {
 		return errors.Wrapf(err, "error approving CSR for %s", requestorFilter)
 	}
 
+	return nil
+}
+
+// GetNode returns a pointer to the node object associated with the external IP provided
+func (nc *nodeConfig) getNode(externalIP string) (*v1.Node, error) {
+	var matchedNode *v1.Node
+
+	nodes, err := nc.k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get list of nodes")
+	}
+	if len(nodes.Items) == 0 {
+		return nil, fmt.Errorf("no nodes found")
+	}
+
+	// Find the node that has the given IP
+	for _, node := range nodes.Items {
+		for _, address := range node.Status.Addresses {
+			if address.Type == "ExternalIP" && address.Address == externalIP {
+				matchedNode = &node
+				break
+			}
+		}
+		if matchedNode != nil {
+			break
+		}
+	}
+	if matchedNode == nil {
+		return nil, fmt.Errorf("could not find node with IP: %s", externalIP)
+	}
+	return matchedNode, nil
+}
+
+// waitForNodeAnnotation checks if the node object has the given annotation and waits for retry.Interval seconds and
+// returns an error if the annotation does not appear in that time frame.
+func (nc *nodeConfig) waitForNodeAnnotation(nodeName, annotation string) error {
+	var found bool
+	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		node, err := nc.k8sclientset.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
+		if err != nil {
+			return false, errors.Wrap(err, fmt.Sprintf("error getting node %s", nodeName))
+		}
+		_, found := node.Annotations[annotation]
+		if found {
+			return true, nil
+		}
+		return false, nil
+	})
+
+	if !found {
+		return errors.Wrap(err, fmt.Sprintf("timeout waiting for %s node annotation", annotation))
+	}
 	return nil
 }

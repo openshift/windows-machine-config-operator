@@ -3,12 +3,13 @@ package e2e
 import (
 	"context"
 	"encoding/json"
-	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	"log"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
+	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
@@ -25,7 +26,9 @@ import (
 // waitForTrackerConfigMap waits for the Windows tracker configmap to be created with appropriate values
 func (tc *testContext) waitForTrackerConfigMap() error {
 	var trackerConfigMap *corev1.ConfigMap
-	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+	// timeout is a factor of the number of nodes we are dealing with as all nodes have to finish their full
+	// configuration before the ConfigMap is updated.
+	err := wait.Poll(tc.retryInterval, time.Duration(gc.numberOfNodes)*tc.timeout, func() (done bool, err error) {
 		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(tracker.StoreName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -56,17 +59,8 @@ func getInstanceID(providerID string) string {
 
 // getInstanceIDsOfNodes returns the instanceIDs of all the Windows nodes created
 func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
-	nodes, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: wmc.WindowsOSLabel})
-	if err != nil {
-		return nil, errors.Wrap(err, "error while querying for Windows nodes")
-	}
-
-	for _, node := range nodes.Items {
-		tc.nodes = append(tc.nodes, node)
-	}
-
-	instanceIDs := make([]string, 0, len(tc.nodes))
-	for _, node := range tc.nodes {
+	instanceIDs := make([]string, 0, len(gc.nodes))
+	for _, node := range gc.nodes {
 		if len(node.Spec.ProviderID) > 0 {
 			instanceID := getInstanceID(node.Spec.ProviderID)
 			instanceIDs = append(instanceIDs, instanceID)
@@ -144,7 +138,7 @@ func (tc *testContext) getInstanceIP(instanceID string) (string, error) {
 // getCredsFromSecret gets the credentials associated with the instance.
 func (tc *testContext) getCredsFromSecret(instanceID string) (tracker.Credentials, error) {
 	var creds tracker.Credentials
-	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+	err := wait.Poll(tc.retryInterval, tc.timeout, func() (done bool, err error) {
 		instanceSecret, err := tc.kubeclient.CoreV1().Secrets(tc.namespace).Get(instanceID, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -180,7 +174,11 @@ func (tc *testContext) validateInstanceSecret(instanceID string) error {
 		return err
 	}
 	err = tc.validateConnectivity(windowsVM)
-	return err
+	if err != nil {
+		return err
+	}
+	gc.windowsVMs = append(gc.windowsVMs, testVM{windowsVM})
+	return nil
 }
 
 // testValidateSecrets ensures we've valid secrets in place to be used by trackerConfigmap to construct node objects
@@ -192,6 +190,10 @@ func testValidateSecrets(t *testing.T) {
 	instanceIDs, err := testCtx.getInstanceIDsOfNodes()
 	require.NoError(t, err, "error while getting instance ids")
 	require.Equal(t, len(instanceIDs), gc.numberOfNodes, "mismatched node count")
+
+	// Reset the windowsVMs to avoid staleness
+	gc.windowsVMs = make([]testVM, 0, numberOfNodes)
+
 	for _, instanceID := range instanceIDs {
 		err := testCtx.validateInstanceSecret(instanceID)
 		assert.NoError(t, err, "error validating instance secret")
