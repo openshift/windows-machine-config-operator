@@ -284,3 +284,25 @@ func testWorkerLabel(t *testing.T) {
 		assert.Contains(t, node.Labels, nc.WorkerLabel, "expected node label %s was not present on %s", nc.WorkerLabel, node.GetName())
 	}
 }
+
+// testNodeTaint tests if the Windows node has the Windows taint
+func testNodeTaint(t *testing.T) {
+	// windowsTaint is the taint that needs to be applied to the Windows node
+	windowsTaint := corev1.Taint{
+		Key:    "os",
+		Value:  "Windows",
+		Effect: corev1.TaintEffectNoSchedule,
+	}
+
+	for _, node := range gc.nodes {
+		hasTaint := func() bool {
+			for _, taint := range node.Spec.Taints {
+				if taint.Key == windowsTaint.Key && taint.Value == windowsTaint.Value && taint.Effect == windowsTaint.Effect {
+					return true
+				}
+			}
+			return false
+		}()
+		assert.Equal(t, hasTaint, true, "expected Windows Taint to be present on the Node: %s", node.GetName())
+	}
+}
