@@ -20,7 +20,6 @@ import (
 const (
 	instanceType        = "m5a.large"
 	credentialAccountID = "default"
-	SSHKeyPair          = "libra"
 	wmcCRName           = "instance"
 )
 
@@ -53,7 +52,7 @@ func testWindowsNodeCreation(t *testing.T) {
 		},
 		Spec: operator.WindowsMachineConfigSpec{
 			InstanceType: instanceType,
-			AWS:          &operator.AWS{CredentialAccountID: credentialAccountID, SSHKeyPair: SSHKeyPair},
+			AWS:          &operator.AWS{CredentialAccountID: credentialAccountID, SSHKeyPair: gc.sshKeyPair},
 			Replicas:     gc.numberOfNodes,
 		},
 	}
