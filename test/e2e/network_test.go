@@ -25,10 +25,10 @@ func testHNSNetworksCreated(t *testing.T) {
 		// network setup has succeeded.
 		stdout, _, err := vm.Run("Get-HnsNetwork", true)
 		require.NoError(t, err, "Could not run Get-HnsNetwork command")
-		assert.Contains(t, stdout, "BaseOpenShiftNetwork",
-			"Could not find BaseOpenShiftNetwork in %s", vm.GetCredentials().GetInstanceId())
-		assert.Contains(t, stdout, "OpenShiftNetwork",
-			"Could not find OpenShiftNetwork in %s", vm.GetCredentials().GetInstanceId())
+		assert.Contains(t, stdout, windows.BaseOVNKubeOverlayNetwork,
+			"Could not find %s in %s", windows.BaseOVNKubeOverlayNetwork, vm.GetCredentials().GetInstanceId())
+		assert.Contains(t, stdout, windows.OVNKubeOverlayNetwork,
+			"Could not find %s in %s", windows.OVNKubeOverlayNetwork, vm.GetCredentials().GetInstanceId())
 	}
 }
 

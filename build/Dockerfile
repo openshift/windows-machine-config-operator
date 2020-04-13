@@ -45,7 +45,7 @@ RUN tar -zxf /download/cni-plugins-windows-amd64-v0.8.2.tgz
 #│   ├── host-local.exe
 #│   ├── win-bridge.exe
 #│   └── win-overlay.exe
-#├── hybrid-overlay.exe
+#├── hybrid-overlay-node.exe
 #├── kube-node
 #│   ├── kubelet.exe
 #│   └── kube-proxy.exe
@@ -60,8 +60,8 @@ LABEL stage=operator
 WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-bootstrapper/wmcb.exe .
 
-# Copy hybrid-overlay.exe
-COPY --from=build /build/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay.exe .
+# Copy hybrid-overlay-node.exe
+COPY --from=build /build/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
 
 # Copy kubelet.exe and kube-proxy.exe
 WORKDIR /payload/kube-node/

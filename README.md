@@ -32,7 +32,7 @@ for our CI purposes.
 │   ├── host-local.exe
 │   ├── win-bridge.exe
 │   └── win-overlay.exe
-├── hybrid-overlay.exe
+├── hybrid-overlay-node.exe
 ├── kube-node
 │   ├── kubelet.exe
 │   └── kube-proxy.exe

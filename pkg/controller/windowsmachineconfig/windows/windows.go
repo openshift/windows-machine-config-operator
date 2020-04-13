@@ -22,8 +22,12 @@ const (
 	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
 	// logDir is the remote kubernetes log directory
 	logDir = "C:\\k\\log\\"
-	// HybridOverlayProcess is the process name of the hybrid-overlay.exe in the Windows VM
-	HybridOverlayProcess = "hybrid-overlay"
+	// HybridOverlayProcess is the process name of the hybrid-overlay-node.exe in the Windows VM
+	HybridOverlayProcess = "hybrid-overlay-node"
+	// BaseOVNKubeOverlayNetwork is the name of base OVN HNS Overlay network
+	BaseOVNKubeOverlayNetwork = "BaseOVNKubernetesHybridOverlayNetwork"
+	// OVNKubeOverlayNetwork is the name of the OVN HNS Overlay network
+	OVNKubeOverlayNetwork = "OVNKubernetesHybridOverlayNetwork"
 )
 
 var log = logf.Log.WithName("windows")
@@ -135,8 +139,8 @@ func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 		return errors.Wrap(err, fmt.Sprintf("error running %s", wkl.HybridOverlayName))
 	}
 
-	if err = vm.waitForOpenShiftHNSNetworks(); err != nil {
-		return errors.Wrap(err, "error waiting for OpenShift HNS networks to be created")
+	if err = vm.waitForHNSNetworks(); err != nil {
+		return errors.Wrap(err, "error waiting for OVN HNS networks to be created")
 	}
 
 	// Running the hybrid-overlay causes network reconfiguration in the Windows VM which results in the ssh connection
@@ -149,8 +153,8 @@ func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 	return nil
 }
 
-// waitForOpenShiftHNSNetworks waits for the OpenShift HNS networks to be created until the timeout is reached
-func (vm *Windows) waitForOpenShiftHNSNetworks() error {
+// waitForHNSNetworks waits for the OVN overlay HNS networks to be created until the timeout is reached
+func (vm *Windows) waitForHNSNetworks() error {
 	var stdout string
 	var err error
 	for retries := 0; retries < retry.Count; retries++ {
@@ -160,19 +164,19 @@ func (vm *Windows) waitForOpenShiftHNSNetworks() error {
 			continue
 		}
 
-		if strings.Contains(stdout, "BaseOpenShiftNetwork") &&
-			strings.Contains(stdout, "OpenShiftNetwork") {
+		if strings.Contains(stdout, BaseOVNKubeOverlayNetwork) &&
+			strings.Contains(stdout, OVNKubeOverlayNetwork) {
 			return nil
 		}
 		time.Sleep(retry.Interval)
 	}
 
-	// OpenShift HNS networks were not found
+	// OVN overlay HNS networks were not found
 	log.Info("Get-HnsNetwork", "stdout", stdout)
-	return errors.Wrap(err, "timeout waiting for OpenShift HNS networks")
+	return errors.Wrap(err, "timeout waiting for OVN overlay HNS networks")
 }
 
-// waitForHybridOverlayToRun waits for the hybrid-overlay.exe to run until the timeout is reached
+// waitForHybridOverlayToRun waits for the hybrid-overlay-node.exe to run until the timeout is reached
 func (vm *Windows) waitForHybridOverlayToRun() error {
 	var err error
 	for retries := 0; retries < retry.Count; retries++ {

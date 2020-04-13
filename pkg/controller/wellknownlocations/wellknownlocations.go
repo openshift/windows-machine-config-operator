@@ -34,7 +34,7 @@ const (
 	// this binary mounted
 	WinOverlayCNIPlugin = payloadDirectory + "/cni-plugins/win-overlay.exe"
 	// hybridOverlayName is the name of the hybrid overlay executable
-	HybridOverlayName = "hybrid-overlay.exe"
+	HybridOverlayName = "hybrid-overlay-node.exe"
 	// HybridOverlayPath contains the path of the hybrid overlay binary. The container image should already have this
 	// binary mounted
 	HybridOverlayPath = payloadDirectory + HybridOverlayName
