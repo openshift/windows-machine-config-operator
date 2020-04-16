@@ -267,7 +267,7 @@ func createWindowsMachineConfig(namespace string, isReplicasFieldRequired bool, 
 		},
 		Spec: operator.WindowsMachineConfigSpec{
 			InstanceType: instanceType,
-			AWS:          &operator.AWS{CredentialAccountID: credentialAccountID, SSHKeyPair: SSHKeyPair},
+			AWS:          &operator.AWS{CredentialAccountID: credentialAccountID, SSHKeyPair: gc.sshKeyPair},
 		},
 	}
 	if isReplicasFieldRequired {

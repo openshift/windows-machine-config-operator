@@ -22,12 +22,19 @@ func TestWMCO(t *testing.T) {
 	if err := setupWMCOResources(); err != nil {
 		t.Fatalf("%v", err)
 	}
-	// TODO: In future, we'd like to skip the teardown for each test. As of now, since we just have deletion it should
-	// 		be ok to call destroy directly.
-	//		Jira Story: https://issues.redhat.com/browse/WINC-283
+
+	// We've to update the global context struct here as the operator-sdk's framework has coupled flag
+	// parsing along with test suite execution.
+	// Reference:
+	// https://github.com/operator-framework/operator-sdk/blob/b448429687fd7cb2343d022814ed70c9d264612b/pkg/test/main_entry.go#L51
+	gc.numberOfNodes = numberOfNodes
+	gc.skipNodeDeletion = skipNodeDeletion
+	gc.sshKeyPair = sshKeyPair
 	t.Run("WMC CR validation", testWMCValidation)
 	t.Run("create", creationTestSuite)
-	t.Run("destroy", deletionTestSuite)
+	if !gc.skipNodeDeletion {
+		t.Run("destroy", deletionTestSuite)
+	}
 }
 
 // setupWMCO setups the resources needed to run WMCO tests

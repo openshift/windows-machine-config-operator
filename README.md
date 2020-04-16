@@ -21,9 +21,6 @@ export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
 export CLUSTER_ADDR=<cluster_name, eg: ravig211.devcluster.openshift.com>
 export KUBE_SSH_KEY_PATH=<path to ssh key>
 ```
-- Update the sshKeyPair mentioned in [create_test.go](https://github.com/openshift/windows-machine-config-operator/blob/master/test/e2e/create_test.go) to match with what 
-is being used in KUBE_SSH_KEY_PATH. Please note that we're using libra as keypair
-for our CI purposes.
 - Ensure that /payload directory exists and is accessible by the user account. The directory needs to be populated with the following files. Please see the [Dockerfile](https://github.com/openshift/windows-machine-config-operator/blob/master/build/Dockerfile) for figuring where to download and build these binaries. It is up to the user to keep these files up to date.
 ```
 /payload/
@@ -42,9 +39,21 @@ for our CI purposes.
 ```
 Once the above variables are set and the /payload directory has been populated, run the following script:
 ```shell script
-hack/run-ci-e2e-test.sh
+hack/run-ci-e2e-test.sh -k "openshift-dev"
 ```
+We assume that the developer uses `openshift-dev` as the key pair in the aws cloud
 
+Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
+- `-s` to skip the deletion of Windows nodes that are created as part of test suite run
+- `-n` to represent the number of Windows nodes to be created for test run
+- `-k` to represent the AWS specific key pair that will be used during e2e run and it should map to the private key
+       that we have in `KUBE_SSH_KEY_PATH`. The default value points to `libra` which we use in our CI
+       
+Example command to spin up 2 Windows nodes and retain them after test run:
+```
+hack/run-ci-e2e-test.sh -s -k "openshift-dev" -n 2      
+```
+        
 ## Bundling the Windows Machine Config Operator
 This directory contains resources related to installing the WMCO onto a cluster using OLM.
 

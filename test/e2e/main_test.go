@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"flag"
 	"testing"
 	"time"
 
@@ -15,10 +16,14 @@ import (
 
 var (
 	// numberOfNodes represent the number of nodes to be dealt with in the test suite.
-	// Expose this as a flag.
-	numberOfNodes = 1
+	numberOfNodes int
+	// skipNodeDeletion allows the Windows nodes to hang around after the test suite has been run. This skips the deletion
+	// test suite.
+	skipNodeDeletion bool
+	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
+	sshKeyPair string
 	// gc is the global context across the test suites.
-	gc = globalContext{numberOfNodes: numberOfNodes}
+	gc = globalContext{}
 )
 
 // testVM encapsulates a VM created by the test
@@ -38,6 +43,10 @@ type globalContext struct {
 	nodes []v1.Node
 	// windowsVMs is used to interact with the Windows VMs created by the test suite
 	windowsVMs []testVM
+	// skipNodeDeletion allows the Windows nodes to hang around after the test suite has been run.
+	skipNodeDeletion bool
+	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
+	sshKeyPair string
 }
 
 // testContext holds the information related to the individual test suite. This data structure
@@ -81,5 +90,11 @@ func (tc *testContext) cleanup() {
 }
 
 func TestMain(m *testing.M) {
+	flag.IntVar(&numberOfNodes, "node-count", 1, "number of nodes to be created for testing")
+	flag.BoolVar(&skipNodeDeletion, "skip-node-deletion", false,
+		"Option to disable deletion of the VMs")
+	// We're using libra as default value to be used in CI
+	flag.StringVar(&sshKeyPair, "ssh-key-pair", "libra", "SSH Key Pair to be used for decrypting "+
+		"the Windows Node password")
 	framework.MainEntry(m)
 }
