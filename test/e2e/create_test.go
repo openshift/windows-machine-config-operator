@@ -7,7 +7,6 @@ import (
 	"time"
 
 	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
-	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/stretchr/testify/require"
@@ -34,6 +33,8 @@ func creationTestSuite(t *testing.T) {
 	t.Run("ConfigMap validation", func(t *testing.T) { testConfigMapValidation(t) })
 	t.Run("Secrets validation", func(t *testing.T) { testValidateSecrets(t) })
 	t.Run("Network validation", testNetwork)
+	t.Run("Label validation", func(t *testing.T) { testWorkerLabel(t) })
+	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
 }
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
@@ -76,7 +77,7 @@ func (tc *testContext) waitForWindowsNode() error {
 	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster, so to be on safe
 	// side, let's make it as 20 minutes per node. The value comes from nodeCreationTime variable
 	err := wait.Poll(nodeRetryInterval, time.Duration(gc.numberOfNodes)*nodeCreationTime, func() (done bool, err error) {
-		nodes, err = tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: wmc.WindowsOSLabel})
+		nodes, err = tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("waiting for %d Windows nodes", gc.numberOfNodes)

@@ -26,11 +26,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-const (
-	// windowsOSLabel is the label that is applied by WMCB to identify the Windows nodes bootstrapped via WMCB
-	WindowsOSLabel = "node.openshift.io/os_id=Windows"
-)
-
 var log = logf.Log.WithName("controller_windowsmachineconfig")
 
 /**
@@ -161,7 +156,7 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 	// Get the current number of Windows VMs created by WMCO.
 	// TODO: Get all the running Windows nodes in the cluster
 	//		jira story: https://issues.redhat.com/browse/WINC-280
-	windowsNodes, err := r.k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: WindowsOSLabel})
+	windowsNodes, err := r.k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
 	if err != nil {
 		return reconcile.Result{}, nil
 	}
