@@ -7,6 +7,11 @@
 FROM golang:1.13.8 as build
 LABEL stage=build
 
+# Create cache directory as user running the tests doesn't have the permissions to create it at runtime. This is required
+# for the go builds below to succeed
+RUN mkdir /go/.cache
+ENV GOCACHE="/go/.cache"
+
 # Build WMCB
 RUN mkdir /build/
 WORKDIR /build/
