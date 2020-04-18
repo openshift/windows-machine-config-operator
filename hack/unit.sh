@@ -13,6 +13,6 @@ if [[ "$goflags" == *"-mod=vendor"* ]]; then
   unset GOFLAGS
 fi
 
-go test -v ./cmd/...
-
+# Run tests from all packages excluding e2e package, as it consists of e2e tests.
+go test -v ./cmd/... ./pkg/... -count=1
 exit 0

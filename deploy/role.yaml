@@ -89,6 +89,7 @@ rules:
    - "config.openshift.io"
    resources:
    - infrastructures
+   - networks
    verbs:
    - get
  - apiGroups:
@@ -100,3 +101,9 @@ rules:
    - get
    - list
    - update
+ - apiGroups:
+     - operator.openshift.io
+   resources:
+     - networks
+   verbs:
+     - get

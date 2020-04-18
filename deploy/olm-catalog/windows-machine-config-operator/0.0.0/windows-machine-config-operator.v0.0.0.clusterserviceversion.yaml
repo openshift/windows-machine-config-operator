@@ -54,6 +54,7 @@ spec:
           - config.openshift.io
           resources:
           - infrastructures
+          - networks
           verbs:
           - get
         - apiGroups:
@@ -65,6 +66,12 @@ spec:
           - get
           - list
           - update
+        - apiGroups:
+          - operator.openshift.io
+          resources:
+          - networks
+          verbs:
+          - get
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator
