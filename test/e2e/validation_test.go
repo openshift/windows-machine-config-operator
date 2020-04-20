@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-// waitForTrackerConfigMap waits for the Windows tracker configmap to be created with appropriate values
+// waitForTrackerConfigMap waits for the Windows tracker ConfigMap to be created with appropriate values
 func (tc *testContext) waitForTrackerConfigMap() error {
 	var trackerConfigMap *corev1.ConfigMap
 	// timeout is a factor of the number of nodes we are dealing with as all nodes have to finish their full
@@ -32,17 +32,16 @@ func (tc *testContext) waitForTrackerConfigMap() error {
 		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(tracker.StoreName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				log.Printf("Waiting for availability of tracker configmap to be created: %s\n", tracker.StoreName)
+				log.Printf("waiting for %s/%s ConfigMap to be created", tc.namespace, tracker.StoreName)
 				return false, nil
 			}
 			return false, err
 		}
 		if len(trackerConfigMap.BinaryData) == gc.numberOfNodes {
-			log.Println("Tracker configmap tracking required number of configmap")
+			log.Printf("%s/%s ConfigMap tracking required number of nodes", tc.namespace, tracker.StoreName)
 			return true, nil
 		}
-		log.Printf("still waiting for %d number of "+
-			"Windows worker nodes to be tracked but as of now we have %d\n", gc.numberOfNodes,
+		log.Printf("waiting for %d/%d Windows worker nodes to be tracked", gc.numberOfNodes,
 			len(trackerConfigMap.BinaryData))
 		return false, nil
 	})
@@ -75,7 +74,7 @@ func testConfigMapValidation(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
 	err = testCtx.waitForTrackerConfigMap()
-	require.NoError(t, err, "error waiting for tracker configmap")
+	require.NoError(t, err, "error waiting for tracker ConfigMap")
 
 	// Get the instance id from the cloud provider for the windows Nodes created
 	instanceIDs, err := testCtx.getInstanceIDsOfNodes()

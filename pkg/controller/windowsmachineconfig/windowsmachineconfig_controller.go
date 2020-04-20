@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var log = logf.Log.WithName("controller_windowsmachineconfig")
+var log = logf.Log.WithName("controller_wmc")
 
 /**
 * USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
@@ -105,8 +105,7 @@ type ReconcileWindowsMachineConfig struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
-	reqLogger.Info("reconciling WindowsMachineConfig")
+	log.Info("reconciling", "namespace", request.Namespace, "name", request.Name)
 
 	// Fetch the WindowsMachineConfig instance
 	instance := &wmcapi.WindowsMachineConfig{}
@@ -150,7 +149,7 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 		return reconcile.Result{}, nil
 	}
 	if r.windowsVMs == nil {
-		// populate the windowsVM map here from configmap as source of truth
+		// populate the windowsVM map here from ConfigMap as source of truth
 		r.windowsVMs = make(map[types.WindowsVM]bool)
 	}
 	// Get the current number of Windows VMs created by WMCO.
@@ -177,6 +176,7 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 // reconcileWindowsNodes reconciles the Windows nodes so that required number of the Windows nodes are present in the
 // cluster
 func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current int) bool {
+	log.Info("replicas", "current", current, "desired", desired)
 	if r.tracker == nil {
 		var err error
 		r.tracker, err = tracker.NewTracker(r.k8sclientset, r.windowsVMs)
@@ -193,10 +193,12 @@ func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current i
 		return true
 	}
 	r.tracker.WindowsVMs(r.windowsVMs)
+	log.V(1).Info("starting tracker reconciliation")
 	err := r.tracker.Reconcile()
 	if err != nil {
-		log.Error(err, "tracking Windows VMs via configmap failed")
+		log.Error(err, "tracker reconciliation failed")
 	}
+	log.V(1).Info("completed tracker reconciliation")
 	return vmCount
 }
 
@@ -220,24 +222,25 @@ func (r *ReconcileWindowsMachineConfig) deleteWindowsVMs(count int) bool {
 		// Choose of the Windows worker nodes randomly
 		vmTobeDeleted := chooseRandomNode(r.windowsVMs)
 		if vmTobeDeleted.GetCredentials() == nil {
-			errs = append(errs, errors.New("One of the VM deletions failed, will reconcile..."))
+			errs = append(errs, errors.New("VM picked for deletion has no credentials, will reconcile..."))
 			continue
 		}
 
 		// Get the instance associated with the Windows worker node
 		instancedID := vmTobeDeleted.GetCredentials().GetInstanceId()
 		if len(instancedID) == 0 {
-			errs = append(errs, errors.New("One of the VM deletions failed, will reconcile..."))
+			errs = append(errs, errors.New("VM picked for deletion has no instance ID, will reconcile..."))
 			continue
 		}
 
 		// Delete the Windows VM from cloud provider
-		log.Info("deleting the Windows VM", "instance", instancedID)
+		log.V(1).Info("deleting the Windows VM", "ID", instancedID)
 		if err := r.cloudProvider.DestroyWindowsVM(instancedID); err != nil {
-			log.Error(err, "error while deleting windows VM", "instance", instancedID)
-			errs = append(errs, errors.Wrap(err, "One of the VM deletions failed, will reconcile"))
+			log.Error(err, "error deleting Windows VM", "ID", instancedID)
+			errs = append(errs, errors.Wrapf(err, "error deleting Windows VM %s", instancedID))
 		}
 		delete(r.windowsVMs, vmTobeDeleted)
+		log.Info("Windows VM has been deleted and removed from the cluster", "ID", instancedID)
 	}
 
 	// If any of the Windows VM fails to get deleted consider this as a failure and return false
@@ -255,20 +258,24 @@ func (r *ReconcileWindowsMachineConfig) createWindowsWorkerNodes(count int) bool
 	var errs []error
 	for i := 0; i < count; i++ {
 		// Create Windows VM in the cloud provider
+		log.V(1).Info("creating the Windows VM")
 		createdVM, err := r.cloudProvider.CreateWindowsVM()
 		if err != nil {
 			errs = append(errs, errors.Wrap(err, "error creating windows VM"))
 			log.Error(err, "error creating windows VM")
 		}
-		log.V(1).Info("created the Windows VM", "instance",
-			createdVM.GetCredentials().GetInstanceId())
 
 		// Make the Windows VM a Windows worker node.
+		log.V(1).Info("configuring the Windows VM", "ID",
+			createdVM.GetCredentials().GetInstanceId())
 		nc := nodeconfig.NewNodeConfig(r.k8sclientset, createdVM)
 		if err := nc.Configure(); err != nil {
 			// TODO: Unwrap to extract correct error
 			errs = append(errs, errors.Wrap(err, "configuring Windows VM failed"))
 			log.Error(err, "configuring Windows VM failed")
+		}
+		if err == nil {
+			log.Info("Windows VM has joined the cluster as a worker node", "ID", nc.GetCredentials().GetInstanceId())
 		}
 
 		// update the windowsVMs slice
