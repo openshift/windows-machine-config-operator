@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"log"
+	"math"
 	"testing"
 	"time"
 
@@ -75,8 +76,9 @@ func (tc *testContext) waitForWindowsNode() error {
 	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac}
 
 	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster, so to be on safe
-	// side, let's make it as 20 minutes per node. The value comes from nodeCreationTime variable
-	err := wait.Poll(nodeRetryInterval, time.Duration(gc.numberOfNodes)*nodeCreationTime, func() (done bool, err error) {
+	// side, let's make it as 20 minutes per node. The value comes from nodeCreationTime variable.  If we are testing a
+	// scale down from n nodes to 0, then we should not take the number of nodes into account.
+	err := wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(gc.numberOfNodes), 1))*nodeCreationTime, func() (done bool, err error) {
 		nodes, err = tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
