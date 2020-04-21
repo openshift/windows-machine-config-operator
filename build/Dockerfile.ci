@@ -7,11 +7,6 @@
 FROM golang:1.13.8 as build
 LABEL stage=build
 
-# Create cache directory as user running the tests doesn't have the permissions to create it at runtime. This is required
-# for the go builds below to succeed
-RUN mkdir /go/.cache
-ENV GOCACHE="/go/.cache"
-
 # Build WMCB
 RUN mkdir /build/
 WORKDIR /build/
@@ -136,8 +131,8 @@ RUN mkdir -p /go/src/github.com/openshift/windows-machine-config-operator/
 WORKDIR /go/src/github.com/openshift/windows-machine-config-operator/
 COPY --from=build /build/windows-machine-config-operator .
 
-# Allow building binaries
-RUN chmod -R g=u /go
+# Allow building binaries and creation of /go/.cache directory by the hack script
+RUN chmod -R g=u+w /go
 
 ENV PATH="${PATH}:/usr/local/go/bin"
 ENV GOPATH="/go"
