@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -27,8 +28,9 @@ import (
 func (tc *testContext) waitForTrackerConfigMap() error {
 	var trackerConfigMap *corev1.ConfigMap
 	// timeout is a factor of the number of nodes we are dealing with as all nodes have to finish their full
-	// configuration before the ConfigMap is updated.
-	err := wait.Poll(tc.retryInterval, time.Duration(gc.numberOfNodes)*tc.timeout, func() (done bool, err error) {
+	// configuration before the ConfigMap is updated. If we are testing a scale down from n nodes to 0, then we should
+	// not take the number of nodes into account.
+	err := wait.Poll(tc.retryInterval, time.Duration(math.Max(float64(gc.numberOfNodes), 1))*tc.timeout, func() (done bool, err error) {
 		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(tracker.StoreName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
