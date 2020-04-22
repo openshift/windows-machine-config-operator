@@ -188,7 +188,7 @@ func (t *Tracker) syncNodeRecords() {
 		}
 		nodeRecords[credentials.GetInstanceId()] = nodeRecord
 	}
-	// We are overwriting the nodeRecords of tracker here. We'll always use configmap as source of truth
+	// We are overwriting the nodeRecords of tracker here. We'll always use ConfigMap as source of truth
 	t.nodeRecords = nodeRecords
 }
 

@@ -64,7 +64,7 @@ type testContext struct {
 	credentials []tracker.Credentials
 	// kubeclient is the kube client
 	kubeclient kubernetes.Interface
-	// tracker is a pointer to the tracker configmap created by operator
+	// tracker is a pointer to the tracker ConfigMap created by operator
 	tracker *v1.ConfigMap
 	// retryInterval to check for existence of resource in kube api server
 	retryInterval time.Duration

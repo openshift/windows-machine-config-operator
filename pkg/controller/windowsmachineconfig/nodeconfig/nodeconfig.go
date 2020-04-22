@@ -78,7 +78,6 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.configureNetwork(); err != nil {
 		return errors.Wrap(err, "configuring node network failed")
 	}
-	log.Info("VM has been configured as a worker node", "VM ID", nc.GetCredentials().GetInstanceId())
 	return nil
 }
 
