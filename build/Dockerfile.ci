@@ -136,6 +136,7 @@ RUN chmod -R g=u+w /go
 
 ENV PATH="${PATH}:/usr/local/go/bin"
 ENV GOPATH="/go"
+ENV GOCACHE="/go/.cache"
 
 # install operator binary
 COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-machine-config-operator ${OPERATOR}
