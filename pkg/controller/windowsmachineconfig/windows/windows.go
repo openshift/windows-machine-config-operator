@@ -24,6 +24,9 @@ const (
 	logDir = "C:\\k\\log\\"
 	// HybridOverlayProcess is the process name of the hybrid-overlay-node.exe in the Windows VM
 	HybridOverlayProcess = "hybrid-overlay-node"
+	// hybridOverlayConfigurationTime is the approximate time taken for the hybrid-overlay to complete reconfiguring
+	// the Windows VM's network
+	hybridOverlayConfigurationTime = 2 * time.Minute
 	// BaseOVNKubeOverlayNetwork is the name of base OVN HNS Overlay network
 	BaseOVNKubeOverlayNetwork = "BaseOVNKubernetesHybridOverlayNetwork"
 	// OVNKubeOverlayNetwork is the name of the OVN HNS Overlay network
@@ -153,9 +156,11 @@ func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 		return errors.Wrap(err, fmt.Sprintf("error running %s", wkl.HybridOverlayName))
 	}
 
-	if err = vm.waitForHNSNetworks(); err != nil {
-		return errors.Wrap(err, "error waiting for OVN HNS networks to be created")
-	}
+	// Wait for the hybrid-overlay to complete reconfiguring the network. The only way to detect that it has completed
+	// the reconfiguration is to check for the HNS networks but doing that without reinitializing the WinRM client
+	// results in 5+ minutes wait times for the vm.Run() call to complete. So the only alternative is to wait before
+	// proceeding.
+	time.Sleep(hybridOverlayConfigurationTime)
 
 	// Running the hybrid-overlay causes network reconfiguration in the Windows VM which results in the ssh connection
 	// being closed and the client is not smart enough to reconnect. We have observed that the WinRM connection does not
@@ -164,15 +169,19 @@ func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 		return errors.Wrap(err, "error reinitializing VM after running hybrid-overlay")
 	}
 
+	if err = vm.waitForHNSNetworks(); err != nil {
+		return errors.Wrap(err, "error waiting for OVN HNS networks to be created")
+	}
+
 	return nil
 }
 
 // waitForHNSNetworks waits for the OVN overlay HNS networks to be created until the timeout is reached
 func (vm *Windows) waitForHNSNetworks() error {
-	var stdout string
+	var stdout, stderr string
 	var err error
 	for retries := 0; retries < retry.Count; retries++ {
-		stdout, _, err = vm.Run("Get-HnsNetwork", true)
+		stdout, stderr, err = vm.Run("Get-HnsNetwork", true)
 		if err != nil {
 			// retry
 			continue
@@ -186,7 +195,7 @@ func (vm *Windows) waitForHNSNetworks() error {
 	}
 
 	// OVN overlay HNS networks were not found
-	log.Info("Get-HnsNetwork", "stdout", stdout)
+	log.Info("Get-HnsNetwork", "stdout", stdout, "stderr", stderr)
 	return errors.Wrap(err, "timeout waiting for OVN overlay HNS networks")
 }
 
