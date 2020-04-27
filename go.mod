@@ -32,7 +32,9 @@ replace (
 )
 
 require (
-	github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200311205055-ff0cd166abd4
+	github.com/openshift/api v3.9.1-0.20190924102528-32369d4db2ad+incompatible
+	github.com/openshift/client-go v0.0.0-20190923180330-3b6373338c9b
+	github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200427215039-03033d75837c
 	github.com/operator-framework/operator-sdk v0.15.2
 	github.com/pkg/errors v0.8.1
 	github.com/spf13/pflag v1.0.5
