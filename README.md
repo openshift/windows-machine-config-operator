@@ -18,7 +18,6 @@ To run the e2e tests for WMCO locally against an OpenShift cluster set up on AWS
 ```shell script
 export KUBECONFIG=<path to kubeconfig>
 export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
-export CLUSTER_ADDR=<cluster_name, eg: ravig211.devcluster.openshift.com>
 export KUBE_SSH_KEY_PATH=<path to ssh key>
 ```
 - Ensure that /payload directory exists and is accessible by the user account. The directory needs to be populated with the following files. Please see the [Dockerfile](https://github.com/openshift/windows-machine-config-operator/blob/master/build/Dockerfile) for figuring where to download and build these binaries. It is up to the user to keep these files up to date.
@@ -159,12 +158,6 @@ service account the kubeconfig should be generated from the service account.
 ```shell script
 # Change paths as necessary
 oc create secret generic kubeconfig --from-file=kubeconfig=/path/to/kubeconfig
-```
-
-Put the cluster address in a secret:
-```shell script
-CLUSTER_ADDR=$(oc cluster-info | head -n1 | sed 's/.*\/\/api.//g'| sed 's/:.*//g')
-oc create secret generic cluster-address --from-literal=cluster-address=$CLUSTER_ADDR
 ```
 
 Change `spec.startingCSV` in `deploy/olm-catalog/subscription.yaml` to match the version of the operator you wish to deploy.

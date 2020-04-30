@@ -47,12 +47,6 @@ spec:
             # TODO: Remove the KUBECONFIG environment variable as part of https://issues.redhat.com/browse/WINC-328
             - name: KUBECONFIG
               value: /etc/kubeconfig/kubeconfig
-            # TODO: Remove the CLUSTER_ADDR environment variable as part of https://issues.redhat.com/browse/WINC-274
-            - name: CLUSTER_ADDR
-              valueFrom:
-                secretKeyRef:
-                  name: cluster-address
-                  key: cluster-address
           volumeMounts:
           # TODO: Remove the cloud-credentials and cloud-private-key volumeMounts as part of
           # https://issues.redhat.com/browse/WINC-325

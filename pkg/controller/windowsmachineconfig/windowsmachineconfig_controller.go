@@ -327,7 +327,16 @@ func (r *ReconcileWindowsMachineConfig) addWorkerNode() (types.WindowsVM, Reconc
 	}
 
 	log.V(1).Info("configuring the Windows VM", "ID", vm.GetCredentials().GetInstanceId())
-	nc := nodeconfig.NewNodeConfig(r.k8sclientset, vm)
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, vm)
+	if err != nil {
+		// TODO: Unwrap to extract correct error
+		if cleanupErr := r.removeWorkerNode(vm); cleanupErr != nil {
+			log.Error(cleanupErr, "failed to cleanup VM", "VM", vm.GetCredentials().GetInstanceId())
+		}
+
+		return nil, newReconcileError(wmcapi.VMConfigurationFailureReason,
+			errors.Wrap(err, "failed to configure Windows VM"))
+	}
 	if err := nc.Configure(); err != nil {
 		// TODO: Unwrap to extract correct error
 		if cleanupErr := r.removeWorkerNode(vm); cleanupErr != nil {

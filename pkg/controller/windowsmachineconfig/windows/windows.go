@@ -2,7 +2,6 @@ package windows
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -38,11 +37,14 @@ var log = logf.Log.WithName("windows")
 // Windows is a wrapper for the WindowsVM interface.
 type Windows struct {
 	types.WindowsVM
+	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
+	// the OpenShift worker ignition file.
+	workerIgnitionEndpoint string
 }
 
 // New returns a new instance of windows struct
-func New(vm types.WindowsVM) *Windows {
-	return &Windows{vm}
+func New(vm types.WindowsVM, workerIgnitionEndpoint string) *Windows {
+	return &Windows{WindowsVM: vm, workerIgnitionEndpoint: workerIgnitionEndpoint}
 }
 
 // Configure prepares the Windows VM for the bootstrapper and then runs it
@@ -68,6 +70,9 @@ func (vm *Windows) Validate() error {
 	}
 	if vm.GetCredentials().GetInstanceId() == "" {
 		return fmt.Errorf("empty instance id for VM: %v", vm.GetCredentials())
+	}
+	if vm.workerIgnitionEndpoint == "" {
+		return errors.New("cannot use empty cluster address")
 	}
 	return nil
 }
@@ -100,12 +105,10 @@ func (vm *Windows) initializeBootstrapperFiles() error {
 	if err != nil {
 		return errors.Wrapf(err, "unable to copy kubelet.exe to %s", winTemp)
 	}
-	// TODO: As of now, getting cluster address from the environment var, remove it.
-	// 		Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
-	// 		Jira story: https://issues.redhat.com/browse/WINC-274
-	ClusterAddress := os.Getenv("CLUSTER_ADDR")
-	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server https://api-int." +
-		ClusterAddress + ":22623/config/worker" + " -output " + winTemp + "worker.ign"
+
+	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
+	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server " + vm.workerIgnitionEndpoint + " -output " +
+		winTemp + "worker.ign"
 	stdout, stderr, err := vm.Run(ignitionFileDownloadCmd, true)
 	if err != nil {
 		return errors.Wrap(err, "unable to download worker.ign")
