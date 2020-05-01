@@ -116,6 +116,39 @@ type ReconcileWindowsMachineConfig struct {
 	tracker *tracker.Tracker
 }
 
+// getCloudProvider gathers the cloud provider information and sets the cloudProvider struct field
+func (r *ReconcileWindowsMachineConfig) getCloudProvider(instance *wmcapi.WindowsMachineConfig) error {
+	var err error
+	if instance == nil {
+		return fmt.Errorf("cannot get cloud provider if instance is not set")
+	}
+	// Get cloud provider specific info.
+	// TODO: This should be moved to validation section.
+	//              Jira story: https://issues.redhat.com/browse/WINC-277
+	if instance.Spec.AWS == nil {
+		return fmt.Errorf("aws cloud provider is nil, cannot proceed further")
+	}
+
+	// TODO: We assume the cloud provider secret has been mounted to "/etc/cloud/credentials` and private key is
+	//              present at "/etc/private-key.pem". We should have a validation method which checks for the existence
+	//              of these paths.
+	//              Jira story: https://issues.redhat.com/browse/WINC-262
+	// TODO: Add validation for the fields in the WindowsMachineConfig CRD.
+	//              Jira story: https://issues.redhat.com/browse/WINC-279
+	r.cloudProvider, err = cloudprovider.CloudProviderFactory(os.Getenv("KUBECONFIG"),
+		// We assume the credential path is `/etc/aws/credentials` mounted as a secret.
+		wkl.CloudCredentialsPath,
+		instance.Spec.AWS.CredentialAccountID,
+		"/tmp", "", instance.Spec.InstanceType,
+		instance.Spec.AWS.SSHKeyPair, wkl.PrivateKeyPath)
+
+	if err != nil {
+		return errors.Wrap(err, "error instantiating cloud provider")
+	}
+
+	return nil
+}
+
 // Reconcile reads that state of the cluster for a WindowsMachineConfig object and makes changes based on the state read
 // and what is in the WindowsMachineConfig.Spec
 // Note:
@@ -138,30 +171,12 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 		return reconcile.Result{}, err
 	}
 
-	if r.cloudProvider == nil {
-		// Get cloud provider specific info.
-		// TODO: This should be moved to validation section.
-		// 		Jira story: https://issues.redhat.com/browse/WINC-277
-		if instance.Spec.AWS == nil {
-			return reconcile.Result{}, errors.New("AWS Cloud provider is nil, cannot proceed further")
-		}
-		// TODO: We assume the cloud provider secret has been mounted to "/etc/cloud/credentials` and private key is
-		// 		present at "/etc/private-key.pem". We should have a validation method which checks for the existence
-		// 		of these paths.
-		//		Jira story: https://issues.redhat.com/browse/WINC-262
-		// TODO: Add validation for the fields in the WindowsMachineConfig CRD.
-		// 		Jira story: https://issues.redhat.com/browse/WINC-279
-		r.cloudProvider, err = cloudprovider.CloudProviderFactory(os.Getenv("KUBECONFIG"),
-			// We assume the credential path is `/etc/aws/credentials` mounted as a secret.
-			wkl.CloudCredentialsPath,
-			instance.Spec.AWS.CredentialAccountID,
-			"/tmp", "", instance.Spec.InstanceType,
-			instance.Spec.AWS.SSHKeyPair, wkl.PrivateKeyPath)
-
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("error instantiating cloud provider: %v", err)
-		}
+	if err := r.getCloudProvider(instance); err != nil {
+		log.Error(err, "could not get cloud provider")
+		// Not going to requeue as an issue here indicates a problem with the provided credentials
+		return reconcile.Result{}, nil
 	}
+
 	// Get the current number of Windows VMs created by WMCO.
 	// TODO: Get all the running Windows nodes in the cluster
 	//		jira story: https://issues.redhat.com/browse/WINC-280
