@@ -3,11 +3,13 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
+source $WMCO_ROOT/hack/common.sh
+
 NODE_COUNT=""
 SKIP_NODE_DELETION=""
 KEY_PAIR_NAME=""
 
-WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 
 export CGO_ENABLED=0
 export CLUSTER_ADDR=$(oc cluster-info | head -n1 | sed 's/.*\/\/api.//g'| sed 's/:.*//g')
@@ -34,15 +36,7 @@ done
 cp $AWS_SHARED_CREDENTIALS_FILE /etc/cloud/credentials
 cp $KUBE_SSH_KEY_PATH /etc/private-key/private-key.pem
 
-# Download the operator-sdk binary only if it is not already available
-# We do not validate the version of operator-sdk if it is available already
-if ! type operator-sdk > /dev/null; then
-  # TODO: Make this download the same version we have in go dependencies in gomod
-  wget -O /tmp/operator-sdk https://github.com/operator-framework/operator-sdk/releases/download/v0.17.0/operator-sdk-v0.17.0-x86_64-linux-gnu && chmod +x /tmp/operator-sdk
-  # To expand alias. We'll add an alias for operator-sdk to be in `/tmp/operator-sdk`
-  shopt -s expand_aliases
-  alias operator-sdk=/tmp/operator-sdk
-fi
+OSDK=$(get_operator_sdk)
 
 # Set default values for the flags. Without this operator-sdk flags are getting
 # polluted. For example, if KEY_PAIR_NAME is not passed or passed as empty value
@@ -57,7 +51,7 @@ cd $WMCO_ROOT
 oc create -f deploy/namespace.yaml
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
-operator-sdk test local ./test/e2e --debug --up-local --operator-namespace=windows-machine-config-operator --local-operator-flags "--zap-level=debug --zap-encoder=console" --go-test-flags "-v -timeout=60m -node-count=$NODE_COUNT $SKIP_NODE_DELETION -ssh-key-pair=$KEY_PAIR_NAME"
+$OSDK test local ./test/e2e --debug --up-local --operator-namespace=windows-machine-config-operator --local-operator-flags "--zap-level=debug --zap-encoder=console" --go-test-flags "-v -timeout=60m -node-count=$NODE_COUNT $SKIP_NODE_DELETION -ssh-key-pair=$KEY_PAIR_NAME"
 oc delete -f deploy/namespace.yaml 
 
 exit 0
