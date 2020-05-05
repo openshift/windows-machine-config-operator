@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -41,10 +42,29 @@ type Azure struct {
 
 // WindowsMachineConfigStatus defines the observed state of WindowsMachineConfig
 type WindowsMachineConfigStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "operator-sdk generate k8s" to regenerate code after modifying this file
 	// Add custom validation using kubebuilder tags: https://book-v1.book.kubebuilder.io/beyond_basics/generating_crd.html
+
+	// JoinedVMCount is the number of VMs that successfully joined the cluster
+	JoinedVMCount int `json:"joinedVMCount"`
+	// Conditions states the latest available observations of current state
+	Conditions []WindowsMachineConfigCondition `json:"conditions"`
 }
+
+type WindowsMachineConfigCondition struct {
+	// Type describes the type of the condition
+	Type WindowsMachineConfigConditionType `json:"type"`
+	// Status of the condition
+	Status corev1.ConditionStatus `json:"status"`
+	// LastTransitionTime is the timestamp corresponding to the last status change of this condition
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+	// Reason is the machine readable reason for the condition change
+	Reason string `json:"reason,omitempty"`
+	// Message is the human readable reason for the condition change
+	Message string `json:"message,omitempty"`
+}
+
+type WindowsMachineConfigConditionType string
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
@@ -55,8 +75,10 @@ type WindowsMachineConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   WindowsMachineConfigSpec   `json:"spec,omitempty"`
-	Status WindowsMachineConfigStatus `json:"status,omitempty"`
+	// +required
+	Spec WindowsMachineConfigSpec `json:"spec"`
+	// +optional
+	Status WindowsMachineConfigStatus `json:"status"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

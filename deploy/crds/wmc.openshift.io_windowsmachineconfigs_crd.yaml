@@ -67,7 +67,47 @@ spec:
           type: object
         status:
           description: WindowsMachineConfigStatus defines the observed state of WindowsMachineConfig
+          properties:
+            conditions:
+              description: Conditions states the latest available observations of
+                current state
+              items:
+                properties:
+                  lastTransitionTime:
+                    description: LastTransitionTime is the timestamp corresponding
+                      to the last status change of this condition
+                    format: date-time
+                    type: string
+                  message:
+                    description: Message is the human readable reason for the condition
+                      change
+                    type: string
+                  reason:
+                    description: Reason is the machine readable reason for the condition
+                      change
+                    type: string
+                  status:
+                    description: Status of the condition
+                    type: string
+                  type:
+                    description: Type describes the type of the condition
+                    type: string
+                required:
+                - lastTransitionTime
+                - status
+                - type
+                type: object
+              type: array
+            joinedVMCount:
+              description: JoinedVMCount is the number of VMs that successfully joined
+                the cluster
+              type: integer
+          required:
+          - conditions
+          - joinedVMCount
           type: object
+      required:
+      - spec
       type: object
   version: v1alpha1
   versions:
