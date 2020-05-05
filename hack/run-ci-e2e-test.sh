@@ -38,7 +38,7 @@ cp $KUBE_SSH_KEY_PATH /etc/private-key/private-key.pem
 # We do not validate the version of operator-sdk if it is available already
 if ! type operator-sdk > /dev/null; then
   # TODO: Make this download the same version we have in go dependencies in gomod
-  wget -O /tmp/operator-sdk https://github.com/operator-framework/operator-sdk/releases/download/v0.15.2/operator-sdk-v0.15.2-x86_64-linux-gnu && chmod +x /tmp/operator-sdk
+  wget -O /tmp/operator-sdk https://github.com/operator-framework/operator-sdk/releases/download/v0.17.0/operator-sdk-v0.17.0-x86_64-linux-gnu && chmod +x /tmp/operator-sdk
   # To expand alias. We'll add an alias for operator-sdk to be in `/tmp/operator-sdk`
   shopt -s expand_aliases
   alias operator-sdk=/tmp/operator-sdk
@@ -57,7 +57,7 @@ cd $WMCO_ROOT
 oc create -f deploy/namespace.yaml
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
-operator-sdk test local ./test/e2e --debug --up-local --namespace=windows-machine-config-operator --local-operator-flags "--zap-level=debug --zap-encoder=console" --go-test-flags "-v -timeout=60m -node-count=$NODE_COUNT $SKIP_NODE_DELETION -ssh-key-pair=$KEY_PAIR_NAME"
+operator-sdk test local ./test/e2e --debug --up-local --operator-namespace=windows-machine-config-operator --local-operator-flags "--zap-level=debug --zap-encoder=console" --go-test-flags "-v -timeout=60m -node-count=$NODE_COUNT $SKIP_NODE_DELETION -ssh-key-pair=$KEY_PAIR_NAME"
 oc delete -f deploy/namespace.yaml 
 
 exit 0
