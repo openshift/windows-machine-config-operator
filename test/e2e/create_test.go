@@ -31,6 +31,7 @@ func creationTestSuite(t *testing.T) {
 	// Any node object related tests should be run only after testNodeCreation as that initializes the node objects in
 	// the global context.
 	t.Run("Creation", func(t *testing.T) { testWindowsNodeCreation(t) })
+	t.Run("Status", func(t *testing.T) { testStatusWhenSuccessful(t) })
 	t.Run("ConfigMap validation", func(t *testing.T) { testConfigMapValidation(t) })
 	t.Run("Secrets validation", func(t *testing.T) { testValidateSecrets(t) })
 	t.Run("Network validation", testNetwork)
@@ -42,7 +43,19 @@ func creationTestSuite(t *testing.T) {
 func testWindowsNodeCreation(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
+
 	// create WMCO custom resource
+	if _, err := testCtx.createWMC(gc.numberOfNodes, gc.sshKeyPair); err != nil {
+		t.Fatalf("error creating wcmo custom resource  %v", err)
+	}
+	if err := testCtx.waitForWindowsNodes(gc.numberOfNodes, true); err != nil {
+		t.Fatalf("windows node creation failed  with %v", err)
+	}
+	log.Printf("Created %d Windows worker nodes", len(gc.nodes))
+}
+
+// createWMC creates a WMC object with the given replicas and keypair
+func (tc *testContext) createWMC(replicas int, keyPair string) (*operator.WindowsMachineConfig, error) {
 	wmco := &operator.WindowsMachineConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "WindowsMachineConfig",
@@ -50,35 +63,30 @@ func testWindowsNodeCreation(t *testing.T) {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      wmcCRName,
-			Namespace: testCtx.namespace,
+			Namespace: tc.namespace,
 		},
 		Spec: operator.WindowsMachineConfigSpec{
 			InstanceType: instanceType,
-			AWS:          &operator.AWS{CredentialAccountID: credentialAccountID, SSHKeyPair: gc.sshKeyPair},
-			Replicas:     gc.numberOfNodes,
+			AWS:          &operator.AWS{CredentialAccountID: credentialAccountID, SSHKeyPair: keyPair},
+			Replicas:     replicas,
 		},
 	}
-	if err = framework.Global.Client.Create(context.TODO(), wmco,
-		&framework.CleanupOptions{TestContext: testCtx.osdkTestCtx,
-			Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval}); err != nil {
-		t.Fatalf("error creating wcmo custom resource  %v", err)
-	}
-	err = testCtx.waitForWindowsNode()
-	if err != nil {
-		t.Fatalf("windows node creation failed  with %v", err)
-	}
-	log.Printf("Created %d Windows worker nodes", len(gc.nodes))
+	return wmco, framework.Global.Client.Create(context.TODO(), wmco,
+		&framework.CleanupOptions{TestContext: tc.osdkTestCtx,
+			Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
 }
 
-// waitForWindowsNode waits for the Windows node with the correct set of annotations to be created by the operator.
-func (tc *testContext) waitForWindowsNode() error {
+// waitForWindowsNode waits until there exists nodeCount Windows nodes with the correct set of annotations.
+// if waitForAnnotations = false, the function will return when the node object is first seen and not wait until
+// the expected annotations are present.
+func (tc *testContext) waitForWindowsNodes(nodeCount int, waitForAnnotations bool) error {
 	var nodes *v1.NodeList
 	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac}
 
 	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster, so to be on safe
 	// side, let's make it as 20 minutes per node. The value comes from nodeCreationTime variable.  If we are testing a
 	// scale down from n nodes to 0, then we should not take the number of nodes into account.
-	err := wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(gc.numberOfNodes), 1))*nodeCreationTime, func() (done bool, err error) {
+	err := wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*nodeCreationTime, func() (done bool, err error) {
 		nodes, err = tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -87,14 +95,16 @@ func (tc *testContext) waitForWindowsNode() error {
 			}
 			return false, err
 		}
-		if len(nodes.Items) != gc.numberOfNodes {
+		if len(nodes.Items) != nodeCount {
 			log.Printf("waiting for %d/%d Windows nodes", len(nodes.Items), gc.numberOfNodes)
 			return false, nil
 		}
-
+		if !waitForAnnotations {
+			return true, nil
+		}
 		// Wait for annotations to be present on the node objects in the scale up caseoc
-		if gc.numberOfNodes != 0 {
-			log.Printf("waiting for annotations to be present on %d Windows nodes", gc.numberOfNodes)
+		if nodeCount != 0 {
+			log.Printf("waiting for annotations to be present on %d Windows nodes", nodeCount)
 		}
 		for _, node := range nodes.Items {
 			for _, annotation := range annotations {

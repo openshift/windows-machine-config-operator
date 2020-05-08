@@ -14,6 +14,7 @@ func deletionTestSuite(t *testing.T) {
 	// Reset the number of nodes to be deleted to 0
 	gc.numberOfNodes = 0
 	t.Run("Deletion", func(t *testing.T) { testWindowsNodeDeletion(t) })
+	t.Run("Status", func(t *testing.T) { testStatusWhenSuccessful(t) })
 	t.Run("ConfigMap validation", func(t *testing.T) { testConfigMapValidation(t) })
 	t.Run("Secrets validation", func(t *testing.T) { testValidateSecrets(t) })
 }
@@ -36,7 +37,7 @@ func testWindowsNodeDeletion(t *testing.T) {
 	}
 	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster, so to be on safe
 	// side, let's make it as 60 minutes.
-	err = testCtx.waitForWindowsNode()
+	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true)
 	if err != nil {
 		t.Fatalf("windows node deletion failed  with %v", err)
 	}
