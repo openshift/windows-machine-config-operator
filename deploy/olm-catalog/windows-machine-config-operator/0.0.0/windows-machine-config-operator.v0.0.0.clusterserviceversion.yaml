@@ -102,11 +102,6 @@ spec:
                   value: windows-machine-config-operator
                 - name: KUBECONFIG
                   value: /etc/kubeconfig/kubeconfig
-                - name: CLUSTER_ADDR
-                  valueFrom:
-                    secretKeyRef:
-                      key: cluster-address
-                      name: cluster-address
                 image: REPLACE_IMAGE
                 imagePullPolicy: Always
                 name: windows-machine-config-operator

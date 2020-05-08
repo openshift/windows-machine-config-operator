@@ -2,6 +2,7 @@ package nodeconfig
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	kretry "k8s.io/client-go/util/retry"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 const (
@@ -42,12 +43,59 @@ type nodeConfig struct {
 	node *v1.Node
 }
 
-// NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM) *nodeConfig {
-	return &nodeConfig{k8sclientset: clientset, Windows: windows.New(windowsVM)}
+// discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint from the
+func discoverKubeAPIServerEndpoint() (string, error) {
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return "", errors.Wrap(err, "unable to get config to talk to kubernetes api server")
+	}
+	if len(cfg.Host) == 0 {
+		return "", errors.Wrap(err, "could not get host name for the kubernetes api server")
+	}
+	return cfg.Host, nil
 }
 
-var log = logf.Log.WithName("nodeconfig")
+// NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
+func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM) (*nodeConfig, error) {
+	var err error
+	if nodeConfigCache.workerIgnitionEndPoint == "" {
+		var kubeAPIServerEndpoint string
+		// We couldn't find it in cache. Let's compute it now.
+		kubeAPIServerEndpoint, err = discoverKubeAPIServerEndpoint()
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to find kube api server endpoint")
+		}
+		clusterAddress, err := getClusterAddr(kubeAPIServerEndpoint)
+		if err != nil {
+			return nil, errors.Wrap(err, "error getting cluster address")
+		}
+		workerIgnitionEndpoint := "https://api-int." + clusterAddress + ":22623/config/worker"
+		nodeConfigCache.workerIgnitionEndPoint = workerIgnitionEndpoint
+	}
+	return &nodeConfig{k8sclientset: clientset, Windows: windows.New(windowsVM, nodeConfigCache.workerIgnitionEndPoint)}, nil
+}
+
+// getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
+// For example: https://api.abc.devcluster.openshift.com:6443 gets translated to
+// abc.devcluster.openshift.com
+// TODO: Think if this needs to be removed as this is too restrictive. Imagine apiserver behind
+// 		a loadbalancer.
+// 		Jira story: https://issues.redhat.com/browse/WINC-398
+func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
+	clusterEndPoint, err := url.Parse(kubeAPIServerEndpoint)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to parse the kubernetes API server endpoint")
+	}
+	hostName := clusterEndPoint.Hostname()
+	subdomainToBeReplaced := "api."
+
+	if !strings.HasPrefix(hostName, "api.") {
+		return "", errors.New("invalid API server url format found: expected hostname to start with `api.`")
+	}
+	// Replace `api.` with empty string for the first occurrence.
+	clusterAddress := strings.Replace(hostName, subdomainToBeReplaced, "", 1)
+	return clusterAddress, nil
+}
 
 // Configure configures the Windows VM to make it a Windows worker node
 func (nc *nodeConfig) Configure() error {

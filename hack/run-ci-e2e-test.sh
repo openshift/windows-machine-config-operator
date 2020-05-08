@@ -12,7 +12,6 @@ KEY_PAIR_NAME=""
 
 
 export CGO_ENABLED=0
-export CLUSTER_ADDR=$(oc cluster-info | head -n1 | sed 's/.*\/\/api.//g'| sed 's/:.*//g')
 
 while getopts ":n:k:s" opt; do
   case ${opt} in
