@@ -10,7 +10,6 @@ import (
 	wmcapi "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -54,7 +53,7 @@ func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 	}
 
 	windowsVMs := make(map[types.WindowsVM]bool)
-	vmTracker, err := tracker.NewTracker(clientset, windowsVMs)
+	vmTracker, err := newTracker(clientset, windowsVMs)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to instantiate tracker")
 	}
@@ -116,7 +115,7 @@ type ReconcileWindowsMachineConfig struct {
 	// k8sclientset holds the kube client that we can re-use for all kube objects other than custom resources.
 	k8sclientset *kubernetes.Clientset
 	// tracker is used to track all the Windows nodes created via WMCO
-	tracker *tracker.Tracker
+	tracker *tracker
 	// statusMgr is used to keep track of and update the WMC status
 	statusMgr *StatusManager
 }

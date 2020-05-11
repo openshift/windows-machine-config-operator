@@ -1,4 +1,4 @@
-package tracker
+package windowsmachineconfig
 
 import (
 	"bytes"
@@ -12,13 +12,10 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // StoreName is the name of the ConfigMap used to track Windows worker node information
 const StoreName = "wmco-node-tracker"
-
-var log = ctrllog.Log.WithName("tracker")
 
 // nodeRecord holds information about a single node in the cluster. This is the information that will be placed in the
 // ConfigMap with the node's cloud ID as the key to get the record.
@@ -31,8 +28,8 @@ type nodeRecord struct {
 	Drain bool `json:"drain"`
 }
 
-// Tracker is used to track the instance information
-type Tracker struct {
+// tracker is used to track the instance information
+type tracker struct {
 	// windowsVMs is a map of Windows VMs to be tracked by WMCO
 	windowsVMs map[types.WindowsVM]bool
 	// operatorNS is the name of namespace where the operator is running.
@@ -43,8 +40,8 @@ type Tracker struct {
 	nodeRecords map[string][]byte
 }
 
-// NewTracker initializes and returns a tracker object
-func NewTracker(k8sclientset *kubernetes.Clientset, windowsVMs map[types.WindowsVM]bool) (*Tracker, error) {
+// newTracker initializes and returns a tracker object
+func newTracker(k8sclientset *kubernetes.Clientset, windowsVMs map[types.WindowsVM]bool) (*tracker, error) {
 	if k8sclientset == nil {
 		return nil, fmt.Errorf("cannot instantiate tracker without k8s client")
 	}
@@ -58,7 +55,7 @@ func NewTracker(k8sclientset *kubernetes.Clientset, windowsVMs map[types.Windows
 		return nil, errors.Wrap(err, "unable to get operator namespace")
 	}
 
-	return &Tracker{
+	return &tracker{
 		windowsVMs:   windowsVMs,
 		operatorNS:   operatorNS,
 		k8sclientset: k8sclientset,
@@ -66,7 +63,7 @@ func NewTracker(k8sclientset *kubernetes.Clientset, windowsVMs map[types.Windows
 }
 
 // WindowsVMs sets WindowsVMs to be tracked by WMCO
-func (t *Tracker) WindowsVMs(windowsVMs map[types.WindowsVM]bool) {
+func (t *tracker) WindowsVMs(windowsVMs map[types.WindowsVM]bool) {
 	t.windowsVMs = windowsVMs
 }
 
@@ -81,7 +78,7 @@ func newNodeRecord(ipAddress string, secretName string) nodeRecord {
 
 // Reconcile ensures that the ConfigMap used by the tracker to store VM -> node information is present on the cluster
 // and is populated with nodeRecords.
-func (t *Tracker) Reconcile() error {
+func (t *tracker) Reconcile() error {
 	store, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Get(StoreName, metav1.GetOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return errors.Wrap(err, fmt.Sprintf("unable to query %s/%s ConfigMap", t.operatorNS, StoreName))
@@ -104,8 +101,8 @@ func (t *Tracker) Reconcile() error {
 	return nil
 }
 
-// createStoreConfigMap creates the store ConfigMap without any data
-func (t *Tracker) createStore() (*v1.ConfigMap, error) {
+// createStore creates the store ConfigMap without any data
+func (t *tracker) createStore() (*v1.ConfigMap, error) {
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      StoreName,
@@ -120,7 +117,7 @@ func (t *Tracker) createStore() (*v1.ConfigMap, error) {
 }
 
 // syncSecrets will syncSecrets associated with instances in the cloud provider
-func (t *Tracker) syncSecrets(cm *v1.ConfigMap) {
+func (t *tracker) syncSecrets(cm *v1.ConfigMap) {
 	existingNodes := cm.BinaryData
 	// Since the secret is created with the instanceID as it's name, we can use the same key to identify secrets
 	// and delete the stale secrets associated with deleted instances.
@@ -134,8 +131,8 @@ func (t *Tracker) syncSecrets(cm *v1.ConfigMap) {
 	}
 }
 
-// updateStoreConfigMap updates the store ConfigMap with the nodeRecords
-func (t *Tracker) updateStore(cm *v1.ConfigMap) error {
+// updateStore updates the store ConfigMap with the nodeRecords
+func (t *tracker) updateStore(cm *v1.ConfigMap) error {
 	cm.BinaryData = t.nodeRecords
 	cm, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Update(cm)
 	if err != nil {
@@ -146,7 +143,7 @@ func (t *Tracker) updateStore(cm *v1.ConfigMap) error {
 
 // syncNodeRecords syncs the node records to be used by tracker. We construct the credentials struct
 // and marshall it so that nodeRecords are updated.
-func (t *Tracker) syncNodeRecords() {
+func (t *tracker) syncNodeRecords() {
 	nodeRecords := make(map[string][]byte, len(t.windowsVMs))
 	for windowsVM := range t.windowsVMs {
 		if windowsVM == nil {
@@ -193,7 +190,7 @@ func (t *Tracker) syncNodeRecords() {
 }
 
 // createSecret creates the secret that stores the username and password from the credentials.
-func (t *Tracker) createSecret(credentials *types.Credentials) (string, error) {
+func (t *tracker) createSecret(credentials *types.Credentials) (string, error) {
 	creds := NewCredentials(credentials.GetUserName(), credentials.GetPassword())
 
 	reqBodyBytes := new(bytes.Buffer)

@@ -11,8 +11,8 @@ import (
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
+	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
 	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -31,16 +31,16 @@ func (tc *testContext) waitForTrackerConfigMap() error {
 	// configuration before the ConfigMap is updated. If we are testing a scale down from n nodes to 0, then we should
 	// not take the number of nodes into account.
 	err := wait.Poll(tc.retryInterval, time.Duration(math.Max(float64(gc.numberOfNodes), 1))*tc.timeout, func() (done bool, err error) {
-		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(tracker.StoreName, metav1.GetOptions{})
+		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(wmc.StoreName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
-				log.Printf("waiting for %s/%s ConfigMap to be created", tc.namespace, tracker.StoreName)
+				log.Printf("waiting for %s/%s ConfigMap to be created", tc.namespace, wmc.StoreName)
 				return false, nil
 			}
 			return false, err
 		}
 		if len(trackerConfigMap.BinaryData) == gc.numberOfNodes {
-			log.Printf("%s/%s ConfigMap tracking required number of nodes", tc.namespace, tracker.StoreName)
+			log.Printf("%s/%s ConfigMap tracking required number of nodes", tc.namespace, wmc.StoreName)
 			return true, nil
 		}
 		log.Printf("waiting for %d/%d Windows worker nodes to be tracked", gc.numberOfNodes,
@@ -88,7 +88,7 @@ func testConfigMapValidation(t *testing.T) {
 }
 
 // getWindowsVM returns a windowsVM interface to be used for running commands against
-func (tc *testContext) getWindowsVM(ipAddress, instanceID string, credentials tracker.Credentials) (types.WindowsVM, error) {
+func (tc *testContext) getWindowsVM(ipAddress, instanceID string, credentials wmc.Credentials) (types.WindowsVM, error) {
 	winVM := &types.Windows{}
 	windowsCredentials := types.NewCredentials(instanceID, ipAddress, credentials.Password, credentials.Username)
 	winVM.Credentials = windowsCredentials
@@ -137,8 +137,8 @@ func (tc *testContext) getInstanceIP(instanceID string) (string, error) {
 }
 
 // getCredsFromSecret gets the credentials associated with the instance.
-func (tc *testContext) getCredsFromSecret(instanceID string) (tracker.Credentials, error) {
-	var creds tracker.Credentials
+func (tc *testContext) getCredsFromSecret(instanceID string) (wmc.Credentials, error) {
+	var creds wmc.Credentials
 	err := wait.Poll(tc.retryInterval, tc.timeout, func() (done bool, err error) {
 		instanceSecret, err := tc.kubeclient.CoreV1().Secrets(tc.namespace).Get(instanceID, metav1.GetOptions{})
 		if err != nil {
@@ -167,7 +167,7 @@ func (tc *testContext) validateInstanceSecret(instanceID string) error {
 	if err != nil {
 		return err
 	}
-	if creds == (tracker.Credentials{}) {
+	if creds == (wmc.Credentials{}) {
 		return errors.New("expected credentials to be present but got a nil value")
 	}
 	windowsVM, err := tc.getWindowsVM(ipAddress, instanceID, creds)
