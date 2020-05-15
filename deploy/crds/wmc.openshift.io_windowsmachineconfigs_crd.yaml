@@ -59,6 +59,7 @@ spec:
             replicas:
               description: Replicas represent how many Windows nodes to be added to
                 the OpenShift cluster
+              format: int32
               minimum: 0
               type: integer
           required:

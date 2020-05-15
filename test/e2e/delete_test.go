@@ -31,7 +31,7 @@ func testWindowsNodeDeletion(t *testing.T) {
 		t.Fatalf("error getting wcmo custom resource  %v", err)
 	}
 	// Delete the Windows VM that got created.
-	wmco.Spec.Replicas = gc.numberOfNodes
+	wmco.Spec.Replicas = int32(gc.numberOfNodes)
 	if err := framework.Global.Client.Update(context.TODO(), wmco); err != nil {
 		t.Fatalf("error updating wcmo custom resource  %v", err)
 	}
