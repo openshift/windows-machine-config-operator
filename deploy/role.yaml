@@ -47,16 +47,6 @@ rules:
   - deployments/finalizers
   verbs:
   - update
-# TODO: pods permissions needed as we are currently watching pods
-# remove as part of https://issues.redhat.com/browse/WINC-340
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
 # These permissions needed for the metrics server
 - apiGroups:
   - apps
