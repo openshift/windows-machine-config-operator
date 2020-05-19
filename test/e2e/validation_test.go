@@ -88,15 +88,15 @@ func testConfigMapValidation(t *testing.T) {
 }
 
 // getWindowsVM returns a windowsVM interface to be used for running commands against
-func (tc *testContext) getWindowsVM(ipAddress, instanceID string, credentials wmc.Credentials) (types.WindowsVM, error) {
-	winVM := &types.Windows{}
-	windowsCredentials := types.NewCredentials(instanceID, ipAddress, credentials.Password, credentials.Username)
-	winVM.Credentials = windowsCredentials
-	// Set up Winrm client
-	err := winVM.SetupWinRMClient()
+func (tc *testContext) getWindowsVM(ipAddress, instanceID string) (types.WindowsVM, error) {
+	creds, err := tc.getCredsFromSecret(instanceID)
 	if err != nil {
-		return nil, errors.Wrap(err, "error instantiating winrm client")
+		return nil, errors.Wrap(err, "error while getting creds from secret")
 	}
+	if creds == (wmc.Credentials{}) {
+		return nil, errors.New("expected credentials to be present but got a nil value")
+	}
+	winVM, err := wmc.GetWindowsVM(instanceID, ipAddress, creds)
 	return winVM, nil
 }
 
@@ -118,22 +118,17 @@ func (tc *testContext) validateConnectivity(windowsVM types.WindowsVM) error {
 	return nil
 }
 
-// getInstanceIP gets the instance IP address associated with a node
-func (tc *testContext) getInstanceIP(instanceID string) (string, error) {
-	nodes, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+// getNodeIP gets the instance IP address associated with a node
+func (tc *testContext) getNodeIP(instanceID string) (string, error) {
+	nodeList, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
 	if err != nil {
 		return "", errors.Wrap(err, "error while querying for Windows nodes")
 	}
-	for _, node := range nodes.Items {
-		if strings.Contains(node.Spec.ProviderID, instanceID) {
-			for _, address := range node.Status.Addresses {
-				if address.Type == corev1.NodeExternalIP {
-					return address.Address, nil
-				}
-			}
-		}
+	nodeIP, err := wmc.GetNodeIP(nodeList, instanceID)
+	if err != nil {
+		return "", errors.Wrap(err, "error getting the node IP")
 	}
-	return "", errors.New("unable to find Windows Worker nodes")
+	return nodeIP, nil
 }
 
 // getCredsFromSecret gets the credentials associated with the instance.
@@ -159,18 +154,11 @@ func (tc *testContext) getCredsFromSecret(instanceID string) (wmc.Credentials, e
 
 // validateInstanceSecret validates the instance secret.
 func (tc *testContext) validateInstanceSecret(instanceID string) error {
-	ipAddress, err := tc.getInstanceIP(instanceID)
+	ipAddress, err := tc.getNodeIP(instanceID)
 	if err != nil {
 		return err
 	}
-	creds, err := tc.getCredsFromSecret(instanceID)
-	if err != nil {
-		return err
-	}
-	if creds == (wmc.Credentials{}) {
-		return errors.New("expected credentials to be present but got a nil value")
-	}
-	windowsVM, err := tc.getWindowsVM(ipAddress, instanceID, creds)
+	windowsVM, err := tc.getWindowsVM(ipAddress, instanceID)
 	if err != nil {
 		return err
 	}

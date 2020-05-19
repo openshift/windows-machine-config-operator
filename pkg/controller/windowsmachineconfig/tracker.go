@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
+	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/pkg/errors"
 	"k8s.io/api/core/v1"
@@ -41,12 +43,9 @@ type tracker struct {
 }
 
 // newTracker initializes and returns a tracker object
-func newTracker(k8sclientset *kubernetes.Clientset, windowsVMs map[types.WindowsVM]bool) (*tracker, error) {
+func newTracker(k8sclientset *kubernetes.Clientset) (*tracker, error) {
 	if k8sclientset == nil {
 		return nil, fmt.Errorf("cannot instantiate tracker without k8s client")
-	}
-	if windowsVMs == nil {
-		return nil, fmt.Errorf("cannot instantiate tracker with a nil windowsVMs slice")
 	}
 
 	// Get the namespace the operator is currently deployed in.
@@ -54,17 +53,17 @@ func newTracker(k8sclientset *kubernetes.Clientset, windowsVMs map[types.Windows
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get operator namespace")
 	}
-
+	// Construct the windowsVMs map which has information of the credentials
+	windowsVMs, err := initWindowsVMs(k8sclientset, operatorNS)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to construct the Windows VM objects from the WMCO node tracker "+
+			"ConfigMap")
+	}
 	return &tracker{
 		windowsVMs:   windowsVMs,
 		operatorNS:   operatorNS,
 		k8sclientset: k8sclientset,
 	}, nil
-}
-
-// WindowsVMs sets WindowsVMs to be tracked by WMCO
-func (t *tracker) WindowsVMs(windowsVMs map[types.WindowsVM]bool) {
-	t.windowsVMs = windowsVMs
 }
 
 // newNodeRecord initializes and returns a nodeRecord object
@@ -76,6 +75,130 @@ func newNodeRecord(ipAddress string, secretName string) nodeRecord {
 	}
 }
 
+// GetWindowsVM returns a WindowsVM interface for the specified VM
+func GetWindowsVM(instanceID, ipAddress string, credentials Credentials) (types.WindowsVM, error) {
+	winVM := &types.Windows{}
+	windowsCredentials := types.NewCredentials(instanceID, ipAddress, credentials.Password, credentials.Username)
+	winVM.Credentials = windowsCredentials
+	// Set up Winrm client
+	if err := winVM.SetupWinRMClient(); err != nil {
+		return nil, errors.Wrap(err, "error instantiating winrm client")
+	}
+	// Set up SSH client
+	if err := winVM.GetSSHClient(); err != nil {
+		return nil, errors.Wrap(err, "error instantiating ssh client")
+	}
+	return winVM, nil
+}
+
+// GetNodeIP gets the instance IP address associated with a node
+func GetNodeIP(nodeList *v1.NodeList, instanceID string) (string, error) {
+	// Ignore the nodes that are not ready.
+	for _, node := range nodeList.Items {
+		for _, condition := range node.Status.Conditions {
+			if condition.Type != v1.NodeReady {
+				continue
+			}
+		}
+		if strings.Contains(node.Spec.ProviderID, instanceID) {
+			for _, address := range node.Status.Addresses {
+				// If external ip exists return it as it is used in AWS, if it doesn't return internal(in case of azure)
+				// TODO: collect all the ips and define a priority order, external then internal etc.
+				// https://issues.redhat.com/browse/WINC-355?focusedCommentId=14100301&page=com.atlassian.jira.plugin.system.issuetabpanels%3Acomment-tabpanel#comment-14100301
+				if address.Type == v1.NodeExternalIP && len(address.Address) > 0 {
+					return address.Address, nil
+				}
+			}
+		}
+	}
+	return "", errors.Errorf("unable to find Windows Worker node for VM with instance ID %s", instanceID)
+}
+
+// addWindowsVM adds a new windows VM to the tracker
+func (t *tracker) addWindowsVM(windowsVM types.WindowsVM) {
+	if _, ok := t.windowsVMs[windowsVM]; !ok {
+		t.windowsVMs[windowsVM] = true
+	}
+}
+
+// deleteWindowsVM deletes the given VM from the tracker
+func (t *tracker) deleteWindowsVM(windowsVM types.WindowsVM) {
+	delete(t.windowsVMs, windowsVM)
+}
+
+// chooseRandomNode chooses one of the windows nodes randomly. The randomization is coming from golang maps since you
+// cannot assume the maps to be ordered.
+func (t *tracker) chooseRandomNode() types.WindowsVM {
+	for windowsVM := range t.windowsVMs {
+		return windowsVM
+	}
+	return nil
+}
+
+// getCredsFromSecret gets the credentials associated with the instance.
+func getCredsFromSecret(k8sclientset *kubernetes.Clientset, instanceID string, operatorNS string) (Credentials, error) {
+	creds := Credentials{}
+	instanceSecret, err := k8sclientset.CoreV1().Secrets(operatorNS).Get(instanceID, metav1.GetOptions{})
+	if err != nil && k8serrors.IsNotFound(err) {
+		return creds, errors.Wrapf(err, "secret asociated with instance %s not found", instanceID)
+	}
+	if err != nil {
+		return creds, errors.Wrap(err, "error while getting secret")
+	}
+	encodedCreds, ok := instanceSecret.Data[instanceID]
+	if !ok {
+		return creds, errors.Wrap(err, "instance secret is not present")
+	}
+	if err := json.Unmarshal(encodedCreds, &creds); err != nil {
+		return creds, errors.Wrap(err, "unmarshalling creds failed")
+	}
+	return creds, err
+}
+
+// initWindowsVMs initializes the windowsVMs map from the store configmMap and corresponding secrets. If the ConfigMap
+// is changed or if it is having stale entry, we should still go ahead and use it.
+func initWindowsVMs(k8sclientset *kubernetes.Clientset, operatorNS string) (map[types.WindowsVM]bool, error) {
+	windowsVMs := make(map[types.WindowsVM]bool)
+	store, err := k8sclientset.CoreV1().ConfigMaps(operatorNS).Get(StoreName, metav1.GetOptions{})
+	// It is ok if the tracker ConfigMap doesn't exist. It is usually the case when the operator starts
+	// for the first time but it is not ok when the tracker ConfigMap exists but it unqueryable for some reason
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return nil, errors.Wrap(err, fmt.Sprintf("unable to query %s/%s ConfigMap", operatorNS, StoreName))
+	}
+	if err != nil && k8serrors.IsNotFound(err) {
+		log.Info(" Skipping VM map initialization as tracker does not exist")
+		return windowsVMs, nil
+	}
+	// Get all the Windows nodes in the cluster
+	nodeList, err := k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+	if err != nil {
+		return nil, errors.Wrap(err, "error while querying for Windows nodes")
+	}
+	for instanceID := range store.BinaryData {
+		ipAddress, err := GetNodeIP(nodeList, instanceID)
+		if err != nil {
+			// As of now, we're doing best effort to reconstruct the ConfigMap, so ignore errors while getting them
+			// from ConfigMap. Having said that, the ConfigMap entries should be perfect. Please look at syncNodeRecords
+			// method, where we disallow populating ConfigMap with empty IPAddress, InstanceID and credentials to access
+			// the Windows VM
+			log.Error(err, "error getting external ip", "instance", instanceID)
+			continue
+		}
+		credentials, err := getCredsFromSecret(k8sclientset, instanceID, operatorNS)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error getting credentials from the secret for node %s", instanceID)
+		}
+		windowsVM, err := GetWindowsVM(instanceID, ipAddress, credentials)
+		if err != nil {
+			log.Error(err, "error constructing windowsVM object", "instance", instanceID)
+			continue
+		}
+		// Insert the windowsVM created.
+		windowsVMs[windowsVM] = true
+	}
+	return windowsVMs, nil
+}
+
 // Reconcile ensures that the ConfigMap used by the tracker to store VM -> node information is present on the cluster
 // and is populated with nodeRecords.
 func (t *tracker) Reconcile() error {
@@ -83,7 +206,6 @@ func (t *tracker) Reconcile() error {
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return errors.Wrap(err, fmt.Sprintf("unable to query %s/%s ConfigMap", t.operatorNS, StoreName))
 	}
-
 	// The ConfigMap does not exist, so we need to create it based on the WindowsVM slice
 	if err != nil && k8serrors.IsNotFound(err) {
 		if store, err = t.createStore(); err != nil {
@@ -155,6 +277,7 @@ func (t *tracker) syncNodeRecords() {
 			log.Info("ignoring VM with nil credentials")
 			continue
 		}
+
 		if credentials.GetInstanceId() == "" || credentials.GetIPAddress() == "" || credentials.GetPassword() == "" ||
 			credentials.GetUserName() == "" {
 			log.Info("ignoring VM with incomplete credentials", "credentials", credentials)
@@ -213,7 +336,7 @@ func (t *tracker) createSecret(credentials *types.Credentials) (string, error) {
 
 	// Get and delete the secret if it already exists.
 	_, err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Get(credentials.GetInstanceId(), metav1.GetOptions{})
-	if err != nil && !k8serrors.IsNotFound(err) {
+	if err == nil || (err != nil && !k8serrors.IsNotFound(err)) {
 		deleteOptions := &metav1.DeleteOptions{}
 		if err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Delete(credentials.GetInstanceId(), deleteOptions); err != nil {
 			return "", errors.Wrap(err, fmt.Sprintf("error deleting existing secret %s/%s", t.operatorNS,

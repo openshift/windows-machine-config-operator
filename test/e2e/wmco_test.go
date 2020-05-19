@@ -31,9 +31,6 @@ func TestWMCO(t *testing.T) {
 	gc.skipNodeDeletion = skipNodeDeletion
 	gc.sshKeyPair = sshKeyPair
 
-	t.Run("WMC CR validation", testWMCValidation)
-	// the failure behavior test will be skipped if gc.nodes = 0
-	t.Run("failure behavior", testFailureSuite)
 	t.Run("create", creationTestSuite)
 	if !gc.skipNodeDeletion {
 		t.Run("destroy", deletionTestSuite)

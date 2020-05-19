@@ -50,7 +50,11 @@ cd $WMCO_ROOT
 oc create -f deploy/namespace.yaml
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
-$OSDK test local ./test/e2e --debug --up-local --operator-namespace=windows-machine-config-operator --local-operator-flags "--zap-level=debug --zap-encoder=console" --go-test-flags "-v -timeout=60m -node-count=$NODE_COUNT $SKIP_NODE_DELETION -ssh-key-pair=$KEY_PAIR_NAME"
-oc delete -f deploy/namespace.yaml 
+# Run the creation tests and skip deletion of the Windows VMs
+$OSDK test local ./test/e2e --debug --up-local --operator-namespace=windows-machine-config-operator --local-operator-flags "--zap-level=debug --zap-encoder=console" --go-test-flags "-run=TestWMCO/create -v -timeout=60m -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME"
+# Run the deletion tests while testing operator restart functionality. This will clean up VMs created 
+# in the previous step
+$OSDK test local ./test/e2e --debug --up-local --operator-namespace=windows-machine-config-operator --local-operator-flags "--zap-level=debug --zap-encoder=console" --go-test-flags "-run=TestWMCO/destroy -v -timeout=60m -ssh-key-pair=$KEY_PAIR_NAME"
+oc delete -f deploy/namespace.yaml
 
 exit 0
