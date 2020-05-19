@@ -272,7 +272,7 @@ func createWindowsMachineConfig(namespace string, isReplicasFieldRequired bool, 
 		},
 	}
 	if isReplicasFieldRequired {
-		wmc.Spec.Replicas = replicasFieldValue
+		wmc.Spec.Replicas = int32(replicasFieldValue)
 	}
 	return wmc
 }

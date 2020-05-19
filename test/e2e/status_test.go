@@ -35,7 +35,7 @@ func testStatusWhenSuccessful(t *testing.T) {
 		Namespace: testCtx.namespace}, wmc)
 	require.NoError(t, err, "Could not retrieve instance of WMC")
 
-	assert.Equal(t, wmc.Spec.Replicas, wmc.Status.JoinedVMCount, "Num of nodes in status not equal to spec")
+	assert.Equal(t, wmc.Spec.Replicas, int32(wmc.Status.JoinedVMCount), "Num of nodes in status not equal to spec")
 
 	degraded := wmc.Status.GetWindowsMachineConfigCondition(operator.Degraded)
 	require.NotNil(t, degraded)
