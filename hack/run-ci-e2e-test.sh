@@ -48,6 +48,7 @@ KEY_PAIR_NAME=${KEY_PAIR_NAME:-"libra"}
 
 cd $WMCO_ROOT
 oc create -f deploy/namespace.yaml
+sleep 60m
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
 $OSDK test local ./test/e2e --debug --up-local --operator-namespace=windows-machine-config-operator --local-operator-flags "--zap-level=debug --zap-encoder=console" --go-test-flags "-v -timeout=60m -node-count=$NODE_COUNT $SKIP_NODE_DELETION -ssh-key-pair=$KEY_PAIR_NAME"

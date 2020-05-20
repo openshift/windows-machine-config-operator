@@ -7,6 +7,10 @@
 FROM golang:1.13.8 as build
 LABEL stage=build
 
+ARG OPENSHIFT_BUILD_NAMESPACE
+ARG IMAGE_FORMAT
+RUN env
+
 # Build WMCB
 RUN mkdir /build/
 WORKDIR /build/
