@@ -21,10 +21,7 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    operatorframework.io/cluster-monitoring: "true"
-    operatorframework.io/suggested-namespace: windows-machine-config-operator
-    repository: https://github.com/openshift/windows-machine-config-operator
-  name: windows-machine-config-operator.v0.0.0
+  name: windows-machine-config-operator.v0.0.1
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -35,7 +32,6 @@ spec:
       kind: WindowsMachineConfig
       name: windowsmachineconfigs.wmc.openshift.io
       version: v1alpha1
-  description: Placeholder description
   displayName: Windows Machine Config Operator
   icon:
   - base64data: ""
@@ -188,17 +184,16 @@ spec:
   installModes:
   - supported: true
     type: OwnNamespace
-  - supported: false
+  - supported: true
     type: SingleNamespace
   - supported: false
     type: MultiNamespace
-  - supported: false
+  - supported: true
     type: AllNamespaces
   keywords:
-  - windows
+  - ""
   maintainers:
   - {}
   maturity: alpha
-  provider:
-    name: Red Hat
-  version: 0.0.0
+  provider: {}
+  version: 0.0.1
