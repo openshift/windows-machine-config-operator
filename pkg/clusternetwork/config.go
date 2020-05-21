@@ -1,6 +1,8 @@
 package clusternetwork
 
 import (
+	"net"
+
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
 	"github.com/pkg/errors"
@@ -12,21 +14,27 @@ const ovnKubernetesNetwork = "OVNKubernetes"
 // ClusterNetworkConfig interface contains methods to validate network configuration of a cluster
 type ClusterNetworkConfig interface {
 	Validate() error
+	GetServiceCIDR() (string, error)
 }
 
-// networkType information for a required network type
+// networkType holds information for a required network type
 type networkType struct {
 	// name describes value of the Network Type
 	name string
-	// oclient is the OpenShift config client, we will use to interact with the OpenShift API
-	oclient configclient.Interface
 	// operatorClient is the OpenShift operator client, we will use to interact with OpenShift operator objects
 	operatorClient operatorv1.OperatorV1Interface
+}
+
+// clusterNetworkCfg struct holds the information for the cluster network
+type clusterNetworkCfg struct {
+	// serviceCIDR holds the value for cluster network service CIDR
+	serviceCIDR string
 }
 
 // ovnKubernetes contains information specific to network type OVNKubernetes
 type ovnKubernetes struct {
 	networkType
+	clusterNetworkConfig *clusterNetworkCfg
 }
 
 // NetworkConfigurationFactory is a factory method that returns information specific to network type
@@ -35,18 +43,44 @@ func NetworkConfigurationFactory(oclient configclient.Interface, operatorClient 
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting cluster network type")
 	}
+
+	// retrieve serviceCIDR using cluster config required for cni configurations
+	serviceCIDR, err := getServiceNetworkCIDR(oclient)
+	if err != nil || serviceCIDR == "" {
+		return nil, errors.Wrap(err, "error getting service network CIDR")
+	}
+	clusterNetworkCfg, err := NewClusterNetworkCfg(serviceCIDR)
+	if err != nil {
+		return nil, errors.Wrapf(err, "error getting cluster network config")
+	}
 	switch network {
 	case ovnKubernetesNetwork:
 		return &ovnKubernetes{
 			networkType{
 				name:           network,
-				oclient:        oclient,
 				operatorClient: operatorClient,
 			},
+			clusterNetworkCfg,
 		}, nil
 	default:
 		return nil, errors.Errorf("%s : network type not supported", network)
 	}
+}
+
+// NewClusterNetworkCfg assigns a serviceCIDR value and returns a pointer to the clusterNetworkCfg struct
+func NewClusterNetworkCfg(serviceCIDR string) (*clusterNetworkCfg, error) {
+	if serviceCIDR == "" {
+		return nil, errors.Errorf("can't instantiate cluster network config" +
+			"with empty service CIDR value")
+	}
+	return &clusterNetworkCfg{
+		serviceCIDR: serviceCIDR,
+	}, nil
+}
+
+// GetServiceCIDR returns the serviceCIDR string
+func (ovn *ovnKubernetes) GetServiceCIDR() (string, error) {
+	return ovn.clusterNetworkConfig.serviceCIDR, nil
 }
 
 // Validate for OVN Kubernetes checks for network type and hybrid overlay.
@@ -76,4 +110,31 @@ func getNetworkType(oclient configclient.Interface) (string, error) {
 		return "", errors.Wrap(err, "error getting cluster network object")
 	}
 	return networkCR.Spec.NetworkType, nil
+}
+
+// getServiceNetworkCIDR gets the serviceCIDR using cluster config required for cni configuration
+func getServiceNetworkCIDR(oclient configclient.Interface) (string, error) {
+	// Get the cluster network object so that we can find the service network
+	networkCR, err := oclient.ConfigV1().Networks().Get("cluster", metav1.GetOptions{})
+	if err != nil {
+		return "", errors.Wrap(err, "error getting cluster network object")
+	}
+	if len(networkCR.Spec.ServiceNetwork) == 0 {
+		return "", errors.Wrapf(err, "error getting cluster service CIDR,"+
+			"received empty value for service networks")
+	}
+	serviceCIDR := networkCR.Spec.ServiceNetwork[0]
+	if ValidateCIDR(serviceCIDR) != nil {
+		return "", errors.Wrapf(err, "invalid cluster service CIDR %s", serviceCIDR)
+	}
+	return serviceCIDR, nil
+}
+
+// ValidateCIDR uses the parseCIDR from network package to validate the format of the CIDR
+func ValidateCIDR(cidr string) error {
+	_, _, err := net.ParseCIDR(cidr)
+	if err != nil || cidr == "" {
+		return errors.Wrapf(err, "received invalid CIDR value %s", cidr)
+	}
+	return nil
 }

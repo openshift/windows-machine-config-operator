@@ -91,8 +91,8 @@ func GetWindowsVM(instanceID, ipAddress string, credentials Credentials) (types.
 	return winVM, nil
 }
 
-// GetNodeIP gets the instance IP address associated with a node
-func GetNodeIP(nodeList *v1.NodeList, instanceID string) (string, error) {
+// getNodeIP gets the instance IP address associated with a node
+func getNodeIP(nodeList *v1.NodeList, instanceID string) (string, error) {
 	// Ignore the nodes that are not ready.
 	for _, node := range nodeList.Items {
 		for _, condition := range node.Status.Conditions {
@@ -175,7 +175,7 @@ func initWindowsVMs(k8sclientset *kubernetes.Clientset, operatorNS string) (map[
 		return nil, errors.Wrap(err, "error while querying for Windows nodes")
 	}
 	for instanceID := range store.BinaryData {
-		ipAddress, err := GetNodeIP(nodeList, instanceID)
+		ipAddress, err := getNodeIP(nodeList, instanceID)
 		if err != nil {
 			// As of now, we're doing best effort to reconstruct the ConfigMap, so ignore errors while getting them
 			// from ConfigMap. Having said that, the ConfigMap entries should be perfect. Please look at syncNodeRecords

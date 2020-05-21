@@ -121,6 +121,7 @@ func main() {
 		wkl.WmcbPath,
 		wkl.CloudCredentialsPath,
 		wkl.PrivateKeyPath,
+		wkl.CNIConfigTemplatePath,
 	}
 	if err := checkIfRequiredFilesExist(requiredFiles); err != nil {
 		log.Error(err, "could not start the operator")
@@ -159,8 +160,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Get the cluster serviceCIDR using clusterNetworkConfig interface
+	clusterServiceCIDR, err := clusterconfig.network.GetServiceCIDR()
+	if err != nil {
+		log.Error(err, "failed to get service CIDR from the cluster configuration")
+		os.Exit(1)
+	}
+
 	// Setup all Controllers
-	if err := controller.AddToManager(mgr); err != nil {
+	if err := controller.AddToManager(mgr, clusterServiceCIDR); err != nil {
 		log.Error(err, "failed to add all Controllers to the Manager")
 		os.Exit(1)
 	}

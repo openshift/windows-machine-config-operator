@@ -120,15 +120,39 @@ func (tc *testContext) validateConnectivity(windowsVM types.WindowsVM) error {
 
 // getNodeIP gets the instance IP address associated with a node
 func (tc *testContext) getNodeIP(instanceID string) (string, error) {
-	nodeList, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+	node, err := tc.getNode(instanceID)
 	if err != nil {
-		return "", errors.Wrap(err, "error while querying for Windows nodes")
+		return "", errors.Wrapf(err, "unable to find Windows Worker node for instance ID : %s", instanceID)
 	}
-	nodeIP, err := wmc.GetNodeIP(nodeList, instanceID)
+	for _, address := range node.Status.Addresses {
+		if address.Type == corev1.NodeExternalIP {
+			return address.Address, nil
+		}
+	}
+	return "", errors.Wrapf(err, "could not get node IP for node %s", node.Name)
+}
+
+// getNode returns a pointer to the node object associated with the instance ID provided
+func (tc *testContext) getNode(instanceID string) (*corev1.Node, error) {
+	var matchedNode *corev1.Node
+
+	nodes, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
 	if err != nil {
-		return "", errors.Wrap(err, "error getting the node IP")
+		return nil, errors.Wrap(err, "error while querying for Windows nodes")
 	}
-	return nodeIP, nil
+	// Find the node that has the given IP
+	for _, node := range nodes.Items {
+		if strings.Contains(node.Spec.ProviderID, instanceID) {
+			matchedNode = &node
+		}
+		if matchedNode != nil {
+			break
+		}
+	}
+	if matchedNode == nil {
+		return nil, errors.Errorf("could not find node for instance ID : %s", instanceID)
+	}
+	return matchedNode, nil
 }
 
 // getCredsFromSecret gets the credentials associated with the instance.

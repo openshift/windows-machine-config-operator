@@ -2,6 +2,7 @@ package windows
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ const (
 	remoteDir = "C:\\Temp\\"
 	// winTemp is the default Windows temporary directory
 	winTemp = "C:\\Windows\\Temp\\"
+	// cniDir is the directory for storing CNI files
+	cniDir = "C:\\Temp\\cni\\"
 	// wgetIgnoreCertCmd is the remote location of the wget-ignore-cert.ps1 script
 	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
 	// logDir is the remote kubernetes log directory
@@ -215,6 +218,42 @@ func (vm *Windows) waitForHybridOverlayToRun() error {
 
 	// hybrid-overlay never started running
 	return fmt.Errorf("timeout waiting for hybrid-overlay: %v", err)
+}
+
+// ConfigureCNI ensures that the CNI configuration in done on the node
+func (vm *Windows) ConfigureCNI(configFile string) error {
+	// create cni directory
+	_, _, err := vm.Run(mkdirCmd(cniDir), false)
+	if err != nil {
+		return errors.Wrapf(err, "unable to create CNI directory %v", cniDir)
+	}
+
+	// copy the CNI plugins and CNI config file to the windows VM
+	var cniFiles = []string{
+		wkl.FlannelCNIPluginPath,
+		wkl.WinBridgeCNIPlugin,
+		wkl.HostLocalCNIPlugin,
+		wkl.WinOverlayCNIPlugin,
+		configFile,
+	}
+	for _, file := range cniFiles {
+		if err := vm.CopyFile(file, cniDir); err != nil {
+			return errors.Errorf("unable to copy CNI file %s to %s", file, cniDir)
+		}
+	}
+
+	cniConfigDest := cniDir + filepath.Base(configFile)
+	// run the configure-cni command on windows VM
+	configureCNICmd := remoteDir + "wmcb.exe configure-cni --cni-dir=\"" +
+		cniDir + " --cni-config=\"" + cniConfigDest
+
+	_, stderr, err := vm.Run(configureCNICmd, true)
+	if err != nil || len(stderr) > 0 {
+		log.Info("CNI configuration failed", "CNI configuration command", configureCNICmd, "stderr", stderr, "err", err)
+		return errors.Wrap(err, "CNI configuration failed")
+	}
+
+	return nil
 }
 
 // mkdirCmd returns the Windows command to create a directory if it does not exists
