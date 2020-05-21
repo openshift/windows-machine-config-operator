@@ -7,7 +7,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
+	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"k8s.io/api/core/v1"
@@ -61,7 +61,7 @@ type testContext struct {
 	// osdkTestCtx is the operator sdk framework's test Context
 	osdkTestCtx *framework.TestCtx
 	// credentials to be used to access the Windows nodes
-	credentials []tracker.Credentials
+	credentials []wmc.Credentials
 	// kubeclient is the kube client
 	kubeclient kubernetes.Interface
 	// tracker is a pointer to the tracker ConfigMap created by operator

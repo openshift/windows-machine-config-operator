@@ -10,7 +10,6 @@ import (
 	wmcapi "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/tracker"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -54,7 +53,7 @@ func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 	}
 
 	windowsVMs := make(map[types.WindowsVM]bool)
-	vmTracker, err := tracker.NewTracker(clientset, windowsVMs)
+	vmTracker, err := newTracker(clientset)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to instantiate tracker")
 	}
@@ -105,7 +104,7 @@ type ReconcileWindowsMachineConfig struct {
 	// k8sclientset holds the kube client that we can re-use for all kube objects other than custom resources.
 	k8sclientset *kubernetes.Clientset
 	// tracker is used to track all the Windows nodes created via WMCO
-	tracker *tracker.Tracker
+	tracker *tracker
 	// statusMgr is used to keep track of and update the WMC status
 	statusMgr *StatusManager
 }
@@ -237,7 +236,6 @@ func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current i
 		return current, nil
 	}
 
-	r.tracker.WindowsVMs(r.windowsVMs)
 	log.V(1).Info("starting tracker reconciliation")
 	if err := r.tracker.Reconcile(); err != nil {
 		errs = append(errs, newReconcileError(wmcapi.TrackerFailureReason, err))
@@ -247,21 +245,12 @@ func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current i
 	return newNodeCount, errs
 }
 
-// chooseRandomNode chooses one of the windows nodes randomly. The randomization is coming from golang maps since you
-// cannot assume the maps to be ordered.
-func chooseRandomNode(windowsVMs map[types.WindowsVM]bool) types.WindowsVM {
-	for windowsVM := range windowsVMs {
-		return windowsVM
-	}
-	return nil
-}
-
 // removeWorkerNode terminates the underlying VM and removes the given vm from the list of VMs
 func (r *ReconcileWindowsMachineConfig) removeWorkerNode(vm types.WindowsVM) ReconcileError {
 	// VM is missing credentials, this can occur if there was a failure initially creating it. We can consider the
 	// actual VM terminated as there is nothing we can do with it.
 	if vm.GetCredentials() == nil || len(vm.GetCredentials().GetInstanceId()) == 0 {
-		delete(r.windowsVMs, vm)
+		r.tracker.deleteWindowsVM(vm)
 		return nil
 	}
 
@@ -276,7 +265,7 @@ func (r *ReconcileWindowsMachineConfig) removeWorkerNode(vm types.WindowsVM) Rec
 	}
 
 	// Remove VM from our list of tracked VMs
-	delete(r.windowsVMs, vm)
+	r.tracker.deleteWindowsVM(vm)
 	log.Info("Windows worker has been removed from the cluster", "ID", id)
 	return nil
 }
@@ -288,7 +277,7 @@ func (r *ReconcileWindowsMachineConfig) removeWorkerNodes(count int) (int, []Rec
 	// From the list of Windows VMs choose randomly count number of VMs.
 	for i := 0; i < count; i++ {
 		// Choose of the Windows worker nodes randomly
-		vm := chooseRandomNode(r.windowsVMs)
+		vm := r.tracker.chooseRandomNode()
 		if vm == nil {
 			errs = append(errs, newReconcileError(wmcapi.VMTerminationFailureReason,
 				fmt.Errorf("expected VM and got a nil value")))
@@ -354,9 +343,7 @@ func (r *ReconcileWindowsMachineConfig) addWorkerNodes(count int) (int, []Reconc
 		}
 
 		// update the windowsVMs map with the new VM
-		if _, ok := r.windowsVMs[vm]; !ok {
-			r.windowsVMs[vm] = true
-		}
+		r.tracker.addWindowsVM(vm)
 	}
 
 	// If any of the Windows VM fails to get created consider this as a failure and return false

@@ -30,6 +30,9 @@ func creationTestSuite(t *testing.T) {
 	// are the secrets but they are created only after the VMs have been fully configured.
 	// Any node object related tests should be run only after testNodeCreation as that initializes the node objects in
 	// the global context.
+	t.Run("WMC CR validation", testWMCValidation)
+	// the failure behavior test will be skipped if gc.nodes = 0
+	t.Run("failure behavior", testFailureSuite)
 	t.Run("Creation", func(t *testing.T) { testWindowsNodeCreation(t) })
 	t.Run("Status", func(t *testing.T) { testStatusWhenSuccessful(t) })
 	t.Run("ConfigMap validation", func(t *testing.T) { testConfigMapValidation(t) })
