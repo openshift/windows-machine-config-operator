@@ -8,6 +8,7 @@ import (
 	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -19,9 +20,8 @@ var (
 
 // TestWMCO sets up the testing suite for WMCO.
 func TestWMCO(t *testing.T) {
-	if err := setupWMCOResources(); err != nil {
-		t.Fatalf("%v", err)
-	}
+	err := setupWMCOResources()
+	require.NoError(t, err)
 
 	// We've to update the global context struct here as the operator-sdk's framework has coupled flag
 	// parsing along with test suite execution.

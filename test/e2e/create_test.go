@@ -48,12 +48,10 @@ func testWindowsNodeCreation(t *testing.T) {
 	require.NoError(t, err)
 
 	// create WMCO custom resource
-	if _, err := testCtx.createWMC(gc.numberOfNodes, gc.sshKeyPair); err != nil {
-		t.Fatalf("error creating wcmo custom resource  %v", err)
-	}
-	if err := testCtx.waitForWindowsNodes(gc.numberOfNodes, true); err != nil {
-		t.Fatalf("windows node creation failed  with %v", err)
-	}
+	_, err = testCtx.createWMC(gc.numberOfNodes, gc.sshKeyPair)
+	require.NoError(t, err, "error creating wcmo custom resource")
+	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true)
+	require.NoError(t, err, "windows node creation failed")
 	log.Printf("Created %d Windows worker nodes", len(gc.nodes))
 }
 

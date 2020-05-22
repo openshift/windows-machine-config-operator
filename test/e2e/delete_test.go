@@ -38,13 +38,10 @@ func testWindowsNodeDeletion(t *testing.T) {
 	gc.numberOfNodes = 0
 	// Delete the Windows VM that got created.
 	wmco.Spec.Replicas = int32(gc.numberOfNodes)
-	if err := framework.Global.Client.Update(context.TODO(), wmco); err != nil {
-		t.Fatalf("error updating wcmo custom resource  %v", err)
-	}
+	err = framework.Global.Client.Update(context.TODO(), wmco)
+	require.NoError(t, err, "error updating wcmo custom resource")
 	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster, so to be on safe
 	// side, let's make it as 60 minutes.
 	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true)
-	if err != nil {
-		t.Fatalf("windows node deletion failed  with %v", err)
-	}
+	require.NoError(t, err, "windows node deletion failed")
 }
