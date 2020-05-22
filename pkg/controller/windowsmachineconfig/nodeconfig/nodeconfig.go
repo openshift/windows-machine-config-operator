@@ -115,8 +115,8 @@ func (nc *nodeConfig) Configure() error {
 	// populate node object in nodeConfig
 	err = nc.getNode()
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("error getting node object for VM %s",
-			nc.GetCredentials().GetInstanceId()))
+		return errors.Wrapf(err, "error getting node object for VM %s",
+			nc.GetCredentials().GetInstanceId())
 	}
 	// Apply worker labels
 	if err := nc.applyWorkerLabel(); err != nil {
@@ -135,8 +135,8 @@ func (nc *nodeConfig) configureNetwork() error {
 	// Wait until the node object has the hybrid overlay subnet annotation. Otherwise the hybrid-overlay will fail to
 	// start
 	if err := nc.waitForNodeAnnotation(HybridOverlaySubnet); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("error waiting for %s node annotation for %s", HybridOverlaySubnet,
-			nc.node.GetName()))
+		return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlaySubnet,
+			nc.node.GetName())
 	}
 
 	// NOTE: Investigate if we need to introduce a interface wrt to the VM's networking configuration. This will
@@ -144,14 +144,14 @@ func (nc *nodeConfig) configureNetwork() error {
 
 	// Configure the hybrid overlay in the Windows VM
 	if err := nc.Windows.ConfigureHybridOverlay(nc.node.GetName()); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("error configuring hybrid overlay for %s", nc.node.GetName()))
+		return errors.Wrapf(err, "error configuring hybrid overlay for %s", nc.node.GetName())
 	}
 
 	// Wait until the node object has the hybrid overlay MAC annotation. This is required for the CNI configuration to
 	// start.
 	if err := nc.waitForNodeAnnotation(HybridOverlayMac); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("error waiting for %s node annotation for %s", HybridOverlayMac,
-			nc.node.GetName()))
+		return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlayMac,
+			nc.node.GetName())
 	}
 	return nil
 }
@@ -307,7 +307,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		node, err := nc.k8sclientset.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
 		if err != nil {
-			return false, errors.Wrap(err, fmt.Sprintf("error getting node %s", nodeName))
+			return false, errors.Wrapf(err, "error getting node %s", nodeName)
 		}
 		_, found := node.Annotations[annotation]
 		if found {
@@ -319,7 +319,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	})
 
 	if !found {
-		return errors.Wrap(err, fmt.Sprintf("timeout waiting for %s node annotation", annotation))
+		return errors.Wrapf(err, "timeout waiting for %s node annotation", annotation)
 	}
 	return nil
 }

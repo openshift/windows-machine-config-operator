@@ -140,12 +140,12 @@ func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 
 	_, stderr, err = vm.Run(mkdirCmd(logDir), false)
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("unable to create %s directory:\n%s", logDir, stderr))
+		return errors.Wrapf(err, "unable to create %s directory:\n%s", logDir, stderr)
 	}
 
 	if err := vm.CopyFile(wkl.HybridOverlayPath, remoteDir); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("error copying %s-->%s", wkl.HybridOverlayPath,
-			remoteDir+wkl.HybridOverlayName))
+		return errors.Wrapf(err, "error copying %s-->%s", wkl.HybridOverlayPath,
+			remoteDir+wkl.HybridOverlayName)
 	}
 
 	// Start the hybrid-overlay in the background over ssh. We cannot use vm.Run() and by extension WinRM.Run() here as
@@ -156,7 +156,7 @@ func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 		" --k8s-kubeconfig c:\\k\\kubeconfig > "+logDir+"hybrid-overlay.log 2>&1", false)
 
 	if err = vm.waitForHybridOverlayToRun(); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("error running %s", wkl.HybridOverlayName))
+		return errors.Wrapf(err, "error running %s", wkl.HybridOverlayName)
 	}
 
 	// Wait for the hybrid-overlay to complete reconfiguring the network. The only way to detect that it has completed

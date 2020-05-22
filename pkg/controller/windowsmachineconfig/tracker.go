@@ -163,7 +163,7 @@ func initWindowsVMs(k8sclientset *kubernetes.Clientset, operatorNS string) (map[
 	// It is ok if the tracker ConfigMap doesn't exist. It is usually the case when the operator starts
 	// for the first time but it is not ok when the tracker ConfigMap exists but it unqueryable for some reason
 	if err != nil && !k8serrors.IsNotFound(err) {
-		return nil, errors.Wrap(err, fmt.Sprintf("unable to query %s/%s ConfigMap", operatorNS, StoreName))
+		return nil, errors.Wrapf(err, "unable to query %s/%s ConfigMap", operatorNS, StoreName)
 	}
 	if err != nil && k8serrors.IsNotFound(err) {
 		log.Info(" Skipping VM map initialization as tracker does not exist")
@@ -204,12 +204,12 @@ func initWindowsVMs(k8sclientset *kubernetes.Clientset, operatorNS string) (map[
 func (t *tracker) Reconcile() error {
 	store, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Get(StoreName, metav1.GetOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
-		return errors.Wrap(err, fmt.Sprintf("unable to query %s/%s ConfigMap", t.operatorNS, StoreName))
+		return errors.Wrapf(err, "unable to query %s/%s ConfigMap", t.operatorNS, StoreName)
 	}
 	// The ConfigMap does not exist, so we need to create it based on the WindowsVM slice
 	if err != nil && k8serrors.IsNotFound(err) {
 		if store, err = t.createStore(); err != nil {
-			return errors.Wrap(err, fmt.Sprintf("unable to create %s/%s ConfigMap", t.operatorNS, StoreName))
+			return errors.Wrapf(err, "unable to create %s/%s ConfigMap", t.operatorNS, StoreName)
 		}
 	}
 	// sync the node records
@@ -218,7 +218,7 @@ func (t *tracker) Reconcile() error {
 	t.syncSecrets(store)
 	// sync the store
 	if err = t.updateStore(store); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("unable to update %s/%s ConfigMap", t.operatorNS, StoreName))
+		return errors.Wrapf(err, "unable to update %s/%s ConfigMap", t.operatorNS, StoreName)
 	}
 	return nil
 }
@@ -339,14 +339,14 @@ func (t *tracker) createSecret(credentials *types.Credentials) (string, error) {
 	if err == nil || (err != nil && !k8serrors.IsNotFound(err)) {
 		deleteOptions := &metav1.DeleteOptions{}
 		if err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Delete(credentials.GetInstanceId(), deleteOptions); err != nil {
-			return "", errors.Wrap(err, fmt.Sprintf("error deleting existing secret %s/%s", t.operatorNS,
-				credentials.GetInstanceId()))
+			return "", errors.Wrapf(err, "error deleting existing secret %s/%s", t.operatorNS,
+				credentials.GetInstanceId())
 		}
 	}
 
 	secret, err = t.k8sclientset.CoreV1().Secrets(t.operatorNS).Create(secret)
 	if err != nil {
-		return "", errors.Wrap(err, fmt.Sprintf("error creating secret %s/%s", t.operatorNS, credentials.GetInstanceId()))
+		return "", errors.Wrapf(err, "error creating secret %s/%s", t.operatorNS, credentials.GetInstanceId())
 	}
 	return secret.GetName(), nil
 }
