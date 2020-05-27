@@ -41,8 +41,6 @@ type globalContext struct {
 	numberOfNodes int
 	// nodes are the Windows nodes created by the operator
 	nodes []v1.Node
-	// windowsVMs is used to interact with the Windows VMs created by the test suite
-	windowsVMs []testVM
 	// skipNodeDeletion allows the Windows nodes to hang around after the test suite has been run.
 	skipNodeDeletion bool
 	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
