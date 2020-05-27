@@ -35,8 +35,8 @@ var log = logf.Log.WithName("controller_wmc")
 
 // Add creates a new WindowsMachineConfig Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
-func Add(mgr manager.Manager) error {
-	reconciler, err := newReconciler(mgr)
+func Add(mgr manager.Manager, clusterServiceCIDR string) error {
+	reconciler, err := newReconciler(mgr, clusterServiceCIDR)
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s reconciler", ControllerName)
 	}
@@ -44,7 +44,7 @@ func Add(mgr manager.Manager) error {
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
+func newReconciler(mgr manager.Manager, clusterServiceCIDR string) (reconcile.Reconciler, error) {
 	// TODO: This should be moved out to validation for reconciler struct.
 	// 		Jira story: https://issues.redhat.com/browse/WINC-277
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
@@ -59,10 +59,11 @@ func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 	}
 
 	return &ReconcileWindowsMachineConfig{client: mgr.GetClient(),
-			scheme:       mgr.GetScheme(),
-			k8sclientset: clientset,
-			tracker:      vmTracker,
-			windowsVMs:   windowsVMs,
+			scheme:             mgr.GetScheme(),
+			k8sclientset:       clientset,
+			tracker:            vmTracker,
+			windowsVMs:         windowsVMs,
+			clusterServiceCIDR: clusterServiceCIDR,
 		},
 		nil
 }
@@ -107,6 +108,8 @@ type ReconcileWindowsMachineConfig struct {
 	tracker *tracker
 	// statusMgr is used to keep track of and update the WMC status
 	statusMgr *StatusManager
+	// clusterServiceCIDR holds the cluster network service CIDR
+	clusterServiceCIDR string
 }
 
 // getCloudProvider gathers the cloud provider information and sets the cloudProvider struct field
@@ -305,7 +308,8 @@ func (r *ReconcileWindowsMachineConfig) addWorkerNode() (types.WindowsVM, Reconc
 	}
 
 	log.V(1).Info("configuring the Windows VM", "ID", vm.GetCredentials().GetInstanceId())
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, vm)
+
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, vm, r.clusterServiceCIDR)
 	if err != nil {
 		// TODO: Unwrap to extract correct error
 		if cleanupErr := r.removeWorkerNode(vm); cleanupErr != nil {

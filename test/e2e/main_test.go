@@ -90,7 +90,7 @@ func (tc *testContext) cleanup() {
 }
 
 func TestMain(m *testing.M) {
-	flag.IntVar(&numberOfNodes, "node-count", 1, "number of nodes to be created for testing")
+	flag.IntVar(&numberOfNodes, "node-count", 2, "number of nodes to be created for testing")
 	flag.BoolVar(&skipNodeDeletion, "skip-node-deletion", false,
 		"Option to disable deletion of the VMs")
 	// We're using libra as default value to be used in CI

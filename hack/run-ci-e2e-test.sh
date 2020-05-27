@@ -42,7 +42,7 @@ OSDK=$(get_operator_sdk)
 # the value is literally taken as "" instead of empty-string so default values we
 # specified in main_test.go has literally no effect. Not sure, if this is because of
 # the way operator-sdk testing is done using `go test []string{}
-NODE_COUNT=${NODE_COUNT:-1}
+NODE_COUNT=${NODE_COUNT:-2}
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"-skip-node-deletion=false"}
 KEY_PAIR_NAME=${KEY_PAIR_NAME:-"libra"}
 

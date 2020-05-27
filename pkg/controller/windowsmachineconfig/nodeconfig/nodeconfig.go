@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
+	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
+	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/windows"
 	"github.com/pkg/errors"
 	certificates "k8s.io/api/certificates/v1beta1"
@@ -41,6 +43,10 @@ type nodeConfig struct {
 	*windows.Windows
 	// Node holds the information related to node object
 	node *v1.Node
+	// network holds the network information specific to the node
+	network *network
+	// clusterServiceCIDR holds the service CIDR for cluster
+	clusterServiceCIDR string
 }
 
 // discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint from the
@@ -56,7 +62,8 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM) (*nodeConfig, error) {
+func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM,
+	clusterServiceCIDR string) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -72,7 +79,13 @@ func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM) (
 		workerIgnitionEndpoint := "https://api-int." + clusterAddress + ":22623/config/worker"
 		nodeConfigCache.workerIgnitionEndPoint = workerIgnitionEndpoint
 	}
-	return &nodeConfig{k8sclientset: clientset, Windows: windows.New(windowsVM, nodeConfigCache.workerIgnitionEndPoint)}, nil
+	if err = clusternetwork.ValidateCIDR(clusterServiceCIDR); err != nil {
+		return nil, errors.Wrap(err, "error receiving valid CIDR value for "+
+			"creating new node config")
+	}
+	return &nodeConfig{k8sclientset: clientset, Windows: windows.New(windowsVM,
+		nodeConfigCache.workerIgnitionEndPoint), network: newNetwork(),
+		clusterServiceCIDR: clusterServiceCIDR}, nil
 }
 
 // getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
@@ -152,6 +165,11 @@ func (nc *nodeConfig) configureNetwork() error {
 	if err := nc.waitForNodeAnnotation(HybridOverlayMac); err != nil {
 		return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlayMac,
 			nc.node.GetName())
+	}
+
+	// Configure CNI in the Windows VM
+	if err := nc.configureCNI(); err != nil {
+		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
 	}
 	return nil
 }
@@ -320,6 +338,29 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 
 	if !found {
 		return errors.Wrapf(err, "timeout waiting for %s node annotation", annotation)
+	}
+	return nil
+}
+
+// configureCNI populates the CNI config template and sends the config file location
+// for completing CNI configuration in the windows VM
+func (nc *nodeConfig) configureCNI() error {
+	// set the hostSubnet value in the network struct
+	if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
+		return errors.Wrapf(err, "error populating host subnet in node network")
+	}
+	// populate the CNI config file with the host subnet and the service network CIDR
+	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, wkl.CNIConfigTemplatePath)
+	if err != nil {
+		return errors.Wrapf(err, "error populating CNI config file %s", configFile)
+	}
+	// configure CNI in the Windows VM
+	if err = nc.Windows.ConfigureCNI(configFile); err != nil {
+		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
+	}
+	if err = nc.network.cleanupTempConfig(configFile); err != nil {
+		log.Error(err, " could not delete temp CNI config file", "configFile",
+			configFile)
 	}
 	return nil
 }

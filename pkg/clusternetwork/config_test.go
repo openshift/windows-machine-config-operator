@@ -85,10 +85,12 @@ func TestNetworkConfigurationValidate(t *testing.T) {
 func createFakeClients(networkType string) (configclient.Interface, operatorclient.OperatorV1Interface) {
 	fakeOperatorClient := fakeoperatorclient.NewSimpleClientset().OperatorV1()
 	fakeConfigClient := fakeconfigclient.NewSimpleClientset()
+	serviceNetworks := []string{"172.30.0.0/16", "134.20.0.0/16"}
 
 	testNetworkConfig := &v1.Network{}
 	testNetworkConfig.Name = "cluster"
 	testNetworkConfig.Spec.NetworkType = networkType
+	testNetworkConfig.Spec.ServiceNetwork = serviceNetworks
 
 	testNetworkOperator := &operatorv1.Network{}
 	testNetworkOperator.Name = "cluster"

@@ -23,11 +23,12 @@ export KUBE_SSH_KEY_PATH=<path to ssh key>
 - Ensure that /payload directory exists and is accessible by the user account. The directory needs to be populated with the following files. Please see the [Dockerfile](https://github.com/openshift/windows-machine-config-operator/blob/master/build/Dockerfile) for figuring where to download and build these binaries. It is up to the user to keep these files up to date.
 ```
 /payload/
-├── cni-plugins
+├── cni
 │   ├── flannel.exe
 │   ├── host-local.exe
 │   ├── win-bridge.exe
-│   └── win-overlay.exe
+│   ├── win-overlay.exe
+│   └── cni-conf-template.json
 ├── hybrid-overlay-node.exe
 ├── kube-node
 │   ├── kubelet.exe
