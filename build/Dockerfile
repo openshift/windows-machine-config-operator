@@ -75,7 +75,7 @@ COPY --from=download /download/cni/flannel.exe .
 COPY --from=download /download/cni/host-local.exe .
 COPY --from=download /download/cni/win-bridge.exe .
 COPY --from=download /download/cni/win-overlay.exe .
-COPY --from=build /build/windows-machine-config-operator/pkg/internal/cni-conf-template.json .
+COPY pkg/internal/cni-conf-template.json .
 
 # Copy wget-ignore-cert powershell script
 RUN mkdir /payload/powershell/
