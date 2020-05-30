@@ -87,7 +87,10 @@ spec:
                 name: windows-machine-config-operator
             spec:
               containers:
-              - command:
+              - args:
+                - --zap-level=debug
+                - --zap-encoder=console
+                command:
                 - windows-machine-config-operator
                 env:
                 - name: WATCH_NAMESPACE
