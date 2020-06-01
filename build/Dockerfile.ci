@@ -120,8 +120,8 @@ RUN curl -L -s https://dl.google.com/go/go1.13.8.linux-amd64.tar.gz > go1.13.8.l
     && rm -rf ./go*
 
 # Download and install oc
-RUN curl -L -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.2.2/openshift-client-linux-4.2.2.tar.gz -o openshift-origin-client-tools.tar.gz \
-    && echo "8f853477fa99cfc4087ad2ddf9b13b9d22e5fc4d5dc24c63ec5b0a91bb337fc9 openshift-origin-client-tools.tar.gz" | sha256sum -c \
+RUN curl -L -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.4.6/openshift-client-linux-4.4.6.tar.gz -o openshift-origin-client-tools.tar.gz \
+    && echo "97ac91f9dede0d93bad8525934ef5a4f1c02e0b42d4f6ef58de99713e0f60d9c openshift-origin-client-tools.tar.gz" | sha256sum -c \
     && tar -xzf openshift-origin-client-tools.tar.gz \
     && mv oc /usr/bin/oc \
     && mv kubectl /usr/bin/kubectl \
