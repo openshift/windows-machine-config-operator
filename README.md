@@ -1,10 +1,10 @@
 # Windows Machine Config Operator
 
 ## Pre-requisites
-- [Install](https://github.com/operator-framework/operator-sdk/blob/v0.17.x/doc/user/install-operator-sdk.md) operator-sdk
-  v0.17.1
-- The operator is written using operator-sdk [v0.17.1](https://github.com/operator-framework/operator-sdk/releases/tag/v0.17.1)
-  and has the same [pre-requisites](https://github.com/operator-framework/operator-sdk/tree/v0.17.x#prerequisites) as it
+- [Install](https://sdk.operatorframework.io/docs/install-operator-sdk/) operator-sdk
+  v0.18.1
+- The operator is written using operator-sdk [v0.18.1](https://github.com/operator-framework/operator-sdk/releases/tag/v0.18.1)
+  and has the same [pre-requisites](https://sdk.operatorframework.io/docs/install-operator-sdk/#prerequisites) as it
   does.
 - Instructions assume that the user is using [Podman](https://podman.io/) container engine.
 
@@ -98,8 +98,6 @@ You should verify that the new bundle is valid:
 ```shell script
 operator-sdk bundle validate $BUNDLE_REPOSITORY:$BUNDLE_TAG --image-builder podman
 ```
-*Bundle verification is broken in operator-sdk v0.17.x. This will be fixed in operator-sdk v0.18. 
-Track the issue [here](https://github.com/operator-framework/operator-sdk/issues/2952). The error does not imply that the bundle will not work.*
 
 ### Creating a new operator index
 You can skip this step if you want to run the operator locally [without bundle and index images](#running-without-bundle-and-index-images)
@@ -186,13 +184,13 @@ of the WMCO operator image you wish to deploy.
 
 In order to test the operator locally using OLM, use:
 ```shell script
-operator-sdk run --olm --olm-namespace openshift-operator-lifecycle-manager \
+operator-sdk run packagemanifests --olm-namespace openshift-operator-lifecycle-manager \
 --operator-namespace windows-machine-config-operator --operator-version $OPERATOR_VERSION
 ```
 
 In order to clean up OLM installation running locally, use: 
 ```shell script
-operator-sdk cleanup --olm --olm-namespace openshift-operator-lifecycle-manager \
+operator-sdk cleanup packagemanifests --olm-namespace openshift-operator-lifecycle-manager \
 --operator-namespace windows-machine-config-operator --operator-version $OPERATOR_VERSION
 ```
 
