@@ -39,8 +39,8 @@ RUN microdnf -y update
 # Download, checksum and extract the kubernetes node package
 # We are tightly coupling the operator to the OpenShift version, so with every OpenShift release, we will update the
 # kubernetes node version.
-RUN wget https://dl.k8s.io/v1.17.3/kubernetes-node-windows-amd64.tar.gz
-RUN echo "7323b7adf83fccc65eea9f23370794aa9901e9a9b3b1ac90403197448408eee5be84f541aa2448ceaa12fe6278814575a26132cf6e0ddd2f8aa5fa47bd127c71 kubernetes-node-windows-amd64.tar.gz" > kubernetes-node-windows-amd64.tar.gz.sha512
+RUN wget https://dl.k8s.io/v1.18.3/kubernetes-node-windows-amd64.tar.gz
+RUN echo "f83802db06a86edd9ade8e737ed0e8a11ebeeaa69e102f9550b90f0d8a724e7864f6531f7f500ff70d4202168a774c5b328fea1ec0a95b9e275a0233a852f04f kubernetes-node-windows-amd64.tar.gz" > kubernetes-node-windows-amd64.tar.gz.sha512
 RUN sha512sum -c kubernetes-node-windows-amd64.tar.gz.sha512
 RUN tar -zxf kubernetes-node-windows-amd64.tar.gz
 
