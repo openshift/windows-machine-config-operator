@@ -122,6 +122,7 @@ func main() {
 		wkl.CloudCredentialsPath,
 		wkl.PrivateKeyPath,
 		wkl.CNIConfigTemplatePath,
+		wkl.HNSPSModule,
 	}
 	if err := checkIfRequiredFilesExist(requiredFiles); err != nil {
 		log.Error(err, "could not start the operator")

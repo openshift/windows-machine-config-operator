@@ -42,7 +42,7 @@ type nodeConfig struct {
 	// k8sclientset holds the information related to kubernetes clientset
 	k8sclientset *kubernetes.Clientset
 	// Windows holds the information related to the windows VM
-	*windows.Windows
+	windows.Windows
 	// Node holds the information related to node object
 	node *v1.Node
 	// network holds the network information specific to the node
@@ -181,6 +181,10 @@ func (nc *nodeConfig) configureNetwork() error {
 	// Configure CNI in the Windows VM
 	if err := nc.configureCNI(); err != nil {
 		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
+	}
+	// Start the kube-proxy service
+	if err := nc.Windows.ConfigureKubeProxy(nc.node.GetName(), nc.node.Annotations[HybridOverlaySubnet]); err != nil {
+		return errors.Wrapf(err, "error starting kube-proxy for %s", nc.node.GetName())
 	}
 	return nil
 }

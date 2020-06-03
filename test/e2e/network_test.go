@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -18,10 +20,9 @@ import (
 
 // testNetwork runs all the cluster and node network tests
 func testNetwork(t *testing.T) {
-	t.Run("East West Networking across Linux and Windows nodes",
-		func(t *testing.T) { testEastWestNetworking(t) })
-	t.Run("East West Networking across Windows nodes",
-		func(t *testing.T) { testEastWestNetworkingAcrossWindowsNodes(t) })
+	t.Run("East West Networking across Linux and Windows nodes", testEastWestNetworking)
+	t.Run("East West Networking across Windows nodes", testEastWestNetworkingAcrossWindowsNodes)
+	t.Run("North south networking", testNorthSouthNetworking)
 }
 
 var (
@@ -139,6 +140,115 @@ func testEastWestNetworkingAcrossWindowsNodes(t *testing.T) {
 	if err = testCtx.deleteJob(winCurlerJobOnSecondNode.Name); err != nil {
 		t.Logf("could not delete job %s", winCurlerJobOnSecondNode.Name)
 	}
+}
+
+// testNorthSouthNetworking deploys a Windows Server pod, and tests that we can network with it from outside the cluster
+func testNorthSouthNetworking(t *testing.T) {
+	testCtx, err := NewTestContext(t)
+	require.NoError(t, err)
+
+	// Use the 0th node to test
+	require.NotEmpty(t, gc.nodes)
+	node := gc.nodes[0]
+
+	affinity, err := getAffinityForNode(&node)
+	require.NoError(t, err, "Could not get affinity for node")
+
+	// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
+	// So trying multiple times
+	var winServerDeployment *appsv1.Deployment
+	for i := 0; i < deploymentRetries; i++ {
+		winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver-"+
+			strings.ToLower(node.Status.NodeInfo.MachineID), affinity)
+		if err == nil {
+			break
+		}
+	}
+	require.NoError(t, err, "could not create Windows Server deployment")
+	defer testCtx.deleteDeployment(winServerDeployment.Name)
+
+	// Assert that we can successfully GET the webserver
+	err = testCtx.getThroughLoadBalancer(winServerDeployment)
+	assert.NoError(t, err, "unable to GET the webserver through a load balancer")
+}
+
+// getThroughLoadBalancer does a GET request to the given webserver through a load balancer service
+func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) error {
+	// Create a load balancer svc to expose the webserver
+	loadBalancer, err := tc.createLoadBalancer(webserver.Name, *webserver.Spec.Selector)
+	if err != nil {
+		return errors.Wrap(err, "could not create load balancer for Windows Server")
+	}
+	defer tc.deleteService(loadBalancer.Name)
+	loadBalancer, err = tc.waitForLoadBalancerIngress(loadBalancer.Name)
+	if err != nil {
+		return errors.Wrap(err, "error waiting for load balancer ingress")
+	}
+
+	// Try and read from the webserver through the load balancer. The load balancer takes a fair amount of time,
+	// ~3 min, to start properly routing connections.
+	resp, err := retryGET("http://" + loadBalancer.Status.LoadBalancer.Ingress[0].Hostname)
+	if err != nil {
+		return fmt.Errorf("could not GET from load balancer: %v", loadBalancer)
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// retryGET will repeatedly try to GET from the provided URL until a 200 response is received or timeout
+func retryGET(url string) (*http.Response, error) {
+	var resp *http.Response
+	var err error
+	for i := 0; i < retryCount*3; i++ {
+		resp, err = http.Get(url)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+		time.Sleep(retryInterval)
+	}
+	return nil, fmt.Errorf("timed out trying to GET %s: %s", url, err)
+}
+
+// createLoadBalancer creates a new load balancer for pods matching the label selector
+func (tc *testContext) createLoadBalancer(name string, selector metav1.LabelSelector) (*v1.Service, error) {
+	svcSpec := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: v1.ServiceSpec{
+			Type: v1.ServiceTypeLoadBalancer,
+			Ports: []v1.ServicePort{
+				{
+					Protocol: v1.ProtocolTCP,
+					Port:     80,
+				},
+			},
+			Selector: selector.MatchLabels,
+		}}
+	return tc.kubeclient.CoreV1().Services(v1.NamespaceDefault).Create(context.TODO(), svcSpec, metav1.CreateOptions{})
+}
+
+// waitForLoadBalancerIngress waits until the load balancer has an external hostname ready
+func (tc *testContext) waitForLoadBalancerIngress(name string) (*v1.Service, error) {
+	var svc *v1.Service
+	var err error
+	for i := 0; i < retryCount; i++ {
+		svc, err = tc.kubeclient.CoreV1().Services(v1.NamespaceDefault).Get(context.TODO(), name, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		if len(svc.Status.LoadBalancer.Ingress) == 1 {
+			return svc, nil
+		}
+		time.Sleep(retryInterval)
+	}
+	return nil, fmt.Errorf("timed out waiting for single ingress: %v", svc)
+}
+
+// deleteService deletes the service with the given name
+func (tc *testContext) deleteService(name string) error {
+	svcClient := tc.kubeclient.CoreV1().Services(v1.NamespaceDefault)
+	return svcClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 // getAffinityForNode returns an affinity which matches the associated node's name
