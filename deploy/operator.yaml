@@ -32,6 +32,9 @@ spec:
           image: REPLACE_IMAGE
           command:
           - windows-machine-config-operator
+          args:
+          - "--zap-level=debug"
+          - "--zap-encoder=console"
           imagePullPolicy: Always
           env:
             - name: WATCH_NAMESPACE

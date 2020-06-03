@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
 	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
@@ -87,37 +86,6 @@ func testConfigMapValidation(t *testing.T) {
 	}
 }
 
-// getWindowsVM returns a windowsVM interface to be used for running commands against
-func (tc *testContext) getWindowsVM(ipAddress, instanceID string) (types.WindowsVM, error) {
-	creds, err := tc.getCredsFromSecret(instanceID)
-	if err != nil {
-		return nil, errors.Wrap(err, "error while getting creds from secret")
-	}
-	if creds == (wmc.Credentials{}) {
-		return nil, errors.New("expected credentials to be present but got a nil value")
-	}
-	winVM, err := wmc.GetWindowsVM(instanceID, ipAddress, creds)
-	return winVM, nil
-}
-
-// validateConnectivity ensures that we have connectivity for the Windows VM
-func (tc *testContext) validateConnectivity(windowsVM types.WindowsVM) error {
-	stdout, stderr, err := windowsVM.Run("dir", false)
-	if err != nil {
-		return errors.Wrap(err, "failed to run dir command on remote Windows VM")
-	}
-	if stderr != "" {
-		return errors.New("test returned stderr output")
-	}
-	if strings.Contains(stdout, "FAIL") {
-		return errors.New("test output showed a failure")
-	}
-	if strings.Contains(stdout, "panic") {
-		return errors.New("test output showed panic")
-	}
-	return nil
-}
-
 // getNodeIP gets the instance IP address associated with a node
 func (tc *testContext) getNodeIP(instanceID string) (string, error) {
 	node, err := tc.getNode(instanceID)
@@ -178,19 +146,13 @@ func (tc *testContext) getCredsFromSecret(instanceID string) (wmc.Credentials, e
 
 // validateInstanceSecret validates the instance secret.
 func (tc *testContext) validateInstanceSecret(instanceID string) error {
-	ipAddress, err := tc.getNodeIP(instanceID)
+	creds, err := tc.getCredsFromSecret(instanceID)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "error while getting creds from secret")
 	}
-	windowsVM, err := tc.getWindowsVM(ipAddress, instanceID)
-	if err != nil {
-		return err
+	if creds == (wmc.Credentials{}) {
+		return errors.New("expected credentials to be present but got a nil value")
 	}
-	err = tc.validateConnectivity(windowsVM)
-	if err != nil {
-		return err
-	}
-	gc.windowsVMs = append(gc.windowsVMs, testVM{windowsVM})
 	return nil
 }
 
@@ -203,9 +165,6 @@ func testValidateSecrets(t *testing.T) {
 	instanceIDs, err := testCtx.getInstanceIDsOfNodes()
 	require.NoError(t, err, "error while getting instance ids")
 	require.Equal(t, len(instanceIDs), gc.numberOfNodes, "mismatched node count")
-
-	// Reset the windowsVMs to avoid staleness
-	gc.windowsVMs = make([]testVM, 0, numberOfNodes)
 
 	for _, instanceID := range instanceIDs {
 		err := testCtx.validateInstanceSecret(instanceID)

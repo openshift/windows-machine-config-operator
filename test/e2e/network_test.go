@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/windows"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,8 +17,6 @@ import (
 
 // testNetwork runs all the cluster and node network tests
 func testNetwork(t *testing.T) {
-	t.Run("Hybrid overlay running", testHybridOverlayRunning)
-	t.Run("OpenShift HNS networks", testHNSNetworksCreated)
 	t.Run("East West Networking across Linux and Windows nodes",
 		func(t *testing.T) { testEastWestNetworking(t) })
 	t.Run("East West Networking across Windows nodes",
@@ -37,54 +34,24 @@ var (
 	retryInterval = 5 * time.Second
 )
 
-// testHNSNetworksCreated tests that the required HNS Networks have been created on the bootstrapped nodes
-func testHNSNetworksCreated(t *testing.T) {
-	testCtx, err := NewTestContext(t)
-	require.NoError(t, err)
-	defer testCtx.cleanup()
-
-	for _, vm := range gc.windowsVMs {
-		// We don't need to retry as we are waiting long enough for the secrets to be created which implies that the
-		// network setup has succeeded.
-		stdout, _, err := vm.Run("Get-HnsNetwork", true)
-		require.NoError(t, err, "could not run Get-HnsNetwork command")
-		assert.Contains(t, stdout, windows.BaseOVNKubeOverlayNetwork,
-			"could not find %s in %s", windows.BaseOVNKubeOverlayNetwork, vm.GetCredentials().GetInstanceId())
-		assert.Contains(t, stdout, windows.OVNKubeOverlayNetwork,
-			"could not find %s in %s", windows.OVNKubeOverlayNetwork, vm.GetCredentials().GetInstanceId())
-	}
-}
-
-// testHybridOverlayRunning checks if the hybrid-overlay process is running on all the bootstrapped nodes
-func testHybridOverlayRunning(t *testing.T) {
-	testCtx, err := NewTestContext(t)
-	require.NoError(t, err)
-	defer testCtx.cleanup()
-
-	for _, vm := range gc.windowsVMs {
-		_, stderr, err := vm.Run("Get-Process -Name \""+windows.HybridOverlayProcess+"\"", true)
-		require.NoError(t, err, "could not run Get-Process command")
-		// stderr being empty implies that hybrid-overlay was running.
-		assert.Equal(t, "", stderr, "hybrid-overlay was not running in %s",
-			vm.GetCredentials().GetInstanceId())
-	}
-}
-
 // testEastWestNetworking deploys Windows and Linux pods, and tests that the pods can communicate
 func testEastWestNetworking(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
 
-	for _, vm := range gc.windowsVMs {
-		instanceID := vm.GetCredentials().GetInstanceId()
-		node, err := testCtx.getNode(instanceID)
-		require.NoError(t, err, "could not get Windows node object associated with the vm")
-
-		affinity, err := getAffinityForNode(node)
+	for _, node := range gc.nodes {
+		affinity, err := getAffinityForNode(&node)
 		require.NoError(t, err, "could not get affinity for first node")
 
-		// Deploy a webserver pod on the new node
-		winServerDeployment, err := testCtx.deployWindowsWebServer("win-webserver-"+vm.GetCredentials().GetInstanceId(), vm, affinity)
+		// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
+		// So trying multiple times
+		var winServerDeployment *appsv1.Deployment
+		for i := 0; i < deploymentRetries; i++ {
+			winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver-"+strings.ToLower(node.Status.NodeInfo.MachineID), affinity)
+			if err == nil {
+				break
+			}
+		}
 		require.NoError(t, err, "could not create Windows Server deployment")
 
 		// Get the pod so we can use its IP
@@ -94,13 +61,13 @@ func testEastWestNetworking(t *testing.T) {
 		// test Windows <-> Linux
 		// This will install curl and then curl the windows server.
 		linuxCurlerCommand := []string{"bash", "-c", "yum update; yum install curl -y; curl " + winServerIP}
-		linuxCurlerJob, err := testCtx.createLinuxJob("linux-curler-"+vm.GetCredentials().GetInstanceId(), linuxCurlerCommand)
+		linuxCurlerJob, err := testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), linuxCurlerCommand)
 		require.NoError(t, err, "could not create Linux job")
 		err = testCtx.waitUntilJobSucceeds(linuxCurlerJob.Name)
 		assert.NoError(t, err, "could not curl the Windows server from a linux container")
 
 		// test Windows <-> Windows on same node
-		winCurlerJob, err := testCtx.createWinCurlerJob(vm, winServerIP)
+		winCurlerJob, err := testCtx.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID), winServerIP)
 		require.NoError(t, err, "could not create Windows job")
 		err = testCtx.waitUntilJobSucceeds(winCurlerJob.Name)
 		assert.NoError(t, err, "could not curl the Windows webserver pod from a separate Windows container")
@@ -124,23 +91,25 @@ func testEastWestNetworkingAcrossWindowsNodes(t *testing.T) {
 	require.NoError(t, err)
 	defer testCtx.cleanup()
 
-	// Need at least two Windows VMs to run these tests, throwing error if this condition is not met
-	require.GreaterOrEqualf(t, len(gc.nodes), 2, "insufficient number of Windows VMs to run tests across"+
-		" VMs, Minimum VM count: 2, Current VM count: %d", len(gc.nodes))
+	// Need at least two Windows nodes to run these tests, throwing error if this condition is not met
+	require.GreaterOrEqualf(t, len(gc.nodes), 2, "insufficient number of Windows nodes to run tests across"+
+		" nodes, Minimum node count: 2, Current node count: %d", len(gc.nodes))
 
-	firstVM := gc.windowsVMs[0]
-	secondVM := gc.windowsVMs[1]
+	firstNode := gc.nodes[0]
+	secondNode := gc.nodes[1]
 
-	instanceIDFirstVM := firstVM.GetCredentials().GetInstanceId()
-	firstNode, err := testCtx.getNode(instanceIDFirstVM)
-	require.NoError(t, err, "could not get Windows node object from first VM")
-
-	affinityForFirstNode, err := getAffinityForNode(firstNode)
+	affinityForFirstNode, err := getAffinityForNode(&firstNode)
 	require.NoError(t, err, "could not get affinity for first node")
 
-	// Deploy a webserver pod on the first node
-	winServerDeploymentOnFirstNode, err := testCtx.deployWindowsWebServer("win-webserver-"+firstVM.GetCredentials().GetInstanceId(),
-		firstVM, affinityForFirstNode)
+	// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
+	// So trying multiple times
+	var winServerDeploymentOnFirstNode *appsv1.Deployment
+	for i := 0; i < deploymentRetries; i++ {
+		winServerDeploymentOnFirstNode, err = testCtx.deployWindowsWebServer("win-webserver-"+strings.ToLower(firstNode.Status.NodeInfo.MachineID), affinityForFirstNode)
+		if err == nil {
+			break
+		}
+	}
 	require.NoError(t, err, "could not create Windows Server deployment on first Node")
 
 	// Get the pod so we can use its IP
@@ -148,10 +117,16 @@ func testEastWestNetworkingAcrossWindowsNodes(t *testing.T) {
 	require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeploymentOnFirstNode.Spec.Selector)
 
 	// test Windows <-> Windows across nodes
-	winCurlerJobOnSecondNode, err := testCtx.createWinCurlerJob(secondVM, winServerIP)
+	winCurlerJobOnSecondNode, err := testCtx.createWinCurlerJob(strings.ToLower(secondNode.Status.NodeInfo.MachineID), winServerIP)
 	require.NoError(t, err, "could not create Windows job on second Node")
 
-	err = testCtx.waitUntilJobSucceeds(winCurlerJobOnSecondNode.Name)
+	// This is prone to timing out due to having to pull the Windows image so trying multiple times
+	for i := 0; i < 10; i++ {
+		err = testCtx.waitUntilJobSucceeds(winCurlerJobOnSecondNode.Name)
+		if err == nil {
+			break
+		}
+	}
 	assert.NoError(t, err, "could not curl the Windows webserver pod on the first node from Windows container "+
 		"on the second node")
 
@@ -187,12 +162,7 @@ func getAffinityForNode(node *v1.Node) (*v1.Affinity, error) {
 }
 
 // deployWindowsWebServer creates a deployment with a single Windows Server pod, listening on port 80
-func (tc *testContext) deployWindowsWebServer(name string, vm testVM, affinity *v1.Affinity) (*appsv1.Deployment, error) {
-	// Preload the image that will be used on the Windows node, to prevent download timeouts
-	// and separate possible failure conditions into multiple operations
-	if err := pullContainerImage(windowsServerImage, vm); err != nil {
-		return nil, errors.Wrapf(err, "could not pull Windows Server image")
-	}
+func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	// This will run a Server on the container, which can be reached with a GET request
 	winServerCommand := []string{"powershell.exe", "-command",
 		"$listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start(); " +
@@ -218,16 +188,6 @@ func (tc *testContext) deployWindowsWebServer(name string, vm testVM, affinity *
 func (tc *testContext) deleteDeployment(name string) error {
 	deploymentsClient := tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault)
 	return deploymentsClient.Delete(name, &metav1.DeleteOptions{})
-}
-
-// pullContainerImage pulls the designated image on the remote host
-func pullContainerImage(name string, vm testVM) error {
-	command := "docker pull " + name
-	_, _, err := vm.Run(command, false)
-	if err != nil {
-		return errors.Wrapf(err, "failed to remotely run docker pull")
-	}
-	return nil
 }
 
 // getPodIP returns the IP of the pod that matches the label selector. If more than one pod match the
@@ -348,9 +308,9 @@ func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.J
 }
 
 //  createWinCurlerJob creates a Job to curl Windows server at given IP address
-func (tc *testContext) createWinCurlerJob(vm testVM, winServerIP string) (*batchv1.Job, error) {
+func (tc *testContext) createWinCurlerJob(name string, winServerIP string) (*batchv1.Job, error) {
 	winCurlerCommand := getWinCurlerCommand(winServerIP)
-	winCurlerJob, err := tc.createWindowsServerJob("win-curler-"+vm.GetCredentials().GetInstanceId(), winCurlerCommand)
+	winCurlerJob, err := tc.createWindowsServerJob("win-curler-"+name, winCurlerCommand)
 	return winCurlerJob, err
 }
 

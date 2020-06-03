@@ -25,25 +25,9 @@ To run the e2e tests for WMCO locally against an OpenShift cluster set up on AWS
 export KUBECONFIG=<path to kubeconfig>
 export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
 export KUBE_SSH_KEY_PATH=<path to ssh key>
+export OPERATOR_IMAGE=<registry url for remote WMCO image>
 ```
-- Ensure that /payload directory exists and is accessible by the user account. The directory needs to be populated with the following files. Please see the [Dockerfile](https://github.com/openshift/windows-machine-config-operator/blob/master/build/Dockerfile) for figuring where to download and build these binaries. It is up to the user to keep these files up to date.
-```
-/payload/
-├── cni
-│   ├── flannel.exe
-│   ├── host-local.exe
-│   ├── win-bridge.exe
-│   ├── win-overlay.exe
-│   └── cni-conf-template.json
-├── hybrid-overlay-node.exe
-├── kube-node
-│   ├── kubelet.exe
-│   └── kube-proxy.exe
-├── powershell
-│   └── wget-ignore-cert.ps1
-└── wmcb.exe
-```
-Once the above variables are set and the /payload directory has been populated, run the following script:
+Once the above variables are set, run the following script:
 ```shell script
 hack/run-ci-e2e-test.sh -k "openshift-dev"
 ```
