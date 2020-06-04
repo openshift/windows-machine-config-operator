@@ -23,6 +23,8 @@ const (
 	VMTerminationFailureReason string = "VMTerminationFailure"
 	// TrackerFailureReason indicates there was a problem tracking and storing VM information
 	TrackerFailureReason string = "TrackerFailure"
+	// StatusFailureReason indicates there was an issue updating the status for the operator
+	StatusFailureReason string = "StatusFailure"
 )
 
 // NewWindowsMachineConfigCondition creates a new WindowsMachineConfig condition.
