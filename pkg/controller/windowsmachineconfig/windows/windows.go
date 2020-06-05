@@ -22,8 +22,10 @@ const (
 	cniDir = "C:\\Temp\\cni\\"
 	// wgetIgnoreCertCmd is the remote location of the wget-ignore-cert.ps1 script
 	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
+	// k8sDir is the remote kubernetes executable directory
+	k8sDir = "C:\\k\\"
 	// logDir is the remote kubernetes log directory
-	logDir = "C:\\k\\log\\"
+	logDir = k8sDir + "log\\"
 	// HybridOverlayProcess is the process name of the hybrid-overlay-node.exe in the Windows VM
 	HybridOverlayProcess = "hybrid-overlay-node"
 	// hybridOverlayConfigurationTime is the approximate time taken for the hybrid-overlay to complete reconfiguring
@@ -52,15 +54,49 @@ func New(vm types.WindowsVM, workerIgnitionEndpoint string) *Windows {
 
 // Configure prepares the Windows VM for the bootstrapper and then runs it
 func (vm *Windows) Configure() error {
-	// Create the temp directory
-	_, err := vm.RunOverSSH(mkdirCmd(remoteDir), false)
-	if err != nil {
-		return errors.Wrapf(err, "unable to create remote directory %v", remoteDir)
+	if err := vm.createDirectories(); err != nil {
+		return errors.Wrap(err, "error creating directories on Windows VM")
 	}
-	if err := vm.CopyFile(wkl.IgnoreWgetPowerShellPath, remoteDir); err != nil {
-		return errors.Wrapf(err, "error while copying powershell script")
+	if err := vm.transferFiles(); err != nil {
+		return errors.Wrap(err, "error transferring files to Windows VM")
 	}
 	return vm.runBootstrapper()
+}
+
+// createDirectories creates directories required for configuring the Windows node on the VM
+func (vm *Windows) createDirectories() error {
+	directoriesToCreate := []string{
+		k8sDir,
+		remoteDir,
+		cniDir,
+		logDir,
+	}
+	for _, dir := range directoriesToCreate {
+		if _, err := vm.RunOverSSH(mkdirCmd(dir), false); err != nil {
+			return errors.Wrapf(err, "unable to create remote directory %s", dir)
+		}
+	}
+	return nil
+}
+
+// transferFiles copies various files required for configuring the Windows node, to the VM.
+func (vm *Windows) transferFiles() error {
+	srcDestPairs := map[string]string{
+		wkl.IgnoreWgetPowerShellPath: remoteDir,
+		wkl.WmcbPath:                 remoteDir,
+		wkl.HybridOverlayPath:        remoteDir,
+		wkl.FlannelCNIPluginPath:     cniDir,
+		wkl.WinBridgeCNIPlugin:       cniDir,
+		wkl.HostLocalCNIPlugin:       cniDir,
+		wkl.WinOverlayCNIPlugin:      cniDir,
+		wkl.KubeletPath:              winTemp,
+	}
+	for src, dest := range srcDestPairs {
+		if err := vm.CopyFile(src, dest); err != nil {
+			return errors.Wrapf(err, "error copying %s to %s ", src, dest)
+		}
+	}
+	return nil
 }
 
 // validate the WindowsVM node object
@@ -82,9 +118,6 @@ func (vm *Windows) Validate() error {
 
 // runBootstrapper copies the bootstrapper and runs the code on the remote Windows VM
 func (vm *Windows) runBootstrapper() error {
-	if err := vm.CopyFile(wkl.WmcbPath, remoteDir); err != nil {
-		return errors.Wrap(err, "error while copying wmcb binary")
-	}
 	err := vm.initializeBootstrapperFiles()
 	if err != nil {
 		return errors.Wrap(err, "error initializing bootstrapper files")
@@ -101,11 +134,6 @@ func (vm *Windows) runBootstrapper() error {
 
 // initializeTestBootstrapperFiles initializes the files required for initialize-kubelet
 func (vm *Windows) initializeBootstrapperFiles() error {
-	err := vm.CopyFile(wkl.KubeletPath, winTemp)
-	if err != nil {
-		return errors.Wrapf(err, "unable to copy kubelet.exe to %s", winTemp)
-	}
-
 	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
 	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server " + vm.workerIgnitionEndpoint + " -output " +
 		winTemp + "worker.ign"
@@ -120,7 +148,7 @@ func (vm *Windows) initializeBootstrapperFiles() error {
 // ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
 func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 	// Check if the hybrid-overlay is running
-	out, err := vm.RunOverSSH("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
+	_, err := vm.RunOverSSH("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
 
 	// err being nil implies that hybrid-overlay was running.
 	if err == nil {
@@ -131,16 +159,6 @@ func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 			log.Info("unable to stop hybrid-overlay", "stop command", stopCmd, "output", out)
 			return errors.Wrap(err, "unable to stop hybrid-overlay")
 		}
-	}
-
-	out, err = vm.RunOverSSH(mkdirCmd(logDir), false)
-	if err != nil {
-		return errors.Wrapf(err, "unable to create %s directory:\n%s", logDir, out)
-	}
-
-	if err := vm.CopyFile(wkl.HybridOverlayPath, remoteDir); err != nil {
-		return errors.Wrapf(err, "error copying %s-->%s", wkl.HybridOverlayPath,
-			remoteDir+wkl.HybridOverlayName)
 	}
 
 	// Start the hybrid-overlay in the background over ssh. We cannot use vm.Run() and by extension WinRM.Run() here as
@@ -214,24 +232,9 @@ func (vm *Windows) waitForHybridOverlayToRun() error {
 
 // ConfigureCNI ensures that the CNI configuration in done on the node
 func (vm *Windows) ConfigureCNI(configFile string) error {
-	// create cni directory
-	_, err := vm.RunOverSSH(mkdirCmd(cniDir), false)
-	if err != nil {
-		return errors.Wrapf(err, "unable to create CNI directory %v", cniDir)
-	}
-
-	// copy the CNI plugins and CNI config file to the windows VM
-	var cniFiles = []string{
-		wkl.FlannelCNIPluginPath,
-		wkl.WinBridgeCNIPlugin,
-		wkl.HostLocalCNIPlugin,
-		wkl.WinOverlayCNIPlugin,
-		configFile,
-	}
-	for _, file := range cniFiles {
-		if err := vm.CopyFile(file, cniDir); err != nil {
-			return errors.Errorf("unable to copy CNI file %s to %s", file, cniDir)
-		}
+	// copy the CNI config file to the Windows VM
+	if err := vm.CopyFile(configFile, cniDir); err != nil {
+		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniDir)
 	}
 
 	cniConfigDest := cniDir + filepath.Base(configFile)
