@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	clientset "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
@@ -55,10 +56,21 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "unable to get config to talk to kubernetes api server")
 	}
-	if len(cfg.Host) == 0 {
+
+	client, err := clientset.NewForConfig(cfg)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to get client from the given config")
+	}
+
+	host, err := client.ConfigV1().Infrastructures().Get("cluster", metav1.GetOptions{})
+	if err != nil {
+		return "", errors.Wrap(err, "unable to get cluster infrastructure resource")
+	}
+	// get API server internal url of format https://api-int.abc.devcluster.openshift.com:6443
+	if host.Status.APIServerInternalURL == "" {
 		return "", errors.Wrap(err, "could not get host name for the kubernetes api server")
 	}
-	return cfg.Host, nil
+	return host.Status.APIServerInternalURL, nil
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
@@ -76,7 +88,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM,
 		if err != nil {
 			return nil, errors.Wrap(err, "error getting cluster address")
 		}
-		workerIgnitionEndpoint := "https://api-int." + clusterAddress + ":22623/config/worker"
+		workerIgnitionEndpoint := "https://" + clusterAddress + ":22623/config/worker"
 		nodeConfigCache.workerIgnitionEndPoint = workerIgnitionEndpoint
 	}
 	if err = clusternetwork.ValidateCIDR(clusterServiceCIDR); err != nil {
@@ -89,8 +101,8 @@ func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM,
 }
 
 // getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
-// For example: https://api.abc.devcluster.openshift.com:6443 gets translated to
-// abc.devcluster.openshift.com
+// For example: https://api-int.abc.devcluster.openshift.com:6443 gets translated to
+// api-int.abc.devcluster.openshift.com
 // TODO: Think if this needs to be removed as this is too restrictive. Imagine apiserver behind
 // 		a loadbalancer.
 // 		Jira story: https://issues.redhat.com/browse/WINC-398
@@ -100,14 +112,12 @@ func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
 		return "", errors.Wrap(err, "unable to parse the kubernetes API server endpoint")
 	}
 	hostName := clusterEndPoint.Hostname()
-	subdomainToBeReplaced := "api."
 
-	if !strings.HasPrefix(hostName, "api.") {
-		return "", errors.New("invalid API server url format found: expected hostname to start with `api.`")
+	// Check if hostname is valid
+	if !strings.HasPrefix(hostName, "api-int.") {
+		return "", errors.New("invalid API server url format found: expected hostname to start with `api-int.`")
 	}
-	// Replace `api.` with empty string for the first occurrence.
-	clusterAddress := strings.Replace(hostName, subdomainToBeReplaced, "", 1)
-	return clusterAddress, nil
+	return hostName, nil
 }
 
 // Configure configures the Windows VM to make it a Windows worker node
