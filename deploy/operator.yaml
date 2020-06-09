@@ -22,10 +22,6 @@ spec:
       - name: cloud-private-key
         secret:
           secretName: cloud-private-key
-      # TODO: Remove the kubeconfig volume as part of https://issues.redhat.com/browse/WINC-328
-      - name: kubeconfig
-        secret:
-          secretName: kubeconfig
       containers:
         - name: windows-machine-config-operator
           # Replace this with the built image name
@@ -47,9 +43,6 @@ spec:
                   fieldPath: metadata.name
             - name: OPERATOR_NAME
               value: "windows-machine-config-operator"
-            # TODO: Remove the KUBECONFIG environment variable as part of https://issues.redhat.com/browse/WINC-328
-            - name: KUBECONFIG
-              value: /etc/kubeconfig/kubeconfig
           volumeMounts:
           # TODO: Remove the cloud-credentials and cloud-private-key volumeMounts as part of
           # https://issues.redhat.com/browse/WINC-325
@@ -58,8 +51,4 @@ spec:
             readOnly: true
           - name: cloud-private-key
             mountPath: "/etc/private-key/"
-            readOnly: true
-          # TODO: Remove the kubeconfig volumeMount as part of https://issues.redhat.com/browse/WINC-328
-          - name: kubeconfig
-            mountPath: "/etc/kubeconfig/"
             readOnly: true

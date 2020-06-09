@@ -3,8 +3,6 @@ package windowsmachineconfig
 import (
 	"context"
 	"fmt"
-	"os"
-
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/cloudprovider"
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	wmcapi "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
@@ -131,7 +129,7 @@ func (r *ReconcileWindowsMachineConfig) getCloudProvider(instance *wmcapi.Window
 	//              Jira story: https://issues.redhat.com/browse/WINC-262
 	// TODO: Add validation for the fields in the WindowsMachineConfig CRD.
 	//              Jira story: https://issues.redhat.com/browse/WINC-279
-	r.cloudProvider, err = cloudprovider.CloudProviderFactory(os.Getenv("KUBECONFIG"),
+	r.cloudProvider, err = cloudprovider.CloudProviderFactory("",
 		// We assume the credential path is `/etc/aws/credentials` mounted as a secret.
 		wkl.CloudCredentialsPath,
 		instance.Spec.AWS.CredentialAccountID,

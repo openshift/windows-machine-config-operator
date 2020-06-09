@@ -153,13 +153,6 @@ oc create secret generic cloud-credentials --from-file=credentials=$HOME/.aws/cr
 oc create secret generic cloud-private-key --from-file=private-key.pem=$HOME/.ssh/$keyname
 ```
 
-Put the kubeconfig you wish to use in a secret. In order to use the permissions of the windows-machine-config-operator
-service account the kubeconfig should be generated from the service account.
-```shell script
-# Change paths as necessary
-oc create secret generic kubeconfig --from-file=kubeconfig=/path/to/kubeconfig
-```
-
 ##### Running with bundle and index images
 You can skip this step if you want to run the operator locally [without bundle and index images](#running-without-bundle-and-index-images)
 

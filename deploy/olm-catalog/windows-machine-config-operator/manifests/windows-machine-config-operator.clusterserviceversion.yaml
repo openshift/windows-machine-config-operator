@@ -109,8 +109,6 @@ spec:
                       fieldPath: metadata.name
                 - name: OPERATOR_NAME
                   value: windows-machine-config-operator
-                - name: KUBECONFIG
-                  value: /etc/kubeconfig/kubeconfig
                 image: REPLACE_IMAGE
                 imagePullPolicy: Always
                 name: windows-machine-config-operator
@@ -122,9 +120,6 @@ spec:
                 - mountPath: /etc/private-key/
                   name: cloud-private-key
                   readOnly: true
-                - mountPath: /etc/kubeconfig/
-                  name: kubeconfig
-                  readOnly: true
               serviceAccountName: windows-machine-config-operator
               volumes:
               - name: cloud-credentials
@@ -133,9 +128,6 @@ spec:
               - name: cloud-private-key
                 secret:
                   secretName: cloud-private-key
-              - name: kubeconfig
-                secret:
-                  secretName: kubeconfig
       permissions:
       - rules:
         - apiGroups:
