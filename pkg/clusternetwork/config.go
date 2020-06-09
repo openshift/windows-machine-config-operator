@@ -1,6 +1,7 @@
 package clusternetwork
 
 import (
+	"context"
 	"net"
 
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
@@ -86,7 +87,7 @@ func (ovn *ovnKubernetes) GetServiceCIDR() (string, error) {
 // Validate for OVN Kubernetes checks for network type and hybrid overlay.
 func (ovn *ovnKubernetes) Validate() error {
 	//check if hybrid overlay is enabled for the cluster
-	networkCR, err := ovn.operatorClient.Networks().Get("cluster", metav1.GetOptions{})
+	networkCR, err := ovn.operatorClient.Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error getting cluster network.operator object")
 	}
@@ -105,7 +106,7 @@ func (ovn *ovnKubernetes) Validate() error {
 // getNetworkType returns network type of the cluster
 func getNetworkType(oclient configclient.Interface) (string, error) {
 	// Get the cluster network object so that we can find the network type
-	networkCR, err := oclient.ConfigV1().Networks().Get("cluster", metav1.GetOptions{})
+	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
 		return "", errors.Wrap(err, "error getting cluster network object")
 	}
@@ -115,7 +116,7 @@ func getNetworkType(oclient configclient.Interface) (string, error) {
 // getServiceNetworkCIDR gets the serviceCIDR using cluster config required for cni configuration
 func getServiceNetworkCIDR(oclient configclient.Interface) (string, error) {
 	// Get the cluster network object so that we can find the service network
-	networkCR, err := oclient.ConfigV1().Networks().Get("cluster", metav1.GetOptions{})
+	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
 		return "", errors.Wrap(err, "error getting cluster network object")
 	}

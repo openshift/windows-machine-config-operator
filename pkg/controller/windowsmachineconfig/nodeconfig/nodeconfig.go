@@ -1,6 +1,7 @@
 package nodeconfig
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -62,7 +63,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 		return "", errors.Wrap(err, "unable to get client from the given config")
 	}
 
-	host, err := client.ConfigV1().Infrastructures().Get("cluster", metav1.GetOptions{})
+	host, err := client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
 		return "", errors.Wrap(err, "unable to get cluster infrastructure resource")
 	}
@@ -191,7 +192,7 @@ func (nc *nodeConfig) applyWorkerLabel() error {
 		return nil
 	}
 	nc.node.Labels[WorkerLabel] = ""
-	node, err := nc.k8sclientset.CoreV1().Nodes().Update(nc.node)
+	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, metav1.UpdateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error applying worker label to node object")
 	}
@@ -222,7 +223,7 @@ func (nc *nodeConfig) findCSR(requestor string) (*certificates.CertificateSignin
 	var foundCSR *certificates.CertificateSigningRequest
 	// Find the CSR
 	for retries := 0; retries < retry.Count; retries++ {
-		csrs, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().List(metav1.ListOptions{})
+		csrs, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			return nil, fmt.Errorf("unable to get CSR list: %v", err)
 		}
@@ -275,6 +276,7 @@ func (nc *nodeConfig) approve(csr *certificates.CertificateSigningRequest) error
 	return kretry.RetryOnConflict(kretry.DefaultRetry, func() error {
 		// Ensure we get the current version
 		csr, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().Get(
+			context.TODO(),
 			csr.GetName(), metav1.GetOptions{})
 		if err != nil {
 			return err
@@ -288,7 +290,7 @@ func (nc *nodeConfig) approve(csr *certificates.CertificateSigningRequest) error
 			LastUpdateTime: metav1.Now(),
 		})
 
-		_, err = nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(csr)
+		_, err = nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(context.TODO(), csr, metav1.UpdateOptions{})
 		return err
 	})
 }
@@ -309,7 +311,7 @@ func (nc *nodeConfig) handleCSR(requestorFilter string) error {
 
 // getNode returns a pointer to the node object associated with the instance id provided
 func (nc *nodeConfig) getNode() error {
-	nodes, err := nc.k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: WindowsOSLabel})
+	nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: WindowsOSLabel})
 	if err != nil {
 		return errors.Wrap(err, "could not get list of nodes")
 	}
@@ -333,7 +335,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	nodeName := nc.node.GetName()
 	var found bool
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
-		node, err := nc.k8sclientset.CoreV1().Nodes().Get(nodeName, metav1.GetOptions{})
+		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
 			return false, errors.Wrapf(err, "error getting node %s", nodeName)
 		}

@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -187,14 +188,14 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 // deleteDeployment deletes the deployment with the given name
 func (tc *testContext) deleteDeployment(name string) error {
 	deploymentsClient := tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault)
-	return deploymentsClient.Delete(name, &metav1.DeleteOptions{})
+	return deploymentsClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 // getPodIP returns the IP of the pod that matches the label selector. If more than one pod match the
 // selector, the function will return an error
 func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	selectorString := labels.Set(selector.MatchLabels).String()
-	podList, err := tc.kubeclient.CoreV1().Pods(v1.NamespaceDefault).List(metav1.ListOptions{
+	podList, err := tc.kubeclient.CoreV1().Pods(v1.NamespaceDefault).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectorString})
 	if err != nil {
 		return "", err
@@ -259,7 +260,7 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 	}
 
 	// Create Deployment
-	deploy, err := deploymentsClient.Create(deployment)
+	deploy, err := deploymentsClient.Create(context.TODO(), deployment, metav1.CreateOptions{})
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not create deployment")
 	}
@@ -271,7 +272,8 @@ func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 	var deployment *appsv1.Deployment
 	var err error
 	for i := 0; i < retryCount; i++ {
-		deployment, err = tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault).Get(name,
+		deployment, err = tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault).Get(context.TODO(),
+			name,
 			metav1.GetOptions{})
 		if err != nil {
 			return errors.Wrapf(err, "could not get deployment for %s", name)
@@ -287,7 +289,7 @@ func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 
 // getPodEvents gets all events for any pod with the input in its name. Used for debugging purposes
 func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
-	eventList, err := tc.kubeclient.CoreV1().Events(v1.NamespaceDefault).List(metav1.ListOptions{
+	eventList, err := tc.kubeclient.CoreV1().Events(v1.NamespaceDefault).List(context.TODO(), metav1.ListOptions{
 		FieldSelector: "involvedObject.kind=Pod"})
 	if err != nil {
 		return []v1.Event{}, err
@@ -359,7 +361,7 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 	}
 
 	// Create job
-	job, err := jobsClient.Create(job)
+	job, err := jobsClient.Create(context.TODO(), job, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +371,7 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 // deleteJob deletes the job with the given name
 func (tc *testContext) deleteJob(name string) error {
 	jobsClient := tc.kubeclient.BatchV1().Jobs(v1.NamespaceDefault)
-	return jobsClient.Delete(name, &metav1.DeleteOptions{})
+	return jobsClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 // waitUntilJobSucceeds will return an error if the job fails or reaches a timeout
@@ -377,7 +379,7 @@ func (tc *testContext) waitUntilJobSucceeds(name string) error {
 	var job *batchv1.Job
 	var err error
 	for i := 0; i < retryCount; i++ {
-		job, err = tc.kubeclient.BatchV1().Jobs(v1.NamespaceDefault).Get(name, metav1.GetOptions{})
+		job, err = tc.kubeclient.BatchV1().Jobs(v1.NamespaceDefault).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}

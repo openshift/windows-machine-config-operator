@@ -30,7 +30,7 @@ func (tc *testContext) waitForTrackerConfigMap() error {
 	// configuration before the ConfigMap is updated. If we are testing a scale down from n nodes to 0, then we should
 	// not take the number of nodes into account.
 	err := wait.Poll(tc.retryInterval, time.Duration(math.Max(float64(gc.numberOfNodes), 1))*tc.timeout, func() (done bool, err error) {
-		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(wmc.StoreName, metav1.GetOptions{})
+		trackerConfigMap, err = tc.kubeclient.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), wmc.StoreName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("waiting for %s/%s ConfigMap to be created", tc.namespace, wmc.StoreName)
@@ -104,7 +104,7 @@ func (tc *testContext) getNodeIP(instanceID string) (string, error) {
 func (tc *testContext) getNode(instanceID string) (*corev1.Node, error) {
 	var matchedNode *corev1.Node
 
-	nodes, err := tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+	nodes, err := tc.kubeclient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
 	if err != nil {
 		return nil, errors.Wrap(err, "error while querying for Windows nodes")
 	}
@@ -127,7 +127,7 @@ func (tc *testContext) getNode(instanceID string) (*corev1.Node, error) {
 func (tc *testContext) getCredsFromSecret(instanceID string) (wmc.Credentials, error) {
 	var creds wmc.Credentials
 	err := wait.Poll(tc.retryInterval, tc.timeout, func() (done bool, err error) {
-		instanceSecret, err := tc.kubeclient.CoreV1().Secrets(tc.namespace).Get(instanceID, metav1.GetOptions{})
+		instanceSecret, err := tc.kubeclient.CoreV1().Secrets(tc.namespace).Get(context.TODO(), instanceID, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("Waiting for instance secret to be created: %s\n", instanceSecret.Name)
