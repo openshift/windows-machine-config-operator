@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -47,6 +48,20 @@ func Add(mgr manager.Manager, clusterServiceCIDR string) error {
 func newReconciler(mgr manager.Manager, clusterServiceCIDR string) (reconcile.Reconciler, error) {
 	// TODO: This should be moved out to validation for reconciler struct.
 	// 		Jira story: https://issues.redhat.com/browse/WINC-277
+	// The default client serves read requests from the cache which
+	// could be stale and result in a get call to return an older version
+	// of the object. Hence we are using a non-default-client referenced
+	// by operator-sdk.
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := client.New(cfg, client.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		return nil, err
+	}
+
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating kubernetes clientset")
@@ -58,7 +73,7 @@ func newReconciler(mgr manager.Manager, clusterServiceCIDR string) (reconcile.Re
 		return nil, errors.Wrap(err, "failed to instantiate tracker")
 	}
 
-	return &ReconcileWindowsMachineConfig{client: mgr.GetClient(),
+	return &ReconcileWindowsMachineConfig{client: client,
 			scheme:             mgr.GetScheme(),
 			k8sclientset:       clientset,
 			tracker:            vmTracker,
@@ -193,14 +208,6 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 	// Get the current count of required number of Windows VMs
 	currentCountOfWindowsVMs := len(windowsNodes.Items)
 
-	// Update status to reflect that operator is reconciling
-	r.statusMgr.setStatusConditions([]wmcapi.WindowsMachineConfigCondition{
-		*wmcapi.NewWindowsMachineConfigCondition(wmcapi.Reconciling, corev1.ConditionTrue, "", "")})
-	if err = r.statusMgr.updateStatus(); err != nil {
-		// Don't continue reconciling and requeue on status error
-		return reconcile.Result{}, err
-	}
-
 	// Add or remove nodes
 	nodeCount, nodeReconcileErrs := r.reconcileWindowsNodes(int(instance.Spec.Replicas), currentCountOfWindowsVMs)
 
@@ -229,6 +236,14 @@ func (r *ReconcileWindowsMachineConfig) reconcileWindowsNodes(desired, current i
 	var successCount int
 	var newNodeCount int
 	log.Info("replicas", "current", current, "desired", desired)
+	if current != desired {
+		// Update status to reflect that operator is reconciling
+		r.statusMgr.setStatusConditions([]wmcapi.WindowsMachineConfigCondition{
+			*wmcapi.NewWindowsMachineConfigCondition(wmcapi.Reconciling, corev1.ConditionTrue, "", "")})
+		if err := r.statusMgr.updateStatus(); err != nil {
+			errs = append(errs, newReconcileError(wmcapi.StatusFailureReason, err))
+		}
+	}
 	if desired < current {
 		successCount, errs = r.removeWorkerNodes(current - desired)
 		newNodeCount = current - successCount

@@ -48,8 +48,11 @@ func (s *StatusManager) updateStatus() error {
 		return errors.Wrapf(err, "could not get %v", s.wmcName)
 	}
 
-	object.Status.JoinedVMCount = s.joinedVMCount
 	for _, condition := range s.conditionsToSet {
+		// update the joined VM count if we are done reconciling
+		if condition.Type == wmcapi.Reconciling && condition.Status == corev1.ConditionFalse {
+			object.Status.JoinedVMCount = s.joinedVMCount
+		}
 		object.Status.SetWindowsMachineConfigCondition(condition)
 	}
 	if (s.degradedCondition != wmcapi.WindowsMachineConfigCondition{}) {
