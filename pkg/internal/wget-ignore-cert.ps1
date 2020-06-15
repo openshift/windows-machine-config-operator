@@ -22,5 +22,5 @@ public static class Dummy {
 "@
 }
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = [dummy]::GetDelegate()
-
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 wget $server -o $output
