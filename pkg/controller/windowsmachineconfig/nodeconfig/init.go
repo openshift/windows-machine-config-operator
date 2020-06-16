@@ -34,5 +34,5 @@ func init() {
 		log.Error(err, "error getting cluster address")
 	}
 	// populate the cache
-	nodeConfigCache.workerIgnitionEndPoint = "https://api-int." + clusterAddress + ":22623/config/worker"
+	nodeConfigCache.workerIgnitionEndPoint = "https://" + clusterAddress + ":22623/config/worker"
 }

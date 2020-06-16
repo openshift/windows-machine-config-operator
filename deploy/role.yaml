@@ -97,3 +97,19 @@ rules:
      - networks
    verbs:
      - get
+# Pod permissions used to get OwnerReference corresponding to the current pod. This is required to ensure that
+# the operator pod is the leader in the given namespace.
+ - apiGroups:
+     - ""
+   resources:
+     - pods
+   verbs:
+     - get
+     - list
+# Permissions needed to approve a CSR.
+ - apiGroups:
+     - certificates.k8s.io
+   resources:
+     - signers
+   verbs:
+     - approve

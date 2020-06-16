@@ -19,8 +19,8 @@ func Test_getClusterAddr(t *testing.T) {
 	}{
 		{
 			name:    "Valid test case",
-			args:    args{kubeAPIServerEndpoint: "https://api.abc.devcluster.openshift.com:6443"},
-			want:    "abc.devcluster.openshift.com",
+			args:    args{kubeAPIServerEndpoint: "https://api-int.abc.devcluster.openshift.com:6443"},
+			want:    "api-int.abc.devcluster.openshift.com",
 			wantErr: false,
 		},
 		{
@@ -31,8 +31,8 @@ func Test_getClusterAddr(t *testing.T) {
 		},
 		{
 			name:    "Test case with invalid api at the last",
-			args:    args{kubeAPIServerEndpoint: "https://api.abc.devcluster.openshift.com.api:6443"},
-			want:    "abc.devcluster.openshift.com.api",
+			args:    args{kubeAPIServerEndpoint: "https://api-int.abc.devcluster.openshift.com.api:6443"},
+			want:    "api-int.abc.devcluster.openshift.com.api",
 			wantErr: false,
 		},
 	}
