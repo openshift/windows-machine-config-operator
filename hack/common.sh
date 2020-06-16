@@ -13,3 +13,75 @@ get_operator_sdk() {
   wget -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v0.18.1/operator-sdk-v0.18.1-x86_64-linux-gnu >/dev/null  && chmod +x /tmp/operator-sdk || return
   echo $DOWNLOAD_DIR
 }
+
+# This function runs operator-sdk run --olm/cleanup depending on the given parameters
+# Parameters:
+# 1: command to run [run/cleanup]
+# 2: path to the operator-sdk binary to use
+# 3: OPTIONAL path to the directory holding the temporary CSV with image field replaced with operator image
+OSDK_WMCO_management() {
+  if [ "$#" -lt 2 ]; then
+    echo incorrect parameter count for OSDK_WMCO_management $#
+    return 1
+  fi
+  if [[ "$1" != "run" && "$1" != "cleanup" ]]; then
+    echo $1 does not match either run or cleanup
+    return 1
+  fi
+
+  local COMMAND=$1
+  local OSDK_PATH=$2
+  local INCLUDE=""
+
+  if [[ "$1" = "run" ]]; then
+    INCLUDE="--include "$3"/windows-machine-config-operator/manifests/windows-machine-config-operator.clusterserviceversion.yaml"
+  fi
+
+  # Currently this fails even on successes, adding this check to ignore the failure
+  # https://github.com/operator-framework/operator-sdk/issues/2938
+  if ! $OSDK_PATH $COMMAND packagemanifests --olm-namespace openshift-operator-lifecycle-manager --operator-namespace windows-machine-config-operator \
+  --operator-version 0.0.0 $INCLUDE; then
+    echo operator-sdk $1 failed
+  fi
+}
+
+# Creates a temporary directory to hold edited manifests, validates the operator bundle
+# and prepares the cluster to run the operator and runs the operator on the cluster using OLM
+# Parameters:
+# 1: path to the operator-sdk binary to use
+run_WMCO(){
+  local OSDK=$1
+
+  # Create a temporary directory to hold the edited manifests which will be removed on exit
+  MANIFEST_LOC=`mktemp -d`
+  trap "rm -r $MANIFEST_LOC" EXIT
+  cp -r deploy/olm-catalog/windows-machine-config-operator/ $MANIFEST_LOC
+  sed -i "s|REPLACE_IMAGE|$OPERATOR_IMAGE|g" $MANIFEST_LOC/windows-machine-config-operator/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+
+  # Validate the operator bundle manifests
+  $OSDK bundle validate "$MANIFEST_LOC"/windows-machine-config-operator/
+  if [ $? -ne 0 ] ; then
+      error-exit "operator bundle validation failed"
+  fi
+
+  oc apply -f deploy/namespace.yaml
+  if ! oc create secret generic cloud-credentials --from-file=credentials=$AWS_SHARED_CREDENTIALS_FILE -n windows-machine-config-operator; then
+    echo "secret already present"
+  fi
+  if ! oc create secret generic cloud-private-key --from-file=private-key.pem=$KUBE_SSH_KEY_PATH -n windows-machine-config-operator; then
+    echo "cloud-private-key already present"
+  fi
+
+  # Run the operator in the windows-machine-config-operator namespace
+  OSDK_WMCO_management run $OSDK $MANIFEST_LOC
+}
+
+# Cleans up the installation of operator from the cluster and deletes the namespace
+# Parameters:
+# 1: path to the operator-sdk binary to use
+cleanup_WMCO() {
+  local OSDK=$1
+  # Remove the operator from windows-machine-config-operator namespace
+  OSDK_WMCO_management cleanup $OSDK
+  oc delete -f deploy/namespace.yaml
+}

@@ -16,32 +16,6 @@ get_WMCO_logs() {
   oc logs -l name=windows-machine-config-operator -n windows-machine-config-operator
 }
 
-# This function runs operator-sdk run --olm/cleanup depending on the given parameters
-# Parameters:
-# 1: command to run [run/cleanup]
-# 2: path to the operator-sdk binary to use
-# 3: path to the directory holding the operator manifests
-OSDK_WMCO_management() {
-  if [ $# != 3 ]; then
-    echo incorrect parameter count for OSDK_WMCO_management
-    return 1
-  fi
-  if [[ "$1" != "run" && "$1" != "cleanup" ]]; then
-    echo $1 does not match either run or cleanup
-    return 1
-  fi
-
-  local COMMAND=$1
-  local OSDK_PATH=$2
-
-  # Currently this fails even on successes, adding this check to ignore the failure
-  # https://github.com/operator-framework/operator-sdk/issues/2938
-  if ! $OSDK_PATH $COMMAND packagemanifests --olm-namespace openshift-operator-lifecycle-manager --operator-namespace windows-machine-config-operator \
-  --operator-version 0.0.0 --include $3/windows-machine-config-operator/manifests/windows-machine-config-operator.clusterserviceversion.yaml; then
-    echo operator-sdk $1 failed
-  fi
-}
-
 # This function runs operator-sdk test with certain go test arguments
 # Parameters:
 # 1: path to the operator-sdk binary to use
@@ -99,22 +73,8 @@ KEY_PAIR_NAME=${KEY_PAIR_NAME:-"openshift-dev"}
 # https://steps.svc.ci.openshift.org/help/ci-operator#release
 OPERATOR_IMAGE=${OPERATOR_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//stable:windows-machine-config-operator-test}}
 
-# Create a temporary directory to hold the edited manifests which will be removed on exit
-MANIFEST_LOC=`mktemp -d`
-trap "rm -r $MANIFEST_LOC" EXIT
-cp -r deploy/olm-catalog/windows-machine-config-operator/ $MANIFEST_LOC
-sed -i "s|REPLACE_IMAGE|$OPERATOR_IMAGE|g" $MANIFEST_LOC/windows-machine-config-operator/manifests/windows-machine-config-operator.clusterserviceversion.yaml
-
-# Verify the operator bundle manifests
-$OSDK bundle validate "$MANIFEST_LOC"/windows-machine-config-operator/
-
-cd $WMCO_ROOT
-oc create -f deploy/namespace.yaml
-oc create secret generic cloud-credentials --from-file=credentials=$AWS_SHARED_CREDENTIALS_FILE -n windows-machine-config-operator
-oc create secret generic cloud-private-key --from-file=private-key.pem=$KUBE_SSH_KEY_PATH -n windows-machine-config-operator
-
-# Run the operator in the windows-machine-config-operator namespace
-OSDK_WMCO_management run $OSDK $MANIFEST_LOC
+# Setup and run the operator
+run_WMCO $OSDK
 
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
@@ -129,7 +89,6 @@ OSDK_WMCO_test $OSDK "-run=TestWMCO/destroy -v -timeout=60m -ssh-key-pair=$KEY_P
 get_WMCO_logs
 
 # Cleanup the operator resources
-OSDK_WMCO_management cleanup $OSDK $MANIFEST_LOC
-oc delete -f deploy/namespace.yaml
+cleanup_WMCO $OSDK
 
 exit 0
