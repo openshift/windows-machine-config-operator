@@ -80,10 +80,6 @@ func GetWindowsVM(instanceID, ipAddress string, credentials Credentials) (types.
 	winVM := &types.Windows{}
 	windowsCredentials := types.NewCredentials(instanceID, ipAddress, credentials.Password, credentials.Username)
 	winVM.Credentials = windowsCredentials
-	// Set up Winrm client
-	if err := winVM.SetupWinRMClient(); err != nil {
-		return nil, errors.Wrap(err, "error instantiating winrm client")
-	}
 	// Set up SSH client
 	if err := winVM.GetSSHClient(); err != nil {
 		return nil, errors.Wrap(err, "error instantiating ssh client")

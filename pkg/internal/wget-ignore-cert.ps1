@@ -4,6 +4,9 @@ param (
     [Parameter(Mandatory=$true)][string]$output
 )
 
+# Prevent the progress meter from accessing the console.
+$ProgressPreference = "SilentlyContinue"
+
 if (-not("dummy" -as [type])) {
     add-type -TypeDefinition @"
 using System;
@@ -23,4 +26,6 @@ public static class Dummy {
 }
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = [dummy]::GetDelegate()
 
-wget $server -o $output
+# $null is needed to prevent wget from attempting read the standard input or
+# output streams when attached to the console.
+$null | wget $server -o $output > $null

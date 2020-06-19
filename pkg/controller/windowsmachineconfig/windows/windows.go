@@ -53,7 +53,7 @@ func New(vm types.WindowsVM, workerIgnitionEndpoint string) *Windows {
 // Configure prepares the Windows VM for the bootstrapper and then runs it
 func (vm *Windows) Configure() error {
 	// Create the temp directory
-	_, _, err := vm.Run(mkdirCmd(remoteDir), false)
+	_, err := vm.RunOverSSH(mkdirCmd(remoteDir), false)
 	if err != nil {
 		return errors.Wrapf(err, "unable to create remote directory %v", remoteDir)
 	}
@@ -91,14 +91,11 @@ func (vm *Windows) runBootstrapper() error {
 	}
 	wmcbInitializeCmd := remoteDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
 		"worker.ign --kubelet-path " + winTemp + "kubelet.exe"
-	stdout, stderr, err := vm.Run(wmcbInitializeCmd, true)
+	out, err := vm.RunOverSSH(wmcbInitializeCmd, true)
+	log.V(1).Info("output from wmcb", "output", out)
 	if err != nil {
 		return errors.Wrap(err, "error running bootstrapper")
 	}
-	if len(stderr) > 0 {
-		log.Info("bootstrapper initialization failed", "stderr", stderr)
-	}
-	log.V(5).Info("stdout from wmcb", "stdout", stdout)
 	return nil
 }
 
@@ -112,38 +109,33 @@ func (vm *Windows) initializeBootstrapperFiles() error {
 	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
 	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server " + vm.workerIgnitionEndpoint + " -output " +
 		winTemp + "worker.ign"
-	stdout, stderr, err := vm.Run(ignitionFileDownloadCmd, true)
+	out, err := vm.RunOverSSH(ignitionFileDownloadCmd, true)
+	log.V(1).Info("ignition file download", "cmd", ignitionFileDownloadCmd, "output", out)
 	if err != nil {
 		return errors.Wrap(err, "unable to download worker.ign")
 	}
-
-	log.V(5).Info("stderr associated with the ignition file download", "stderr", stderr)
-	if len(stderr) > 0 {
-		log.Info("error while downloading the ignition file from cluster", "stderr", stderr)
-	}
-	log.V(5).Info("stdout associated with the ignition file download", "stdout", stdout)
 	return nil
 }
 
 // ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
 func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 	// Check if the hybrid-overlay is running
-	_, stderr, err := vm.Run("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
+	out, err := vm.RunOverSSH("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
 
-	// stderr being empty implies that hybrid-overlay was running.
-	if err == nil || stderr == "" {
+	// err being nil implies that hybrid-overlay was running.
+	if err == nil {
 		// Stop the hybrid-overlay
 		stopCmd := "Stop-Process -Name \"" + HybridOverlayProcess + "\""
-		_, stderr, err := vm.Run(stopCmd, true)
-		if err != nil || stderr != "" {
-			log.Info("unable to stop hybrid-overlay", "stop command", stopCmd, "stderr", stderr)
+		out, err := vm.RunOverSSH(stopCmd, true)
+		if err != nil {
+			log.Info("unable to stop hybrid-overlay", "stop command", stopCmd, "output", out)
 			return errors.Wrap(err, "unable to stop hybrid-overlay")
 		}
 	}
 
-	_, stderr, err = vm.Run(mkdirCmd(logDir), false)
+	out, err = vm.RunOverSSH(mkdirCmd(logDir), false)
 	if err != nil {
-		return errors.Wrapf(err, "unable to create %s directory:\n%s", logDir, stderr)
+		return errors.Wrapf(err, "unable to create %s directory:\n%s", logDir, out)
 	}
 
 	if err := vm.CopyFile(wkl.HybridOverlayPath, remoteDir); err != nil {
@@ -184,24 +176,24 @@ func (vm *Windows) ConfigureHybridOverlay(nodeName string) error {
 
 // waitForHNSNetworks waits for the OVN overlay HNS networks to be created until the timeout is reached
 func (vm *Windows) waitForHNSNetworks() error {
-	var stdout, stderr string
+	var out string
 	var err error
 	for retries := 0; retries < retry.Count; retries++ {
-		stdout, stderr, err = vm.Run("Get-HnsNetwork", true)
+		out, err = vm.RunOverSSH("Get-HnsNetwork", true)
 		if err != nil {
 			// retry
 			continue
 		}
 
-		if strings.Contains(stdout, BaseOVNKubeOverlayNetwork) &&
-			strings.Contains(stdout, OVNKubeOverlayNetwork) {
+		if strings.Contains(out, BaseOVNKubeOverlayNetwork) &&
+			strings.Contains(out, OVNKubeOverlayNetwork) {
 			return nil
 		}
 		time.Sleep(retry.Interval)
 	}
 
 	// OVN overlay HNS networks were not found
-	log.Info("Get-HnsNetwork", "stdout", stdout, "stderr", stderr)
+	log.Info("Get-HnsNetwork", "output", out)
 	return errors.Wrap(err, "timeout waiting for OVN overlay HNS networks")
 }
 
@@ -209,7 +201,7 @@ func (vm *Windows) waitForHNSNetworks() error {
 func (vm *Windows) waitForHybridOverlayToRun() error {
 	var err error
 	for retries := 0; retries < retry.Count; retries++ {
-		_, _, err = vm.Run("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
+		_, err = vm.RunOverSSH("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
 		if err == nil {
 			return nil
 		}
@@ -223,7 +215,7 @@ func (vm *Windows) waitForHybridOverlayToRun() error {
 // ConfigureCNI ensures that the CNI configuration in done on the node
 func (vm *Windows) ConfigureCNI(configFile string) error {
 	// create cni directory
-	_, _, err := vm.Run(mkdirCmd(cniDir), false)
+	_, err := vm.RunOverSSH(mkdirCmd(cniDir), false)
 	if err != nil {
 		return errors.Wrapf(err, "unable to create CNI directory %v", cniDir)
 	}
@@ -247,9 +239,9 @@ func (vm *Windows) ConfigureCNI(configFile string) error {
 	configureCNICmd := remoteDir + "wmcb.exe configure-cni --cni-dir=\"" +
 		cniDir + " --cni-config=\"" + cniConfigDest
 
-	_, stderr, err := vm.Run(configureCNICmd, true)
-	if err != nil || len(stderr) > 0 {
-		log.Info("CNI configuration failed", "CNI configuration command", configureCNICmd, "stderr", stderr, "err", err)
+	out, err := vm.RunOverSSH(configureCNICmd, true)
+	if err != nil {
+		log.Info("CNI configuration failed", "command", configureCNICmd, "output", out, "error", err)
 		return errors.Wrap(err, "CNI configuration failed")
 	}
 
