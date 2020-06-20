@@ -10,6 +10,6 @@ get_operator_sdk() {
 
   DOWNLOAD_DIR=/tmp/operator-sdk
   # TODO: Make this download the same version we have in go dependencies in gomod
-  wget -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v0.17.1/operator-sdk-v0.17.1-x86_64-linux-gnu >/dev/null  && chmod +x /tmp/operator-sdk || return
+  wget -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v0.18.1/operator-sdk-v0.18.1-x86_64-linux-gnu >/dev/null  && chmod +x /tmp/operator-sdk || return
   echo $DOWNLOAD_DIR
 }

@@ -1,6 +1,8 @@
 package clusternetwork
 
 import (
+	"context"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
 
 	v1 "github.com/openshift/api/config/v1"
@@ -62,7 +64,7 @@ func TestNetworkConfigurationValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeConfigClient, fakeOperatorClient := createFakeClients(tt.networkType)
 			if tt.networkPatch != nil {
-				_, err := fakeOperatorClient.Networks().Patch("cluster", k8stypes.MergePatchType, tt.networkPatch)
+				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, metav1.PatchOptions{})
 				require.Nil(t, err, "network patch should not throw error")
 			}
 
@@ -95,11 +97,11 @@ func createFakeClients(networkType string) (configclient.Interface, operatorclie
 	testNetworkOperator := &operatorv1.Network{}
 	testNetworkOperator.Name = "cluster"
 
-	_, err := fakeConfigClient.ConfigV1().Networks().Create(testNetworkConfig)
+	_, err := fakeConfigClient.ConfigV1().Networks().Create(context.TODO(), testNetworkConfig, metav1.CreateOptions{})
 	if err != nil {
 		return nil, nil
 	}
-	_, err = fakeOperatorClient.Networks().Create(testNetworkOperator)
+	_, err = fakeOperatorClient.Networks().Create(context.TODO(), testNetworkOperator, metav1.CreateOptions{})
 	if err != nil {
 		return nil, nil
 	}

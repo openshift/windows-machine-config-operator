@@ -36,7 +36,8 @@ OSDK_WMCO_management() {
 
   # Currently this fails even on successes, adding this check to ignore the failure
   # https://github.com/operator-framework/operator-sdk/issues/2938
-  if ! $OSDK_PATH $COMMAND --olm --olm-namespace openshift-operator-lifecycle-manager --operator-namespace windows-machine-config-operator --operator-version 0.0.0 --manifests $3/windows-machine-config-operator; then
+  if ! $OSDK_PATH $COMMAND packagemanifests --olm-namespace openshift-operator-lifecycle-manager --operator-namespace windows-machine-config-operator \
+  --operator-version 0.0.0 --include $3/windows-machine-config-operator/manifests/windows-machine-config-operator.clusterserviceversion.yaml; then
     echo operator-sdk $1 failed
   fi
 }
@@ -103,6 +104,9 @@ MANIFEST_LOC=`mktemp -d`
 trap "rm -r $MANIFEST_LOC" EXIT
 cp -r deploy/olm-catalog/windows-machine-config-operator/ $MANIFEST_LOC
 sed -i "s|REPLACE_IMAGE|$OPERATOR_IMAGE|g" $MANIFEST_LOC/windows-machine-config-operator/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+
+# Verify the operator bundle manifests
+$OSDK bundle validate "$MANIFEST_LOC"/windows-machine-config-operator/
 
 cd $WMCO_ROOT
 oc create -f deploy/namespace.yaml

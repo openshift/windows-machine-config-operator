@@ -90,7 +90,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int, waitForAnnotations boo
 	// side, let's make it as 20 minutes per node. The value comes from nodeCreationTime variable.  If we are testing a
 	// scale down from n nodes to 0, then we should not take the number of nodes into account.
 	err := wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*nodeCreationTime, func() (done bool, err error) {
-		nodes, err = tc.kubeclient.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
+		nodes, err = tc.kubeclient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("waiting for %d Windows nodes", gc.numberOfNodes)

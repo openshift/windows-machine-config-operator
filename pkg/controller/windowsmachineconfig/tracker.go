@@ -2,6 +2,7 @@ package windowsmachineconfig
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -134,7 +135,7 @@ func (t *tracker) chooseRandomNode() types.WindowsVM {
 // getCredsFromSecret gets the credentials associated with the instance.
 func getCredsFromSecret(k8sclientset *kubernetes.Clientset, instanceID string, operatorNS string) (Credentials, error) {
 	creds := Credentials{}
-	instanceSecret, err := k8sclientset.CoreV1().Secrets(operatorNS).Get(instanceID, metav1.GetOptions{})
+	instanceSecret, err := k8sclientset.CoreV1().Secrets(operatorNS).Get(context.TODO(), instanceID, metav1.GetOptions{})
 	if err != nil && k8serrors.IsNotFound(err) {
 		return creds, errors.Wrapf(err, "secret asociated with instance %s not found", instanceID)
 	}
@@ -155,7 +156,7 @@ func getCredsFromSecret(k8sclientset *kubernetes.Clientset, instanceID string, o
 // is changed or if it is having stale entry, we should still go ahead and use it.
 func initWindowsVMs(k8sclientset *kubernetes.Clientset, operatorNS string) (map[types.WindowsVM]bool, error) {
 	windowsVMs := make(map[types.WindowsVM]bool)
-	store, err := k8sclientset.CoreV1().ConfigMaps(operatorNS).Get(StoreName, metav1.GetOptions{})
+	store, err := k8sclientset.CoreV1().ConfigMaps(operatorNS).Get(context.TODO(), StoreName, metav1.GetOptions{})
 	// It is ok if the tracker ConfigMap doesn't exist. It is usually the case when the operator starts
 	// for the first time but it is not ok when the tracker ConfigMap exists but it unqueryable for some reason
 	if err != nil && !k8serrors.IsNotFound(err) {
@@ -166,7 +167,7 @@ func initWindowsVMs(k8sclientset *kubernetes.Clientset, operatorNS string) (map[
 		return windowsVMs, nil
 	}
 	// Get all the Windows nodes in the cluster
-	nodeList, err := k8sclientset.CoreV1().Nodes().List(metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+	nodeList, err := k8sclientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
 	if err != nil {
 		return nil, errors.Wrap(err, "error while querying for Windows nodes")
 	}
@@ -198,7 +199,7 @@ func initWindowsVMs(k8sclientset *kubernetes.Clientset, operatorNS string) (map[
 // Reconcile ensures that the ConfigMap used by the tracker to store VM -> node information is present on the cluster
 // and is populated with nodeRecords.
 func (t *tracker) Reconcile() error {
-	store, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Get(StoreName, metav1.GetOptions{})
+	store, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Get(context.TODO(), StoreName, metav1.GetOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
 		return errors.Wrapf(err, "unable to query %s/%s ConfigMap", t.operatorNS, StoreName)
 	}
@@ -227,7 +228,7 @@ func (t *tracker) createStore() (*v1.ConfigMap, error) {
 			Namespace: t.operatorNS,
 		},
 	}
-	cm, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Create(cm)
+	cm, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Create(context.TODO(), cm, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +243,7 @@ func (t *tracker) syncSecrets(cm *v1.ConfigMap) {
 	for name := range existingNodes {
 		if _, ok := t.nodeRecords[name]; !ok {
 			deleteOptions := &metav1.DeleteOptions{}
-			if err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Delete(name, deleteOptions); err != nil {
+			if err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Delete(context.TODO(), name, *deleteOptions); err != nil {
 				log.Error(err, "while deleting secret associated with instance")
 			}
 		}
@@ -252,7 +253,7 @@ func (t *tracker) syncSecrets(cm *v1.ConfigMap) {
 // updateStore updates the store ConfigMap with the nodeRecords
 func (t *tracker) updateStore(cm *v1.ConfigMap) error {
 	cm.BinaryData = t.nodeRecords
-	cm, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Update(cm)
+	cm, err := t.k8sclientset.CoreV1().ConfigMaps(t.operatorNS).Update(context.TODO(), cm, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}
@@ -331,16 +332,16 @@ func (t *tracker) createSecret(credentials *types.Credentials) (string, error) {
 	}
 
 	// Get and delete the secret if it already exists.
-	_, err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Get(credentials.GetInstanceId(), metav1.GetOptions{})
+	_, err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Get(context.TODO(), credentials.GetInstanceId(), metav1.GetOptions{})
 	if err == nil || (err != nil && !k8serrors.IsNotFound(err)) {
 		deleteOptions := &metav1.DeleteOptions{}
-		if err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Delete(credentials.GetInstanceId(), deleteOptions); err != nil {
+		if err := t.k8sclientset.CoreV1().Secrets(t.operatorNS).Delete(context.TODO(), credentials.GetInstanceId(), *deleteOptions); err != nil {
 			return "", errors.Wrapf(err, "error deleting existing secret %s/%s", t.operatorNS,
 				credentials.GetInstanceId())
 		}
 	}
 
-	secret, err = t.k8sclientset.CoreV1().Secrets(t.operatorNS).Create(secret)
+	secret, err = t.k8sclientset.CoreV1().Secrets(t.operatorNS).Create(context.TODO(), secret, metav1.CreateOptions{})
 	if err != nil {
 		return "", errors.Wrapf(err, "error creating secret %s/%s", t.operatorNS, credentials.GetInstanceId())
 	}
