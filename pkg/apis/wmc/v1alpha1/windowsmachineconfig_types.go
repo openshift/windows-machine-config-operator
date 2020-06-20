@@ -8,16 +8,12 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// TODO: change replicas field to type `int` once we bump operator-sdk version to 0.18 or above
-// jira ticket https://issues.redhat.com/browse/WINC-407
-// operator-sdk issue https://github.com/operator-framework/operator-sdk/issues/2952
-
 // WindowsMachineConfigSpec defines the desired state of WindowsMachineConfig
 type WindowsMachineConfigSpec struct {
 	// Replicas represent how many Windows nodes to be added to the
 	// OpenShift cluster
 	// +kubebuilder:validation:Minimum=0
-	Replicas int32 `json:"replicas"`
+	Replicas int `json:"replicas"`
 	// InstanceType represents the flavor of instance to be used while
 	// creating the virtual machines. Please note that this is common
 	// across all the Windows nodes in the cluster

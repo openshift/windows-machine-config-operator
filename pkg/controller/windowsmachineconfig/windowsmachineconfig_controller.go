@@ -207,7 +207,7 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 	currentCountOfWindowsVMs := len(windowsNodes.Items)
 
 	// Add or remove nodes
-	nodeCount, nodeReconcileErrs := r.reconcileWindowsNodes(int(instance.Spec.Replicas), currentCountOfWindowsVMs)
+	nodeCount, nodeReconcileErrs := r.reconcileWindowsNodes(instance.Spec.Replicas, currentCountOfWindowsVMs)
 
 	// Update all conditions and node count
 	r.statusMgr.joinedVMCount = nodeCount

@@ -71,7 +71,7 @@ func (tc *testContext) createWMC(replicas int, keyPair string) (*operator.Window
 		Spec: operator.WindowsMachineConfigSpec{
 			InstanceType: instanceType,
 			AWS:          &operator.AWS{CredentialAccountID: credentialAccountID, SSHKeyPair: keyPair},
-			Replicas:     int32(replicas),
+			Replicas:     replicas,
 		},
 	}
 	return wmco, framework.Global.Client.Create(context.TODO(), wmco,
