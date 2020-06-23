@@ -727,8 +727,8 @@ github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70 h1:LvJxSt/lnLT
 github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70/go.mod h1:HeCrq1LSOBgHAUpINH4IgBLkt2U/NBwE5sq4JJgcl2Y=
 github.com/openshift/origin v0.0.0-20160503220234-8f127d736703/go.mod h1:0Rox5r9C8aQn6j1oAOQ0c1uC86mYbUFObzjBRvUKHII=
 github.com/openshift/prom-label-proxy v0.1.1-0.20191016113035-b8153a7f39f1/go.mod h1:p5MuxzsYP1JPsNGwtjtcgRHHlGziCJJfztff91nNixw=
-github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200619015040-0288e17404c0 h1:y27NdWhVduDta+Jv673G5MEUK5lzolyAK7LciCySJ0s=
-github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200619015040-0288e17404c0/go.mod h1:XWbD38xHnqMWtKV4PaOAFqebhXFp3bJTWAtwt1FtmAg=
+github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200619143322-727c39ac62ac h1:nmCJeW33hhPpt4+VNzhPQUCO2m0sHOkwJJXjuJpmD/A=
+github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200619143322-727c39ac62ac/go.mod h1:XWbD38xHnqMWtKV4PaOAFqebhXFp3bJTWAtwt1FtmAg=
 github.com/opentracing-contrib/go-stdlib v0.0.0-20190519235532-cf7a6c988dc9/go.mod h1:PLldrQSroqzH70Xl+1DQcGnefIbqsKR7UDaiux3zV+w=
 github.com/opentracing/basictracer-go v1.0.0/go.mod h1:QfBfYuafItcjQuMwinw9GhYKwFXS9KnPs5lxoYwgW74=
 github.com/opentracing/opentracing-go v1.0.2/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=

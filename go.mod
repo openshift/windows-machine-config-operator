@@ -10,6 +10,7 @@ replace (
 	github.com/mattn/go-sqlite3 => github.com/mattn/go-sqlite3 v1.10.0
 	github.com/openshift/api => github.com/openshift/api v0.0.0-20200422081840-fdd1b0c14c88 // OpenShift 4.5
 	github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70 // OpenShift 4.5
+	github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer => github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200619143322-727c39ac62ac // Pinned WNI to version before SSH connection failing
 	k8s.io/api => k8s.io/api v0.18.2
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.18.2
 	k8s.io/apimachinery => k8s.io/apimachinery v0.18.2
