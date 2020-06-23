@@ -66,6 +66,7 @@ RUN tar -zxf /download/cni-plugins-windows-amd64-v0.8.6.tgz
 #│   └── kube-proxy.exe
 #├── powershell
 #│   └── wget-ignore-cert.ps1
+#│   └── hns.psm1
 #└── wmcb.exe
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
@@ -94,10 +95,11 @@ COPY --from=download /download/cni/win-bridge.exe .
 COPY --from=download /download/cni/win-overlay.exe .
 COPY --from=build /build/windows-machine-config-operator/pkg/internal/cni-conf-template.json .
 
-# Copy wget-ignore-cert powershell script
+# Copy required powershell scripts
 RUN mkdir /payload/powershell/
 WORKDIR /payload/powershell/
 COPY --from=build /build/windows-machine-config-operator/pkg/internal/wget-ignore-cert.ps1 .
+COPY --from=build /build/windows-machine-config-operator/pkg/internal/hns.psm1 .
 
 WORKDIR /
 
