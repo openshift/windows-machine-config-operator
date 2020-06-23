@@ -112,7 +112,6 @@ cd $WMCO_ROOT
 oc create -f deploy/namespace.yaml
 oc create secret generic cloud-credentials --from-file=credentials=$AWS_SHARED_CREDENTIALS_FILE -n windows-machine-config-operator
 oc create secret generic cloud-private-key --from-file=private-key.pem=$KUBE_SSH_KEY_PATH -n windows-machine-config-operator
-oc create secret generic kubeconfig --from-file=kubeconfig=$KUBECONFIG -n windows-machine-config-operator
 
 # Run the operator in the windows-machine-config-operator namespace
 OSDK_WMCO_management run $OSDK $MANIFEST_LOC
