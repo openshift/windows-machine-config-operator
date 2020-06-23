@@ -99,10 +99,7 @@ func getNodeIP(nodeList *v1.NodeList, instanceID string) (string, error) {
 		}
 		if strings.Contains(node.Spec.ProviderID, instanceID) {
 			for _, address := range node.Status.Addresses {
-				// If external ip exists return it as it is used in AWS, if it doesn't return internal(in case of azure)
-				// TODO: collect all the ips and define a priority order, external then internal etc.
-				// https://issues.redhat.com/browse/WINC-355?focusedCommentId=14100301&page=com.atlassian.jira.plugin.system.issuetabpanels%3Acomment-tabpanel#comment-14100301
-				if address.Type == v1.NodeExternalIP && len(address.Address) > 0 {
+				if address.Type == v1.NodeInternalIP && len(address.Address) > 0 {
 					return address.Address, nil
 				}
 			}

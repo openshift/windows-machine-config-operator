@@ -12,6 +12,7 @@ spec:
       labels:
         name: windows-machine-config-operator
     spec:
+      hostNetwork: true
       serviceAccountName: windows-machine-config-operator
       volumes:
       # TODO: Remove the cloud-credentials and cloud-private-key volumes as part of

@@ -127,6 +127,7 @@ spec:
                 - mountPath: /etc/private-key/
                   name: cloud-private-key
                   readOnly: true
+              hostNetwork: true
               serviceAccountName: windows-machine-config-operator
               volumes:
               - name: cloud-credentials
@@ -191,6 +192,14 @@ spec:
           - '*'
           verbs:
           - '*'
+        - apiGroups:
+          - security.openshift.io
+          resourceNames:
+          - hostnetwork
+          resources:
+          - securitycontextconstraints
+          verbs:
+          - use
         serviceAccountName: windows-machine-config-operator
     strategy: deployment
   installModes:
