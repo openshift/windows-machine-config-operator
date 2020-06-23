@@ -67,17 +67,24 @@ spec:
           - list
           - update
         - apiGroups:
-            - certificates.k8s.io
-          resources:
-            - signers
-          verbs:
-            - approve
-        - apiGroups:
           - operator.openshift.io
           resources:
           - networks
           verbs:
           - get
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+        - apiGroups:
+          - certificates.k8s.io
+          resources:
+          - signers
+          verbs:
+          - approve
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator
@@ -171,13 +178,6 @@ spec:
           - deployments/finalizers
           verbs:
           - update
-        - apiGroups:
-            - ""
-          resources:
-            - pods
-          verbs:
-            - get
-            - list
         - apiGroups:
           - apps
           resources:
