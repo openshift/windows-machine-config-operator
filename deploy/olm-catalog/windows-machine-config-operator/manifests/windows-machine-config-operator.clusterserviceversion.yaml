@@ -67,17 +67,24 @@ spec:
           - list
           - update
         - apiGroups:
-            - certificates.k8s.io
-          resources:
-            - signers
-          verbs:
-            - approve
-        - apiGroups:
           - operator.openshift.io
           resources:
           - networks
           verbs:
           - get
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+        - apiGroups:
+          - certificates.k8s.io
+          resources:
+          - signers
+          verbs:
+          - approve
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator
@@ -120,6 +127,7 @@ spec:
                 - mountPath: /etc/private-key/
                   name: cloud-private-key
                   readOnly: true
+              hostNetwork: true
               serviceAccountName: windows-machine-config-operator
               volumes:
               - name: cloud-credentials
@@ -172,13 +180,6 @@ spec:
           verbs:
           - update
         - apiGroups:
-            - ""
-          resources:
-            - pods
-          verbs:
-            - get
-            - list
-        - apiGroups:
           - apps
           resources:
           - replicasets
@@ -191,6 +192,14 @@ spec:
           - '*'
           verbs:
           - '*'
+        - apiGroups:
+          - security.openshift.io
+          resourceNames:
+          - hostnetwork
+          resources:
+          - securitycontextconstraints
+          verbs:
+          - use
         serviceAccountName: windows-machine-config-operator
     strategy: deployment
   installModes:

@@ -61,6 +61,15 @@ rules:
   - '*'
   verbs:
   - '*'
+# Permissions to access hostnetwork SCC
+- apiGroups:
+  - security.openshift.io
+  resourceNames:
+  - hostnetwork
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - use 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

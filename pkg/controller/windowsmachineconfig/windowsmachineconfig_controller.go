@@ -3,6 +3,7 @@ package windowsmachineconfig
 import (
 	"context"
 	"fmt"
+
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/cloudprovider"
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	wmcapi "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
@@ -315,7 +316,7 @@ func (r *ReconcileWindowsMachineConfig) removeWorkerNodes(count int) (int, []Rec
 func (r *ReconcileWindowsMachineConfig) addWorkerNode() (types.WindowsVM, ReconcileError) {
 	// Create Windows VM in the cloud provider
 	log.V(1).Info("creating a Windows VM")
-	vm, err := r.cloudProvider.CreateWindowsVM()
+	vm, err := r.cloudProvider.CreateWindowsVMWithPrivateSubnet()
 	if err != nil {
 		return nil, newReconcileError(wmcapi.VMCreationFailureReason, errors.Wrap(err, "error creating windows VM"))
 	}
