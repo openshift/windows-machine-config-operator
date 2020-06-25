@@ -3,6 +3,7 @@ package windowsmachineconfig
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/cloudprovider"
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
@@ -10,10 +11,12 @@ import (
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -72,12 +75,18 @@ func newReconciler(mgr manager.Manager, clusterServiceCIDR string) (reconcile.Re
 		return nil, errors.Wrap(err, "failed to instantiate tracker")
 	}
 
+	signer, err := createSigner()
+	if err != nil {
+		return nil, errors.Wrapf(err, "error creating signer using private key: %v", wkl.PrivateKeyPath)
+	}
+
 	return &ReconcileWindowsMachineConfig{client: client,
 			scheme:             mgr.GetScheme(),
 			k8sclientset:       clientset,
 			tracker:            vmTracker,
 			windowsVMs:         windowsVMs,
 			clusterServiceCIDR: clusterServiceCIDR,
+			signer:             signer,
 		},
 		nil
 }
@@ -124,6 +133,8 @@ type ReconcileWindowsMachineConfig struct {
 	statusMgr *StatusManager
 	// clusterServiceCIDR holds the cluster network service CIDR
 	clusterServiceCIDR string
+	// signer is a signer created from the user's private key
+	signer ssh.Signer
 }
 
 // getCloudProvider gathers the cloud provider information and sets the cloudProvider struct field
@@ -193,6 +204,10 @@ func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (re
 		// Not going to requeue as an issue here indicates a problem with the provided credentials
 		log.Error(err, "could not get cloud provider")
 		return reconcile.Result{}, nil
+	}
+
+	if err := r.createUserDataSecret(); err != nil {
+		log.Error(err, "error creating user data secret")
 	}
 
 	// Get the current number of Windows VMs created by WMCO.
@@ -369,6 +384,83 @@ func (r *ReconcileWindowsMachineConfig) addWorkerNodes(count int) (int, []Reconc
 		return count - len(errs), errs
 	}
 	return count, nil
+}
+
+// createUserDataSecret creates a secret 'windows-user-data' in 'openshift-machine-api'
+// namespace. This secret will be used to inject cloud provider user data for creating
+// windows machines
+func (r *ReconcileWindowsMachineConfig) createUserDataSecret() error {
+	if r.signer == nil {
+		return errors.Errorf("failed to retrieve signer for private key: %v", wkl.PrivateKeyPath)
+	}
+
+	pubKeyBytes := ssh.MarshalAuthorizedKey(r.signer.PublicKey())
+	if pubKeyBytes == nil {
+		return errors.Errorf("failed to retrieve public key using signer for private key: %v", wkl.PrivateKeyPath)
+	}
+
+	// sshd service is started to create the default sshd_config file. This file is modified
+	// for enabling publicKey auth and the service is restarted for the changes to take effect.
+	userDataSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "windows-user-data",
+			Namespace: "openshift-machine-api",
+		},
+		Data: map[string][]byte{
+			"userData": []byte(`<powershell>
+			Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+			$firewallRuleName = "ContainerLogsPort"
+			$containerLogsPort = "10250"
+			New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $containerLogsPort -EdgeTraversalPolicy Allow
+			Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+			Install-Module -Force OpenSSHUtils
+			Set-Service -Name ssh-agent -StartupType ‘Automatic’
+			Set-Service -Name sshd -StartupType ‘Automatic’
+			Start-Service ssh-agent
+			Start-Service sshd
+			$pubKeyConf = (Get-Content -path C:\ProgramData\ssh\sshd_config) -replace '#PubkeyAuthentication yes','PubkeyAuthentication yes'
+			$pubKeyConf | Set-Content -Path C:\ProgramData\ssh\sshd_config
+ 			$passwordConf = (Get-Content -path C:\ProgramData\ssh\sshd_config) -replace '#PasswordAuthentication yes','PasswordAuthentication yes'
+			$passwordConf | Set-Content -Path C:\ProgramData\ssh\sshd_config
+			$authFileConf = (Get-Content -path C:\ProgramData\ssh\sshd_config) -replace 'AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys','#AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys'
+			$authFileConf | Set-Content -Path C:\ProgramData\ssh\sshd_config
+			$pubKeyLocationConf = (Get-Content -path C:\ProgramData\ssh\sshd_config) -replace 'Match Group administrators','#Match Group administrators'
+			$pubKeyLocationConf | Set-Content -Path C:\ProgramData\ssh\sshd_config
+			Restart-Service sshd
+			New-item -Path $env:USERPROFILE -Name .ssh -ItemType Directory -force
+			echo "` + string(pubKeyBytes[:]) + `"| Out-File $env:USERPROFILE\.ssh\authorized_keys -Encoding ascii
+			</powershell>
+			<persist>true</persist>`),
+		},
+	}
+
+	// check if the userDataSecret already exists
+	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: userDataSecret.Name, Namespace: userDataSecret.Namespace}, &corev1.Secret{})
+	if err != nil {
+		if k8sapierrors.IsNotFound(err) {
+			log.Info("Creating a new Secret", "Secret.Namespace", userDataSecret.Namespace, "Secret.Name", userDataSecret.Name)
+			err = r.client.Create(context.TODO(), userDataSecret)
+			if err != nil {
+				return errors.Wrap(err, "error creating windows user data secret")
+			}
+		}
+		return errors.Wrap(err, "error creating windows user data secret")
+	}
+	return nil
+}
+
+// createSigner creates a signer using the private key from the privateKeyPath
+func createSigner() (ssh.Signer, error) {
+	privateKeyBytes, err := ioutil.ReadFile(wkl.PrivateKeyPath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to find private key from path: %v", wkl.PrivateKeyPath)
+	}
+
+	signer, err := ssh.ParsePrivateKey(privateKeyBytes)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to parse private key: %v", wkl.PrivateKeyPath)
+	}
+	return signer, nil
 }
 
 // ReconcileError fulfils the error interface while also including a human readable reason for the error

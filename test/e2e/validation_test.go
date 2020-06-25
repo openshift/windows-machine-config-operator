@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -277,4 +278,36 @@ func testNodeTaint(t *testing.T) {
 		}()
 		assert.Equal(t, hasTaint, true, "expected Windows Taint to be present on the Node: %s", node.GetName())
 	}
+}
+
+// createSigner creates a signer using the private key retrieved from the secret
+func createSigner() (ssh.Signer, error) {
+	privateKeySecret := &corev1.Secret{}
+	err := framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "cloud-private-key", Namespace: "windows-machine-config-operator"}, privateKeySecret)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to retrieve cloud private key secret")
+	}
+
+	privateKeyBytes := privateKeySecret.Data["private-key.pem"][:]
+	if privateKeyBytes == nil {
+		return nil, errors.New("failed to retrieve private key using cloud private key secret")
+	}
+
+	signer, err := ssh.ParsePrivateKey(privateKeyBytes)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to parse private key")
+	}
+	return signer, nil
+}
+
+// testUserData tests if the userData created in the 'openshift-machine-api' namespace is valid
+func testUserData(t *testing.T) {
+	signer, err := createSigner()
+	require.NoError(t, err, "error creating signer using private key")
+	pubKeyBytes := ssh.MarshalAuthorizedKey(signer.PublicKey())
+	require.NotNil(t, pubKeyBytes, "failed to retrieve public key using signer for private key")
+	found := &corev1.Secret{}
+	err = framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data", Namespace: "openshift-machine-api"}, found)
+	require.NoError(t, err, "could not find windows user data secret in required namespace")
+	assert.Contains(t, string(found.Data["userData"][:]), string(pubKeyBytes[:]), "expected user data not present in required namespace")
 }
