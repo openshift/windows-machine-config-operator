@@ -91,8 +91,8 @@ func TestMain(m *testing.M) {
 	flag.IntVar(&numberOfNodes, "node-count", 2, "number of nodes to be created for testing")
 	flag.BoolVar(&skipNodeDeletion, "skip-node-deletion", false,
 		"Option to disable deletion of the VMs")
-	// We're using libra as default value to be used in CI
-	flag.StringVar(&sshKeyPair, "ssh-key-pair", "libra", "SSH Key Pair to be used for decrypting "+
+	// We're using openshift-dev as default value to be used in CI
+	flag.StringVar(&sshKeyPair, "ssh-key-pair", "openshift-dev", "SSH Key Pair to be used for decrypting "+
 		"the Windows Node password")
 	framework.MainEntry(m)
 }
