@@ -402,12 +402,14 @@ func (r *ReconcileWindowsMachineConfig) addWorkerNode() (types.WindowsVM, Reconc
 		return nil, newReconcileError(wmcapi.VMCreationFailureReason, errors.Wrap(err, "error creating windows VM"))
 	}
 
+	// TODO: WINC-429 will replace vm.GetCredentials().GetInstanceId() with the instance ID from the Machine
 	log.V(1).Info("configuring the Windows VM", "ID", vm.GetCredentials().GetInstanceId())
 
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, vm, r.clusterServiceCIDR)
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, vm, r.clusterServiceCIDR, r.signer)
 	if err != nil {
 		// TODO: Unwrap to extract correct error
 		if cleanupErr := r.removeWorkerNode(vm); cleanupErr != nil {
+			// TODO: WINC-429 will replace vm.GetCredentials().GetInstanceId() with the instance ID from the Machine
 			log.Error(cleanupErr, "failed to cleanup VM", "VM", vm.GetCredentials().GetInstanceId())
 		}
 
@@ -417,14 +419,14 @@ func (r *ReconcileWindowsMachineConfig) addWorkerNode() (types.WindowsVM, Reconc
 	if err := nc.Configure(); err != nil {
 		// TODO: Unwrap to extract correct error
 		if cleanupErr := r.removeWorkerNode(vm); cleanupErr != nil {
-			log.Error(cleanupErr, "failed to cleanup VM", "VM", vm.GetCredentials().GetInstanceId())
+			log.Error(cleanupErr, "failed to cleanup VM", "VM", nc.ID())
 		}
 
 		return nil, newReconcileError(wmcapi.VMConfigurationFailureReason,
 			errors.Wrap(err, "failed to configure Windows VM"))
 	}
 
-	log.Info("Windows VM has joined the cluster as a worker node", "ID", nc.GetCredentials().GetInstanceId())
+	log.Info("Windows VM has joined the cluster as a worker node", "ID", nc.ID())
 	return vm, nil
 }
 
