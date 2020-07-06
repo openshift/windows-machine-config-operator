@@ -1,7 +1,8 @@
 # Script that downloads a file from the server to the output location ignoring the server certificate
 param (
     [Parameter(Mandatory=$true)][string]$server,
-    [Parameter(Mandatory=$true)][string]$output
+    [Parameter(Mandatory=$true)][string]$output,
+    [Parameter(Mandatory=$true)][string]$useragent
 )
 
 # Prevent the progress meter from accessing the console.
@@ -28,4 +29,4 @@ public static class Dummy {
 
 # $null is needed to prevent wget from attempting read the standard input or
 # output streams when attached to the console.
-$null | wget $server -o $output > $null
+$null | wget -UserAgent $useragent $server -o $output > $null

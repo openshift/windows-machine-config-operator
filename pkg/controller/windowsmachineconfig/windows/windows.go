@@ -155,9 +155,11 @@ func (vm *windows) runBootstrapper() error {
 
 // initializeTestBootstrapperFiles initializes the files required for initialize-kubelet
 func (vm *windows) initializeBootstrapperFiles() error {
+	// The 0.35.0 maps to ignition spec v2. This should be modified when we switch to v3
+	ignitionUserAgentSpec := "Ignition/0.35.0"
 	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
 	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server " + vm.workerIgnitionEndpoint + " -output " +
-		winTemp + "worker.ign"
+		winTemp + "worker.ign" + " -useragent " + ignitionUserAgentSpec
 	out, err := vm.RunOverSSH(ignitionFileDownloadCmd, true)
 	log.V(1).Info("ignition file download", "cmd", ignitionFileDownloadCmd, "output", out)
 	if err != nil {
