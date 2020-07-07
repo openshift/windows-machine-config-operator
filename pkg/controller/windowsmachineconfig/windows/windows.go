@@ -65,9 +65,13 @@ type Windows interface {
 	Run(string, bool) (string, error)
 	// Reinitialize re-initializes the Windows VM's SSH client
 	Reinitialize() error
+	// Configure prepares the Windows VM for the bootstrapper and then runs it
 	Configure() error
+	// ConfigureCNI ensures that the CNI configuration in done on the node
 	ConfigureCNI(string) error
+	// ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
 	ConfigureHybridOverlay(string) error
+	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy(string, string) error
 }
 
@@ -111,6 +115,8 @@ func New(vm types.WindowsVM, workerIgnitionEndpoint string, signer ssh.Signer) (
 		nil
 }
 
+// Interface methods
+
 func (vm *windows) ID() string {
 	return vm.id
 }
@@ -141,7 +147,6 @@ func (vm *windows) Reinitialize() error {
 	return nil
 }
 
-// Configure prepares the Windows VM for the bootstrapper and then runs it
 func (vm *windows) Configure() error {
 	if err := vm.createDirectories(); err != nil {
 		return errors.Wrap(err, "error creating directories on Windows VM")
@@ -151,6 +156,90 @@ func (vm *windows) Configure() error {
 	}
 	return vm.runBootstrapper()
 }
+
+func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
+	// Check if the hybrid-overlay is running
+	_, err := vm.Run("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
+
+	// err being nil implies that hybrid-overlay is running.
+	if err == nil {
+		// Stop the hybrid-overlay
+		stopCmd := "Stop-Process -Name \"" + HybridOverlayProcess + "\""
+		out, err := vm.Run(stopCmd, true)
+		if err != nil {
+			log.Info("unable to stop hybrid-overlay", "stop command", stopCmd, "output", out)
+			return errors.Wrap(err, "unable to stop hybrid-overlay")
+		}
+	}
+
+	// Start the hybrid-overlay in the background over ssh.
+	// TODO: This will be removed in https://issues.redhat.com/browse/WINC-353
+	go vm.Run(remoteDir+wkl.HybridOverlayName+" --node "+nodeName+
+		" --k8s-kubeconfig c:\\k\\kubeconfig > "+logDir+"hybrid-overlay.log 2>&1", false)
+
+	if err = vm.waitForHybridOverlayToRun(); err != nil {
+		return errors.Wrapf(err, "error running %s", wkl.HybridOverlayName)
+	}
+
+	// Wait for the hybrid-overlay to complete reconfiguring the network. The only way to detect that it has completed
+	// the reconfiguration is to check for the HNS networks but doing that without reinitializing the WinRM client
+	// results in 5+ minutes wait times for the vm.Run() call to complete. So the only alternative is to wait before
+	// proceeding.
+	time.Sleep(hybridOverlayConfigurationTime)
+
+	// Running the hybrid-overlay causes network reconfiguration in the Windows VM which results in the ssh connection
+	// being closed and the client is not smart enough to reconnect. We have observed that the WinRM connection does not
+	// get closed and does not need reinitialization.
+	if err = vm.Reinitialize(); err != nil {
+		return errors.Wrap(err, "error reinitializing VM after running hybrid-overlay")
+	}
+
+	if err = vm.waitForHNSNetworks(); err != nil {
+		return errors.Wrap(err, "error waiting for OVN HNS networks to be created")
+	}
+
+	return nil
+}
+
+func (vm *windows) ConfigureCNI(configFile string) error {
+	// copy the CNI config file to the Windows VM
+	if err := vm.CopyFile(configFile, cniDir); err != nil {
+		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniDir)
+	}
+
+	cniConfigDest := cniDir + filepath.Base(configFile)
+	// run the configure-cni command on the Windows VM
+	configureCNICmd := remoteDir + "wmcb.exe configure-cni --cni-dir=\"" +
+		cniDir + " --cni-config=\"" + cniConfigDest
+
+	out, err := vm.Run(configureCNICmd, true)
+	if err != nil {
+		log.Info("CNI configuration failed", "command", configureCNICmd, "output", out, "error", err)
+		return errors.Wrap(err, "CNI configuration failed")
+	}
+
+	return nil
+}
+
+func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
+	sVIP, err := vm.getSourceVIP()
+	if err != nil {
+		return errors.Wrap(err, "error getting source VIP")
+	}
+	kubeProxyService, err := newKubeProxyService(nodeName, hostSubnet, sVIP)
+	if err != nil {
+		return errors.Wrap(err, "error creating service object")
+	}
+	if err := vm.createService(kubeProxyService); err != nil {
+		return errors.Wrap(err, "error creating kube-proxy Windows service")
+	}
+	if err := vm.startService(kubeProxyService); err != nil {
+		return errors.Wrap(err, "error starting kube-proxy Windows service")
+	}
+	return nil
+}
+
+// Interface helper methods
 
 // createDirectories creates directories required for configuring the Windows node on the VM
 func (vm *windows) createDirectories() error {
@@ -191,20 +280,6 @@ func (vm *windows) transferFiles() error {
 	return nil
 }
 
-// validate the WindowsVM node object
-func validate(vm types.WindowsVM) error {
-	if vm.GetCredentials() == nil {
-		return fmt.Errorf("nil credentials for VM")
-	}
-	if vm.GetCredentials().GetIPAddress() == "" {
-		return fmt.Errorf("empty IP for VM: %v", vm.GetCredentials())
-	}
-	if vm.GetCredentials().GetInstanceId() == "" {
-		return fmt.Errorf("empty instance id for VM: %v", vm.GetCredentials())
-	}
-	return nil
-}
-
 // runBootstrapper copies the bootstrapper and runs the code on the remote Windows VM
 func (vm *windows) runBootstrapper() error {
 	err := vm.initializeBootstrapperFiles()
@@ -236,48 +311,23 @@ func (vm *windows) initializeBootstrapperFiles() error {
 	return nil
 }
 
-// ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
-func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
-	// Check if the hybrid-overlay is running
-	_, err := vm.Run("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
-
-	// err being nil implies that hybrid-overlay is running
-	if err == nil {
-		// Stop the hybrid-overlay
-		stopCmd := "Stop-Process -Name \"" + HybridOverlayProcess + "\""
-		out, err := vm.Run(stopCmd, true)
-		if err != nil {
-			log.Info("unable to stop hybrid-overlay", "stop command", stopCmd, "output", out)
-			return errors.Wrap(err, "unable to stop hybrid-overlay")
-		}
+// createService creates the service on the Windows VM
+func (vm *windows) createService(svc service) error {
+	out, err := vm.Run("sc.exe create "+svc.Name()+" binPath=\""+svc.BinaryPath()+" "+
+		svc.Args()+"\" start=auto", false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to create service with output: %s", out)
 	}
+	return nil
+}
 
-	// Start the hybrid-overlay in the background over ssh.
-	// TODO: This will be removed in https://issues.redhat.com/browse/WINC-353
-	go vm.Run(remoteDir+wkl.HybridOverlayName+" --node "+nodeName+
-		" --k8s-kubeconfig c:\\k\\kubeconfig > "+logDir+"hybrid-overlay.log 2>&1", false)
-
-	if err = vm.waitForHybridOverlayToRun(); err != nil {
-		return errors.Wrapf(err, "error running %s", wkl.HybridOverlayName)
+// startService starts a previously created Windows service
+func (vm *windows) startService(svc service) error {
+	out, err := vm.Run("sc.exe start "+svc.Name(), false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to start service with output: %s", out)
 	}
-
-	// Wait for the hybrid-overlay to complete reconfiguring the network. The only way to detect that it has completed
-	// the reconfiguration is to check for the HNS networks but doing that without reinitializing the WinRM client
-	// results in 5+ minutes wait times for the vm.Run() call to complete. So the only alternative is to wait before
-	// proceeding.
-	time.Sleep(hybridOverlayConfigurationTime)
-
-	// Running the hybrid-overlay causes network reconfiguration in the Windows VM which results in the ssh connection
-	// being closed and the client is not smart enough to reconnect. We have observed that the WinRM connection does not
-	// get closed and does not need reinitialization.
-	if err = vm.Reinitialize(); err != nil {
-		return errors.Wrap(err, "error reinitializing VM after running hybrid-overlay")
-	}
-
-	if err = vm.waitForHNSNetworks(); err != nil {
-		return errors.Wrap(err, "error waiting for OVN HNS networks to be created")
-	}
-
+	log.V(1).Info("started service", "name", svc.Name(), "binary", svc.BinaryPath(), "args", svc.Args())
 	return nil
 }
 
@@ -319,66 +369,6 @@ func (vm *windows) waitForHybridOverlayToRun() error {
 	return fmt.Errorf("timeout waiting for hybrid-overlay: %v", err)
 }
 
-// ConfigureCNI ensures that the CNI configuration in done on the node
-func (vm *windows) ConfigureCNI(configFile string) error {
-	// copy the CNI config file to the Windows VM
-	if err := vm.CopyFile(configFile, cniDir); err != nil {
-		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniDir)
-	}
-
-	cniConfigDest := cniDir + filepath.Base(configFile)
-	// run the configure-cni command on windows VM
-	configureCNICmd := remoteDir + "wmcb.exe configure-cni --cni-dir=\"" +
-		cniDir + " --cni-config=\"" + cniConfigDest
-
-	out, err := vm.Run(configureCNICmd, true)
-	if err != nil {
-		log.Info("CNI configuration failed", "command", configureCNICmd, "output", out, "error", err)
-		return errors.Wrap(err, "CNI configuration failed")
-	}
-
-	return nil
-}
-
-// createService creates the service on the Windows VM
-func (vm *windows) createService(svc service) error {
-	out, err := vm.Run("sc.exe create "+svc.Name()+" binPath=\""+svc.BinaryPath()+" "+
-		svc.Args()+"\" start=auto", false)
-	if err != nil {
-		return errors.Wrapf(err, "failed to create service with output: %s", out)
-	}
-	return nil
-}
-
-// startService starts a previously created Windows service
-func (vm *windows) startService(svc service) error {
-	out, err := vm.Run("sc.exe start "+svc.Name(), false)
-	if err != nil {
-		return errors.Wrapf(err, "failed to start service with output: %s", out)
-	}
-	log.V(1).Info("started service", "name", svc.Name(), "binary", svc.BinaryPath(), "args", svc.Args())
-	return nil
-}
-
-// ConfigureKubeProxy ensures that the kube-proxy service is running
-func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
-	sVIP, err := vm.getSourceVIP()
-	if err != nil {
-		return errors.Wrap(err, "error getting source VIP")
-	}
-	kubeProxyService, err := newKubeProxyService(nodeName, hostSubnet, sVIP)
-	if err != nil {
-		return errors.Wrap(err, "error creating service object")
-	}
-	if err := vm.createService(kubeProxyService); err != nil {
-		return errors.Wrap(err, "error creating kube-proxy Windows service")
-	}
-	if err := vm.startService(kubeProxyService); err != nil {
-		return errors.Wrap(err, "error starting kube-proxy Windows service")
-	}
-	return nil
-}
-
 // getSourceVIP returns the source VIP of the VM
 func (vm *windows) getSourceVIP() (string, error) {
 	cmd := "\"Import-Module -DisableNameChecking " + hnsPSModule + "; " +
@@ -400,7 +390,23 @@ func (vm *windows) getSourceVIP() (string, error) {
 	return sourceVIP, nil
 }
 
+// Generic helper methods
+
 // mkdirCmd returns the Windows command to create a directory if it does not exists
 func mkdirCmd(dirName string) string {
 	return "if not exist " + dirName + " mkdir " + dirName
+}
+
+// validate the WindowsVM node object
+func validate(vm types.WindowsVM) error {
+	if vm.GetCredentials() == nil {
+		return fmt.Errorf("nil credentials for VM")
+	}
+	if vm.GetCredentials().GetIPAddress() == "" {
+		return fmt.Errorf("empty IP for VM: %v", vm.GetCredentials())
+	}
+	if vm.GetCredentials().GetInstanceId() == "" {
+		return fmt.Errorf("empty instance id for VM: %v", vm.GetCredentials())
+	}
+	return nil
 }
