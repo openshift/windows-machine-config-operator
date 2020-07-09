@@ -88,7 +88,7 @@ OSDK=$(get_operator_sdk)
 # the way operator-sdk testing is done using `go test []string{}
 NODE_COUNT=${NODE_COUNT:-2}
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"-skip-node-deletion=false"}
-KEY_PAIR_NAME=${KEY_PAIR_NAME:-"libra"}
+KEY_PAIR_NAME=${KEY_PAIR_NAME:-"openshift-dev"}
 
 # OPERATOR_IMAGE defines where the WMCO image to test with is located. If $OPERATOR_IMAGE is already set, use its value.
 # Setting $OPERATOR_IMAGE is required for local testing.
