@@ -24,7 +24,7 @@ To run the e2e tests for WMCO locally against an OpenShift cluster set up on AWS
 ```shell script
 export KUBECONFIG=<path to kubeconfig>
 export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
-export KUBE_SSH_KEY_PATH=<path to ssh key>
+export KUBE_SSH_KEY_PATH=<path to RSA type ssh key>
 export OPERATOR_IMAGE=<registry url for remote WMCO image>
 ```
 Once the above variables are set, run the following script:
@@ -144,7 +144,7 @@ oc project windows-machine-config-operator
 In order to run the operator locally, you need to create secrets before deploying the operator.
 
 Create the cloud provider and cloud private key secrets. The cloud-private-key should match the keypair used in the
-Windows Machine Config CR you will use.
+Windows Machine Config CR you will use and it should be of RSA key type.
 ```shell script
 # Change paths as necessary
 oc create secret generic cloud-credentials --from-file=credentials=$HOME/.aws/credentials

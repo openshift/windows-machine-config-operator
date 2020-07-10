@@ -122,3 +122,10 @@ rules:
      - signers
    verbs:
      - approve
+ - apiGroups:
+     - ""
+   resources:
+     - secrets
+   verbs:
+     - create
+     - get

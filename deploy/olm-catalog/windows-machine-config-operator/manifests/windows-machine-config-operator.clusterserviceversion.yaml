@@ -85,6 +85,13 @@ spec:
           - signers
           verbs:
           - approve
+        - apiGroups:
+          - ""
+          resources:
+          - secrets
+          verbs:
+          - create
+          - get
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator
