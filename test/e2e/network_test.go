@@ -27,7 +27,11 @@ func testNetwork(t *testing.T) {
 
 var (
 	// windowsServerImage is the name/location of the Windows Server 2019 image we will use to test pod deployment
-	windowsServerImage = "mcr.microsoft.com/windows/servercore:ltsc2019"
+	// mcr.microsoft.com/windows/nanoserver:1809 do not have Powershell by default. So we are using a hybrid image
+	// which has nanoserver:1809 with the Powershell Core.
+	// 1809 tag is the Windows build number compatible with Windows Server 2019 LTSC. The test image build number
+	//should always match with the host image build number
+	windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1809"
 	// ubi8Image is the name/location of the linux image we will use for testing
 	ubi8Image = "registry.access.redhat.com/ubi8/ubi:latest"
 	// retryCount is the amount of times we will retry an api operation
@@ -275,7 +279,7 @@ func getAffinityForNode(node *v1.Node) (*v1.Affinity, error) {
 // deployWindowsWebServer creates a deployment with a single Windows Server pod, listening on port 80
 func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	// This will run a Server on the container, which can be reached with a GET request
-	winServerCommand := []string{"powershell.exe", "-command",
+	winServerCommand := []string{"pwsh.exe", "-command",
 		"$listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start(); " +
 			"Write-Host('Listening at http://*:80/'); while ($listener.IsListening) { " +
 			"$context = $listener.GetContext(); $response = $context.Response; " +
@@ -322,6 +326,7 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 func (tc *testContext) createWindowsServerDeployment(name string, command []string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	deploymentsClient := tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault)
 	replicaCount := int32(1)
+	containerUserName := "ContainerAdministrator"
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name + "-deployment",
@@ -354,7 +359,14 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 							Name:            name,
 							Image:           windowsServerImage,
 							ImagePullPolicy: v1.PullIfNotPresent,
-							Command:         command,
+							// The default user for nanoserver image is ContainerUser.
+							// Change user to ContainerAdministrator to run HttpListener in admin mode.
+							SecurityContext: &v1.SecurityContext{
+								WindowsOptions: &v1.WindowsSecurityContextOptions{
+									RunAsUserName: &containerUserName,
+								},
+							},
+							Command: command,
 							Ports: []v1.ContainerPort{
 								{
 									Protocol:      v1.ProtocolTCP,
@@ -381,7 +393,8 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 	var deployment *appsv1.Deployment
 	var err error
-	for i := 0; i < retryCount; i++ {
+	// Retry if we fail to get the deployment
+	for i := 0; i < 5; i++ {
 		deployment, err = tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault).Get(context.TODO(),
 			name,
 			metav1.GetOptions{})
@@ -391,7 +404,9 @@ func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 		if *deployment.Spec.Replicas == deployment.Status.AvailableReplicas {
 			return nil
 		}
-		time.Sleep(retryInterval)
+		// The timeout limit for the image pull is 10m. So retry for a total of 10m
+		// to give time for the deployment to come up.
+		time.Sleep(2 * time.Minute)
 	}
 	events, _ := tc.getPodEvents(name)
 	return errors.Errorf("timed out waiting for deployment %v to scale: %v", deployment, events)
@@ -430,7 +445,7 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string) (*bat
 func getWinCurlerCommand(winServerIP string) []string {
 	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
 	// takes some time to finish initial network setup.
-	winCurlerCommand := []string{"powershell.exe", "-command", "for (($i =0), ($j = 0); $i -lt 10; $i++) { " +
+	winCurlerCommand := []string{"pwsh.exe", "-command", "for (($i =0), ($j = 0); $i -lt 10; $i++) { " +
 		"$response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP +
 		"; $code = $response.StatusCode; echo \"GET returned code $code\";" +
 		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"}

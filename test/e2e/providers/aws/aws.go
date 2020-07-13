@@ -125,6 +125,9 @@ func getLatestWindowsAMI(ec2Client *ec2.EC2) (string, error) {
 	// This filter will grab all ami's that match the exact name. The '?' indicate any character will match.
 	// The ami's will have the name format: Windows_Server-2019-English-Full-ContainersLatest-2020.01.15
 	// so the question marks will match the date of creation
+	// The image obtained by using windowsAMIFilterValue is compatible with  the test container image -
+	// "mcr.microsoft.com/powershell:lts-nanoserver-1809". If the windowsAMIFilterValue changes,
+	// the test container image also needs to be changed.
 	windowsAMIFilterValue := "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
 	searchFilter := ec2.Filter{Name: &windowsAMIFilterName, Values: []*string{&windowsAMIFilterValue}}
 
