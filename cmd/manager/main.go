@@ -7,9 +7,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	"k8s.io/client-go/rest"
 
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
@@ -18,7 +15,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/controller"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/version"
-
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
@@ -29,6 +25,10 @@ import (
 	"github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -143,9 +143,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	// watch `openshift-machine-api` namespace along with wmco namespace
+	namespaces := []string{"openshift-machine-api", namespace}
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{
-		Namespace:          namespace,
+		NewCache:           cache.MultiNamespacedCacheBuilder(namespaces),
 		MetricsBindAddress: fmt.Sprintf("%s:%d", metricsHost, metricsPort),
 	})
 	if err != nil {

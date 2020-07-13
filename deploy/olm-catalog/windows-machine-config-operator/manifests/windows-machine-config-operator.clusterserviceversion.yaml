@@ -47,6 +47,7 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - events
           - nodes
           verbs:
           - '*'
@@ -92,6 +93,20 @@ spec:
           verbs:
           - create
           - get
+        - apiGroups:
+          - machine.openshift.io
+          resources:
+          - machines
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - wmc.openshift.io
+          resources:
+          - '*'
+          verbs:
+          - '*'
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator
@@ -193,12 +208,6 @@ spec:
           - deployments
           verbs:
           - get
-        - apiGroups:
-          - wmc.openshift.io
-          resources:
-          - '*'
-          verbs:
-          - '*'
         - apiGroups:
           - security.openshift.io
           resourceNames:

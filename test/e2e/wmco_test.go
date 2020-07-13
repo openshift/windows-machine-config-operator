@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/openshift/windows-machine-config-operator/pkg/apis"
 	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
@@ -46,6 +47,11 @@ func setupWMCOResources() error {
 	err := framework.AddToFrameworkScheme(apis.AddToScheme, wmcoList)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up test suite")
+	}
+	// Register the Machine API to create machine objects from framework's client
+	err = framework.AddToFrameworkScheme(mapi.AddToScheme, &mapi.MachineSetList{})
+	if err != nil {
+		return errors.Wrap(err, "failed adding machine api scheme")
 	}
 	return nil
 }

@@ -4,12 +4,14 @@ import (
 	"context"
 	"log"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
 	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/nodeconfig"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,6 +43,74 @@ func creationTestSuite(t *testing.T) {
 	t.Run("Label validation", func(t *testing.T) { testWorkerLabel(t) })
 	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
 	t.Run("User Data validation", func(t *testing.T) { testUserData(t) })
+	t.Run("Machine Creation", func(t *testing.T) { testWindowsMachineCreation(t) })
+}
+
+// testWindowsMachineCreation tests the creation of the Windows machines and checks if WMCO is properly watching
+// for the Windows machines created
+func testWindowsMachineCreation(t *testing.T) {
+	testCtx, err := NewTestContext(t)
+	require.NoError(t, err)
+	defer testCtx.cleanup()
+	testCases := []struct {
+		testCase  string
+		isWindows bool
+	}{
+		{
+			testCase:  "Create a Windows VM with label",
+			isWindows: true,
+		},
+		{
+			testCase:  "Create a Windows VM without label",
+			isWindows: false,
+		},
+	}
+	var machineSetNames = make([]string, 0, len(testCases))
+	expectedEventCount := 0
+	for _, test := range testCases {
+		machineSet, err := testCtx.CloudProvider.GenerateMachineSet(test.isWindows)
+		require.NoError(t, err)
+		err = framework.Global.Client.Create(context.TODO(), machineSet,
+			&framework.CleanupOptions{TestContext: testCtx.osdkTestCtx, Timeout: cleanupTimeout,
+				RetryInterval: cleanupRetryInterval})
+		require.NoError(t, err)
+		log.Printf("MachineSet Name %s", machineSet.Name)
+		machineSetNames = append(machineSetNames, machineSet.Name)
+		if test.isWindows {
+			expectedEventCount++
+		}
+	}
+	require.NoError(t, testCtx.waitForProvisionedEvent(expectedEventCount, machineSetNames))
+}
+
+// waitForProvisionedEvent waits for 2 minutes for the required number of machines to come to the provisioned state.
+func (tc *testContext) waitForProvisionedEvent(expectedEventCount int, machineSetNames []string) error {
+	var actualEventCount int
+	timeOut := 2 * time.Minute
+	startTime := time.Now()
+	for i := 0; time.Since(startTime) <= timeOut; i++ {
+		eventsList, err := tc.kubeclient.CoreV1().Events("openshift-machine-api").List(context.TODO(),
+			metav1.ListOptions{})
+		if err != nil {
+			log.Printf("event list failed: %v", err)
+			continue
+		}
+		actualEventCount = 0
+		for _, event := range eventsList.Items {
+			if event.Reason == "WMCO Setup" {
+				for _, machineSetName := range machineSetNames {
+					if strings.Contains(event.Message, machineSetName) {
+						actualEventCount++
+					}
+				}
+			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+	if actualEventCount == expectedEventCount {
+		return nil
+	}
+	return errors.Errorf("expected event count %d but got %d", expectedEventCount, actualEventCount)
 }
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
