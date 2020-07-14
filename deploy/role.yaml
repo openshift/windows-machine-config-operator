@@ -3,6 +3,7 @@ kind: Role
 metadata:
   creationTimestamp: null
   name: windows-machine-config-operator
+  namespace: windows-machine-config-operator
 rules:
 - apiGroups:
   - ""
@@ -55,12 +56,6 @@ rules:
   - deployments
   verbs:
   - get
-- apiGroups:
-  - wmc.openshift.io
-  resources:
-  - '*'
-  verbs:
-  - '*'
 # Permissions to access hostnetwork SCC
 - apiGroups:
   - security.openshift.io
@@ -69,7 +64,7 @@ rules:
   resources:
   - securitycontextconstraints
   verbs:
-  - use 
+  - use
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -80,6 +75,7 @@ rules:
  - apiGroups:
    - ""
    resources:
+   - events
    - nodes
    verbs:
    - "*"
@@ -129,3 +125,19 @@ rules:
    verbs:
      - create
      - get
+# Permissions to access the machine api
+ - apiGroups:
+     - "machine.openshift.io"
+   resources:
+     - machines
+   verbs:
+     - get
+     - list
+     - watch
+# Permissions to access the wmc object
+ - apiGroups:
+     - wmc.openshift.io
+   resources:
+     - '*'
+   verbs:
+     - '*'

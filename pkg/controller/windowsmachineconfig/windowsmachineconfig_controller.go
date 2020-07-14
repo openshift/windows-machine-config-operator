@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 
+	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/cloudprovider"
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	wmcapi "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
@@ -18,9 +19,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -34,7 +37,7 @@ const (
 	ControllerName = "windowsmachineconfig-controller"
 )
 
-var log = logf.Log.WithName("controller_wmc")
+var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new WindowsMachineConfig Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
@@ -87,6 +90,7 @@ func newReconciler(mgr manager.Manager, clusterServiceCIDR string) (reconcile.Re
 			windowsVMs:         windowsVMs,
 			clusterServiceCIDR: clusterServiceCIDR,
 			signer:             signer,
+			recorder:           mgr.GetEventRecorderFor(ControllerName),
 		},
 		nil
 }
@@ -108,6 +112,35 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if err != nil {
 		return errors.Wrap(err, "could not create watch on WindowsMachineConfig objects")
 	}
+	// Watch for the Machine objects
+	windowsOSLabel := "machine.openshift.io/os-id"
+	predicateFilter := predicate.Funcs{
+		// ignore create event for all Machines as WMCO should for Machine getting provisioned
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			labels := e.MetaNew.GetLabels()
+			if value, ok := labels[windowsOSLabel]; ok {
+				if value == "Windows" {
+					return true
+				}
+			}
+			return false
+		},
+		// ignore delete event for all Machines as WMCO does not react to node getting deleted
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+	}
+
+	err = c.Watch(&source.Kind{Type: &mapi.Machine{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-machine-api"},
+	}}, &handler.EnqueueRequestForObject{}, predicateFilter)
+	if err != nil {
+		return errors.Wrap(err, "could not create watch on Machine objects")
+	}
+
 	return nil
 }
 
@@ -135,6 +168,8 @@ type ReconcileWindowsMachineConfig struct {
 	clusterServiceCIDR string
 	// signer is a signer created from the user's private key
 	signer ssh.Signer
+	// recorder to generate events
+	recorder record.EventRecorder
 }
 
 // getCloudProvider gathers the cloud provider information and sets the cloudProvider struct field
@@ -177,6 +212,37 @@ func (r *ReconcileWindowsMachineConfig) getCloudProvider(instance *wmcapi.Window
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileWindowsMachineConfig) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	log.Info("reconciling", "namespace", request.Namespace, "name", request.Name)
+	wmcoObject := false
+	// Fetch the Machine instance
+	machine := &mapi.Machine{}
+	provisionedPhase := "Provisioned"
+	if err := r.client.Get(context.TODO(), request.NamespacedName, machine); err != nil {
+		wmcoObject = true
+		// TODO: Uncomment this when we switch to Machine-api completely in WINC-429
+		//if k8sapierrors.IsNotFound(err) {
+		//	// Request object not found, could have been deleted after reconcile request.
+		//	// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+		//	// Return and don't requeue
+		//
+		//	return reconcile.Result{}, nil
+		//
+		//}
+		//// Error reading the object - requeue the request.
+		//return reconcile.Result{}, err
+	}
+	if !wmcoObject {
+		if machine.Status.Phase == nil {
+			// Phase can be nil and should be ignored by WMCO
+			return reconcile.Result{}, nil
+		}
+		if *machine.Status.Phase != provisionedPhase {
+			// If the Machine is not in provisioned state, WMCO shouldn't care about it
+			return reconcile.Result{}, nil
+		}
+		r.recorder.Eventf(machine, corev1.EventTypeNormal, "WMCO Setup",
+			"Machine %s Provisioned Successfully", machine.Name)
+		return reconcile.Result{}, nil
+	}
 
 	// Fetch the WindowsMachineConfig instance
 	instance := &wmcapi.WindowsMachineConfig{}

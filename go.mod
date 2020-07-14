@@ -32,11 +32,14 @@ replace (
 	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.18.2
 	k8s.io/metrics => k8s.io/metrics v0.18.2
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.18.2
+	sigs.k8s.io/cluster-api-provider-aws => github.com/openshift/cluster-api-provider-aws v0.2.1-0.20200520125206-5e266b553d8e // This is coming from machine-api repo
 )
 
 require (
-	github.com/openshift/api v0.0.0-20200422081840-fdd1b0c14c88
+	github.com/aws/aws-sdk-go v1.25.48
+	github.com/openshift/api v0.0.0-20200424083944-0422dc17083e
 	github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70
+	github.com/openshift/machine-api-operator v0.2.1-0.20200520080344-fe76daf636f4
 	github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200619015040-0288e17404c0
 	github.com/operator-framework/operator-sdk v0.18.1
 	github.com/pkg/errors v0.9.1
@@ -45,5 +48,6 @@ require (
 	k8s.io/api v0.18.3
 	k8s.io/apimachinery v0.18.3
 	k8s.io/client-go v12.0.0+incompatible
+	sigs.k8s.io/cluster-api-provider-aws v0.0.0-00010101000000-000000000000
 	sigs.k8s.io/controller-runtime v0.6.0
 )

@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	wmc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/providers"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"k8s.io/api/core/v1"
@@ -68,6 +69,8 @@ type testContext struct {
 	retryInterval time.Duration
 	// timeout to terminate checking for the existence of resource in kube apiserver
 	timeout time.Duration
+	// CloudProvider to talk to various cloud providers
+	providers.CloudProvider
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -77,9 +80,13 @@ func NewTestContext(t *testing.T) (*testContext, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "test context instantiation failed")
 	}
+	cloudProvider, err := providers.NewCloudProvider()
+	if err != nil {
+		return nil, errors.Wrap(err, "cloud provider creation failed")
+	}
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{osdkTestCtx: fmwkTestContext, kubeclient: framework.Global.KubeClient,
-		timeout: retry.Timeout, retryInterval: retry.Interval, namespace: namespace}, nil
+		timeout: retry.Timeout, retryInterval: retry.Interval, namespace: namespace, CloudProvider: cloudProvider}, nil
 }
 
 // cleanup cleans up the test context
