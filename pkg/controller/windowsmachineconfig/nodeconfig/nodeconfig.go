@@ -14,6 +14,7 @@ import (
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/windows"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/ssh"
 	certificates "k8s.io/api/certificates/v1beta1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,8 +76,9 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM,
-	clusterServiceCIDR string) (*nodeConfig, error) {
+// TODO: WINC-429 will replace WindowsVM with a Machine
+func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM, clusterServiceCIDR string,
+	signer ssh.Signer) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -96,8 +98,13 @@ func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM,
 		return nil, errors.Wrap(err, "error receiving valid CIDR value for "+
 			"creating new node config")
 	}
-	return &nodeConfig{k8sclientset: clientset, Windows: windows.New(windowsVM,
-		nodeConfigCache.workerIgnitionEndPoint), network: newNetwork(),
+
+	win, err := windows.New(windowsVM, nodeConfigCache.workerIgnitionEndPoint, signer)
+	if err != nil {
+		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
+	}
+
+	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(),
 		clusterServiceCIDR: clusterServiceCIDR}, nil
 }
 
@@ -123,12 +130,6 @@ func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
 
 // Configure configures the Windows VM to make it a Windows worker node
 func (nc *nodeConfig) Configure() error {
-	var err error
-	// Validate WindowsVM
-	if err := nc.Windows.Validate(); err != nil {
-		return errors.Wrap(err, "error validating Windows VM")
-	}
-
 	if err := nc.Windows.Configure(); err != nil {
 		return errors.Wrap(err, "configuring the Windows VM failed")
 	}
@@ -137,10 +138,8 @@ func (nc *nodeConfig) Configure() error {
 	}
 
 	// populate node object in nodeConfig
-	err = nc.getNode()
-	if err != nil {
-		return errors.Wrapf(err, "error getting node object for VM %s",
-			nc.GetCredentials().GetInstanceId())
+	if err := nc.getNode(); err != nil {
+		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
 	}
 	// Apply worker labels
 	if err := nc.applyWorkerLabel(); err != nil {
@@ -323,7 +322,7 @@ func (nc *nodeConfig) getNode() error {
 		return fmt.Errorf("no nodes found")
 	}
 	// get the node with given instance id
-	instanceID := nc.GetCredentials().GetInstanceId()
+	instanceID := nc.ID()
 	for _, node := range nodes.Items {
 		if instanceID == getInstanceIDfromProviderID(node.Spec.ProviderID) {
 			nc.node = &node
