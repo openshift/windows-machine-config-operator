@@ -3,6 +3,9 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
+source $WMCO_ROOT/hack/common.sh
+
 OUTPUT_DIR=${1:-}
 if [[ -z "$OUTPUT_DIR" ]]; then
     echo "usage: $0 OUTPUT_DIR"
@@ -14,6 +17,8 @@ MAIN_PACKAGE="${PACKAGE}/cmd/manager"
 BIN_NAME="windows-machine-config-operator"
 BIN_DIR="${OUTPUT_DIR}/bin"
 
+VERSION=$(get_version)
+
 echo "building ${BIN_NAME}..."
 mkdir -p "${BIN_DIR}"
 
@@ -24,4 +29,4 @@ goflags=${GOFLAGS:-}
 if [[ "$goflags" == *"-mod=vendor"* ]]; then
   unset GOFLAGS
 fi
-CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build -o ${BIN_DIR}/${BIN_NAME} ${MAIN_PACKAGE}
+CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${MAIN_PACKAGE}

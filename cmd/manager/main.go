@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
@@ -20,7 +19,6 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/leader"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	"github.com/operator-framework/operator-sdk/pkg/metrics"
-	sdkVersion "github.com/operator-framework/operator-sdk/version"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 	v1 "k8s.io/api/core/v1"
@@ -59,12 +57,6 @@ type clusterConfig struct {
 	network clusternetwork.ClusterNetworkConfig
 }
 
-func printVersion() {
-	log.Info("operator", "version", version.Version)
-	log.Info("go", "version", runtime.Version(), "os", runtime.GOOS, "arch", runtime.GOARCH)
-	log.Info("operator-sdk", "version", sdkVersion.Version)
-}
-
 func main() {
 	// Add the zap logger flag set to the CLI. The flag set must
 	// be added before calling pflag.Parse().
@@ -76,6 +68,24 @@ func main() {
 
 	pflag.Parse()
 
+	// add version subcommand to query the operator version
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "version":
+			fmt.Printf("%s version: %q, go version: %q\n", os.Args[0], version.Get(),
+				version.GoVersion)
+			os.Exit(0)
+		default:
+			fg := strings.Split(os.Args[1], "=")
+			arg := strings.Replace(fg[0], "--", "", -1)
+			if pflag.Lookup(arg) == nil {
+				fmt.Printf("unknown sub-command: %v\n", os.Args[1])
+				fmt.Print("available sub-commands:\n\tversion\n")
+				os.Exit(1)
+			}
+		}
+	}
+
 	// Use a zap logr.Logger implementation. If none of the zap
 	// flags are configured (or if the zap flag set is not being
 	// used), this defaults to a production zap logger.
@@ -86,7 +96,7 @@ func main() {
 	// uniform and structured logs.
 	logf.SetLogger(zap.Logger())
 
-	printVersion()
+	version.Print()
 
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
