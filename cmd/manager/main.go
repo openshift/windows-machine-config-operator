@@ -319,7 +319,8 @@ func (c *clusterConfig) validateK8sVersion() error {
 func (c *clusterConfig) validate() error {
 	err := c.validateK8sVersion()
 	if err != nil {
-		return errors.Wrap(err, "error validating k8s version")
+		// Temporarily just log this error until https://bugzilla.redhat.com/show_bug.cgi?id=1859614 is fixed
+		log.Error(err, "error validating k8s version")
 	}
 	if err = c.network.Validate(); err != nil {
 		return errors.Wrap(err, "error validating network configuration")
