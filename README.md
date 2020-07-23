@@ -18,13 +18,34 @@ The operator image needs to be pushed to a remote repository:
 ```shell script
 podman push quay.io/<insert username>/wmco:$VERSION_TAG
 ```
-
-## Testing locally
-To run the e2e tests for WMCO locally against an OpenShift cluster set up on AWS, we need to setup the following environment variables.
+## Development workflow
+To run the operator on a cluster (for testing purpose only) or to run the e2e tests for WMCO against an OpenShift 
+cluster set up on AWS, we need to setup the following environment variables.
 ```shell script
 export KUBECONFIG=<path to kubeconfig>
 export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
 export KUBE_SSH_KEY_PATH=<path to RSA type ssh key>
+```
+
+To run the operator on a cluster, use: 
+```shell script
+hack/olm.sh run -c "<OPERATOR_IMAGE>"
+```
+This command builds the operator image and pushes it to remote repository. Executing [Build](#build) step is not required. 
+
+Inorder to build the operator ignoring the existing build image cache, run the above command with the `-i` option.
+
+To clean-up the installation, use:
+```shell script
+hack/olm.sh cleanup
+```
+
+*Operator-sdk has a known bug while using `operator-sdk run/cleanup packagemanifests` where it shows failure on success. 
+Track the issue [here](https://github.com/operator-framework/operator-sdk/issues/2938). The error does not imply that the operator will not work.*
+
+### Running e2e tests on a cluster
+We need to set up all the environment variables required in [Development workflow](#development-workflow) as well as: 
+```shell script
 export OPERATOR_IMAGE=<registry url for remote WMCO image>
 ```
 Once the above variables are set, run the following script:
@@ -177,22 +198,3 @@ Now create the subscription which will deploy the operator.
 ```shell script
 oc apply -f deploy/olm-catalog/subscription.yaml
 ```
-
-##### Running without bundle and index images
-Edit the CSV in `deploy/olm-catalog/windows-machine-config-operator/manifests/` and replacing `REPLACE_IMAGE` with the location 
-of the WMCO operator image you wish to deploy. 
-
-In order to test the operator locally using OLM, use:
-```shell script
-operator-sdk run packagemanifests --olm-namespace openshift-operator-lifecycle-manager \
---operator-namespace windows-machine-config-operator --operator-version $OPERATOR_VERSION
-```
-
-In order to clean up OLM installation running locally, use: 
-```shell script
-operator-sdk cleanup packagemanifests --olm-namespace openshift-operator-lifecycle-manager \
---operator-namespace windows-machine-config-operator --operator-version $OPERATOR_VERSION
-```
-
-*Operator-sdk has a known bug while using `operator-sdk run/cleanup --olm` where it shows failure on success. 
-Track the issue [here](https://github.com/operator-framework/operator-sdk/issues/2938). The error does not imply that the operator will not work.*
