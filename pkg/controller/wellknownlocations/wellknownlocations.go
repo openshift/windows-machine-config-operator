@@ -1,9 +1,6 @@
 package wellknownlocations
 
 const (
-	// CloudCredentialsPath contains the path to the file where cloud credentials are stored. This would've been mounted
-	// as a secret by user
-	CloudCredentialsPath = "/etc/cloud/credentials"
 	// PrivateKeyPath contains the path to the private key which is used in decrypting password in case of AWS
 	// cloud provider. This would have been mounted as a secret by user
 	// TODO: Jira story for validation: https://issues.redhat.com/browse/WINC-316

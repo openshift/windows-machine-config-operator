@@ -9,7 +9,6 @@ build:
 .PHONY: lint
 lint:
 	hack/lint-gofmt.sh
-	hack/lint-generate-crds.sh
 
 .PHONY: unit
 unit:

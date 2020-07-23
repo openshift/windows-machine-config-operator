@@ -81,7 +81,7 @@ run_WMCO $OSDK
 # Run the creation tests and skip deletion of the Windows VMs
 OSDK_WMCO_test $OSDK "-run=TestWMCO/create -v -timeout=90m -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME"
 
-# Run the deletion tests while testing operator restart functionality. This will clean up VMs created 
+# Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
 OSDK_WMCO_test $OSDK "-run=TestWMCO/destroy -v -timeout=60m -ssh-key-pair=$KEY_PAIR_NAME"
 

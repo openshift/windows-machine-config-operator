@@ -2,25 +2,20 @@ package nodeconfig
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
-	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachineconfig/windows"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/windows"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
-	certificates "k8s.io/api/certificates/v1beta1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	kretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
@@ -76,8 +71,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-// TODO: WINC-429 will replace WindowsVM with a Machine
-func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM, clusterServiceCIDR string,
+func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, clusterServiceCIDR string,
 	signer ssh.Signer) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
@@ -99,7 +93,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, windowsVM types.WindowsVM, c
 			"creating new node config")
 	}
 
-	win, err := windows.New(windowsVM, nodeConfigCache.workerIgnitionEndPoint, signer)
+	win, err := windows.New(ipAddress, instanceID, nodeConfigCache.workerIgnitionEndPoint, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
@@ -133,12 +127,8 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.Windows.Configure(); err != nil {
 		return errors.Wrap(err, "configuring the Windows VM failed")
 	}
-	if err := nc.handleCSRs(); err != nil {
-		return errors.Wrap(err, "handling CSR for the given node failed")
-	}
-
 	// populate node object in nodeConfig
-	if err := nc.getNode(); err != nil {
+	if err := nc.setNode(); err != nil {
 		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
 	}
 	// Apply worker labels
@@ -203,133 +193,27 @@ func (nc *nodeConfig) applyWorkerLabel() error {
 	return nil
 }
 
-// HandleCSRs handles the approval of bootstrap and node CSRs
-func (nc *nodeConfig) handleCSRs() error {
-	// Handle the bootstrap CSR
-	err := nc.handleCSR(bootstrapCSR)
-	if err != nil {
-		return errors.Wrap(err, "unable to handle bootstrap CSR")
-	}
-
-	// TODO: Handle the node CSR
-	// 		Note: for the product we want to get the node name from the instance information
-	//		jira story: https://issues.redhat.com/browse/WINC-271
-	err = nc.handleCSR("system:node:")
-	if err != nil {
-		return errors.Wrap(err, "unable to handle node CSR")
-	}
-	return nil
-}
-
-// findCSR finds the CSR that contains the requestor filter
-func (nc *nodeConfig) findCSR(requestor string) (*certificates.CertificateSigningRequest, error) {
-	var foundCSR *certificates.CertificateSigningRequest
-	// Find the CSR
-	for retries := 0; retries < retry.Count; retries++ {
-		csrs, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().List(context.TODO(), metav1.ListOptions{})
+// setNode identifies the node from the instanceID provided and sets the node object in the nodeconfig.
+func (nc *nodeConfig) setNode() error {
+	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
+			metav1.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
-			return nil, fmt.Errorf("unable to get CSR list: %v", err)
+			return false, errors.Wrap(err, "could not get list of nodes")
 		}
-		if csrs == nil {
-			time.Sleep(retry.Interval)
-			continue
+		if len(nodes.Items) == 0 {
+			return false, errors.Errorf("no nodes found")
 		}
-
-		for _, csr := range csrs.Items {
-			if !strings.Contains(csr.Spec.Username, requestor) {
-				continue
+		// get the node with given instance id
+		for _, node := range nodes.Items {
+			if nc.ID() == getInstanceIDfromProviderID(node.Spec.ProviderID) {
+				nc.node = &node
+				return true, nil
 			}
-			var handledCSR bool
-			for _, c := range csr.Status.Conditions {
-				if c.Type == certificates.CertificateApproved || c.Type == certificates.CertificateDenied {
-					handledCSR = true
-					break
-				}
-			}
-			if handledCSR {
-				continue
-			}
-			foundCSR = &csr
-			break
 		}
-
-		if foundCSR != nil {
-			break
-		}
-		time.Sleep(retry.Interval)
-	}
-
-	if foundCSR == nil {
-		return nil, errors.Errorf("unable to find CSR with requestor %s", requestor)
-	}
-	return foundCSR, nil
-}
-
-// approve approves the given CSR if it has not already been approved
-// Based on https://github.com/kubernetes/kubectl/blob/master/pkg/cmd/certificates/certificates.go#L237
-func (nc *nodeConfig) approve(csr *certificates.CertificateSigningRequest) error {
-	// Check if the certificate has already been approved
-	for _, c := range csr.Status.Conditions {
-		if c.Type == certificates.CertificateApproved {
-			return nil
-		}
-	}
-
-	// Approve the CSR
-	return kretry.RetryOnConflict(kretry.DefaultRetry, func() error {
-		// Ensure we get the current version
-		csr, err := nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().Get(
-			context.TODO(),
-			csr.GetName(), metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-
-		// Add the approval status condition
-		csr.Status.Conditions = append(csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
-			Type:           certificates.CertificateApproved,
-			Reason:         "WMCBe2eTestRunnerApprove",
-			Message:        "This CSR was approved by WMCO runner",
-			LastUpdateTime: metav1.Now(),
-		})
-
-		_, err = nc.k8sclientset.CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(context.TODO(), csr, metav1.UpdateOptions{})
-		return err
+		return false, nil
 	})
-}
-
-// handleCSR finds the CSR based on the requestor filter and approves it
-func (nc *nodeConfig) handleCSR(requestorFilter string) error {
-	csr, err := nc.findCSR(requestorFilter)
-	if err != nil {
-		return errors.Wrapf(err, "error finding CSR for %s", requestorFilter)
-	}
-
-	if err = nc.approve(csr); err != nil {
-		return errors.Wrapf(err, "error approving CSR for %s", requestorFilter)
-	}
-
-	return nil
-}
-
-// getNode returns a pointer to the node object associated with the instance id provided
-func (nc *nodeConfig) getNode() error {
-	nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: WindowsOSLabel})
-	if err != nil {
-		return errors.Wrap(err, "could not get list of nodes")
-	}
-	if len(nodes.Items) == 0 {
-		return fmt.Errorf("no nodes found")
-	}
-	// get the node with given instance id
-	instanceID := nc.ID()
-	for _, node := range nodes.Items {
-		if instanceID == getInstanceIDfromProviderID(node.Spec.ProviderID) {
-			nc.node = &node
-			return nil
-		}
-	}
-	return errors.Errorf("unable to find node for instanceID %s", instanceID)
+	return errors.Wrapf(err, "unable to find node for instanceID %s", nc.ID())
 }
 
 // waitForNodeAnnotation checks if the node object has the given annotation and waits for retry.Interval seconds and

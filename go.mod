@@ -39,7 +39,6 @@ require (
 	github.com/openshift/api v0.0.0-20200424083944-0422dc17083e
 	github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70
 	github.com/openshift/machine-api-operator v0.2.1-0.20200520080344-fe76daf636f4
-	github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer v0.0.0-20200620102919-dd78396c3ed4
 	github.com/operator-framework/operator-sdk v0.18.1
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
