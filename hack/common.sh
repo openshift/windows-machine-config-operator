@@ -49,7 +49,7 @@ OSDK_WMCO_management() {
 # and prepares the cluster to run the operator and runs the operator on the cluster using OLM
 # Parameters:
 # 1: path to the operator-sdk binary to use
-run_WMCO(){
+run_WMCO() {
   local OSDK=$1
 
   # Create a temporary directory to hold the edited manifests which will be removed on exit
@@ -71,6 +71,11 @@ run_WMCO(){
 
   # Run the operator in the windows-machine-config-operator namespace
   OSDK_WMCO_management run $OSDK $MANIFEST_LOC
+
+  # Additional guard that ensures that operator was deployed given the SDK flakes in error reporting
+  if ! oc rollout status deployment windows-machine-config-operator -n windows-machine-config-operator --timeout=5s; then
+    return 1
+  fi
 }
 
 # Cleans up the installation of operator from the cluster and deletes the namespace

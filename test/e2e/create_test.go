@@ -23,7 +23,10 @@ func creationTestSuite(t *testing.T) {
 	// are the secrets but they are created only after the VMs have been fully configured.
 	// Any node object related tests should be run only after testNodeCreation as that initializes the node objects in
 	// the global context.
-	t.Run("Creation", func(t *testing.T) { testWindowsNodeCreation(t) })
+	if !t.Run("Creation", func(t *testing.T) { testWindowsNodeCreation(t) }) {
+		// No point in running the other tests if creation failed
+		return
+	}
 	t.Run("Network validation", testNetwork)
 	t.Run("Label validation", func(t *testing.T) { testWorkerLabel(t) })
 	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
