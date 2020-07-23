@@ -5,8 +5,6 @@ import (
 	"time"
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
-	"github.com/openshift/windows-machine-config-operator/pkg/apis"
-	operator "github.com/openshift/windows-machine-config-operator/pkg/apis/wmc/v1alpha1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 )
@@ -31,7 +29,7 @@ func TestWMCO(t *testing.T) {
 	// parsing along with test suite execution.
 	// Reference:
 	// https://github.com/operator-framework/operator-sdk/blob/b448429687fd7cb2343d022814ed70c9d264612b/pkg/test/main_entry.go#L51
-	gc.numberOfNodes = numberOfNodes
+	gc.numberOfNodes = int32(numberOfNodes)
 	gc.skipNodeDeletion = skipNodeDeletion
 	gc.sshKeyPair = sshKeyPair
 
@@ -43,13 +41,8 @@ func TestWMCO(t *testing.T) {
 
 // setupWMCO setups the resources needed to run WMCO tests
 func setupWMCOResources() error {
-	wmcoList := &operator.WindowsMachineConfigList{}
-	err := framework.AddToFrameworkScheme(apis.AddToScheme, wmcoList)
-	if err != nil {
-		return errors.Wrap(err, "failed setting up test suite")
-	}
 	// Register the Machine API to create machine objects from framework's client
-	err = framework.AddToFrameworkScheme(mapi.AddToScheme, &mapi.MachineSetList{})
+	err := framework.AddToFrameworkScheme(mapi.AddToScheme, &mapi.MachineSetList{})
 	if err != nil {
 		return errors.Wrap(err, "failed adding machine api scheme")
 	}

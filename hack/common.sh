@@ -65,9 +65,6 @@ run_WMCO(){
   fi
 
   oc apply -f deploy/namespace.yaml
-  if ! oc create secret generic cloud-credentials --from-file=credentials=$AWS_SHARED_CREDENTIALS_FILE -n windows-machine-config-operator; then
-    echo "secret already present"
-  fi
   if ! oc create secret generic cloud-private-key --from-file=private-key.pem=$KUBE_SSH_KEY_PATH -n windows-machine-config-operator; then
     echo "cloud-private-key already present"
   fi

@@ -1,5 +1,16 @@
 # Windows Machine Config Operator
 
+## Introduction
+The Windows Machine Config Operator is the entry point for OpenShift customers who want to run Windows workloads on
+their clusters. The operator is configured to watch for [Machines](https://docs.openshift.com/container-platform/4.4/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws)
+with a `machine.openshift.io/os-id: Windows` label. The way a customer will initiate the process is by creating a 
+MachineSet with this label specifying an Windows image that has the container runtime installed. The operator will do
+all the necessary steps to configure the underlying VM so that it can join the cluster as a worker node. More design
+details can be explored in the [WMCO enhancement](https://github.com/openshift/enhancements/blob/master/enhancements/windows-containers/windows-machine-config-operator.md).
+
+Customers will eventually be able to install it using OperatorHub. These instructions are for those who want to try out
+the latest version of the operator.
+
 ## Pre-requisites
 - [Install](https://sdk.operatorframework.io/docs/install-operator-sdk/) operator-sdk
   v0.18.1
@@ -145,7 +156,7 @@ and removed from it:
 opm index rm --from-index $INDEX_REPOSITORY:$INDEX_TAG
 ```
 
-### Deploying the operator on a local cluster
+### Deploying the operator on a cluster
 #### Openshift Console
 This deployment method is currently not supported. Please use the [CLI](#cli)
 
@@ -161,14 +172,12 @@ Switch to the windows-machine-config-operator project:
 oc project windows-machine-config-operator
 ```
 
-##### Create Secrets
-In order to run the operator locally, you need to create secrets before deploying the operator.
+##### Create private key Secret
+In order to run the operator, you need to create a secret containing the private key that will be used to access the
+Windows VMs. The private key should be in PEM encoded RSA format.
 
-Create the cloud provider and cloud private key secrets. The cloud-private-key should match the keypair used in the
-Windows Machine Config CR you will use and it should be of RSA key type.
 ```shell script
 # Change paths as necessary
-oc create secret generic cloud-credentials --from-file=credentials=$HOME/.aws/credentials
 oc create secret generic cloud-private-key --from-file=private-key.pem=$HOME/.ssh/$keyname
 ```
 
@@ -197,4 +206,80 @@ Change `spec.startingCSV` in `deploy/olm-catalog/subscription.yaml` to match the
 Now create the subscription which will deploy the operator.
 ```shell script
 oc apply -f deploy/olm-catalog/subscription.yaml
+```
+
+### Creating a Windows MachineSet
+Below is the example of a Windows MachineSet which can create Windows Machines that the WMCO can react upon. Please 
+note that the `windows-user-data` secret will be created by the WMCO lazily when it is configuring the first Windows 
+Machine. After that, the `windows-user-data` will be available for the subsequent MachineSets to be consumed. It might 
+take around 10 minutes for the Windows VM to be configured so that it joins the cluster. Please note that the MachineSet
+should have `machine.openshift.io/os-id: Windows` label and the image should point to a Windows image with a container
+run-time installed.
+
+In order to get the `infrastructureID` use:
+```shell script
+ oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
+```
+##### Example:
+```
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  labels:
+    machine.openshift.io/cluster-api-cluster: <infrastructureID> 
+  name: <infrastructureID>-<role>-<zone> 
+  namespace: openshift-machine-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: <infrastructureID> 
+      machine.openshift.io/cluster-api-machineset: <infrastructureID>-<role>-<zone> 
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: <infrastructureID> 
+        machine.openshift.io/cluster-api-machine-role: <role> 
+        machine.openshift.io/cluster-api-machine-type: <role> 
+        machine.openshift.io/cluster-api-machineset: <infrastructureID>-<role>-<zone>
+        machine.openshift.io/os-id: Windows
+    spec:
+      metadata:
+        labels:
+          node-role.kubernetes.io/<role>: "" 
+      providerSpec:
+        value:
+          ami:
+            id: <windows_image_with_container_runtime_installed>
+          apiVersion: awsproviderconfig.openshift.io/v1beta1
+          blockDevices:
+            - ebs:
+                iops: 0
+                volumeSize: 120
+                volumeType: gp2
+          credentialsSecret:
+            name: aws-cloud-credentials
+          deviceIndex: 0
+          iamInstanceProfile:
+            id: <infrastructureID>-worker-profile 
+          instanceType: m5a.large
+          kind: AWSMachineProviderConfig
+          placement:
+            availabilityZone: us-east-1a
+            region: us-east-1
+          securityGroups:
+            - filters:
+                - name: tag:Name
+                  values:
+                    - <infrastructureID>-worker-sg 
+          subnet:
+            filters:
+              - name: tag:Name
+                values:
+                  - <infrastructureID>-private-us-east-1a 
+          tags:
+            - name: kubernetes.io/cluster/<infrastructureID> 
+              value: owned
+          userDataSecret:
+            name: windows-user-data
 ```

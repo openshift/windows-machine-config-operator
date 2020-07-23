@@ -15,11 +15,6 @@ spec:
       hostNetwork: true
       serviceAccountName: windows-machine-config-operator
       volumes:
-      # TODO: Remove the cloud-credentials and cloud-private-key volumes as part of
-      # https://issues.redhat.com/browse/WINC-325
-      - name: cloud-credentials
-        secret:
-          secretName: cloud-credentials
       - name: cloud-private-key
         secret:
           secretName: cloud-private-key
@@ -45,11 +40,6 @@ spec:
             - name: OPERATOR_NAME
               value: "windows-machine-config-operator"
           volumeMounts:
-          # TODO: Remove the cloud-credentials and cloud-private-key volumeMounts as part of
-          # https://issues.redhat.com/browse/WINC-325
-          - name: cloud-credentials
-            mountPath: "/etc/cloud/"
-            readOnly: true
           - name: cloud-private-key
             mountPath: "/etc/private-key/"
             readOnly: true

@@ -31,9 +31,6 @@ const (
 	instanceType = "m5a.large"
 )
 
-// number of replicas of windows machine to be created
-var replicas = int32(1)
-
 type awsProvider struct {
 	// imageID is the AMI image-id to be used for creating Virtual Machine
 	imageID string
@@ -47,6 +44,8 @@ type awsProvider struct {
 	openShiftClient *clusterinfo.OpenShift
 	// region in which the Machine needs to be created
 	region string
+	// sshKeyPair is the key pair associated with the Windows VM
+	sshKeyPair string
 }
 
 // newSession uses AWS credentials to create and returns a session for interacting with EC2.
@@ -65,7 +64,7 @@ func newSession(credentialPath, credentialAccountID, region string) (*awssession
 // credentialAccountID is the account name the user uses to create VM instance.
 // The credentialAccountID should exist in the AWS credentials file pointing at one specific credential.
 func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
-	credentialAccountID, instanceType, region string) (*awsProvider, error) {
+	credentialAccountID, instanceType, region, sshKeyPair string) (*awsProvider, error) {
 	session, err := newSession(credentialPath, credentialAccountID, region)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new AWS session: %v", err)
@@ -85,12 +84,13 @@ func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
 		ec2Client,
 		openShiftClient,
 		region,
+		sshKeyPair,
 	}, nil
 }
 
 // SetupAWSCloudProvider creates AWS provider using the give OpenShift client
 // This is the first step of the e2e test and fails the test upon error.
-func SetupAWSCloudProvider(region string) (*awsProvider, error) {
+func SetupAWSCloudProvider(region, sshKeyPair string) (*awsProvider, error) {
 	oc, err := clusterinfo.GetOpenShift()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OpenShift client with error: %v", err)
@@ -100,7 +100,7 @@ func SetupAWSCloudProvider(region string) (*awsProvider, error) {
 	if len(awsCredentials) == 0 {
 		return nil, fmt.Errorf("AWS_SHARED_CREDENTIALS_FILE env var is empty")
 	}
-	awsProvider, err := newAWSProvider(oc, awsCredentials, "default", instanceType, region)
+	awsProvider, err := newAWSProvider(oc, awsCredentials, "default", instanceType, region, sshKeyPair)
 	if err != nil {
 		return nil, fmt.Errorf("error obtaining aws interface object: %v", err)
 	}
@@ -293,11 +293,14 @@ func (a *awsProvider) getIAMWorkerRole(infraID string) (*ec2.IamInstanceProfileS
 	}
 	return &ec2.IamInstanceProfileSpecification{
 		Arn: iamspc.InstanceProfile.Arn,
+		// The ARN itself is not good enough in the MachineSet spec. we need the id to map the worker
+		// IAM profile in MachineSet spec
+		Name: iamspc.InstanceProfile.InstanceProfileName,
 	}, nil
 }
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
-func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool) (*mapi.MachineSet, error) {
+func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
 	clusterName, err := a.getInfraID()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get infrastructure id %v", err)
@@ -310,15 +313,14 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool) (*mapi.MachineSe
 
 	sgID, err := a.getClusterWorkerSGID(clusterName)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get securoty group id: %v", err)
+		return nil, fmt.Errorf("unable to get security group id: %v", err)
 	}
 
 	subnet, err := a.getSubnet(clusterName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get subnet: %v", err)
 	}
-
-	machineSetName := "windows-machineset-"
+	machineSetName := "e2e-windows-machineset-"
 	matchLabels := map[string]string{
 		"machine.openshift.io/cluster-api-cluster": clusterName,
 	}
@@ -344,7 +346,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool) (*mapi.MachineSe
 		},
 		InstanceType: a.instanceType,
 		IAMInstanceProfile: &awsprovider.AWSResourceReference{
-			ARN: instanceProfile.Arn,
+			ID: instanceProfile.Name,
 		},
 		CredentialsSecret: &v1.LocalObjectReference{
 			Name: "aws-cloud-credentials",
@@ -362,6 +364,8 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool) (*mapi.MachineSe
 			a.region,
 			*subnet.AvailabilityZone,
 		},
+		UserDataSecret: &v1.LocalObjectReference{Name: "windows-user-data"},
+		KeyName:        &a.sshKeyPair,
 	}
 
 	rawBytes, err := json.Marshal(providerSpec)

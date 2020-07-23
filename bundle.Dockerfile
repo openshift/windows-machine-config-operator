@@ -8,4 +8,4 @@ LABEL operators.operatorframework.io.bundle.channels.v1=alpha
 LABEL operators.operatorframework.io.bundle.channel.default.v1=alpha
 
 COPY deploy/olm-catalog/windows-machine-config-operator/manifests /manifests/
-COPY deploy/olm-catalog/windows-machine-config-operator/metadata/annotations.yaml /metadata/annotations.yaml
+COPY deploy/olm-catalog/windows-machine-config-operator/metadata /metadata/

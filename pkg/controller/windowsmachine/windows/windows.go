@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/windows-machine-config-bootstrapper/tools/windows-node-installer/pkg/types"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/pkg/errors"
@@ -77,6 +76,8 @@ type Windows interface {
 
 // windows implements the Windows interface
 type windows struct {
+	// ipAddress is the IP address associated with the Windows VM created
+	ipAddress string
 	// id is the VM's cloud provider ID
 	id string
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
@@ -89,27 +90,21 @@ type windows struct {
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-// TODO: WINC-429 will replace WindowsVM with a MachineSet
-func New(vm types.WindowsVM, workerIgnitionEndpoint string, signer ssh.Signer) (Windows, error) {
-	// Validate the WindowsVM
-	if err := validate(vm); err != nil {
-		return nil, errors.Wrap(err, "error validating Windows VM")
-	}
-
+func New(ipAddress, instanceID, workerIgnitionEndpoint string, signer ssh.Signer) (Windows, error) {
 	if workerIgnitionEndpoint == "" {
 		return nil, errors.New("cannot use empty ignition endpoint")
 	}
 
 	// Update the logger name with the VM's cloud ID
-	log = logf.Log.WithName(fmt.Sprintf("VM %s", vm.GetCredentials().GetInstanceId()))
-
-	conn, err := newSshConnectivity(vm.GetCredentials().GetUserName(), vm.GetCredentials().GetIPAddress(), signer)
+	log = logf.Log.WithName(fmt.Sprintf("VM %s", instanceID))
+	// For now, let's use the `Administrator` user for every node
+	conn, err := newSshConnectivity("Administrator", ipAddress, signer)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", vm.GetCredentials().GetInstanceId())
+		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instanceID)
 	}
 
 	return &windows{
-			id:                     vm.GetCredentials().GetInstanceId(),
+			id:                     instanceID,
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint},
 		nil
@@ -395,18 +390,4 @@ func (vm *windows) getSourceVIP() (string, error) {
 // mkdirCmd returns the Windows command to create a directory if it does not exists
 func mkdirCmd(dirName string) string {
 	return "if not exist " + dirName + " mkdir " + dirName
-}
-
-// validate the WindowsVM node object
-func validate(vm types.WindowsVM) error {
-	if vm.GetCredentials() == nil {
-		return fmt.Errorf("nil credentials for VM")
-	}
-	if vm.GetCredentials().GetIPAddress() == "" {
-		return fmt.Errorf("empty IP for VM: %v", vm.GetCredentials())
-	}
-	if vm.GetCredentials().GetInstanceId() == "" {
-		return fmt.Errorf("empty instance id for VM: %v", vm.GetCredentials())
-	}
-	return nil
 }

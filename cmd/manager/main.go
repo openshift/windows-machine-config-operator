@@ -119,7 +119,6 @@ func main() {
 		wkl.KubeProxyPath,
 		wkl.IgnoreWgetPowerShellPath,
 		wkl.WmcbPath,
-		wkl.CloudCredentialsPath,
 		wkl.PrivateKeyPath,
 		wkl.CNIConfigTemplatePath,
 		wkl.HNSPSModule,

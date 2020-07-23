@@ -2,24 +2,7 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: ClusterServiceVersion
 metadata:
   annotations:
-    alm-examples: |-
-      [
-        {
-          "apiVersion": "wmc.openshift.io/v1alpha1",
-          "kind": "WindowsMachineConfig",
-          "metadata": {
-            "name": "instance"
-          },
-          "spec": {
-            "aws": {
-              "credentialAccountId": "default",
-              "sshKeyPair": "openshift-dev"
-            },
-            "instanceType": "m5a.large",
-            "replicas": 1
-          }
-        }
-      ]
+    alm-examples: '[]'
     capabilities: Basic Install
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: windows-machine-config-operator
@@ -28,13 +11,7 @@ metadata:
   namespace: windows-machine-config-operator
 spec:
   apiservicedefinitions: {}
-  customresourcedefinitions:
-    owned:
-    - description: WindowsMachineConfig is the Schema for the windowsmachineconfigs
-        API
-      kind: WindowsMachineConfig
-      name: windowsmachineconfigs.wmc.openshift.io
-      version: v1alpha1
+  customresourcedefinitions: {}
   description: Placeholder description
   displayName: Windows Machine Config Operator
   icon:
@@ -101,12 +78,6 @@ spec:
           - get
           - list
           - watch
-        - apiGroups:
-          - wmc.openshift.io
-          resources:
-          - '*'
-          verbs:
-          - '*'
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator
@@ -143,18 +114,12 @@ spec:
                 name: windows-machine-config-operator
                 resources: {}
                 volumeMounts:
-                - mountPath: /etc/cloud/
-                  name: cloud-credentials
-                  readOnly: true
                 - mountPath: /etc/private-key/
                   name: cloud-private-key
                   readOnly: true
               hostNetwork: true
               serviceAccountName: windows-machine-config-operator
               volumes:
-              - name: cloud-credentials
-                secret:
-                  secretName: cloud-credentials
               - name: cloud-private-key
                 secret:
                   secretName: cloud-private-key
