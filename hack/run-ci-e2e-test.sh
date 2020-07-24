@@ -64,6 +64,14 @@ NODE_COUNT=${NODE_COUNT:-2}
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"-skip-node-deletion=false"}
 KEY_PAIR_NAME=${KEY_PAIR_NAME:-"openshift-dev"}
 
+# If ARTIFACT_DIR is not set, create a temp directory for artifacts
+ARTIFACT_DIR=${ARTIFACT_DIR:-}
+if [ -z "$ARTIFACT_DIR" ]; then
+  ARTIFACT_DIR=`mktemp -d`
+  echo "ARTIFACT_DIR is not set. Artifacts will be stored in: $ARTIFACT_DIR"
+  export ARTIFACT_DIR=$ARTIFACT_DIR
+fi
+
 # OPERATOR_IMAGE defines where the WMCO image to test with is located. If $OPERATOR_IMAGE is already set, use its value.
 # Setting $OPERATOR_IMAGE is required for local testing.
 # In OpenShift CI $IMAGE_FORMAT will be set to a value such as registry.svc.ci.openshift.org/ci-op-<input-hash>/stable:${component}

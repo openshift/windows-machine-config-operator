@@ -28,6 +28,7 @@ func creationTestSuite(t *testing.T) {
 	t.Run("Label validation", func(t *testing.T) { testWorkerLabel(t) })
 	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
 	t.Run("User Data validation", func(t *testing.T) { testUserData(t) })
+	t.Run("Node Logs", func(t *testing.T) { testNodeLogs(t) })
 }
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
