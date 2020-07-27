@@ -35,9 +35,9 @@ func TestIsValidKubernetesVersion(t *testing.T) {
 		version      string
 		errorMessage string
 	}{
-		{"cluster version lower than supported version ", "v1.17.1", "Unsupported server version: v1.17.1. Supported version is v1.18.x"},
-		{"cluster version equals supported version", "v1.18.3", ""},
-		{"cluster version greater than supported version", "v1.19.0", "Unsupported server version: v1.19.0. Supported version is v1.18.x"},
+		{"cluster version lower than supported version ", "v1.17.1", "Unsupported server version: v1.17.1. Supported version is v1.19.x"},
+		{"cluster version equals supported version", "v1.19.0", ""},
+		{"cluster version greater than supported version", "v1.20.0", "Unsupported server version: v1.20.0. Supported version is v1.19.x"},
 	}
 
 	for _, tt := range tests {
