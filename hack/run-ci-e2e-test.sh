@@ -13,7 +13,7 @@ KEY_PAIR_NAME=""
 export CGO_ENABLED=0
 
 get_WMCO_logs() {
-  oc logs -l name=windows-machine-config-operator -n windows-machine-config-operator
+  oc logs -l name=windows-machine-config-operator -n windows-machine-config-operator --tail=-1
 }
 
 # This function runs operator-sdk test with certain go test arguments
@@ -74,7 +74,12 @@ KEY_PAIR_NAME=${KEY_PAIR_NAME:-"openshift-dev"}
 OPERATOR_IMAGE=${OPERATOR_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//stable:windows-machine-config-operator-test}}
 
 # Setup and run the operator
-run_WMCO $OSDK
+if ! run_WMCO $OSDK; then
+  # Try to get the WMCO logs if possible
+  get_WMCO_logs
+  cleanup_WMCO $OSDK
+  exit 1
+fi
 
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
