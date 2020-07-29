@@ -66,6 +66,10 @@ anaconda-mode/
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+# Ignore leftovers created by `hack/` scripts
+_tmp/
+vendordiff.patch
+deploy/test/
 # Test binary, build with 'go test -c'
 *.test
 # Output of the go coverage tool, specifically when used with LiteIDE

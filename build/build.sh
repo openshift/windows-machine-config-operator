@@ -7,6 +7,8 @@ WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
 
 OUTPUT_DIR=${1:-}
+GOFLAGS=${2:-}
+
 if [[ -z "$OUTPUT_DIR" ]]; then
     echo "usage: $0 OUTPUT_DIR"
     exit 1
@@ -25,8 +27,5 @@ mkdir -p "${BIN_DIR}"
 # Account for environments where GOFLAGS is not set by setting goflags to an empty string if GOFLAGS is not set
 goflags=${GOFLAGS:-}
 
-# The golang 1.13 image used in CI enforces vendoring. Workaround that by unsetting it.
-if [[ "$goflags" == *"-mod=vendor"* ]]; then
-  unset GOFLAGS
-fi
-CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${MAIN_PACKAGE}
+
+CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build ${GOFLAGS} -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${MAIN_PACKAGE}
