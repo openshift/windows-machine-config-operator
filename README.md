@@ -44,7 +44,7 @@ hack/olm.sh run -c "<OPERATOR_IMAGE>"
 ```
 This command builds the operator image and pushes it to remote repository. Executing [Build](#build) step is not required. 
 
-Inorder to build the operator ignoring the existing build image cache, run the above command with the `-i` option.
+In order to build the operator ignoring the existing build image cache, run the above command with the `-i` option.
 
 To clean-up the installation, use:
 ```shell script
@@ -106,7 +106,7 @@ operator-sdk bundle create --generate-only --channels alpha --default-channel al
 ```
 
 ### Creating a bundle image
-You can skip this step if you want to run the operator locally [without bundle and index images](#running-without-bundle-and-index-images)
+You can skip this step if you want to run the operator for [developer testing purposes only](#development-workflow)
 
 A bundle image can be created by editing the CSV in `deploy/olm-catalog/windows-machine-config-operator/manifests/`
 and replacing `REPLACE_IMAGE` with the location of the WMCO operator image you wish to deploy.
@@ -132,7 +132,7 @@ operator-sdk bundle validate $BUNDLE_REPOSITORY:$BUNDLE_TAG --image-builder podm
 ```
 
 ### Creating a new operator index
-You can skip this step if you want to run the operator locally [without bundle and index images](#running-without-bundle-and-index-images)
+You can skip this step if you want to run the operator for [developer testing purposes only](#development-workflow)
 
 An operator index is a collection of bundles. Creating one is required if you wish to deploy your operator on your own
 cluster.
@@ -182,7 +182,7 @@ oc create secret generic cloud-private-key --from-file=private-key.pem=$HOME/.ss
 ```
 
 ##### Running with bundle and index images
-You can skip this step if you want to run the operator locally [without bundle and index images](#running-without-bundle-and-index-images)
+You can skip this step if you want to run the operator for [developer testing purposes only](#development-workflow)
 
 Change `deploy/olm-catalog/catalogsource.yaml` to point to the operator index created [above](#creating-a-new-operator-index). Now deploy it:
 ```shell script
