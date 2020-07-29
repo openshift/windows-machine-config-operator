@@ -47,6 +47,7 @@ source $WMCO_ROOT/hack/common.sh
 
 cd $WMCO_ROOT
 OSDK=$(get_operator_sdk)
+VERSION=$(get_version)
 
 # Builds the container image and pushes it to remote repository. Uses this built image to run the operator on the cluster.
 # It is user's responsibility to clean old/unused containers in container repository as well as local system.
@@ -56,7 +57,8 @@ case "$ACTION" in
       error-exit "OPERATOR_IMAGE not set"
   fi
 
-  $OSDK build "$OPERATOR_IMAGE" --image-builder $CONTAINER_TOOL $noCache
+  $OSDK build "$OPERATOR_IMAGE" --image-builder $CONTAINER_TOOL $noCache \
+    --go-build-args "-ldflags -X=github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}"
   if [ $? -ne 0 ] ; then
       error-exit "failed to build operator image"
   fi

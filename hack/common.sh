@@ -87,3 +87,16 @@ cleanup_WMCO() {
   OSDK_WMCO_management cleanup $OSDK
   oc delete -f deploy/namespace.yaml
 }
+
+# returns the operator version in `Version+GitHash` format
+get_version() {
+  OPERATOR_VERSION=0.0.1
+  GIT_COMMIT=$(git rev-parse --short HEAD)
+  VERSION="${OPERATOR_VERSION}+${GIT_COMMIT}"
+
+  if [ -n "$(git status --porcelain)" ]; then
+    VERSION="${VERSION}-dirty"
+  fi
+
+  echo $VERSION
+}
