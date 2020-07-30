@@ -44,10 +44,13 @@ require (
 	github.com/pkg/sftp v1.11.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.5.1
-	golang.org/x/crypto v0.0.0-20200414173820-0848c9571904
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
+	golang.org/x/net v0.0.0-20200707034311-ab3426394381 // indirect
+	golang.org/x/sys v0.0.0-20200728102440-3e129f6d46b1 // indirect
 	k8s.io/api v0.18.3
 	k8s.io/apimachinery v0.18.3
 	k8s.io/client-go v12.0.0+incompatible
+	k8s.io/utils v0.0.0-20200729134348-d5654de09c73 // indirect
 	sigs.k8s.io/cluster-api-provider-aws v0.0.0-00010101000000-000000000000
 	sigs.k8s.io/controller-runtime v0.6.0
 )
