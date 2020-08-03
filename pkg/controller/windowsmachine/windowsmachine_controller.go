@@ -85,7 +85,7 @@ func newReconciler(mgr manager.Manager, clusterServiceCIDR string) (reconcile.Re
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r})
+	c, err := controller.New(ControllerName, mgr, controller.Options{MaxConcurrentReconciles: 10, Reconciler: r})
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s", ControllerName)
 	}
