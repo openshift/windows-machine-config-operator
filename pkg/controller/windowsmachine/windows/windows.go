@@ -27,9 +27,11 @@ const (
 	// k8sDir is the remote kubernetes executable directory
 	k8sDir = "C:\\k\\"
 	// logDir is the remote kubernetes log directory
-	logDir = k8sDir + "log\\"
+	logDir = "C:\\var\\log\\"
 	// kubeProxyLogDir is the remote kube-proxy log directory
 	kubeProxyLogDir = logDir + "kube-proxy\\"
+	// hybridOverlayLogDir is the remote hybrid-overlay log directory
+	hybridOverlayLogDir = logDir + "hybrid-overlay\\"
 	// kubeProxyPath is the location of the kube-proxy exe
 	kubeProxyPath = k8sDir + "kube-proxy.exe"
 	// HybridOverlayProcess is the process name of the hybrid-overlay-node.exe in the Windows VM
@@ -170,7 +172,7 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 	// Start the hybrid-overlay in the background over ssh.
 	// TODO: This will be removed in https://issues.redhat.com/browse/WINC-353
 	go vm.Run(remoteDir+wkl.HybridOverlayName+" --node "+nodeName+
-		" --k8s-kubeconfig c:\\k\\kubeconfig > "+logDir+"hybrid-overlay.log 2>&1", false)
+		" --k8s-kubeconfig c:\\k\\kubeconfig --logfile="+hybridOverlayLogDir+"hybrid-overlay.log", false)
 
 	if err = vm.waitForHybridOverlayToRun(); err != nil {
 		return errors.Wrapf(err, "error running %s", wkl.HybridOverlayName)
@@ -244,6 +246,7 @@ func (vm *windows) createDirectories() error {
 		cniDir,
 		logDir,
 		kubeProxyLogDir,
+		hybridOverlayLogDir,
 	}
 	for _, dir := range directoriesToCreate {
 		if _, err := vm.Run(mkdirCmd(dir), false); err != nil {
