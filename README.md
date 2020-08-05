@@ -209,17 +209,19 @@ oc apply -f deploy/olm-catalog/subscription.yaml
 ```
 
 ### Creating a Windows MachineSet
-Below is the example of a Windows MachineSet which can create Windows Machines that the WMCO can react upon. Please 
+Below is the example of an AWS Windows MachineSet which can create Windows Machines that the WMCO can react upon. Please
 note that the `windows-user-data` secret will be created by the WMCO lazily when it is configuring the first Windows 
 Machine. After that, the `windows-user-data` will be available for the subsequent MachineSets to be consumed. It might 
 take around 10 minutes for the Windows VM to be configured so that it joins the cluster. Please note that the MachineSet
-should have `machine.openshift.io/os-id: Windows` label and the image should point to a Windows image with a container
-run-time installed.
-
-In order to get the `infrastructureID` use:
+should have `machine.openshift.io/os-id: Windows` label, and _\<windows_container_ami\>_ should be replaced with the
+AMI ID of a Windows image with a container run-time installed. _\<infrastructureID\>_ should be replaced with the output
+of:
 ```shell script
  oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
+_\<region\>_ should be replaced with a valid AWS region like `us-east-1`. _\<zone\>_ should be replaced with a valid AWS
+availability zone like `us-east-1a`.
+
 ##### Example:
 ```
 apiVersion: machine.openshift.io/v1beta1
@@ -227,30 +229,30 @@ kind: MachineSet
 metadata:
   labels:
     machine.openshift.io/cluster-api-cluster: <infrastructureID> 
-  name: <infrastructureID>-<role>-<zone> 
+  name: <infrastructureID>-worker-<zone>
   namespace: openshift-machine-api
 spec:
   replicas: 1
   selector:
     matchLabels:
       machine.openshift.io/cluster-api-cluster: <infrastructureID> 
-      machine.openshift.io/cluster-api-machineset: <infrastructureID>-<role>-<zone> 
+      machine.openshift.io/cluster-api-machineset: <infrastructureID>-worker-<zone>
   template:
     metadata:
       labels:
         machine.openshift.io/cluster-api-cluster: <infrastructureID> 
-        machine.openshift.io/cluster-api-machine-role: <role> 
-        machine.openshift.io/cluster-api-machine-type: <role> 
-        machine.openshift.io/cluster-api-machineset: <infrastructureID>-<role>-<zone>
+        machine.openshift.io/cluster-api-machine-role: worker
+        machine.openshift.io/cluster-api-machine-type: worker
+        machine.openshift.io/cluster-api-machineset: <infrastructureID>-worker-<zone>
         machine.openshift.io/os-id: Windows
     spec:
       metadata:
         labels:
-          node-role.kubernetes.io/<role>: "" 
+          node-role.kubernetes.io/worker: ""
       providerSpec:
         value:
           ami:
-            id: <windows_image_with_container_runtime_installed>
+            id: <windows_container_ami>
           apiVersion: awsproviderconfig.openshift.io/v1beta1
           blockDevices:
             - ebs:
@@ -265,8 +267,8 @@ spec:
           instanceType: m5a.large
           kind: AWSMachineProviderConfig
           placement:
-            availabilityZone: us-east-1a
-            region: us-east-1
+            availabilityZone: <zone>
+            region: <region>
           securityGroups:
             - filters:
                 - name: tag:Name
@@ -276,7 +278,7 @@ spec:
             filters:
               - name: tag:Name
                 values:
-                  - <infrastructureID>-private-us-east-1a 
+                  - <infrastructureID>-private-<zone>
           tags:
             - name: kubernetes.io/cluster/<infrastructureID> 
               value: owned
