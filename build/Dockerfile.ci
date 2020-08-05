@@ -10,14 +10,14 @@ LABEL stage=build
 # Build WMCB
 RUN mkdir /build/
 WORKDIR /build/
-# Pin this to a release branch once branching has ocurred and master is no longer fast forwarded.
+# Pin this to a release branch once branching has occurred and master is no longer fast forwarded.
 RUN git clone https://github.com/openshift/windows-machine-config-bootstrapper.git
 WORKDIR windows-machine-config-bootstrapper
 RUN make build
 
 # Build hybrid-overlay
 WORKDIR /build/
-RUN git clone https://github.com/openshift/ovn-kubernetes/
+RUN git clone https://github.com/openshift/ovn-kubernetes.git
 WORKDIR ovn-kubernetes/go-controller/
 RUN make windows
 

@@ -11,7 +11,7 @@ RUN make build
 
 # Build hybrid-overlay
 WORKDIR /build/
-RUN git clone https://github.com/openshift/ovn-kubernetes/
+RUN git clone https://github.com/openshift/ovn-kubernetes.git
 WORKDIR ovn-kubernetes/go-controller/
 RUN make windows
 
