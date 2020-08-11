@@ -152,8 +152,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// watch `openshift-machine-api` namespace along with wmco namespace
-	namespaces := []string{"openshift-machine-api", namespace}
+	// Allow for the watching of cluster-wide resources with "", so that we can watch nodes,
+	// as well as resources within the `openshift-machine-api` and WMCO namespace
+	namespaces := []string{"", "openshift-machine-api", namespace}
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{
 		NewCache:           cache.MultiNamespacedCacheBuilder(namespaces),

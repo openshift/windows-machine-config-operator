@@ -26,6 +26,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&mapi.Machine{},
 		&mapi.MachineList{},
+		&mapi.MachineSet{},
 	)
 	meta.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	nodeCreationTime     = time.Minute * 20
+	nodeCreationTime     = time.Minute * 30
 	nodeRetryInterval    = time.Minute * 1
 	cleanupRetryInterval = time.Second * 1
 	cleanupTimeout       = time.Second * 5
@@ -46,8 +46,8 @@ func TestWMCO(t *testing.T) {
 	// individual test suites after the operator is running
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
 	t.Run("create", creationTestSuite)
+	t.Run("upgrade", upgradeTestSuite)
 	t.Run("destroy", deletionTestSuite)
-
 }
 
 // setupWMCO setups the resources needed to run WMCO tests

@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
-	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
@@ -27,14 +28,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/version"
 )
 
 const (
 	// ControllerName is the name of the WindowsMachine controller
 	ControllerName = "windowsmachine-controller"
+	// minHealthyCount is the minimum number of nodes that are required to be in running phase at a given time.
+	minHealthyCount = 1
+	// windowsOSLabel is the label used to identify the Windows Machines.
+	windowsOSLabel = "machine.openshift.io/os-id"
+	// requeueDuration is the time after which the request is requeued.
+	requeueDuration = time.Minute * 5
 )
 
 var log = logf.Log.WithName(ControllerName)
@@ -94,8 +103,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return errors.Wrapf(err, "could not create %s", ControllerName)
 	}
 	// Watch for the Machine objects with label defined by windowsOSLabel
-	windowsOSLabel := "machine.openshift.io/os-id"
-	predicateFilter := predicate.Funcs{
+	machinePredicate := predicate.Funcs{
 		// ignore create event for all Machines as WMCO should for Machine getting provisioned
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -117,11 +125,80 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	err = c.Watch(&source.Kind{Type: &mapi.Machine{
 		ObjectMeta: meta.ObjectMeta{Namespace: "openshift-machine-api"},
-	}}, &handler.EnqueueRequestForObject{}, predicateFilter)
+	}}, &handler.EnqueueRequestForObject{}, machinePredicate)
 	if err != nil {
 		return errors.Wrap(err, "could not create watch on Machine objects")
 	}
 
+	err = c.Watch(&source.Kind{Type: &core.Node{
+		ObjectMeta: meta.ObjectMeta{Namespace: ""},
+	}}, &handler.EnqueueRequestsFromMapFunc{ToRequests: newNodeToMachineMapper(mgr.GetClient())}, predicate.Funcs{
+		CreateFunc: func(createEvent event.CreateEvent) bool {
+			if createEvent.Meta.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() {
+				return true
+			}
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.MetaNew.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() {
+				return true
+			}
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+	})
+	if err != nil {
+		return errors.Wrap(err, "could not create watch on node objects")
+	}
+
+	return nil
+}
+
+// nodeToMachineMapper fulfills the mapper interface and allows for the mapping from a node to the associated Machine
+type nodeToMachineMapper struct {
+	client client.Client
+}
+
+// newNodeToMachineMapper returns a pointer to a new nodeToMachineMapper
+func newNodeToMachineMapper(client client.Client) *nodeToMachineMapper {
+	return &nodeToMachineMapper{client: client}
+}
+
+// Map maps Windows nodes to machines
+func (m *nodeToMachineMapper) Map(object handler.MapObject) []reconcile.Request {
+	node := core.Node{}
+
+	// If for some reason this mapper is called on an object which is not a Node, return
+	if kind := object.Object.GetObjectKind().GroupVersionKind(); kind.Kind != node.Kind {
+		return nil
+	}
+	if object.Meta.GetLabels()[core.LabelOSStable] != "windows" {
+		return nil
+	}
+
+	// Map the Node to the associated Machine through the Node's UID
+	machines := &mapi.MachineList{}
+	err := m.client.List(context.TODO(), machines,
+		client.MatchingLabels(map[string]string{windowsOSLabel: "Windows"}))
+	if err != nil {
+		log.Error(err, "could not get a list of machines")
+	}
+	for _, machine := range machines.Items {
+		if machine.Status.NodeRef != nil && machine.Status.NodeRef.UID == object.Meta.GetUID() {
+			return []reconcile.Request{
+				{
+					NamespacedName: types.NamespacedName{
+						Namespace: machine.GetNamespace(),
+						Name:      machine.GetName(),
+					},
+				},
+			}
+		}
+	}
+
+	// Node doesn't match a machine, return
 	return nil
 }
 
@@ -203,7 +280,26 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		}
 
 		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; present {
-			// version annotation exists, node is fully configured, do nothing.
+			// version annotation doesn`t match the current operator version
+			if node.Annotations[nodeconfig.VersionAnnotation] != version.Get() {
+
+				if !r.isAllowedDeletion(machine) {
+					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted", "Machine %v deletion restricted due to exceeded number of unhealthy machines. ", machine.Name)
+					return reconcile.Result{RequeueAfter: requeueDuration}, nil
+				}
+				if !machine.GetDeletionTimestamp().IsZero() {
+					// Delete already initiated
+					return reconcile.Result{}, nil
+				}
+
+				if err := r.client.Delete(context.TODO(), machine); err != nil {
+					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionFailed", "Machine %v deletion failed: unable to delete Machine object: %v", machine.Name, err)
+					return reconcile.Result{}, err
+				}
+				r.recorder.Eventf(machine, core.EventTypeNormal, "MachineDeleted", "Machine %v has been remediated by requesting to delete Machine object", machine.Name)
+				return reconcile.Result{}, nil
+			}
+			// version annotation exists with a valid value, node is fully configured, do nothing.
 			return reconcile.Result{}, nil
 		}
 	} else if *machine.Status.Phase != provisionedPhase {
@@ -295,4 +391,44 @@ func (r *ReconcileWindowsMachine) validateUserData(privateKey []byte) error {
 		return errors.Errorf("invalid content for userData secret")
 	}
 	return nil
+}
+
+// isAllowedDeletion determines if the number of machines after deletion of the given machine doesn`t fall below the
+// minHealthyCount
+func (r *ReconcileWindowsMachine) isAllowedDeletion(machine *mapi.Machine) bool {
+	if len(machine.OwnerReferences) == 0 {
+		return false
+	}
+	machinesetName := machine.OwnerReferences[0].Name
+
+	machines := &mapi.MachineList{}
+	err := r.client.List(context.TODO(), machines,
+		client.MatchingLabels(map[string]string{windowsOSLabel: "Windows"}))
+	if err != nil {
+		return false
+	}
+
+	// get Windows MachineSet
+	windowsMachineSet := &mapi.MachineSet{}
+	err = r.client.Get(context.TODO(), types.NamespacedName{Name: machinesetName,
+		Namespace: "openshift-machine-api"}, windowsMachineSet)
+	if err != nil {
+		return false
+	}
+
+	if minHealthyCount == *(windowsMachineSet.Spec.Replicas) {
+		return true
+	}
+
+	totalHealthy := 0
+	for _, ma := range machines.Items {
+		// Machines are determined as Healthy when they are part of Windows MachineSet and are
+		// in the Running Status
+		if len(ma.OwnerReferences) != 0 && ma.OwnerReferences[0].Name == machinesetName {
+			if ma.Status.Phase != nil && *ma.Status.Phase == "Running" && ma.Status.NodeRef != nil {
+				totalHealthy += 1
+			}
+		}
+	}
+	return totalHealthy-1 >= minHealthyCount
 }
