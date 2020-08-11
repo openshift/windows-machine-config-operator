@@ -9,6 +9,7 @@ source $WMCO_ROOT/hack/common.sh
 NODE_COUNT=""
 SKIP_NODE_DELETION=""
 KEY_PAIR_NAME=""
+WMCO_PATH_OPTION=""
 
 export CGO_ENABLED=0
 
@@ -35,7 +36,7 @@ OSDK_WMCO_test() {
   fi
 }
 
-while getopts ":n:k:s" opt; do
+while getopts ":n:k:b:s" opt; do
   case ${opt} in
     n ) # process option for the node count
       NODE_COUNT=$OPTARG
@@ -46,8 +47,11 @@ while getopts ":n:k:s" opt; do
     s ) # process option for skipping deleting Windows VMs created by test suite
       SKIP_NODE_DELETION="-skip-node-deletion"
       ;;
+    b ) # path to the WMCO binary, used for version validation
+      WMCO_PATH_OPTION="-wmco-path=$OPTARG"
+      ;;
     \? )
-      echo "Usage: $0 [-n] [-k] [-s]"
+      echo "Usage: $0 [-n] [-k] [-s] [-b]"
       exit 0
       ;;
   esac
@@ -92,7 +96,7 @@ fi
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
 # Run the creation tests and skip deletion of the Windows VMs
-OSDK_WMCO_test $OSDK "-run=TestWMCO/create -v -timeout=90m -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME"
+OSDK_WMCO_test $OSDK "-run=TestWMCO/create -v -timeout=90m -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME $WMCO_PATH_OPTION"
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step

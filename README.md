@@ -63,13 +63,17 @@ Once the above variables are set, run the following script:
 ```shell script
 hack/run-ci-e2e-test.sh -k "openshift-dev"
 ```
-We assume that the developer uses `openshift-dev` as the key pair in the aws cloud
+We assume that the developer uses `openshift-dev` as the key pair in the aws cloud.
 
 Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
 - `-s` to skip the deletion of Windows nodes that are created as part of test suite run
 - `-n` to represent the number of Windows nodes to be created for test run
 - `-k` to represent the AWS specific key pair that will be used during e2e run and it should map to the private key
        that we have in `KUBE_SSH_KEY_PATH`. The default value points to `openshift-dev` which we use in our CI
+- `-b` gives an alternative path to the WMCO binary. This option overridden in OpenShift CI.
+       When building the operator locally, the WMCO binary is created as part of the operator image build process and
+       can be found at `build/_output/bin/windows-machine-config-operator`, this is the default value of this option.
+
        
 Example command to spin up 2 Windows nodes and retain them after test run:
 ```
