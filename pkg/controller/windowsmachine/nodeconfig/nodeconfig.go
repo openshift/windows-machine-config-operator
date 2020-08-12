@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	// bootstrapCSR is the CSR name associated with a worker node that just got bootstrapped.
-	bootstrapCSR = "system:serviceaccount:openshift-machine-config-operator:node-bootstrapper"
 	// HybridOverlaySubnet is an annotation applied by the cluster network operator which is used by the hybrid overlay
 	HybridOverlaySubnet = "k8s.ovn.org/hybrid-overlay-node-subnet"
 	// HybridOverlayMac is an annotation applied by the hybrid-overlay
