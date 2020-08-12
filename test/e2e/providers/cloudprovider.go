@@ -14,7 +14,7 @@ type CloudProvider interface {
 	GenerateMachineSet(bool, int32) (*mapi.MachineSet, error)
 }
 
-func NewCloudProvider(sshKeyPair string) (CloudProvider, error) {
+func NewCloudProvider(sshKeyPair string, hasCustomVXLANPort bool) (CloudProvider, error) {
 	openshift, err := oc.GetOpenShift()
 	if err != nil {
 		return nil, errors.Wrap(err, "Getting OpenShift client failed")
@@ -26,7 +26,7 @@ func NewCloudProvider(sshKeyPair string) (CloudProvider, error) {
 	switch provider := cloudProvider.Type; provider {
 	case v1.AWSPlatformType:
 		// 	Setup the AWS cloud provider in the same region where the cluster is running
-		return awsProvider.SetupAWSCloudProvider(cloudProvider.AWS.Region, sshKeyPair)
+		return awsProvider.SetupAWSCloudProvider(cloudProvider.AWS.Region, sshKeyPair, hasCustomVXLANPort)
 	default:
 		return nil, fmt.Errorf("the '%v' cloud provider is not supported", provider)
 	}

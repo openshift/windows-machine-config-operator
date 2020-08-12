@@ -64,7 +64,7 @@ func newSession(credentialPath, credentialAccountID, region string) (*awssession
 // credentialAccountID is the account name the user uses to create VM instance.
 // The credentialAccountID should exist in the AWS credentials file pointing at one specific credential.
 func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
-	credentialAccountID, instanceType, region, sshKeyPair string) (*awsProvider, error) {
+	credentialAccountID, instanceType, region, sshKeyPair string, hasCustomVXLANPort bool) (*awsProvider, error) {
 	session, err := newSession(credentialPath, credentialAccountID, region)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new AWS session: %v", err)
@@ -74,11 +74,10 @@ func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
 
 	iamClient := iam.New(session, aws.NewConfig())
 
-	imageID, err := getLatestWindowsAMI(ec2Client)
+	imageID, err := getLatestWindowsAMI(ec2Client, hasCustomVXLANPort)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get latest Windows AMI: %v", err)
 	}
-
 	return &awsProvider{imageID, instanceType,
 		iamClient,
 		ec2Client,
@@ -90,7 +89,7 @@ func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
 
 // SetupAWSCloudProvider creates AWS provider using the give OpenShift client
 // This is the first step of the e2e test and fails the test upon error.
-func SetupAWSCloudProvider(region, sshKeyPair string) (*awsProvider, error) {
+func SetupAWSCloudProvider(region, sshKeyPair string, hasCustomVXLANPort bool) (*awsProvider, error) {
 	oc, err := clusterinfo.GetOpenShift()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OpenShift client with error: %v", err)
@@ -100,10 +99,12 @@ func SetupAWSCloudProvider(region, sshKeyPair string) (*awsProvider, error) {
 	if len(awsCredentials) == 0 {
 		return nil, fmt.Errorf("AWS_SHARED_CREDENTIALS_FILE env var is empty")
 	}
-	awsProvider, err := newAWSProvider(oc, awsCredentials, "default", instanceType, region, sshKeyPair)
+	awsProvider, err := newAWSProvider(oc, awsCredentials, "default", instanceType, region, sshKeyPair,
+		hasCustomVXLANPort)
 	if err != nil {
 		return nil, fmt.Errorf("error obtaining aws interface object: %v", err)
 	}
+
 	return awsProvider, nil
 }
 
@@ -118,17 +119,23 @@ func (a *awsProvider) getInfraID() (string, error) {
 }
 
 // getLatestWindowsAMI returns the imageid of the latest released "Windows Server with Containers" image
-func getLatestWindowsAMI(ec2Client *ec2.EC2) (string, error) {
+func getLatestWindowsAMI(ec2Client *ec2.EC2, hasCustomVXLANPort bool) (string, error) {
 	// Have to create these variables, as the below functions require pointers to them
 	windowsAMIOwner := "amazon"
 	windowsAMIFilterName := "name"
+	windowsAMIFilterValue := ""
 	// This filter will grab all ami's that match the exact name. The '?' indicate any character will match.
 	// The ami's will have the name format: Windows_Server-2019-English-Full-ContainersLatest-2020.01.15
 	// so the question marks will match the date of creation
 	// The image obtained by using windowsAMIFilterValue is compatible with  the test container image -
-	// "mcr.microsoft.com/powershell:lts-nanoserver-1809". If the windowsAMIFilterValue changes,
-	// the test container image also needs to be changed.
-	windowsAMIFilterValue := "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+	// "mcr.microsoft.com/powershell:lts-nanoserver-1909" or "mcr.microsoft.com/powershell:lts-nanoserver-1809".
+	// If the windowsAMIFilterValue changes, the test container image also needs to be changed.
+	// if hasCustomVXLANPort is set use 1909 image as it has the custom VXLAN port changes, if not use Windows Server 2019 image
+	if hasCustomVXLANPort {
+		windowsAMIFilterValue = "Windows_Server-1909-English-Core-ContainersLatest-????.??.??"
+	} else {
+		windowsAMIFilterValue = "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+	}
 	searchFilter := ec2.Filter{Name: &windowsAMIFilterName, Values: []*string{&windowsAMIFilterValue}}
 
 	describedImages, err := ec2Client.DescribeImages(&ec2.DescribeImagesInput{
