@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -40,6 +42,35 @@ func testWorkerLabel(t *testing.T) {
 	defer testCtx.Cleanup()
 	for _, node := range gc.nodes {
 		assert.Contains(t, node.Labels, nc.WorkerLabel, "expected node label %s was not present on %s", nc.WorkerLabel, node.GetName())
+	}
+}
+
+// getWMCOVersion returns the version of the operator. This is sourced from the WMCO binary used to create the operator image.
+// This function will return an error if the binary is missing.
+func getWMCOVersion() (string, error) {
+	cmd := exec.Command(wmcoPath, "version")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", errors.Wrapf(err, "error running %s", cmd.String())
+	}
+	// out is formatted like:
+	// ./build/_output/bin/windows-machine-config-operator version: "0.0.1+4165dda-dirty", go version: "go1.13.7 linux/amd64"
+	versionSplit := strings.Split(string(out), "\"")
+	if len(versionSplit) < 3 {
+		return "", fmt.Errorf("unexpected version output")
+	}
+	return versionSplit[1], nil
+}
+
+// testVersionAnnotation tests all nodes are annotated with the version of the currently deployed WMCO
+func testVersionAnnotation(t *testing.T) {
+	operatorVersion, err := getWMCOVersion()
+	require.NoError(t, err, "could not get WMCO version")
+	for _, node := range gc.nodes {
+		t.Run(node.GetName(), func(t *testing.T) {
+			require.Containsf(t, node.Annotations, nc.VersionAnnotation, "node %s missing version annotation", node.GetName())
+			assert.Equal(t, operatorVersion, node.Annotations[nc.VersionAnnotation], "WMCO version annotation mismatch")
+		})
 	}
 }
 

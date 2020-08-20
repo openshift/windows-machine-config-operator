@@ -21,6 +21,8 @@ var (
 	skipNodeDeletion bool
 	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
 	sshKeyPair string
+	// wmcoPath is the path to the WMCO binary that was used within the operator image
+	wmcoPath string
 	// gc is the global context across the test suites.
 	gc = globalContext{}
 )
@@ -90,5 +92,7 @@ func TestMain(m *testing.M) {
 	// We're using openshift-dev as default value to be used in CI
 	flag.StringVar(&sshKeyPair, "ssh-key-pair", "openshift-dev", "SSH Key Pair to be used for decrypting "+
 		"the Windows Node password")
+	flag.StringVar(&wmcoPath, "wmco-path", "./build/_output/bin/windows-machine-config-operator",
+		"Path to the WMCO binary, used for version validation")
 	framework.MainEntry(m)
 }

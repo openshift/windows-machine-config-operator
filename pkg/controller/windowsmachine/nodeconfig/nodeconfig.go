@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/windows"
+	"github.com/openshift/windows-machine-config-operator/version"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/api/core/v1"
@@ -28,6 +29,8 @@ const (
 	WindowsOSLabel = "node.openshift.io/os_id=Windows"
 	// WorkerLabel is the label that needs to be applied to the Windows node to make it worker node
 	WorkerLabel = "node-role.kubernetes.io/worker"
+	// VersionAnnotation indicates the version of WMCO that configured the node
+	VersionAnnotation = "windowsmachineconfig.openshift.io/version"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
@@ -129,10 +132,16 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.setNode(); err != nil {
 		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
 	}
-	// Apply worker labels
-	if err := nc.applyWorkerLabel(); err != nil {
-		return errors.Wrap(err, "failed applying worker label")
+	// Apply labels and annotations to nc.node
+	nc.addWorkerLabel()
+	nc.addVersionAnnotation()
+	// update node object
+	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, metav1.UpdateOptions{})
+	if err != nil {
+		return errors.Wrap(err, "error updating node labels and annotations")
 	}
+	nc.node = node
+
 	// Now that basic kubelet configuration is complete, configure networking in the node
 	if err := nc.configureNetwork(); err != nil {
 		return errors.Wrap(err, "configuring node network failed")
@@ -176,19 +185,18 @@ func (nc *nodeConfig) configureNetwork() error {
 	return nil
 }
 
-// applyWorkerLabel applies the worker label to the Windows Node we created.
-func (nc *nodeConfig) applyWorkerLabel() error {
+// addVersionAnnotation adds the version annotation to nc.node
+func (nc *nodeConfig) addVersionAnnotation() {
+	nc.node.Annotations[VersionAnnotation] = version.Get()
+}
+
+// addWorkerLabel adds the worker label to nc.node
+func (nc *nodeConfig) addWorkerLabel() {
 	if _, found := nc.node.Labels[WorkerLabel]; found {
 		log.V(1).Info("worker label %s already present on node %s", WorkerLabel, nc.node.GetName())
-		return nil
+		return
 	}
 	nc.node.Labels[WorkerLabel] = ""
-	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, metav1.UpdateOptions{})
-	if err != nil {
-		return errors.Wrap(err, "error applying worker label to node object")
-	}
-	nc.node = node
-	return nil
 }
 
 // setNode identifies the node from the instanceID provided and sets the node object in the nodeconfig.
