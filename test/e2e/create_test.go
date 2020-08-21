@@ -31,7 +31,8 @@ func creationTestSuite(t *testing.T) {
 	t.Run("Label validation", func(t *testing.T) { testWorkerLabel(t) })
 	t.Run("Version annotation", func(t *testing.T) { testVersionAnnotation(t) })
 	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
-	t.Run("User Data validation", func(t *testing.T) { testUserData(t) })
+	t.Run("UserData validation", func(t *testing.T) { testUserData(t) })
+	t.Run("UserData idempotent check", func(t *testing.T) { testUserDataTamper(t) })
 	t.Run("Node Logs", func(t *testing.T) { testNodeLogs(t) })
 }
 

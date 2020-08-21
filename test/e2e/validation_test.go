@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
@@ -13,8 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
-	corev1 "k8s.io/api/core/v1"
+	core "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // getInstanceID gets the instanceID of VM for a given cloud provider ID
@@ -77,10 +81,10 @@ func testVersionAnnotation(t *testing.T) {
 // testNodeTaint tests if the Windows node has the Windows taint
 func testNodeTaint(t *testing.T) {
 	// windowsTaint is the taint that needs to be applied to the Windows node
-	windowsTaint := corev1.Taint{
+	windowsTaint := core.Taint{
 		Key:    "os",
 		Value:  "Windows",
-		Effect: corev1.TaintEffectNoSchedule,
+		Effect: core.TaintEffectNoSchedule,
 	}
 
 	for _, node := range gc.nodes {
@@ -98,7 +102,7 @@ func testNodeTaint(t *testing.T) {
 
 // createSigner creates a signer using the private key retrieved from the secret
 func createSigner() (ssh.Signer, error) {
-	privateKeySecret := &corev1.Secret{}
+	privateKeySecret := &core.Secret{}
 	err := framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "cloud-private-key", Namespace: "windows-machine-config-operator"}, privateKeySecret)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve cloud private key secret")
@@ -122,8 +126,56 @@ func testUserData(t *testing.T) {
 	require.NoError(t, err, "error creating signer using private key")
 	pubKeyBytes := ssh.MarshalAuthorizedKey(signer.PublicKey())
 	require.NotNil(t, pubKeyBytes, "failed to retrieve public key using signer for private key")
-	found := &corev1.Secret{}
+	found := &core.Secret{}
 	err = framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data", Namespace: "openshift-machine-api"}, found)
-	require.NoError(t, err, "could not find windows user data secret in required namespace")
+	require.NoError(t, err, "could not find Windows user data secret in required namespace")
 	assert.Contains(t, string(found.Data["userData"][:]), string(pubKeyBytes[:]), "expected user data not present in required namespace")
+}
+
+// testUserDataTamper tests if userData reverts to previous value if updated
+func testUserDataTamper(t *testing.T) {
+	secretInstance := &core.Secret{}
+	validUserDataSecret, err := framework.Global.KubeClient.CoreV1().Secrets("openshift-machine-api").Get(context.TODO(), "windows-user-data", meta.GetOptions{})
+	require.NoError(t, err, "could not find Windows userData secret in required namespace")
+
+	var tests = []struct {
+		name           string
+		operation      string
+		expectedSecret *core.Secret
+	}{
+		{"Update the userData secret with invalid data", "Update", validUserDataSecret},
+		{"Delete the userData secret", "Delete", validUserDataSecret},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.operation == "Update" {
+				updatedSecret := validUserDataSecret.DeepCopy()
+				updatedSecret.Data["userData"] = []byte("invalid data")
+				err := framework.Global.Client.Update(context.TODO(), updatedSecret)
+				require.NoError(t, err, "could not update userData secret")
+			}
+			if tt.operation == "Delete" {
+				err := framework.Global.KubeClient.CoreV1().Secrets("openshift-machine-api").Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})
+				require.NoError(t, err, "could not delete userData secret")
+			}
+
+			// wait for userData secret creation / update to take effect.
+			err := wait.Poll(5*time.Second, 20*time.Second, func() (done bool, err error) {
+				err = framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data",
+					Namespace: "openshift-machine-api"}, secretInstance)
+				if err != nil {
+					if apierrors.IsNotFound(err) {
+						return false, nil
+					}
+					return false, err
+				}
+				if string(validUserDataSecret.Data["userData"][:]) != string(secretInstance.Data["userData"][:]) {
+					return false, nil
+				}
+				return true, nil
+			})
+			require.NoError(t, err, "could not find a valid userData secret in the namespace : %v", secretInstance.Namespace)
+		})
+	}
 }

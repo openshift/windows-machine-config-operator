@@ -70,6 +70,9 @@ spec:
           verbs:
           - create
           - get
+          - list
+          - watch
+          - update
         - apiGroups:
           - machine.openshift.io
           resources:

@@ -125,6 +125,9 @@ rules:
    verbs:
      - create
      - get
+     - list
+     - watch
+     - update
 # Permissions to access the machine api
  - apiGroups:
      - "machine.openshift.io"
