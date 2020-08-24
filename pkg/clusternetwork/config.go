@@ -2,6 +2,7 @@ package clusternetwork
 
 import (
 	"context"
+	"fmt"
 	"net"
 
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
@@ -16,6 +17,7 @@ const ovnKubernetesNetwork = "OVNKubernetes"
 type ClusterNetworkConfig interface {
 	Validate() error
 	GetServiceCIDR() (string, error)
+	VXLANPort() string
 }
 
 // networkType holds information for a required network type
@@ -30,6 +32,8 @@ type networkType struct {
 type clusterNetworkCfg struct {
 	// serviceCIDR holds the value for cluster network service CIDR
 	serviceCIDR string
+	// vxlanPort is the port to be used for VXLAN communication
+	vxlanPort string
 }
 
 // ovnKubernetes contains information specific to network type OVNKubernetes
@@ -50,7 +54,14 @@ func NetworkConfigurationFactory(oclient configclient.Interface, operatorClient 
 	if err != nil || serviceCIDR == "" {
 		return nil, errors.Wrap(err, "error getting service network CIDR")
 	}
-	clusterNetworkCfg, err := NewClusterNetworkCfg(serviceCIDR)
+
+	// retrieve the VXLAN port using cluster config
+	vxlanPort, err := getVXLANPort(operatorClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting the custom vxlan port")
+	}
+
+	clusterNetworkCfg, err := NewClusterNetworkCfg(serviceCIDR, vxlanPort)
 	if err != nil {
 		return nil, errors.Wrapf(err, "error getting cluster network config")
 	}
@@ -69,19 +80,25 @@ func NetworkConfigurationFactory(oclient configclient.Interface, operatorClient 
 }
 
 // NewClusterNetworkCfg assigns a serviceCIDR value and returns a pointer to the clusterNetworkCfg struct
-func NewClusterNetworkCfg(serviceCIDR string) (*clusterNetworkCfg, error) {
+func NewClusterNetworkCfg(serviceCIDR, vxlanPort string) (*clusterNetworkCfg, error) {
 	if serviceCIDR == "" {
 		return nil, errors.Errorf("can't instantiate cluster network config" +
 			"with empty service CIDR value")
 	}
 	return &clusterNetworkCfg{
 		serviceCIDR: serviceCIDR,
+		vxlanPort:   vxlanPort,
 	}, nil
 }
 
 // GetServiceCIDR returns the serviceCIDR string
 func (ovn *ovnKubernetes) GetServiceCIDR() (string, error) {
 	return ovn.clusterNetworkConfig.serviceCIDR, nil
+}
+
+// GetVXLANPort gets the VXLAN port to be used for VXLAN tunnel establishment
+func (ovn *ovnKubernetes) VXLANPort() string {
+	return ovn.clusterNetworkConfig.vxlanPort
 }
 
 // Validate for OVN Kubernetes checks for network type and hybrid overlay.
@@ -129,6 +146,24 @@ func getServiceNetworkCIDR(oclient configclient.Interface) (string, error) {
 		return "", errors.Wrapf(err, "invalid cluster service CIDR %s", serviceCIDR)
 	}
 	return serviceCIDR, nil
+}
+
+// getVXLANPort gets the VXLAN port to establish tunnel as a string. The return type doesn't matter as we want to pass
+// this argument to a powershell command
+func getVXLANPort(operatorClient operatorv1.OperatorV1Interface) (string, error) {
+	// Get the cluster network object so that we can find the service network
+	networkCR, err := operatorClient.Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	if err != nil {
+		return "", errors.Wrap(err, "error getting cluster network object")
+	}
+	var vxlanPort *uint32
+	if networkCR.Spec.DefaultNetwork.OVNKubernetesConfig != nil &&
+		networkCR.Spec.DefaultNetwork.OVNKubernetesConfig.HybridOverlayConfig != nil &&
+		networkCR.Spec.DefaultNetwork.OVNKubernetesConfig.HybridOverlayConfig.HybridOverlayVXLANPort != nil {
+		vxlanPort = networkCR.Spec.DefaultNetwork.OVNKubernetesConfig.HybridOverlayConfig.HybridOverlayVXLANPort
+		return fmt.Sprint(*vxlanPort), nil
+	}
+	return "", nil
 }
 
 // ValidateCIDR uses the parseCIDR from network package to validate the format of the CIDR

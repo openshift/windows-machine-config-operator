@@ -21,16 +21,22 @@ func TestNetworkConfigurationFactory(t *testing.T) {
 	var tests = []struct {
 		name         string
 		networkType  string
+		networkPatch []byte
 		errorMessage string
 	}{
-		{"invalid network type", "OpenShiftSDN", "OpenShiftSDN : network type not supported"},
-		{"valid network type", "OVNKubernetes", ""},
+		{"invalid network type", "OpenShiftSDN", nil, "OpenShiftSDN : network type not supported"},
+		{"valid network type", "OVNKubernetes", []byte(`{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"hybridOverlayConfig": ` +
+			`{"hybridClusterNetwork":[{"cidr":"10.132.0.0/14","hostPrefix":23}],"` +
+			`hybridOverlayVXLANPort": 4800}}}}}`), ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeConfigClient, fakeOperatorClient := createFakeClients(tt.networkType)
-
+			if tt.networkPatch != nil {
+				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, metav1.PatchOptions{})
+				require.Nil(t, err, "network patch should not throw error")
+			}
 			_, err := NetworkConfigurationFactory(fakeConfigClient, fakeOperatorClient)
 			if tt.errorMessage == "" {
 				require.Nil(t, err, "Successful check for valid network type")
@@ -106,4 +112,45 @@ func createFakeClients(networkType string) (configclient.Interface, operatorclie
 		return nil, nil
 	}
 	return fakeConfigClient, fakeOperatorClient
+}
+
+// TestGetVXLANPort checks if the custom VXLAN port is available in the network object
+func TestGetVXLANPort(t *testing.T) {
+	tests := []struct {
+		name         string
+		want         string
+		networkPatch []byte
+		wantErr      bool
+	}{
+		{
+			name: "custom VXLAN",
+			want: "4800",
+			networkPatch: []byte(`{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"hybridOverlayConfig": ` +
+				`{"hybridClusterNetwork":[{"cidr":"10.132.0.0/14","hostPrefix":23}],"` +
+				`hybridOverlayVXLANPort": 4800}}}}}`),
+			wantErr: false,
+		},
+		{
+			name: "no vxlan - expect an empty string",
+			want: "",
+			networkPatch: []byte(`{"spec":{"defaultNetwork":{"ovnKubernetesConfig":{"hybridOverlayConfig":` +
+				`{"hybridClusterNetwork":[{"cidr":"10.132.0.0/14","hostPrefix":23}]}}}}}`),
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, fakeOperatorClient := createFakeClients("OVNKubernetes")
+			if tt.networkPatch != nil {
+				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, metav1.PatchOptions{})
+				require.Nil(t, err, "network patch should not throw error")
+			}
+			got, err := getVXLANPort(fakeOperatorClient)
+			require.NoError(t, err)
+			if (err != nil) != tt.wantErr {
+				assert.Errorf(t, err, "getVXLANPort() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

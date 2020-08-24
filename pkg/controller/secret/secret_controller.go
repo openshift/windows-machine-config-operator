@@ -3,6 +3,7 @@ package secret
 import (
 	"context"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
@@ -32,7 +33,7 @@ var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new Secret Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
-func Add(mgr manager.Manager, _ string) error {
+func Add(mgr manager.Manager, _ clusternetwork.ClusterNetworkConfig) error {
 	reconciler, err := newReconciler(mgr)
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s reconciler", ControllerName)

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
@@ -39,8 +40,8 @@ var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new WindowsMachine Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and start it when the Manager is Started.
-func Add(mgr manager.Manager, clusterServiceCIDR string) error {
-	reconciler, err := newReconciler(mgr, clusterServiceCIDR)
+func Add(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig) error {
+	reconciler, err := newReconciler(mgr, networkConfig)
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s reconciler", ControllerName)
 	}
@@ -48,7 +49,7 @@ func Add(mgr manager.Manager, clusterServiceCIDR string) error {
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, clusterServiceCIDR string) (reconcile.Reconciler, error) {
+func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig) (reconcile.Reconciler, error) {
 	// The default client serves read requests from the cache which
 	// could be stale and result in a get call to return an older version
 	// of the object. Hence we are using a non-default-client referenced
@@ -73,11 +74,17 @@ func newReconciler(mgr manager.Manager, clusterServiceCIDR string) (reconcile.Re
 		return nil, errors.Wrapf(err, "error creating signer using private key: %v", wkl.PrivateKeyPath)
 	}
 
+	serviceCIDR, err := networkConfig.GetServiceCIDR()
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting service CIDR")
+	}
+
 	return &ReconcileWindowsMachine{client: client,
 			scheme:             mgr.GetScheme(),
 			k8sclientset:       clientset,
-			clusterServiceCIDR: clusterServiceCIDR,
+			clusterServiceCIDR: serviceCIDR,
 			signer:             signer,
+			vxlanPort:          networkConfig.VXLANPort(),
 			recorder:           mgr.GetEventRecorderFor(ControllerName),
 		},
 		nil
@@ -138,6 +145,8 @@ type ReconcileWindowsMachine struct {
 	clusterServiceCIDR string
 	// signer is a signer created from the user's private key
 	signer ssh.Signer
+	// vxlanPort is the custom VXLAN port
+	vxlanPort string
 	// recorder to generate events
 	recorder record.EventRecorder
 }
@@ -213,7 +222,8 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
 func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID string) error {
 	log.V(1).Info("configuring the Windows VM", "ID", instanceID)
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, r.clusterServiceCIDR, r.signer)
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, r.clusterServiceCIDR, r.vxlanPort,
+		r.signer)
 	if err != nil {
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
 	}
