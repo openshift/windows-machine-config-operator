@@ -18,8 +18,6 @@ const (
 	remoteDir = "C:\\Temp\\"
 	// winTemp is the default Windows temporary directory
 	winTemp = "C:\\Windows\\Temp\\"
-	// cniDir is the directory for storing CNI files
-	cniDir = "C:\\Temp\\cni\\"
 	// wgetIgnoreCertCmd is the remote location of the wget-ignore-cert.ps1 script
 	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
 	// hnsPSModule is the remote location of the hns.psm1 module
@@ -32,6 +30,10 @@ const (
 	kubeProxyLogDir = logDir + "kube-proxy\\"
 	// hybridOverlayLogDir is the remote hybrid-overlay log directory
 	hybridOverlayLogDir = logDir + "hybrid-overlay\\"
+	// cniDir is the directory for storing CNI binaries
+	cniDir = k8sDir + "cni\\"
+	// cniConfDir is the directory for storing CNI configuration
+	cniConfDir = cniDir + "config\\"
 	// kubeProxyPath is the location of the kube-proxy exe
 	kubeProxyPath = k8sDir + "kube-proxy.exe"
 	// HybridOverlayProcess is the process name of the hybrid-overlay-node.exe in the Windows VM
@@ -170,8 +172,7 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 	}
 
 	// Start the hybrid-overlay in the background over ssh.
-	// TODO: This will be removed in https://issues.redhat.com/browse/WINC-353
-	go vm.Run(remoteDir+wkl.HybridOverlayName+" --node "+nodeName+
+	go vm.Run(k8sDir+wkl.HybridOverlayName+" --node "+nodeName+
 		" --k8s-kubeconfig c:\\k\\kubeconfig --logfile="+hybridOverlayLogDir+"hybrid-overlay.log", false)
 
 	if err = vm.waitForHybridOverlayToRun(); err != nil {
@@ -200,13 +201,13 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 
 func (vm *windows) ConfigureCNI(configFile string) error {
 	// copy the CNI config file to the Windows VM
-	if err := vm.CopyFile(configFile, cniDir); err != nil {
-		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniDir)
+	if err := vm.CopyFile(configFile, cniConfDir); err != nil {
+		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniConfDir)
 	}
 
-	cniConfigDest := cniDir + filepath.Base(configFile)
+	cniConfigDest := cniConfDir + filepath.Base(configFile)
 	// run the configure-cni command on the Windows VM
-	configureCNICmd := remoteDir + "wmcb.exe configure-cni --cni-dir=\"" +
+	configureCNICmd := k8sDir + "wmcb.exe configure-cni --cni-dir=\"" +
 		cniDir + " --cni-config=\"" + cniConfigDest
 
 	out, err := vm.Run(configureCNICmd, true)
@@ -244,6 +245,7 @@ func (vm *windows) createDirectories() error {
 		k8sDir,
 		remoteDir,
 		cniDir,
+		cniConfDir,
 		logDir,
 		kubeProxyLogDir,
 		hybridOverlayLogDir,
@@ -260,15 +262,15 @@ func (vm *windows) createDirectories() error {
 func (vm *windows) transferFiles() error {
 	srcDestPairs := map[string]string{
 		wkl.IgnoreWgetPowerShellPath: remoteDir,
-		wkl.WmcbPath:                 remoteDir,
-		wkl.HybridOverlayPath:        remoteDir,
+		wkl.WmcbPath:                 k8sDir,
+		wkl.HybridOverlayPath:        k8sDir,
 		wkl.HNSPSModule:              remoteDir,
 		wkl.FlannelCNIPluginPath:     cniDir,
 		wkl.WinBridgeCNIPlugin:       cniDir,
 		wkl.HostLocalCNIPlugin:       cniDir,
 		wkl.WinOverlayCNIPlugin:      cniDir,
 		wkl.KubeProxyPath:            k8sDir,
-		wkl.KubeletPath:              winTemp,
+		wkl.KubeletPath:              k8sDir,
 	}
 	for src, dest := range srcDestPairs {
 		if err := vm.CopyFile(src, dest); err != nil {
@@ -284,8 +286,8 @@ func (vm *windows) runBootstrapper() error {
 	if err != nil {
 		return errors.Wrap(err, "error initializing bootstrapper files")
 	}
-	wmcbInitializeCmd := remoteDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
-		"worker.ign --kubelet-path " + winTemp + "kubelet.exe"
+	wmcbInitializeCmd := k8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
+		"worker.ign --kubelet-path " + k8sDir + "kubelet.exe"
 	out, err := vm.Run(wmcbInitializeCmd, true)
 	log.V(1).Info("output from wmcb", "output", out)
 	if err != nil {
