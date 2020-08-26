@@ -132,8 +132,7 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.setNode(); err != nil {
 		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
 	}
-	// Apply labels and annotations to nc.node
-	nc.addWorkerLabel()
+	// Apply version annotation to nc.node
 	nc.addVersionAnnotation()
 	// update node object
 	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, metav1.UpdateOptions{})
@@ -188,15 +187,6 @@ func (nc *nodeConfig) configureNetwork() error {
 // addVersionAnnotation adds the version annotation to nc.node
 func (nc *nodeConfig) addVersionAnnotation() {
 	nc.node.Annotations[VersionAnnotation] = version.Get()
-}
-
-// addWorkerLabel adds the worker label to nc.node
-func (nc *nodeConfig) addWorkerLabel() {
-	if _, found := nc.node.Labels[WorkerLabel]; found {
-		log.V(1).Info("worker label %s already present on node %s", WorkerLabel, nc.node.GetName())
-		return
-	}
-	nc.node.Labels[WorkerLabel] = ""
 }
 
 // setNode identifies the node from the instanceID provided and sets the node object in the nodeconfig.
