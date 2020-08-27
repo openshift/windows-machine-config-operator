@@ -12,6 +12,8 @@ Customers will eventually be able to install it using OperatorHub. These instruc
 the latest version of the operator.
 
 ## Pre-requisites
+- OpenShift 4.6+ cluster configured with
+  [hybrid OVN Kubernetes networking](https://github.com/openshift/windows-machine-config-bootstrapper/blob/release-4.4/tools/ansible/docs/ocp-4-4-with-windows-server.md#bring-up-the-openshift-cluster-with-ovn-kubernetes). The linked instructions also apply to installing 4.6+ clusters.
 - [Install](https://sdk.operatorframework.io/docs/install-operator-sdk/) operator-sdk
   v0.18.1
 - The operator is written using operator-sdk [v0.18.1](https://github.com/operator-framework/operator-sdk/releases/tag/v0.18.1)
