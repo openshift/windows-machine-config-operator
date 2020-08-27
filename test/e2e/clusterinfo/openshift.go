@@ -4,31 +4,37 @@ import (
 	"context"
 	"fmt"
 
-	v1 "github.com/openshift/api/config/v1"
+	config "github.com/openshift/api/config/v1"
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
+	operator "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
+	ctrlruntimecfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 // OpenShift is an Client struct which will be used for all OpenShift related functions to interact with the existing
 // Cluster.
 type OpenShift struct {
-	Client *clientset.Clientset
+	ConfigClient   *clientset.Clientset
+	OperatorClient operator.OperatorV1Interface
 }
 
 // GetOpenShift creates client for the current OpenShift cluster. If KUBECONFIG env var is set, it is used to
 // create client, otherwise it uses in-cluster config.
 func GetOpenShift() (*OpenShift, error) {
-	rc, err := config.GetConfig()
+	rc, err := ctrlruntimecfg.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("error creating the config object %v", err)
 	}
 
-	oc, err := clientset.NewForConfig(rc)
+	cc, err := clientset.NewForConfig(rc)
 	if err != nil {
 		return nil, err
 	}
-	return &OpenShift{oc}, nil
+	oc, err := operator.NewForConfig(rc)
+	if err != nil {
+		return nil, err
+	}
+	return &OpenShift{ConfigClient: cc, OperatorClient: oc}, nil
 }
 
 // GetInfrastructureID returns the infrastructure ID of the OpenShift cluster or an error.
@@ -37,7 +43,7 @@ func (o *OpenShift) GetInfrastructureID() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if infra.Status == (v1.InfrastructureStatus{}) {
+	if infra.Status == (config.InfrastructureStatus{}) {
 		return "", fmt.Errorf("infrastructure status is nil")
 	}
 	return infra.Status.InfrastructureName, nil
@@ -45,22 +51,36 @@ func (o *OpenShift) GetInfrastructureID() (string, error) {
 
 // GetCloudProvider returns the Provider details of a given OpenShift client including provider type and region or
 // an error.
-func (o *OpenShift) GetCloudProvider() (*v1.PlatformStatus, error) {
+func (o *OpenShift) GetCloudProvider() (*config.PlatformStatus, error) {
 	infra, err := o.getInfrastructure()
 	if err != nil {
 		return nil, err
 	}
-	if infra.Status == (v1.InfrastructureStatus{}) || infra.Status.PlatformStatus == nil {
+	if infra.Status == (config.InfrastructureStatus{}) || infra.Status.PlatformStatus == nil {
 		return nil, fmt.Errorf("error getting infrastructure status")
 	}
 	return infra.Status.PlatformStatus, nil
 }
 
 // getInfrastructure returns the information of current Infrastructure referred by the OpenShift client or an error.
-func (o *OpenShift) getInfrastructure() (*v1.Infrastructure, error) {
-	infra, err := o.Client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
+func (o *OpenShift) getInfrastructure() (*config.Infrastructure, error) {
+	infra, err := o.ConfigClient.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return infra, nil
+}
+
+// HasCustomVXLANPort tells if the custom VXLAN port is set or not in the cluster
+func (o *OpenShift) HasCustomVXLANPort() (bool, error) {
+	networkCR, err := o.OperatorClient.Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	if networkCR.Spec.DefaultNetwork.OVNKubernetesConfig != nil &&
+		networkCR.Spec.DefaultNetwork.OVNKubernetesConfig.HybridOverlayConfig != nil &&
+		networkCR.Spec.DefaultNetwork.OVNKubernetesConfig.HybridOverlayConfig.HybridOverlayVXLANPort != nil {
+		return true, nil
+	}
+	return false, nil
 }

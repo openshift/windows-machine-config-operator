@@ -26,12 +26,6 @@ func testNetwork(t *testing.T) {
 }
 
 var (
-	// windowsServerImage is the name/location of the Windows Server 2019 image we will use to test pod deployment
-	// mcr.microsoft.com/windows/nanoserver:1809 do not have Powershell by default. So we are using a hybrid image
-	// which has nanoserver:1809 with the Powershell Core.
-	// 1809 tag is the Windows build number compatible with Windows Server 2019 LTSC. The test image build number
-	//should always match with the host image build number
-	windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1809"
 	// ubi8Image is the name/location of the linux image we will use for testing
 	ubi8Image = "registry.access.redhat.com/ubi8/ubi:latest"
 	// retryCount is the amount of times we will retry an api operation
@@ -322,10 +316,23 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	return podList.Items[0].Status.PodIP, nil
 }
 
+// getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
+func (tc *testContext) getWindowsServerContainerImage() string {
+	var windowsServerImage string
+	// If we're using a custom VXLANPort we need to use 1909 or else use Windows Server 2019
+	if tc.hasCustomVXLAN {
+		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1909"
+	} else {
+		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1809"
+	}
+	return windowsServerImage
+}
+
 // createWindowsServerDeployment creates a deployment with a Windows Server 2019 container
 func (tc *testContext) createWindowsServerDeployment(name string, command []string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	deploymentsClient := tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault)
 	replicaCount := int32(1)
+	windowsServerImage := tc.getWindowsServerContainerImage()
 	containerUserName := "ContainerAdministrator"
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -456,6 +463,7 @@ func getWinCurlerCommand(winServerIP string) []string {
 func (tc *testContext) createWindowsServerJob(name string, command []string) (*batchv1.Job, error) {
 	windowsNodeSelector := map[string]string{"beta.kubernetes.io/os": "windows"}
 	windowsTolerations := []v1.Toleration{{Key: "os", Value: "Windows", Effect: v1.TaintEffectNoSchedule}}
+	windowsServerImage := tc.getWindowsServerContainerImage()
 	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations)
 }
 

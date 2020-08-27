@@ -7,9 +7,11 @@ replace github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503
 replace (
 	github.com/Azure/go-autorest => github.com/Azure/go-autorest v13.3.2+incompatible // Required by OLM
 	github.com/coreos/prometheus-operator => github.com/coreos/prometheus-operator v0.38.1-0.20200424145508-7e176fda06cc
+	github.com/go-logr/logr => github.com/go-logr/logr v0.2.1-0.20200730175230-ee2de8da5be6 // Compatibility issues - https://github.com/go-logr/logr/issues/19, bumping to latest operator-sdk might remove this
+	github.com/go-logr/zapr => github.com/go-logr/zapr v0.2.0 // Same the logr compatibility issue
 	github.com/mattn/go-sqlite3 => github.com/mattn/go-sqlite3 v1.10.0
-	github.com/openshift/api => github.com/openshift/api v0.0.0-20200422081840-fdd1b0c14c88 // OpenShift 4.5
-	github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70 // OpenShift 4.5
+	github.com/openshift/api => github.com/openshift/api v0.0.0-20200803131051-87466835fcc0 // OpenShift 4.6
+	github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20200729195840-c2b1adc6bed6 // OpenShift 4.6
 	k8s.io/api => k8s.io/api v0.18.2
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.18.2
 	k8s.io/apimachinery => k8s.io/apimachinery v0.18.2
@@ -36,7 +38,7 @@ replace (
 
 require (
 	github.com/aws/aws-sdk-go v1.25.48
-	github.com/openshift/api v0.0.0-20200424083944-0422dc17083e
+	github.com/openshift/api v0.0.0-20200728200559-811027b63048
 	github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70
 	github.com/openshift/machine-api-operator v0.2.1-0.20200520080344-fe76daf636f4
 	github.com/operator-framework/operator-sdk v0.18.1
@@ -45,10 +47,9 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.5.1
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
-	golang.org/x/net v0.0.0-20200707034311-ab3426394381 // indirect
 	golang.org/x/sys v0.0.0-20200728102440-3e129f6d46b1 // indirect
-	k8s.io/api v0.18.3
-	k8s.io/apimachinery v0.18.3
+	k8s.io/api v0.19.0-rc.2
+	k8s.io/apimachinery v0.19.0-rc.2
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/utils v0.0.0-20200729134348-d5654de09c73 // indirect
 	sigs.k8s.io/cluster-api-provider-aws v0.0.0-00010101000000-000000000000

@@ -91,10 +91,12 @@ type windows struct {
 	signer ssh.Signer
 	// interact is used to connect to and interact with the VM
 	interact connectivity
+	// vxlanPort is the custom VXLAN port
+	vxlanPort string
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(ipAddress, instanceID, workerIgnitionEndpoint string, signer ssh.Signer) (Windows, error) {
+func New(ipAddress, instanceID, workerIgnitionEndpoint, vxlanPort string, signer ssh.Signer) (Windows, error) {
 	if workerIgnitionEndpoint == "" {
 		return nil, errors.New("cannot use empty ignition endpoint")
 	}
@@ -110,7 +112,9 @@ func New(ipAddress, instanceID, workerIgnitionEndpoint string, signer ssh.Signer
 	return &windows{
 			id:                     instanceID,
 			interact:               conn,
-			workerIgnitionEndpoint: workerIgnitionEndpoint},
+			workerIgnitionEndpoint: workerIgnitionEndpoint,
+			vxlanPort:              vxlanPort,
+		},
 		nil
 }
 
@@ -170,9 +174,12 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 			return errors.Wrap(err, "unable to stop hybrid-overlay")
 		}
 	}
-
+	var customVxlanPortArg = ""
+	if len(vm.vxlanPort) > 0 {
+		customVxlanPortArg = " --hybrid-overlay-vxlan-port=" + vm.vxlanPort
+	}
 	// Start the hybrid-overlay in the background over ssh.
-	go vm.Run(k8sDir+wkl.HybridOverlayName+" --node "+nodeName+
+	go vm.Run(k8sDir+wkl.HybridOverlayName+" --node "+nodeName+customVxlanPortArg+
 		" --k8s-kubeconfig c:\\k\\kubeconfig --logfile="+hybridOverlayLogDir+"hybrid-overlay.log", false)
 
 	if err = vm.waitForHybridOverlayToRun(); err != nil {

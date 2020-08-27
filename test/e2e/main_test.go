@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
@@ -62,6 +63,8 @@ type testContext struct {
 	timeout time.Duration
 	// CloudProvider to talk to various cloud providers
 	providers.CloudProvider
+	// hasCustomVXLAN tells if the cluster is using a custom VXLAN port for communication
+	hasCustomVXLAN bool
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -71,13 +74,22 @@ func NewTestContext(t *testing.T) (*testContext, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "test context instantiation failed")
 	}
-	cloudProvider, err := providers.NewCloudProvider(sshKeyPair)
+	oc, err := clusterinfo.GetOpenShift()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to initialize OpenShift client")
+	}
+	hasCustomVXLANPort, err := oc.HasCustomVXLANPort()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to determine if cluster is using custom VXLAN port")
+	}
+	cloudProvider, err := providers.NewCloudProvider(sshKeyPair, hasCustomVXLANPort)
 	if err != nil {
 		return nil, errors.Wrap(err, "cloud provider creation failed")
 	}
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{osdkTestCtx: fmwkTestContext, kubeclient: framework.Global.KubeClient,
-		timeout: retry.Timeout, retryInterval: retry.Interval, namespace: namespace, CloudProvider: cloudProvider}, nil
+		timeout: retry.Timeout, retryInterval: retry.Interval, namespace: namespace, CloudProvider: cloudProvider,
+		hasCustomVXLAN: hasCustomVXLANPort}, nil
 }
 
 // cleanup cleans up the test context
