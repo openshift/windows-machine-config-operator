@@ -219,8 +219,18 @@ Below is the example of an AWS Windows MachineSet which can create Windows Machi
 note that the `windows-user-data` secret will be created by the WMCO lazily when it is configuring the first Windows 
 Machine. After that, the `windows-user-data` will be available for the subsequent MachineSets to be consumed. It might 
 take around 10 minutes for the Windows VM to be configured so that it joins the cluster. Please note that the MachineSet
-should have `machine.openshift.io/os-id: Windows` label, and _\<windows_container_ami\>_ should be replaced with the
-AMI ID of a Windows image with a container run-time installed. _\<infrastructureID\>_ should be replaced with the output
+should have following labels:
+-  `machine.openshift.io/os-id: Windows`
+- ` machine.openshift.io/cluster-api-machine-role: worker` 
+-  `machine.openshift.io/cluster-api-machine-type: worker` 
+
+The following label, needs to be added to the `Machine` spec with the `MachineSet` spec:
+-  `node-role.kubernetes.io/worker: ""`
+
+Not having these labels will result in the Windows node not being marked as a worker.
+
+_\<windows_container_ami\>_ should be replaced with the AMI ID of a Windows image with a container run-time installed. 
+_\<infrastructureID\>_ should be replaced with the output
 of:
 ```shell script
  oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster

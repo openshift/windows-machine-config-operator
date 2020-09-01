@@ -397,6 +397,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 			Template: mapi.MachineTemplateSpec{
 				ObjectMeta: mapi.ObjectMeta{Labels: machineLabels},
 				Spec: mapi.MachineSpec{
+					ObjectMeta: mapi.ObjectMeta{Labels: map[string]string{"node-role.kubernetes.io/worker": ""}},
 					ProviderSpec: mapi.ProviderSpec{
 						Value: &runtime.RawExtension{
 							Raw: rawBytes,
