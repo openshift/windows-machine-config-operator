@@ -1,34 +1,46 @@
-# build stage for building binaries
-FROM golang:1.13.8 as build
+# We cannot use a golang image as building the kubelet requires rsync and that is not present plus there is no easy way
+# to install it.
+FROM registry.access.redhat.com/ubi8/ubi-minimal as build
 LABEL stage=build
+RUN microdnf -y install rsync make git tar findutils diffutils
+RUN mkdir /build/
+
+# Install go 1.14
+RUN mkdir /build/go
+WORKDIR /build/go
+RUN curl https://golang.org/dl/go1.14.7.linux-amd64.tar.gz -L -o go.tar.gz
+# Check sha256
+RUN echo "4a7fa60f323ee1416a4b1425aefc37ea359e9d64df19c326a58953a97ad41ea5  go.tar.gz" |sha256sum -c
+RUN tar -C /usr/local -xzf go.tar.gz
+ENV PATH=${PATH}:/usr/local/go/bin
 
 # Build WMCB
-RUN mkdir /build/
 WORKDIR /build/
-RUN git clone https://github.com/openshift/windows-machine-config-bootstrapper.git
+RUN git clone --single-branch --branch release-4.6 https://github.com/openshift/windows-machine-config-bootstrapper.git
 WORKDIR windows-machine-config-bootstrapper
 RUN make build
 
 # Build hybrid-overlay
 WORKDIR /build/
-RUN git clone https://github.com/openshift/ovn-kubernetes/
+RUN git clone --single-branch --branch release-4.6 https://github.com/openshift/ovn-kubernetes/
 WORKDIR ovn-kubernetes/go-controller/
 RUN make windows
+
+# Build Kubernetes node binaries
+WORKDIR /build/
+RUN git clone --single-branch --branch release-4.6 https://github.com/openshift/kubernetes
+WORKDIR /build/kubernetes
+ENV KUBE_BUILD_PLATFORMS windows/amd64
+RUN make WHAT=cmd/kubelet
+RUN make WHAT=cmd/kube-proxy
 
 # download stage for downloading packages
 FROM registry.access.redhat.com/ubi8/ubi-minimal as download
 LABEL stage=download
+RUN mkdir /download/
 WORKDIR /download/
 RUN microdnf -y install wget tar gzip
 RUN microdnf -y update
-
-# Download, checksum and extract the kubernetes node package
-# We are tightly coupling the operator to the OpenShift version, so with every OpenShift release, we will update the
-# kubernetes node version.
-RUN wget https://dl.k8s.io/v1.19.0-rc.2/kubernetes-node-windows-amd64.tar.gz
-RUN echo "61389f8c05c682102e3432a2f05f41b11d531124f61443429627f94ef6e970d44240d44d32aa467b814de0b54a17208b2d2696602ba5dd6d30f64db964900230 kubernetes-node-windows-amd64.tar.gz" > kubernetes-node-windows-amd64.tar.gz.sha512
-RUN sha512sum -c kubernetes-node-windows-amd64.tar.gz.sha512
-RUN tar -zxf kubernetes-node-windows-amd64.tar.gz
 
 # Download, checksum and extract the CNI plugin package
 RUN wget https://github.com/containernetworking/plugins/releases/download/v0.8.6/cni-plugins-windows-amd64-v0.8.6.tgz
@@ -59,6 +71,7 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 LABEL stage=operator
 
 # Copy wmcb.exe
+RUN mkdir /payload/
 WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-bootstrapper/wmcb.exe .
 
@@ -66,11 +79,13 @@ COPY --from=build /build/windows-machine-config-bootstrapper/wmcb.exe .
 COPY --from=build /build/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
 
 # Copy kubelet.exe and kube-proxy.exe
+RUN mkdir /payload/kube-node/
 WORKDIR /payload/kube-node/
-COPY --from=download /download/kubernetes/node/bin/kubelet.exe .
-COPY --from=download /download/kubernetes/node/bin/kube-proxy.exe .
+COPY --from=build /build/kubernetes/_output/local/bin/windows/amd64/kubelet.exe .
+COPY --from=build /build/kubernetes/_output/local/bin/windows/amd64/kube-proxy.exe .
 
 # Copy CNI plugin binaries and CNI config template cni-conf-template.json
+RUN mkdir /payload/cni/
 WORKDIR /payload/cni/
 COPY --from=download /download/cni/flannel.exe .
 COPY --from=download /download/cni/host-local.exe .

@@ -65,6 +65,8 @@ type testContext struct {
 	providers.CloudProvider
 	// hasCustomVXLAN tells if the cluster is using a custom VXLAN port for communication
 	hasCustomVXLAN bool
+	// workloadNamespace is the namespace to deploy our test pods on
+	workloadNamespace string
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -89,7 +91,7 @@ func NewTestContext(t *testing.T) (*testContext, error) {
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{osdkTestCtx: fmwkTestContext, kubeclient: framework.Global.KubeClient,
 		timeout: retry.Timeout, retryInterval: retry.Interval, namespace: namespace, CloudProvider: cloudProvider,
-		hasCustomVXLAN: hasCustomVXLANPort}, nil
+		hasCustomVXLAN: hasCustomVXLANPort, workloadNamespace: "wmco-test"}, nil
 }
 
 // cleanup cleans up the test context

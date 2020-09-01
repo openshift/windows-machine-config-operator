@@ -20,6 +20,10 @@ import (
 
 // testNetwork runs all the cluster and node network tests
 func testNetwork(t *testing.T) {
+	testCtx, err := NewTestContext(t)
+	require.NoError(t, err)
+	require.NoError(t, testCtx.createNamespace(testCtx.workloadNamespace), "error creating test namespace")
+	defer testCtx.deleteNamespace(testCtx.workloadNamespace)
 	t.Run("East West Networking across Linux and Windows nodes", testEastWestNetworking)
 	t.Run("East West Networking across Windows nodes", testEastWestNetworkingAcrossWindowsNodes)
 	t.Run("North south networking", testNorthSouthNetworking)
@@ -223,7 +227,7 @@ func (tc *testContext) createLoadBalancer(name string, selector metav1.LabelSele
 			},
 			Selector: selector.MatchLabels,
 		}}
-	return tc.kubeclient.CoreV1().Services(v1.NamespaceDefault).Create(context.TODO(), svcSpec, metav1.CreateOptions{})
+	return tc.kubeclient.CoreV1().Services(tc.workloadNamespace).Create(context.TODO(), svcSpec, metav1.CreateOptions{})
 }
 
 // waitForLoadBalancerIngress waits until the load balancer has an external hostname ready
@@ -231,7 +235,7 @@ func (tc *testContext) waitForLoadBalancerIngress(name string) (*v1.Service, err
 	var svc *v1.Service
 	var err error
 	for i := 0; i < retryCount; i++ {
-		svc, err = tc.kubeclient.CoreV1().Services(v1.NamespaceDefault).Get(context.TODO(), name, metav1.GetOptions{})
+		svc, err = tc.kubeclient.CoreV1().Services(tc.workloadNamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
@@ -245,7 +249,7 @@ func (tc *testContext) waitForLoadBalancerIngress(name string) (*v1.Service, err
 
 // deleteService deletes the service with the given name
 func (tc *testContext) deleteService(name string) error {
-	svcClient := tc.kubeclient.CoreV1().Services(v1.NamespaceDefault)
+	svcClient := tc.kubeclient.CoreV1().Services(tc.workloadNamespace)
 	return svcClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
@@ -268,6 +272,22 @@ func getAffinityForNode(node *v1.Node) (*v1.Affinity, error) {
 			},
 		},
 	}, nil
+}
+
+// createNamespace creates a namespace with the provided name
+func (tc *testContext) createNamespace(name string) error {
+	ns := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+	_, err := tc.kubeclient.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{})
+	return err
+}
+
+// deleteNamespace deletes the namespace with the provided name
+func (tc *testContext) deleteNamespace(name string) error {
+	return tc.kubeclient.CoreV1().Namespaces().Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 // deployWindowsWebServer creates a deployment with a single Windows Server pod, listening on port 80
@@ -295,7 +315,7 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 
 // deleteDeployment deletes the deployment with the given name
 func (tc *testContext) deleteDeployment(name string) error {
-	deploymentsClient := tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault)
+	deploymentsClient := tc.kubeclient.AppsV1().Deployments(tc.workloadNamespace)
 	return deploymentsClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
@@ -303,7 +323,7 @@ func (tc *testContext) deleteDeployment(name string) error {
 // selector, the function will return an error
 func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	selectorString := labels.Set(selector.MatchLabels).String()
-	podList, err := tc.kubeclient.CoreV1().Pods(v1.NamespaceDefault).List(context.TODO(), metav1.ListOptions{
+	podList, err := tc.kubeclient.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: selectorString})
 	if err != nil {
 		return "", err
@@ -330,7 +350,7 @@ func (tc *testContext) getWindowsServerContainerImage() string {
 
 // createWindowsServerDeployment creates a deployment with a Windows Server 2019 container
 func (tc *testContext) createWindowsServerDeployment(name string, command []string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
-	deploymentsClient := tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault)
+	deploymentsClient := tc.kubeclient.AppsV1().Deployments(tc.workloadNamespace)
 	replicaCount := int32(1)
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	containerUserName := "ContainerAdministrator"
@@ -402,7 +422,7 @@ func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 	var err error
 	// Retry if we fail to get the deployment
 	for i := 0; i < 5; i++ {
-		deployment, err = tc.kubeclient.AppsV1().Deployments(v1.NamespaceDefault).Get(context.TODO(),
+		deployment, err = tc.kubeclient.AppsV1().Deployments(tc.workloadNamespace).Get(context.TODO(),
 			name,
 			metav1.GetOptions{})
 		if err != nil {
@@ -421,7 +441,7 @@ func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 
 // getPodEvents gets all events for any pod with the input in its name. Used for debugging purposes
 func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
-	eventList, err := tc.kubeclient.CoreV1().Events(v1.NamespaceDefault).List(context.TODO(), metav1.ListOptions{
+	eventList, err := tc.kubeclient.CoreV1().Events(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
 		FieldSelector: "involvedObject.kind=Pod"})
 	if err != nil {
 		return []v1.Event{}, err
@@ -469,7 +489,7 @@ func (tc *testContext) createWindowsServerJob(name string, command []string) (*b
 
 func (tc *testContext) createJob(name, image string, command []string, selector map[string]string,
 	tolerations []v1.Toleration) (*batchv1.Job, error) {
-	jobsClient := tc.kubeclient.BatchV1().Jobs(v1.NamespaceDefault)
+	jobsClient := tc.kubeclient.BatchV1().Jobs(tc.workloadNamespace)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name + "-job",
@@ -503,7 +523,7 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 
 // deleteJob deletes the job with the given name
 func (tc *testContext) deleteJob(name string) error {
-	jobsClient := tc.kubeclient.BatchV1().Jobs(v1.NamespaceDefault)
+	jobsClient := tc.kubeclient.BatchV1().Jobs(tc.workloadNamespace)
 	return jobsClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
@@ -512,7 +532,7 @@ func (tc *testContext) waitUntilJobSucceeds(name string) error {
 	var job *batchv1.Job
 	var err error
 	for i := 0; i < retryCount; i++ {
-		job, err = tc.kubeclient.BatchV1().Jobs(v1.NamespaceDefault).Get(context.TODO(), name, metav1.GetOptions{})
+		job, err = tc.kubeclient.BatchV1().Jobs(tc.workloadNamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
