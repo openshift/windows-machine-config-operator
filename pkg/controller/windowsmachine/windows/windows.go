@@ -231,22 +231,30 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 	if err != nil {
 		return errors.Wrap(err, "error getting source VIP")
 	}
-	kubeProxyService, err := newKubeProxyService(nodeName, hostSubnet, sVIP)
+
+	kubeProxyServiceArgs := "--windows-service --v=4 --proxy-mode=kernelspace --feature-gates=WinOverlay=true " +
+		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
+		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
+		"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + sVIP +
+		" --enable-dsr=false\""
+
+	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs)
 	if err != nil {
-		return errors.Wrap(err, "error creating service object")
+		return errors.Wrapf(err, "error creating %s service object", kubeProxyServiceName)
 	}
-	// Check if service is already running, then stop it.
-	if vm.isRunning(kubeProxyService) {
-		if err := vm.stopService(kubeProxyService); err != nil {
-			return errors.Wrap(err, "error stopping kube-proxy Windows service")
-		}
-	} else {
+
+	serviceExists, err := vm.serviceExists(kubeProxyServiceName)
+	if err != nil {
+		return errors.Wrapf(err, "error checking if %s Windows service exists", kubeProxyServiceName)
+	}
+	// create service if it does not exist.
+	if !serviceExists {
 		if err := vm.createService(kubeProxyService); err != nil {
-			return errors.Wrap(err, "error creating kube-proxy Windows service")
+			return errors.Wrapf(err, "error creating %s Windows service", kubeProxyServiceName)
 		}
 	}
 	if err := vm.startService(kubeProxyService); err != nil {
-		return errors.Wrap(err, "error starting kube-proxy Windows service")
+		return errors.Wrapf(err, "error starting %s Windows service", kubeProxyServiceName)
 	}
 	return nil
 }
@@ -339,9 +347,12 @@ func (vm *windows) initializeBootstrapperFiles() error {
 }
 
 // createService creates the service on the Windows VM
-func (vm *windows) createService(svc service) error {
-	out, err := vm.Run("sc.exe create "+svc.Name()+" binPath=\""+svc.BinaryPath()+" "+
-		svc.Args()+"\" start=auto", false)
+func (vm *windows) createService(svc *service) error {
+	if svc == nil {
+		return errors.New("service object should not be nil")
+	}
+	out, err := vm.Run("sc.exe create "+svc.name+" binPath=\""+svc.binaryPath+" "+
+		svc.args+" start=auto", false)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create service with output: %s", out)
 	}
@@ -349,31 +360,57 @@ func (vm *windows) createService(svc service) error {
 }
 
 // stopService stops the service that was already running
-func (vm *windows) stopService(svc service) error {
-	out, err := vm.Run("sc.exe stop "+svc.Name(), false)
+func (vm *windows) stopService(svc *service) error {
+	if svc == nil {
+		return errors.New("service object should not be nil")
+	}
+	out, err := vm.Run("sc.exe stop "+svc.name, false)
 	if err != nil {
-		return errors.Wrapf(err, "failed to stop %s service with output: %s", svc.Name(), out)
+		return errors.Wrapf(err, "failed to stop %s service with output: %s", svc.name, out)
 	}
 	return nil
 }
 
-// isRunning gets the status of given service
-func (vm *windows) isRunning(svc service) bool {
-	out, err := vm.Run("sc.exe query "+svc.Name(), false)
+// serviceExists checks if the given service exists on Windows VM
+func (vm *windows) serviceExists(serviceName string) (bool, error) {
+	_, err := vm.Run("sc.exe qc "+serviceName, false)
 	if err != nil {
-		log.Info("failed to query service", "service", svc.Name(), "output", out, "err", err)
-		return false
+		// 1060 is an error code representing ERROR_SERVICE_DOES_NOT_EXIST
+		// referenced: https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
+		if strings.Contains(err.Error(), "status 1060") {
+			return false, nil
+		}
+		return false, err
 	}
-	return strings.Contains(out, "RUNNING")
+	return true, nil
+}
+
+// isRunning checks the status of given service
+func (vm *windows) isRunning(serviceName string) (bool, error) {
+	out, err := vm.Run("sc.exe query "+serviceName, false)
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(out, "RUNNING"), nil
 }
 
 // startService starts a previously created Windows service
-func (vm *windows) startService(svc service) error {
-	out, err := vm.Run("sc.exe start "+svc.Name(), false)
-	if err != nil {
-		return errors.Wrapf(err, "failed to start %s service with output: %s", svc.Name(), out)
+func (vm *windows) startService(svc *service) error {
+	if svc == nil {
+		return errors.New("service object should not be nil")
 	}
-	log.V(1).Info("started service", "name", svc.Name(), "binary", svc.BinaryPath(), "args", svc.Args())
+	serviceRunning, err := vm.isRunning(svc.name)
+	if err != nil {
+		return errors.Wrapf(err, "unable to check if %s Windows service is running", svc.name)
+	}
+	if serviceRunning {
+		return nil
+	}
+	out, err := vm.Run("sc.exe start "+svc.name, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to start %s service with output: %s", svc.name, out)
+	}
+	log.V(1).Info("started service", "name", svc.name, "binary", svc.binaryPath, "args", svc.args)
 	return nil
 }
 
