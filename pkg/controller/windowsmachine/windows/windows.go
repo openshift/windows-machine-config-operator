@@ -36,8 +36,10 @@ const (
 	cniConfDir = cniDir + "config\\"
 	// kubeProxyPath is the location of the kube-proxy exe
 	kubeProxyPath = k8sDir + "kube-proxy.exe"
-	// HybridOverlayProcess is the process name of the hybrid-overlay-node.exe in the Windows VM
-	HybridOverlayProcess = "hybrid-overlay-node"
+	// hybridOverlayPath is the location of the hybrid-overlay-node exe
+	hybridOverlayPath = k8sDir + "hybrid-overlay-node.exe"
+	// hybridOverlayServiceName is the name of the hybrid-overlay-node Windows service
+	hybridOverlayServiceName = "hybrid-overlay-node"
 	// hybridOverlayConfigurationTime is the approximate time taken for the hybrid-overlay to complete reconfiguring
 	// the Windows VM's network
 	hybridOverlayConfigurationTime = 2 * time.Minute
@@ -47,6 +49,8 @@ const (
 	OVNKubeOverlayNetwork = "OVNKubernetesHybridOverlayNetwork"
 	// kubeProxyServiceName is the name of the kube-proxy Windows service
 	kubeProxyServiceName = "kube-proxy"
+	// kubeletServiceName is the name of the kubelet Windows service
+	kubeletServiceName = "kubelet"
 	// remotePowerShellCmdPrefix holds the PowerShell prefix that needs to be prefixed  for every remote PowerShell
 	// command executed on the remote Windows VM
 	remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass "
@@ -161,31 +165,37 @@ func (vm *windows) Configure() error {
 }
 
 func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
-	// Check if the hybrid-overlay is running
-	_, err := vm.Run("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
-
-	// err being nil implies that hybrid-overlay is running.
-	if err == nil {
-		// Stop the hybrid-overlay
-		stopCmd := "Stop-Process -Name \"" + HybridOverlayProcess + "\""
-		out, err := vm.Run(stopCmd, true)
-		if err != nil {
-			log.Info("unable to stop hybrid-overlay", "stop command", stopCmd, "output", out)
-			return errors.Wrap(err, "unable to stop hybrid-overlay")
-		}
-	}
 	var customVxlanPortArg = ""
 	if len(vm.vxlanPort) > 0 {
 		customVxlanPortArg = " --hybrid-overlay-vxlan-port=" + vm.vxlanPort
 	}
-	// Start the hybrid-overlay in the background over ssh.
-	go vm.Run(k8sDir+wkl.HybridOverlayName+" --node "+nodeName+customVxlanPortArg+
-		" --k8s-kubeconfig c:\\k\\kubeconfig --logfile="+hybridOverlayLogDir+"hybrid-overlay.log", false)
 
-	if err = vm.waitForHybridOverlayToRun(); err != nil {
-		return errors.Wrapf(err, "error running %s", wkl.HybridOverlayName)
+	hybridOverlayServiceArgs := "--node " + nodeName + customVxlanPortArg + " --k8s-kubeconfig c:\\k\\kubeconfig " +
+		"--windows-service " + "--logfile " + hybridOverlayLogDir + "hybrid-overlay.log\" depend= " + kubeletServiceName
+
+	hybridOverlayService, err := newService(hybridOverlayPath, hybridOverlayServiceName, hybridOverlayServiceArgs)
+	if err != nil {
+		return errors.Wrapf(err, "error creating %s service object", hybridOverlayServiceName)
 	}
 
+	serviceExists, err := vm.serviceExists(hybridOverlayServiceName)
+	if err != nil {
+		return errors.Wrapf(err, "error checking if %s Windows service exists", hybridOverlayServiceName)
+	}
+	// create service if it does not exist.
+	if !serviceExists {
+		if err := vm.createService(hybridOverlayService); err != nil {
+			return errors.Wrapf(err, "error creating %s Windows service", hybridOverlayServiceName)
+		}
+	}
+
+	if err := vm.startService(hybridOverlayService); err != nil {
+		return errors.Wrapf(err, "error starting %s Windows service", hybridOverlayServiceName)
+	}
+
+	if err = vm.waitForServiceToRun(hybridOverlayServiceName); err != nil {
+		return errors.Wrapf(err, "error running %s Windows service", hybridOverlayServiceName)
+	}
 	// Wait for the hybrid-overlay to complete reconfiguring the network. The only way to detect that it has completed
 	// the reconfiguration is to check for the HNS networks but doing that without reinitializing the WinRM client
 	// results in 5+ minutes wait times for the vm.Run() call to complete. So the only alternative is to wait before
@@ -236,7 +246,7 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
 		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
 		"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + sVIP +
-		" --enable-dsr=false\""
+		" --enable-dsr=false\" depend= " + hybridOverlayServiceName
 
 	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs)
 	if err != nil {
@@ -437,19 +447,23 @@ func (vm *windows) waitForHNSNetworks() error {
 	return errors.Wrap(err, "timeout waiting for OVN overlay HNS networks")
 }
 
-// waitForHybridOverlayToRun waits for the hybrid-overlay-node.exe to run until the timeout is reached
-func (vm *windows) waitForHybridOverlayToRun() error {
+// waitForServiceToRun waits for the given service to be in RUNNING state
+// until the timeout is reached
+func (vm *windows) waitForServiceToRun(serviceName string) error {
 	var err error
 	for retries := 0; retries < retry.Count; retries++ {
-		_, err = vm.Run("Get-Process -Name \""+HybridOverlayProcess+"\"", true)
-		if err == nil {
+		serviceRunning, err := vm.isRunning(serviceName)
+		if err != nil {
+			return errors.Wrapf(err, "unable to check if %s Windows service is running", serviceName)
+		}
+		if serviceRunning {
 			return nil
 		}
 		time.Sleep(retry.Interval)
 	}
 
-	// hybrid-overlay never started running
-	return fmt.Errorf("timeout waiting for hybrid-overlay: %v", err)
+	// service did not reach running state
+	return fmt.Errorf("timeout waiting for %s service to be in running state: %v", serviceName, err)
 }
 
 // getSourceVIP returns the source VIP of the VM
