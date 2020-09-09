@@ -34,13 +34,14 @@ replace (
 	k8s.io/metrics => k8s.io/metrics v0.18.2
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.18.2
 	sigs.k8s.io/cluster-api-provider-aws => github.com/openshift/cluster-api-provider-aws v0.2.1-0.20200520125206-5e266b553d8e // This is coming from machine-api repo
+	sigs.k8s.io/cluster-api-provider-azure => github.com/openshift/cluster-api-provider-azure v0.1.0-alpha.3.0.20200902180535-72169c58a81f
 )
 
 require (
 	github.com/aws/aws-sdk-go v1.25.48
 	github.com/openshift/api v0.0.0-20200728200559-811027b63048
 	github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70
-	github.com/openshift/machine-api-operator v0.2.1-0.20200520080344-fe76daf636f4
+	github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7
 	github.com/operator-framework/operator-sdk v0.18.1
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
@@ -53,5 +54,6 @@ require (
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/utils v0.0.0-20200729134348-d5654de09c73 // indirect
 	sigs.k8s.io/cluster-api-provider-aws v0.0.0-00010101000000-000000000000
+	sigs.k8s.io/cluster-api-provider-azure v0.0.0-00010101000000-000000000000
 	sigs.k8s.io/controller-runtime v0.6.0
 )
