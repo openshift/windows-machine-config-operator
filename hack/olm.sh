@@ -34,10 +34,6 @@ while getopts ":ic:" opt; do
     esac
 done
 
-if [ -z "$AWS_SHARED_CREDENTIALS_FILE" ]; then
-    error-exit "env AWS_SHARED_CREDENTIALS_FILE not found"
-fi
-
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
 
