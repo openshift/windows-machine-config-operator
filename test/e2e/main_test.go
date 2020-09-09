@@ -22,6 +22,8 @@ var (
 	skipNodeDeletion bool
 	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
 	sshKeyPair string
+	// privateKeyPath is the path of the private key file used to configure the Windows node
+	privateKeyPath string
 	// wmcoPath is the path to the WMCO binary that was used within the operator image
 	wmcoPath string
 	// gc is the global context across the test suites.
@@ -42,6 +44,8 @@ type globalContext struct {
 	skipNodeDeletion bool
 	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
 	sshKeyPair string
+	// privateKeyPath is the path of the private key file used to configure the Windows node
+	privateKeyPath string
 }
 
 // testContext holds the information related to the individual test suite. This data structure
@@ -108,5 +112,7 @@ func TestMain(m *testing.M) {
 		"the Windows Node password")
 	flag.StringVar(&wmcoPath, "wmco-path", "./build/_output/bin/windows-machine-config-operator",
 		"Path to the WMCO binary, used for version validation")
+	flag.StringVar(&privateKeyPath, "private-key-path", "",
+		"path of the private key file used to configure the Windows node")
 	framework.MainEntry(m)
 }

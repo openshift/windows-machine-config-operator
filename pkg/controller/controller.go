@@ -6,12 +6,12 @@ import (
 )
 
 // AddToManagerFuncs is a list of functions to add all Controllers to the Manager
-var AddToManagerFuncs []func(manager.Manager, clusternetwork.ClusterNetworkConfig) error
+var AddToManagerFuncs []func(manager.Manager, clusternetwork.ClusterNetworkConfig, string) error
 
 // AddToManager adds all Controllers to the Manager
-func AddToManager(m manager.Manager, config clusternetwork.ClusterNetworkConfig) error {
+func AddToManager(m manager.Manager, config clusternetwork.ClusterNetworkConfig, watchNamespace string) error {
 	for _, f := range AddToManagerFuncs {
-		if err := f(m, config); err != nil {
+		if err := f(m, config, watchNamespace); err != nil {
 			return err
 		}
 	}

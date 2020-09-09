@@ -2,21 +2,32 @@ package e2e
 
 import (
 	"context"
+	"io/ioutil"
 	"log"
 	"math"
 	"testing"
 	"time"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"k8s.io/api/core/v1"
+	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 )
 
 func creationTestSuite(t *testing.T) {
+	// Ensure that the private key secret is created
+	testCtx, err := NewTestContext(t)
+	require.NoError(t, err)
+	require.NoError(t, testCtx.createPrivateKeySecret(), "could not create private key secret")
+	defer testCtx.deletePrivateKeySecret()
+
 	// The order of tests here are important. testValidateSecrets is what populates the windowsVMs slice in the gc.
 	// testNetwork needs that to check if the HNS networks have been installed. Ideally we would like to run testNetwork
 	// before testValidateSecrets and testConfigMapValidation but we cannot as the source of truth for the credentials
@@ -145,4 +156,39 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 	gc.nodes = nodes.Items
 
 	return err
+}
+
+// createPrivateKeySecret ensures that a private key secret exists with the correct data
+func (tc *testContext) createPrivateKeySecret() error {
+	secretsClient := tc.kubeclient.CoreV1().Secrets(tc.namespace)
+	if _, err := secretsClient.Get(context.TODO(), secrets.PrivateKeySecret, metav1.GetOptions{}); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return errors.Wrap(err, "could not get private key secret")
+		}
+	} else {
+		// Secret already exists, delete it
+		if err := secretsClient.Delete(context.TODO(), secrets.PrivateKeySecret, metav1.DeleteOptions{}); err != nil {
+			return errors.Wrap(err, "unable to delete existing private key secret")
+		}
+	}
+
+	keyData, err := ioutil.ReadFile(gc.privateKeyPath)
+	if err != nil {
+		return errors.Wrapf(err, "unable to read private key data from file %s", gc.privateKeyPath)
+	}
+
+	privateKeySecret := core.Secret{
+		Data: map[string][]byte{secrets.PrivateKeySecretKey: keyData},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secrets.PrivateKeySecret,
+			Namespace: tc.namespace,
+		},
+	}
+	_, err = tc.kubeclient.CoreV1().Secrets(tc.namespace).Create(context.TODO(), &privateKeySecret, metav1.CreateOptions{})
+	return err
+}
+
+// deletePrivateKeySecret deletes the private key secret
+func (tc *testContext) deletePrivateKeySecret() error {
+	return tc.kubeclient.CoreV1().Secrets(tc.namespace).Delete(context.TODO(), secrets.PrivateKeySecret, metav1.DeleteOptions{})
 }

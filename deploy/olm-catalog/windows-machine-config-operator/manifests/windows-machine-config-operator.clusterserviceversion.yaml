@@ -116,16 +116,8 @@ spec:
                 imagePullPolicy: Always
                 name: windows-machine-config-operator
                 resources: {}
-                volumeMounts:
-                - mountPath: /etc/private-key/
-                  name: cloud-private-key
-                  readOnly: true
               hostNetwork: true
               serviceAccountName: windows-machine-config-operator
-              volumes:
-              - name: cloud-private-key
-                secret:
-                  secretName: cloud-private-key
       permissions:
       - rules:
         - apiGroups:
