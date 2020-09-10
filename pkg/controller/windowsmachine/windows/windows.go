@@ -178,9 +178,12 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 	if len(vm.vxlanPort) > 0 {
 		customVxlanPortArg = " --hybrid-overlay-vxlan-port=" + vm.vxlanPort
 	}
+
+	hybridOverlayCmd := k8sDir + wkl.HybridOverlayName + " --node " + nodeName + customVxlanPortArg +
+		" --k8s-kubeconfig c:\\k\\kubeconfig --logfile=" + hybridOverlayLogDir + "hybrid-overlay.log"
+	log.Info("hybrid-overlay-node", "cmd", hybridOverlayCmd)
 	// Start the hybrid-overlay in the background over ssh.
-	go vm.Run(k8sDir+wkl.HybridOverlayName+" --node "+nodeName+customVxlanPortArg+
-		" --k8s-kubeconfig c:\\k\\kubeconfig --logfile="+hybridOverlayLogDir+"hybrid-overlay.log", false)
+	go vm.Run(hybridOverlayCmd, false)
 
 	if err = vm.waitForHybridOverlayToRun(); err != nil {
 		return errors.Wrapf(err, "error running %s", wkl.HybridOverlayName)
