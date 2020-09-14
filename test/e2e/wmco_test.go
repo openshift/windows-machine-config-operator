@@ -34,7 +34,6 @@ func TestWMCO(t *testing.T) {
 	// Reference:
 	// https://github.com/operator-framework/operator-sdk/blob/b448429687fd7cb2343d022814ed70c9d264612b/pkg/test/main_entry.go#L51
 	gc.numberOfNodes = int32(numberOfNodes)
-	gc.sshKeyPair = sshKeyPair
 	require.NotEmpty(t, privateKeyPath, "private-key-path is not set")
 	gc.privateKeyPath = privateKeyPath
 	// When the OPENSHIFT_CI env var is set to true, the test is running within CI
