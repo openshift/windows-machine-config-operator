@@ -48,12 +48,21 @@ WORKDIR /build/windows-machine-config-operator
 COPY . .
 RUN make build
 
-# Build CNI plugins
-WORKDIR /build/
-RUN git clone --single-branch --branch release-4.6 https://github.com/openshift/containernetworking-plugins/
-WORKDIR /build/containernetworking-plugins/
-ENV CGO_ENABLED=0
-RUN ./build_windows.sh
+# download stage for downloading packages
+FROM registry.access.redhat.com/ubi8/ubi-minimal as download
+LABEL stage=download
+RUN mkdir /download/
+WORKDIR /download/
+RUN microdnf -y install wget tar gzip
+RUN microdnf -y update
+
+# Download, checksum and extract the CNI plugin package
+RUN wget https://github.com/containernetworking/plugins/releases/download/v0.8.6/cni-plugins-windows-amd64-v0.8.6.tgz
+RUN wget https://github.com/containernetworking/plugins/releases/download/v0.8.6/cni-plugins-windows-amd64-v0.8.6.tgz.sha512
+RUN sha512sum -c cni-plugins-windows-amd64-v0.8.6.tgz.sha512
+RUN mkdir /download/cni/
+WORKDIR /download/cni/
+RUN tar -zxf /download/cni-plugins-windows-amd64-v0.8.6.tgz
 
 # Build the operator image with following payload structure
 # /payload/
@@ -92,10 +101,10 @@ COPY --from=build /build/kubernetes/_output/local/bin/windows/amd64/kube-proxy.e
 # Copy CNI plugin binaries and CNI config template cni-conf-template.json
 RUN mkdir /payload/cni/
 WORKDIR /payload/cni/
-COPY --from=build /build/containernetworking-plugins/bin/flannel.exe .
-COPY --from=build /build/containernetworking-plugins/bin/host-local.exe .
-COPY --from=build /build/containernetworking-plugins/bin/win-bridge.exe .
-COPY --from=build /build/containernetworking-plugins/bin/win-overlay.exe .
+COPY --from=download /download/cni/flannel.exe .
+COPY --from=download /download/cni/host-local.exe .
+COPY --from=download /download/cni/win-bridge.exe .
+COPY --from=download /download/cni/win-overlay.exe .
 COPY --from=build /build/windows-machine-config-operator/pkg/internal/cni-conf-template.json .
 
 # Copy required powershell scripts
