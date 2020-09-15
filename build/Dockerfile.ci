@@ -68,7 +68,6 @@ RUN ./build_windows.sh
 #│   ├── kubelet.exe
 #│   └── kube-proxy.exe
 #├── powershell
-#│   └── wget-ignore-cert.ps1
 #│   └── hns.psm1
 #└── wmcb.exe
 
@@ -101,7 +100,6 @@ COPY --from=build /build/windows-machine-config-operator/pkg/internal/cni-conf-t
 # Copy required powershell scripts
 RUN mkdir /payload/powershell/
 WORKDIR /payload/powershell/
-COPY --from=build /build/windows-machine-config-operator/pkg/internal/wget-ignore-cert.ps1 .
 COPY --from=build /build/windows-machine-config-operator/pkg/internal/hns.psm1 .
 
 WORKDIR /

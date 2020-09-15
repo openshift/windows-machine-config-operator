@@ -15,9 +15,6 @@ const (
 	// KubeProxyPath contains the path of the kube-proxy binary. The container image should already have this binary
 	// mounted
 	KubeProxyPath = payloadDirectory + "/kube-node/kube-proxy.exe"
-	// IgnoreWgetPowerShellPath contains the path of the powershell script which allows wget to ignore certs. The
-	// container image should already have this mounted
-	IgnoreWgetPowerShellPath = payloadDirectory + "/powershell/wget-ignore-cert.ps1"
 	// HNSPSModule is the path to the powershell module which defines various functions for dealing with Windows HNS
 	// networks
 	HNSPSModule = payloadDirectory + "/powershell/hns.psm1"

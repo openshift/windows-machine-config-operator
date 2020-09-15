@@ -1,7 +1,11 @@
 package windows
 
 import (
+	"crypto/tls"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,8 +22,6 @@ const (
 	remoteDir = "C:\\Temp\\"
 	// winTemp is the default Windows temporary directory
 	winTemp = "C:\\Windows\\Temp\\"
-	// wgetIgnoreCertCmd is the remote location of the wget-ignore-cert.ps1 script
-	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
 	// hnsPSModule is the remote location of the hns.psm1 module
 	hnsPSModule = remoteDir + "hns.psm1"
 	// k8sDir is the remote kubernetes executable directory
@@ -268,16 +270,15 @@ func (vm *windows) createDirectories() error {
 // transferFiles copies various files required for configuring the Windows node, to the VM.
 func (vm *windows) transferFiles() error {
 	srcDestPairs := map[string]string{
-		wkl.IgnoreWgetPowerShellPath: remoteDir,
-		wkl.WmcbPath:                 k8sDir,
-		wkl.HybridOverlayPath:        k8sDir,
-		wkl.HNSPSModule:              remoteDir,
-		wkl.FlannelCNIPluginPath:     cniDir,
-		wkl.WinBridgeCNIPlugin:       cniDir,
-		wkl.HostLocalCNIPlugin:       cniDir,
-		wkl.WinOverlayCNIPlugin:      cniDir,
-		wkl.KubeProxyPath:            k8sDir,
-		wkl.KubeletPath:              k8sDir,
+		wkl.WmcbPath:             k8sDir,
+		wkl.HybridOverlayPath:    k8sDir,
+		wkl.HNSPSModule:          remoteDir,
+		wkl.FlannelCNIPluginPath: cniDir,
+		wkl.WinBridgeCNIPlugin:   cniDir,
+		wkl.HostLocalCNIPlugin:   cniDir,
+		wkl.WinOverlayCNIPlugin:  cniDir,
+		wkl.KubeProxyPath:        k8sDir,
+		wkl.KubeletPath:          k8sDir,
 	}
 	for src, dest := range srcDestPairs {
 		if err := vm.CopyFile(src, dest); err != nil {
@@ -305,17 +306,75 @@ func (vm *windows) runBootstrapper() error {
 
 // initializeTestBootstrapperFiles initializes the files required for initialize-kubelet
 func (vm *windows) initializeBootstrapperFiles() error {
-	// Ignition v2.3.0 maps to Ignition config spec v3.1.0.
-	ignitionAcceptHeaderSpec := "application/vnd.coreos.ignition+json`;version=3.1.0"
-	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
-	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server " + vm.workerIgnitionEndpoint + " -output " +
-		winTemp + "worker.ign" + " -acceptHeader " + ignitionAcceptHeaderSpec
-	out, err := vm.Run(ignitionFileDownloadCmd, true)
-	log.V(1).Info("ignition file download", "cmd", ignitionFileDownloadCmd, "output", out)
+	// get ignition config from MCS
+	ignitionConfig, err := vm.getIgnitionConfig()
 	if err != nil {
 		return errors.Wrap(err, "unable to download worker.ign")
 	}
+
+	// create a temp file to hold the ignition config
+	tmpIgnDir, err := ioutil.TempDir("", "ignition")
+	if err != nil {
+		return errors.Wrap(err, "error creating local temp ignition directory")
+	}
+
+	ignConfigPath, err := os.Create(filepath.Join(tmpIgnDir, "worker.ign"))
+	if err != nil {
+		return errors.Wrap(err, "error creating local worker.ign file")
+	}
+	defer ignConfigPath.Close()
+
+	if _, err = ignConfigPath.Write(ignitionConfig); err != nil {
+		return errors.Wrapf(err, "can't write worker ignition config file to %s", ignConfigPath.Name())
+	}
+
+	if ignConfigPath.Name() == "" {
+		return errors.Errorf("couldn't retrieve worker ignition config file %s", ignConfigPath.Name())
+	}
+
+	// copy the Ignition config file to the Windows VM
+	if err := vm.CopyFile(ignConfigPath.Name(), winTemp); err != nil {
+		return errors.Wrapf(err, "unable to copy worker ignition config file %s to %s", ignConfigPath.Name(), winTemp)
+	}
+
+	// remove the temp file
+	err = os.RemoveAll(ignConfigPath.Name())
+	if err != nil {
+		return errors.New("unable to delete temp worker ignition config file")
+	}
+
 	return nil
+}
+
+// getIgnitionConfig downloads the worker ignition config from the machine-config-server
+func (vm *windows) getIgnitionConfig() ([]byte, error) {
+	// Create a custom transport config for http client
+	// We want all defaults except for TLS's InsecureSkipVerify.
+	// So clone the default and change just the TLSClientConfig.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	client := &http.Client{Transport: transport}
+
+	req, err := http.NewRequest(http.MethodGet, vm.workerIgnitionEndpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request for ignition config: %s", err)
+	}
+
+	req.Header.Set("Accept", "application/vnd.coreos.ignition+json=3.10, */*;q=0.1")
+
+	// get ignition config from MCS endpoint
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send http request for ignition: %s", err)
+	}
+	defer resp.Body.Close()
+
+	ignitionConfig, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("could not read MCS response body: %s", err)
+	}
+
+	return ignitionConfig, nil
 }
 
 // createService creates the service on the Windows VM

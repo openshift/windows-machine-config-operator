@@ -54,7 +54,6 @@ RUN ./build_windows.sh
 #│   ├── kubelet.exe
 #│   └── kube-proxy.exe
 #├── powershell
-#│   └── wget-ignore-cert.ps1
 #│   └── hns.psm1
 #└── wmcb.exe
 
@@ -87,7 +86,6 @@ COPY pkg/internal/cni-conf-template.json .
 # Copy required powershell scripts
 RUN mkdir /payload/powershell/
 WORKDIR /payload/powershell/
-COPY pkg/internal/wget-ignore-cert.ps1 .
 COPY pkg/internal/hns.psm1 .
 
 WORKDIR /

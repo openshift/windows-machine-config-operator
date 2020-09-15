@@ -9,11 +9,6 @@ import (
 
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
-	"github.com/openshift/windows-machine-config-operator/pkg/apis"
-	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller"
-	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
-	"github.com/openshift/windows-machine-config-operator/version"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
@@ -21,16 +16,21 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/metrics"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
-	v1 "k8s.io/api/core/v1"
+	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	_ "k8s.io/client-go/plugin/pkg/client/auth" // Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/apis"
+	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller"
+	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
+	"github.com/openshift/windows-machine-config-operator/version"
 )
 
 // Change below variables to serve metrics on different host or port.
@@ -127,7 +127,6 @@ func main() {
 		wkl.HybridOverlayPath,
 		wkl.KubeletPath,
 		wkl.KubeProxyPath,
-		wkl.IgnoreWgetPowerShellPath,
 		wkl.WmcbPath,
 		wkl.PrivateKeyPath,
 		wkl.CNIConfigTemplatePath,
@@ -202,9 +201,9 @@ func addMetrics(ctx context.Context, cfg *rest.Config, namespace string) {
 	}
 
 	// Add to the below struct any other metrics ports you want to expose.
-	servicePorts := []v1.ServicePort{
-		{Port: metricsPort, Name: metrics.OperatorPortName, Protocol: v1.ProtocolTCP, TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: metricsPort}},
-		{Port: operatorMetricsPort, Name: metrics.CRPortName, Protocol: v1.ProtocolTCP, TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: operatorMetricsPort}},
+	servicePorts := []core.ServicePort{
+		{Port: metricsPort, Name: metrics.OperatorPortName, Protocol: core.ProtocolTCP, TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: metricsPort}},
+		{Port: operatorMetricsPort, Name: metrics.CRPortName, Protocol: core.ProtocolTCP, TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: operatorMetricsPort}},
 	}
 
 	// Create Service object to expose the metrics port(s).
@@ -215,7 +214,7 @@ func addMetrics(ctx context.Context, cfg *rest.Config, namespace string) {
 
 	// CreateServiceMonitors will automatically create the prometheus-operator ServiceMonitor resources
 	// necessary to configure Prometheus to scrape metrics from this operator.
-	services := []*v1.Service{service}
+	services := []*core.Service{service}
 	_, err = metrics.CreateServiceMonitors(cfg, namespace, services)
 	if err != nil {
 		log.Info("could not create ServiceMonitor object", "error", err.Error())
