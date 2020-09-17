@@ -235,8 +235,15 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 	if err != nil {
 		return errors.Wrap(err, "error creating service object")
 	}
-	if err := vm.createService(kubeProxyService); err != nil {
-		return errors.Wrap(err, "error creating kube-proxy Windows service")
+	// Check if service is already running, then stop it.
+	if vm.isRunning(kubeProxyService) {
+		if err := vm.stopService(kubeProxyService); err != nil {
+			return errors.Wrap(err, "error stopping kube-proxy Windows service")
+		}
+	} else {
+		if err := vm.createService(kubeProxyService); err != nil {
+			return errors.Wrap(err, "error creating kube-proxy Windows service")
+		}
 	}
 	if err := vm.startService(kubeProxyService); err != nil {
 		return errors.Wrap(err, "error starting kube-proxy Windows service")
@@ -328,11 +335,30 @@ func (vm *windows) createService(svc service) error {
 	return nil
 }
 
+// stopService stops the service that was already running
+func (vm *windows) stopService(svc service) error {
+	out, err := vm.Run("sc.exe stop "+svc.Name(), false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to stop %s service with output: %s", svc.Name(), out)
+	}
+	return nil
+}
+
+// isRunning gets the status of given service
+func (vm *windows) isRunning(svc service) bool {
+	out, err := vm.Run("sc.exe query "+svc.Name(), false)
+	if err != nil {
+		log.Info("failed to query service", "service", svc.Name(), "output", out, "err", err)
+		return false
+	}
+	return strings.Contains(out, "RUNNING")
+}
+
 // startService starts a previously created Windows service
 func (vm *windows) startService(svc service) error {
 	out, err := vm.Run("sc.exe start "+svc.Name(), false)
 	if err != nil {
-		return errors.Wrapf(err, "failed to start service with output: %s", out)
+		return errors.Wrapf(err, "failed to start %s service with output: %s", svc.Name(), out)
 	}
 	log.V(1).Info("started service", "name", svc.Name(), "binary", svc.BinaryPath(), "args", svc.Args())
 	return nil
