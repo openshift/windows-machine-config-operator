@@ -116,7 +116,8 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 				log.Printf("waiting for %d Windows nodes", gc.numberOfNodes)
 				return false, nil
 			}
-			return false, err
+			log.Printf("node object listing failed: %v", err)
+			return false, nil
 		}
 		if len(nodes.Items) != int(nodeCount) {
 			log.Printf("waiting for %d/%d Windows nodes", len(nodes.Items), gc.numberOfNodes)
