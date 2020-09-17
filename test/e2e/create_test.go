@@ -95,7 +95,7 @@ func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool
 // the overall wait time in test suite
 func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, expectError bool) error {
 	var nodes *v1.NodeList
-	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac}
+	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, nodeconfig.VersionAnnotation}
 	var creationTime time.Duration
 	if expectError {
 		// The time we expect to wait, if the windowsLabel is

@@ -132,19 +132,24 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.setNode(); err != nil {
 		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
 	}
-	// Apply version annotation to nc.node
+	// Now that basic kubelet configuration is complete, configure networking in the node
+	if err := nc.configureNetwork(); err != nil {
+		return errors.Wrap(err, "configuring node network failed")
+	}
+
+	// Now that the node has been fully configured, add the version annotation to signify that the node
+	// was successfully configured by this version of WMCO
+	// populate node object in nodeConfig once more
+	if err := nc.setNode(); err != nil {
+		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
+	}
 	nc.addVersionAnnotation()
-	// update node object
 	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, metav1.UpdateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error updating node labels and annotations")
 	}
 	nc.node = node
 
-	// Now that basic kubelet configuration is complete, configure networking in the node
-	if err := nc.configureNetwork(); err != nil {
-		return errors.Wrap(err, "configuring node network failed")
-	}
 	return nil
 }
 

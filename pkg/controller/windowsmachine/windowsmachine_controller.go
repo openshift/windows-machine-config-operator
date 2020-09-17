@@ -2,6 +2,7 @@ package windowsmachine
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
@@ -175,9 +176,33 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	}
 	// provisionedPhase is the status of the machine when it is in the `Provisioned` state
 	provisionedPhase := "Provisioned"
-	if machine.Status.Phase == nil || *machine.Status.Phase != provisionedPhase {
-		// Phase can be nil and should be ignored by WMCO
-		// If the Machine is not in provisioned state, WMCO shouldn't care about it
+	// runningPhase is the status of the machine when it is in the `Running` state, indicating that it is configured into a node
+	runningPhase := "Running"
+	if machine.Status.Phase == nil {
+		// Phase is nil and should be ignored by WMCO until phase is set
+		return reconcile.Result{}, nil
+	} else if *machine.Status.Phase == runningPhase {
+		// Machine has been configured into a node, we need to ensure that the version annotation exists. If it doesn't
+		// the machine was not fully configured and needs to be configured properly.
+		if machine.Status.NodeRef == nil {
+			// NodeRef missing. Requeue and hope it is created. It never being created indicates an issue with the
+			// machine api operator
+			return reconcile.Result{}, fmt.Errorf("ready Windows machine %s missing NodeRef", machine.GetName())
+		}
+
+		node := &core.Node{}
+		err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Namespace: machine.Status.NodeRef.Namespace,
+			Name: machine.Status.NodeRef.Name}, node)
+		if err != nil {
+			return reconcile.Result{}, errors.Wrapf(err, "could not get node associated with machine %s", machine.GetName())
+		}
+
+		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; present {
+			// version annotation exists, node is fully configured, do nothing.
+			return reconcile.Result{}, nil
+		}
+	} else if *machine.Status.Phase != provisionedPhase {
+		// Machine is not in provisioned or running state, nothing we should do as of now
 		return reconcile.Result{}, nil
 	}
 
