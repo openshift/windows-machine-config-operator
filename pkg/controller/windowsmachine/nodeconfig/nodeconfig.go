@@ -195,10 +195,12 @@ func (nc *nodeConfig) setNode() error {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			metav1.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
-			return false, errors.Wrap(err, "could not get list of nodes")
+			log.V(1).Info("node object listing failed for", "VM ID", nc.ID(), "error", err)
+			return false, nil
 		}
 		if len(nodes.Items) == 0 {
-			return false, errors.Errorf("no nodes found")
+			log.V(1).Info("got empty node list for", "VM ID", nc.ID(), "error", err)
+			return false, nil
 		}
 		// get the node with given instance id
 		for _, node := range nodes.Items {
@@ -220,7 +222,8 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
-			return false, errors.Wrapf(err, "error getting node %s", nodeName)
+			log.V(1).Info("error getting node object associated with", "VM ID", nc.ID(), "error", err)
+			return false, nil
 		}
 		_, found := node.Annotations[annotation]
 		if found {
