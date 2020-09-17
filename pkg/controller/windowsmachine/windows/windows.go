@@ -287,6 +287,19 @@ func (vm *windows) transferFiles() error {
 		wkl.KubeletPath:              k8sDir,
 	}
 	for src, dest := range srcDestPairs {
+		// Assumption: Ignore transferring files, if they are already present. This is with assumption that Windows VMs
+		// configuration is immutable for a given version of operator. To make it clear, if we want a newer version
+		// of file that we want to transfer, WMCO team should cut a newer version of operator.
+		// The files are tightly coupled with the operator
+		// TODO: Remove this when we do in place upgrades
+		out, err := vm.Run("Test-Path "+dest+"\\"+filepath.Base(src), true)
+		if err != nil {
+			return errors.Wrapf(err, "error while checking if the file %s exists", dest+"\\"+filepath.Base(src))
+		}
+		if strings.Contains(out, "True") {
+			// The file already exists, don't copy it again
+			continue
+		}
 		if err := vm.CopyFile(src, dest); err != nil {
 			return errors.Wrapf(err, "error copying %s to %s ", src, dest)
 		}
