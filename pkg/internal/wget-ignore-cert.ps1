@@ -27,6 +27,9 @@ public static class Dummy {
 }
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = [dummy]::GetDelegate()
 
+# This makes it so all future errors cause the script to return and throw an error
+$ErrorActionPreference = "Stop"
+
 # $null is needed to prevent wget from attempting read the standard input or
 # output streams when attached to the console.
 $null | wget $server -Headers @{'Accept' = $acceptHeader;} -o $output > $null
