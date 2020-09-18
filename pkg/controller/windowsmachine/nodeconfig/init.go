@@ -28,10 +28,12 @@ func init() {
 	kubeAPIServerEndpoint, err := discoverKubeAPIServerEndpoint()
 	if err != nil {
 		log.Error(err, "unable to find kube api server endpoint")
+		return
 	}
 	clusterAddress, err := getClusterAddr(kubeAPIServerEndpoint)
 	if err != nil {
 		log.Error(err, "error getting cluster address")
+		return
 	}
 	// populate the cache
 	nodeConfigCache.workerIgnitionEndPoint = "https://" + clusterAddress + ":22623/config/worker"
