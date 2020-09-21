@@ -35,8 +35,10 @@ RUN make windows
 
 # Build Kubernetes node binaries
 WORKDIR /build/
-RUN git clone --single-branch --branch release-4.6 https://github.com/openshift/kubernetes
+RUN git clone --branch release-4.6 https://github.com/openshift/kubernetes
 WORKDIR /build/kubernetes
+# TODO: Checking out commit before go 1.15 became a requirement, revert checkout in https://issues.redhat.com/browse/WINC-460
+RUN git checkout f5121a6a6a02ddfafd2bfbf5201b092dc5097ab0
 ENV KUBE_BUILD_PLATFORMS windows/amd64
 RUN make WHAT=cmd/kubelet
 RUN make WHAT=cmd/kube-proxy

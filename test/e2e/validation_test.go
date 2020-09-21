@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 	"testing"
@@ -166,9 +167,11 @@ func testUserDataTamper(t *testing.T) {
 					Namespace: "openshift-machine-api"}, secretInstance)
 				if err != nil {
 					if apierrors.IsNotFound(err) {
+						log.Printf("still waiting for user data secret: %v", err)
 						return false, nil
 					}
-					return false, err
+					log.Printf("error listing secrets: %v", err)
+					return false, nil
 				}
 				if string(validUserDataSecret.Data["userData"][:]) != string(secretInstance.Data["userData"][:]) {
 					return false, nil

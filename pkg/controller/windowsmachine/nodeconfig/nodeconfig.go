@@ -132,19 +132,24 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.setNode(); err != nil {
 		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
 	}
-	// Apply version annotation to nc.node
+	// Now that basic kubelet configuration is complete, configure networking in the node
+	if err := nc.configureNetwork(); err != nil {
+		return errors.Wrap(err, "configuring node network failed")
+	}
+
+	// Now that the node has been fully configured, add the version annotation to signify that the node
+	// was successfully configured by this version of WMCO
+	// populate node object in nodeConfig once more
+	if err := nc.setNode(); err != nil {
+		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
+	}
 	nc.addVersionAnnotation()
-	// update node object
 	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, metav1.UpdateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error updating node labels and annotations")
 	}
 	nc.node = node
 
-	// Now that basic kubelet configuration is complete, configure networking in the node
-	if err := nc.configureNetwork(); err != nil {
-		return errors.Wrap(err, "configuring node network failed")
-	}
 	return nil
 }
 
@@ -195,10 +200,12 @@ func (nc *nodeConfig) setNode() error {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			metav1.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
-			return false, errors.Wrap(err, "could not get list of nodes")
+			log.V(1).Info("node object listing failed for", "Machine ID", nc.ID(), "error", err)
+			return false, nil
 		}
 		if len(nodes.Items) == 0 {
-			return false, errors.Errorf("no nodes found")
+			log.V(1).Info("got empty node list for", "Machine ID", nc.ID(), "error", err)
+			return false, nil
 		}
 		// get the node with given instance id
 		for _, node := range nodes.Items {
@@ -220,7 +227,8 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
-			return false, errors.Wrapf(err, "error getting node %s", nodeName)
+			log.V(1).Info("error getting node object associated with", "Machine ID", nc.ID(), "error", err)
+			return false, nil
 		}
 		_, found := node.Annotations[annotation]
 		if found {

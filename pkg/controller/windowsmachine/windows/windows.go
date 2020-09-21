@@ -235,8 +235,15 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 	if err != nil {
 		return errors.Wrap(err, "error creating service object")
 	}
-	if err := vm.createService(kubeProxyService); err != nil {
-		return errors.Wrap(err, "error creating kube-proxy Windows service")
+	// Check if service is already running, then stop it.
+	if vm.isRunning(kubeProxyService) {
+		if err := vm.stopService(kubeProxyService); err != nil {
+			return errors.Wrap(err, "error stopping kube-proxy Windows service")
+		}
+	} else {
+		if err := vm.createService(kubeProxyService); err != nil {
+			return errors.Wrap(err, "error creating kube-proxy Windows service")
+		}
 	}
 	if err := vm.startService(kubeProxyService); err != nil {
 		return errors.Wrap(err, "error starting kube-proxy Windows service")
@@ -280,6 +287,19 @@ func (vm *windows) transferFiles() error {
 		wkl.KubeletPath:              k8sDir,
 	}
 	for src, dest := range srcDestPairs {
+		// Assumption: Ignore transferring files, if they are already present. This is with assumption that Windows VMs
+		// configuration is immutable for a given version of operator. To make it clear, if we want a newer version
+		// of file that we want to transfer, WMCO team should cut a newer version of operator.
+		// The files are tightly coupled with the operator
+		// TODO: Remove this when we do in place upgrades
+		out, err := vm.Run("Test-Path "+dest+"\\"+filepath.Base(src), true)
+		if err != nil {
+			return errors.Wrapf(err, "error while checking if the file %s exists", dest+"\\"+filepath.Base(src))
+		}
+		if strings.Contains(out, "True") {
+			// The file already exists, don't copy it again
+			continue
+		}
 		if err := vm.CopyFile(src, dest); err != nil {
 			return errors.Wrapf(err, "error copying %s to %s ", src, dest)
 		}
@@ -328,11 +348,30 @@ func (vm *windows) createService(svc service) error {
 	return nil
 }
 
+// stopService stops the service that was already running
+func (vm *windows) stopService(svc service) error {
+	out, err := vm.Run("sc.exe stop "+svc.Name(), false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to stop %s service with output: %s", svc.Name(), out)
+	}
+	return nil
+}
+
+// isRunning gets the status of given service
+func (vm *windows) isRunning(svc service) bool {
+	out, err := vm.Run("sc.exe query "+svc.Name(), false)
+	if err != nil {
+		log.Info("failed to query service", "service", svc.Name(), "output", out, "err", err)
+		return false
+	}
+	return strings.Contains(out, "RUNNING")
+}
+
 // startService starts a previously created Windows service
 func (vm *windows) startService(svc service) error {
 	out, err := vm.Run("sc.exe start "+svc.Name(), false)
 	if err != nil {
-		return errors.Wrapf(err, "failed to start service with output: %s", out)
+		return errors.Wrapf(err, "failed to start %s service with output: %s", svc.Name(), out)
 	}
 	log.V(1).Info("started service", "name", svc.Name(), "binary", svc.BinaryPath(), "args", svc.Args())
 	return nil
