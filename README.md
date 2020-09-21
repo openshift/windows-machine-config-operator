@@ -14,10 +14,11 @@ the latest version of the operator.
 ## Pre-requisites
 - OpenShift 4.6+ cluster configured with
   [hybrid OVN Kubernetes networking](https://github.com/openshift/windows-machine-config-bootstrapper/blob/release-4.4/tools/ansible/docs/ocp-4-4-with-windows-server.md#bring-up-the-openshift-cluster-with-ovn-kubernetes). The linked instructions also apply to installing 4.6+ clusters.
-- [Install](https://sdk.operatorframework.io/docs/install-operator-sdk/) operator-sdk
+- [Install](https://v0-18-x.sdk.operatorframework.io/docs/install-operator-sdk/) operator-sdk
   v0.18.1
+  - Note that the doc sets the release to `v0.18.2`. Please use `v0.18.1` instead.
 - The operator is written using operator-sdk [v0.18.1](https://github.com/operator-framework/operator-sdk/releases/tag/v0.18.1)
-  and has the same [pre-requisites](https://sdk.operatorframework.io/docs/install-operator-sdk/#prerequisites) as it
+  and has the same [pre-requisites](https://v0-18-x.sdk.operatorframework.io/docs/install-operator-sdk/#prerequisites) as it
   does.
 - Instructions assume that the user is using [Podman](https://podman.io/) container engine.
 
@@ -52,9 +53,6 @@ To clean-up the installation, use:
 ```shell script
 hack/olm.sh cleanup
 ```
-
-*Operator-sdk has a known bug while using `operator-sdk run/cleanup packagemanifests` where it shows failure on success. 
-Track the issue [here](https://github.com/operator-framework/operator-sdk/issues/2938). The error does not imply that the operator will not work.*
 
 ### Running e2e tests on a cluster
 We need to set up all the environment variables required in [Development workflow](#development-workflow) as well as: 
@@ -245,21 +243,21 @@ kind: MachineSet
 metadata:
   labels:
     machine.openshift.io/cluster-api-cluster: <infrastructureID> 
-  name: <infrastructureID>-worker-<zone>
+  name: <infrastructureID>-windows-worker-<zone>
   namespace: openshift-machine-api
 spec:
   replicas: 1
   selector:
     matchLabels:
       machine.openshift.io/cluster-api-cluster: <infrastructureID> 
-      machine.openshift.io/cluster-api-machineset: <infrastructureID>-worker-<zone>
+      machine.openshift.io/cluster-api-machineset: <infrastructureID>-windows-worker-<zone>
   template:
     metadata:
       labels:
         machine.openshift.io/cluster-api-cluster: <infrastructureID> 
         machine.openshift.io/cluster-api-machine-role: worker
         machine.openshift.io/cluster-api-machine-type: worker
-        machine.openshift.io/cluster-api-machineset: <infrastructureID>-worker-<zone>
+        machine.openshift.io/cluster-api-machineset: <infrastructureID>-windows-worker-<zone>
         machine.openshift.io/os-id: Windows
     spec:
       metadata:
