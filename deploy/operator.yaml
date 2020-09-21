@@ -14,10 +14,6 @@ spec:
     spec:
       hostNetwork: true
       serviceAccountName: windows-machine-config-operator
-      volumes:
-      - name: cloud-private-key
-        secret:
-          secretName: cloud-private-key
       containers:
         - name: windows-machine-config-operator
           # Replace this with the built image name
@@ -39,7 +35,3 @@ spec:
                   fieldPath: metadata.name
             - name: OPERATOR_NAME
               value: "windows-machine-config-operator"
-          volumeMounts:
-          - name: cloud-private-key
-            mountPath: "/etc/private-key/"
-            readOnly: true

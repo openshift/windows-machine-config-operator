@@ -129,7 +129,6 @@ func main() {
 		wkl.KubeProxyPath,
 		wkl.IgnoreWgetPowerShellPath,
 		wkl.WmcbPath,
-		wkl.PrivateKeyPath,
 		wkl.CNIConfigTemplatePath,
 		wkl.HNSPSModule,
 	}
@@ -138,6 +137,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The watched namespace defined by the WMCO CSV
 	namespace, err := k8sutil.GetWatchNamespace()
 	if err != nil {
 		log.Error(err, "failed to get watch namespace")
@@ -173,7 +173,7 @@ func main() {
 	}
 
 	// Setup all Controllers
-	if err := controller.AddToManager(mgr, clusterconfig.network); err != nil {
+	if err := controller.AddToManager(mgr, clusterconfig.network, namespace); err != nil {
 		log.Error(err, "failed to add all Controllers to the Manager")
 		os.Exit(1)
 	}

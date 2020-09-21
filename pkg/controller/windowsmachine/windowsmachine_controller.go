@@ -7,10 +7,6 @@ import (
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
-	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
@@ -30,6 +26,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 )
 
 const (
@@ -41,8 +41,8 @@ var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new WindowsMachine Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and start it when the Manager is Started.
-func Add(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig) error {
-	reconciler, err := newReconciler(mgr, networkConfig)
+func Add(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig, watchNamespace string) error {
+	reconciler, err := newReconciler(mgr, networkConfig, watchNamespace)
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s reconciler", ControllerName)
 	}
@@ -50,7 +50,7 @@ func Add(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig)
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig) (reconcile.Reconciler, error) {
+func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig, watchNamespace string) (reconcile.Reconciler, error) {
 	// The default client serves read requests from the cache which
 	// could be stale and result in a get call to return an older version
 	// of the object. Hence we are using a non-default-client referenced
@@ -70,11 +70,6 @@ func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetw
 		return nil, errors.Wrap(err, "error creating kubernetes clientset")
 	}
 
-	signer, err := signer.Create()
-	if err != nil {
-		return nil, errors.Wrapf(err, "error creating signer using private key: %v", wkl.PrivateKeyPath)
-	}
-
 	serviceCIDR, err := networkConfig.GetServiceCIDR()
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting service CIDR")
@@ -84,9 +79,9 @@ func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetw
 			scheme:             mgr.GetScheme(),
 			k8sclientset:       clientset,
 			clusterServiceCIDR: serviceCIDR,
-			signer:             signer,
 			vxlanPort:          networkConfig.VXLANPort(),
 			recorder:           mgr.GetEventRecorderFor(ControllerName),
+			watchNamespace:     watchNamespace,
 		},
 		nil
 }
@@ -150,6 +145,8 @@ type ReconcileWindowsMachine struct {
 	vxlanPort string
 	// recorder to generate events
 	recorder record.EventRecorder
+	// watchNamespace is the namespace the operator is watching as defined by the operator CSV
+	watchNamespace string
 }
 
 // Reconcile reads that state of the cluster for a Windows Machine object and makes changes based on the state read
@@ -158,10 +155,18 @@ type ReconcileWindowsMachine struct {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcile.Result, error) {
 	log.Info("reconciling", "namespace", request.Namespace, "name", request.Name)
-	// validate userData secret
-	if err := r.validateUserData(); err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "error validating userData secret")
+	// Get the private key that will be used to configure the instance
+	// Doing this before fetching the machine allows us to warn the user better about the missing private key
+	privateKey, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
+	if err != nil {
+		if k8sapierrors.IsNotFound(err) {
+			// Private key was removed, requeue
+			return reconcile.Result{}, errors.Wrapf(err, "%s does not exist, please create it", secrets.PrivateKeySecret)
+		}
+		return reconcile.Result{}, errors.Wrapf(err, "unable to get secret %s", request.NamespacedName)
 	}
+
 	// Fetch the Machine instance
 	machine := &mapi.Machine{}
 	if err := r.client.Get(context.TODO(), request.NamespacedName, machine); err != nil {
@@ -204,6 +209,16 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	} else if *machine.Status.Phase != provisionedPhase {
 		// Machine is not in provisioned or running state, nothing we should do as of now
 		return reconcile.Result{}, nil
+	}
+
+	// Update the signer with the existing privateKey
+	r.signer, err = signer.Create(privateKey)
+	if err != nil {
+		return reconcile.Result{}, errors.Wrap(err, "error creating signer")
+	}
+	// validate userData secret
+	if err := r.validateUserData(privateKey); err != nil {
+		return reconcile.Result{}, errors.Wrapf(err, "error validating userData secret")
 	}
 
 	// Get the IP address associated with the Windows machine.
@@ -263,7 +278,7 @@ func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID string) er
 
 // validateUserData validates userData secret. It returns error if the secret doesn`t
 // contain expected public key bytes.
-func (r *ReconcileWindowsMachine) validateUserData() error {
+func (r *ReconcileWindowsMachine) validateUserData(privateKey []byte) error {
 	userDataSecret := &core.Secret{}
 	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data", Namespace: "openshift-machine-api"}, userDataSecret)
 
@@ -272,7 +287,7 @@ func (r *ReconcileWindowsMachine) validateUserData() error {
 	}
 
 	secretData := string(userDataSecret.Data["userData"][:])
-	desiredUserDataSecret, err := secrets.GenerateUserData()
+	desiredUserDataSecret, err := secrets.GenerateUserData(privateKey)
 	if err != nil {
 		return err
 	}

@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -20,6 +19,9 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
+	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 )
 
 // getInstanceID gets the instanceID of VM for a given cloud provider ID
@@ -109,7 +111,7 @@ func createSigner() (ssh.Signer, error) {
 		return nil, errors.Wrapf(err, "failed to retrieve cloud private key secret")
 	}
 
-	privateKeyBytes := privateKeySecret.Data["private-key.pem"][:]
+	privateKeyBytes := privateKeySecret.Data[secrets.PrivateKeySecretKey][:]
 	if privateKeyBytes == nil {
 		return nil, errors.New("failed to retrieve private key using cloud private key secret")
 	}

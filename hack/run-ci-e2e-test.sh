@@ -57,6 +57,12 @@ while getopts ":n:k:b:s" opt; do
   esac
 done
 
+# KUBE_SSH_KEY_PATH needs to be set in order to create the cloud-private-key secret
+if [ -z "$KUBE_SSH_KEY_PATH" ]; then
+    echo "env KUBE_SSH_KEY_PATH not found"
+    return 1
+fi
+
 OSDK=$(get_operator_sdk)
 
 # Set default values for the flags. Without this operator-sdk flags are getting
@@ -95,12 +101,16 @@ fi
 
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
+
+# Test that the operator is running when the private key secret is not present
+OSDK_WMCO_test $OSDK "-run=TestWMCO/operator_deployed_without_private_key_secret -v -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
+
 # Run the creation tests and skip deletion of the Windows VMs
-OSDK_WMCO_test $OSDK "-run=TestWMCO/create -v -timeout=90m -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME $WMCO_PATH_OPTION"
+OSDK_WMCO_test $OSDK "-run=TestWMCO/create -v -timeout=90m -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
-OSDK_WMCO_test $OSDK "-run=TestWMCO/destroy -v -timeout=60m -ssh-key-pair=$KEY_PAIR_NAME"
+OSDK_WMCO_test $OSDK "-run=TestWMCO/destroy -v -timeout=60m -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH"
 
 # Get logs on success before cleanup
 get_WMCO_logs

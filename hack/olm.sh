@@ -38,10 +38,6 @@ if [ -z "$AWS_SHARED_CREDENTIALS_FILE" ]; then
     error-exit "env AWS_SHARED_CREDENTIALS_FILE not found"
 fi
 
-if [ -z "$KUBE_SSH_KEY_PATH" ]; then
-    error-exit "env KUBE_SSH_KEY_PATH not found"
-fi
-
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
 

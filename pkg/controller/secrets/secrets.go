@@ -1,29 +1,54 @@
 package secrets
 
 import (
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
-	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
+	"context"
+
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeTypes "k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
 )
 
 const (
-	userDataSecret    = "windows-user-data"
+	// userDataSecret is the name of the userData secret that WMCO creates
+	userDataSecret = "windows-user-data"
+	// userDataNamespace is the namespace of the userData secret that WMCO creates
 	userDataNamespace = "openshift-machine-api"
+	// PrivateKeySecret is the name of the private key secret provided by the user
+	PrivateKeySecret = "cloud-private-key"
+	// PrivateKeySecretKey is the key within the private key secret which holds the private key
+	PrivateKeySecretKey = "private-key.pem"
 )
 
+// GetPrivateKey fetches the specified secret and extracts the private key data
+func GetPrivateKey(secret kubeTypes.NamespacedName, c client.Client) ([]byte, error) {
+	// Fetch the private key secret
+	privateKeySecret := &core.Secret{}
+	if err := c.Get(context.TODO(), secret, privateKeySecret); err != nil {
+		// Error reading the object - requeue the request.
+		return []byte{}, err
+	}
+	privateKey, ok := privateKeySecret.Data[PrivateKeySecretKey]
+	if !ok {
+		return []byte{}, errors.New("cloud-private-key missing 'private-key.pem' secret")
+	}
+	return privateKey, nil
+}
+
 // GenerateUserData generates the desired value of userdata secret.
-func GenerateUserData() (*core.Secret, error) {
-	signer, err := signer.Create()
+func GenerateUserData(privateKey []byte) (*core.Secret, error) {
+	keySigner, err := signer.Create(privateKey)
 	if err != nil {
 		return nil, err
 	}
 
-	pubKeyBytes := ssh.MarshalAuthorizedKey(signer.PublicKey())
+	pubKeyBytes := ssh.MarshalAuthorizedKey(keySigner.PublicKey())
 	if pubKeyBytes == nil {
-		return nil, errors.Errorf("failed to retrieve public key using signer for private key: %v", wkl.PrivateKeyPath)
+		return nil, errors.Errorf("failed to retrieve public key using signer")
 	}
 
 	// sshd service is started to create the default sshd_config file. This file is modified
@@ -62,5 +87,4 @@ func GenerateUserData() (*core.Secret, error) {
 	}
 
 	return userDataSecret, nil
-
 }
