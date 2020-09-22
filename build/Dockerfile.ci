@@ -156,5 +156,8 @@ RUN chmod g=u /etc
 RUN mkdir -m 777 -p /etc/cloud/
 RUN mkdir -m 777 -p /etc/private-key/
 
+# Open up permissions within WMCO directory
+RUN chmod -R g=u+w /go/src/github.com/openshift/windows-machine-config-operator/
+
 ENTRYPOINT [ "/bin/bash" ]
 USER ${USER_UID}
