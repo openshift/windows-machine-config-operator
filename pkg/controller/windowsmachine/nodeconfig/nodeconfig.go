@@ -72,7 +72,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, clusterServiceCIDR, vxlanPort string,
+func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, providerName, instanceID, clusterServiceCIDR, vxlanPort string,
 	signer ssh.Signer) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
@@ -94,7 +94,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, clust
 			"creating new node config")
 	}
 
-	win, err := windows.New(ipAddress, instanceID, nodeConfigCache.workerIgnitionEndPoint, vxlanPort, signer)
+	win, err := windows.New(ipAddress, providerName, instanceID, nodeConfigCache.workerIgnitionEndPoint, vxlanPort, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}

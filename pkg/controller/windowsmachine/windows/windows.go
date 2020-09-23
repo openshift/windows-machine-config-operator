@@ -100,15 +100,26 @@ type windows struct {
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(ipAddress, instanceID, workerIgnitionEndpoint, vxlanPort string, signer ssh.Signer) (Windows, error) {
+func New(ipAddress, providerName, instanceID, workerIgnitionEndpoint, vxlanPort string, signer ssh.Signer) (Windows, error) {
 	if workerIgnitionEndpoint == "" {
 		return nil, errors.New("cannot use empty ignition endpoint")
 	}
 
+	// TODO: This should be changed so that the "core" user is used on all platforms for SSH connections.
+	// https://issues.redhat.com/browse/WINC-430
+	var adminUser string
+	if providerName == "azure" {
+		adminUser = "capi"
+	} else {
+		adminUser = "Administrator"
+	}
+
+	log.V(1).Info("configuring SSH access to the Windows VM for user", "user", adminUser)
 	// Update the logger name with the VM's cloud ID
 	log = logf.Log.WithName(fmt.Sprintf("VM %s", instanceID))
 	// For now, let's use the `Administrator` user for every node
-	conn, err := newSshConnectivity("Administrator", ipAddress, signer)
+
+	conn, err := newSshConnectivity(adminUser, ipAddress, signer)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instanceID)
 	}
