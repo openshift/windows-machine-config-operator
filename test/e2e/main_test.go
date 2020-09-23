@@ -17,9 +17,6 @@ import (
 var (
 	// numberOfNodes represent the number of nodes to be dealt with in the test suite.
 	numberOfNodes int
-	// skipNodeDeletion allows the Windows nodes to hang around after the test suite has been run. This skips the deletion
-	// test suite.
-	skipNodeDeletion bool
 	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
 	sshKeyPair string
 	// privateKeyPath is the path of the private key file used to configure the Windows node
@@ -40,8 +37,6 @@ type globalContext struct {
 	numberOfNodes int32
 	// nodes are the Windows nodes created by the operator
 	nodes []v1.Node
-	// skipNodeDeletion allows the Windows nodes to hang around after the test suite has been run.
-	skipNodeDeletion bool
 	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
 	sshKeyPair string
 	// privateKeyPath is the path of the private key file used to configure the Windows node
@@ -105,8 +100,6 @@ func (tc *testContext) cleanup() {
 
 func TestMain(m *testing.M) {
 	flag.IntVar(&numberOfNodes, "node-count", 2, "number of nodes to be created for testing")
-	flag.BoolVar(&skipNodeDeletion, "skip-node-deletion", false,
-		"Option to disable deletion of the VMs")
 	// We're using openshift-dev as default value to be used in CI
 	flag.StringVar(&sshKeyPair, "ssh-key-pair", "openshift-dev", "SSH Key Pair to be used for decrypting "+
 		"the Windows Node password")

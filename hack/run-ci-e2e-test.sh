@@ -45,7 +45,7 @@ while getopts ":n:k:b:s" opt; do
       KEY_PAIR_NAME=$OPTARG
       ;;
     s ) # process option for skipping deleting Windows VMs created by test suite
-      SKIP_NODE_DELETION="-skip-node-deletion"
+      SKIP_NODE_DELETION="true"
       ;;
     b ) # path to the WMCO binary, used for version validation
       WMCO_PATH_OPTION="-wmco-path=$OPTARG"
@@ -71,7 +71,7 @@ OSDK=$(get_operator_sdk)
 # specified in main_test.go has literally no effect. Not sure, if this is because of
 # the way operator-sdk testing is done using `go test []string{}
 NODE_COUNT=${NODE_COUNT:-2}
-SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"-skip-node-deletion=false"}
+SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"false"}
 KEY_PAIR_NAME=${KEY_PAIR_NAME:-"openshift-dev"}
 
 # If ARTIFACT_DIR is not set, create a temp directory for artifacts
@@ -103,19 +103,22 @@ fi
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
 
 # Test that the operator is running when the private key secret is not present
-OSDK_WMCO_test $OSDK "-run=TestWMCO/operator_deployed_without_private_key_secret -v -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
+OSDK_WMCO_test $OSDK "-run=TestWMCO/operator_deployed_without_private_key_secret -v -node-count=$NODE_COUNT -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
 
-# Run the creation tests and skip deletion of the Windows VMs
-OSDK_WMCO_test $OSDK "-run=TestWMCO/create -v -timeout=90m -node-count=$NODE_COUNT -skip-node-deletion -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
+# Run the creation tests of the Windows VMs
+OSDK_WMCO_test $OSDK "-run=TestWMCO/create -v -timeout=90m -node-count=$NODE_COUNT -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
-OSDK_WMCO_test $OSDK "-run=TestWMCO/destroy -v -timeout=60m -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH"
-
-# Get logs on success before cleanup
-get_WMCO_logs
-
-# Cleanup the operator resources
-cleanup_WMCO $OSDK
+if ! $SKIP_NODE_DELETION; then
+  OSDK_WMCO_test $OSDK "-run=TestWMCO/destroy -v -timeout=60m -ssh-key-pair=$KEY_PAIR_NAME --private-key-path=$KUBE_SSH_KEY_PATH"
+  # Get logs on success before cleanup
+  get_WMCO_logs
+  # Cleanup the operator resources
+  cleanup_WMCO $OSDK
+else
+  # Get logs on success
+  get_WMCO_logs
+fi
 
 exit 0
