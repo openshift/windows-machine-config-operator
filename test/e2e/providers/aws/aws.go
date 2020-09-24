@@ -3,7 +3,6 @@ package aws
 import (
 	"encoding/json"
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/rand"
 	"log"
 	"os"
 	"strings"
@@ -16,11 +15,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/iam"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
-	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
-	"k8s.io/api/core/v1"
+	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/rand"
 	awsprovider "sigs.k8s.io/cluster-api-provider-aws/pkg/apis/awsprovider/v1beta1"
+
+	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
 const (
@@ -44,8 +45,6 @@ type awsProvider struct {
 	openShiftClient *clusterinfo.OpenShift
 	// region in which the Machine needs to be created
 	region string
-	// sshKeyPair is the key pair associated with the Windows VM
-	sshKeyPair string
 }
 
 // newSession uses AWS credentials to create and returns a session for interacting with EC2.
@@ -64,7 +63,7 @@ func newSession(credentialPath, credentialAccountID, region string) (*awssession
 // credentialAccountID is the account name the user uses to create VM instance.
 // The credentialAccountID should exist in the AWS credentials file pointing at one specific credential.
 func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
-	credentialAccountID, instanceType, region, sshKeyPair string, hasCustomVXLANPort bool) (*awsProvider, error) {
+	credentialAccountID, instanceType, region string, hasCustomVXLANPort bool) (*awsProvider, error) {
 	session, err := newSession(credentialPath, credentialAccountID, region)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new AWS session: %v", err)
@@ -83,13 +82,12 @@ func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
 		ec2Client,
 		openShiftClient,
 		region,
-		sshKeyPair,
 	}, nil
 }
 
 // SetupAWSCloudProvider creates AWS provider using the give OpenShift client
 // This is the first step of the e2e test and fails the test upon error.
-func SetupAWSCloudProvider(region, sshKeyPair string, hasCustomVXLANPort bool) (*awsProvider, error) {
+func SetupAWSCloudProvider(region string, hasCustomVXLANPort bool) (*awsProvider, error) {
 	oc, err := clusterinfo.GetOpenShift()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OpenShift client with error: %v", err)
@@ -99,8 +97,7 @@ func SetupAWSCloudProvider(region, sshKeyPair string, hasCustomVXLANPort bool) (
 	if len(awsCredentials) == 0 {
 		return nil, fmt.Errorf("AWS_SHARED_CREDENTIALS_FILE env var is empty")
 	}
-	awsProvider, err := newAWSProvider(oc, awsCredentials, "default", instanceType, region, sshKeyPair,
-		hasCustomVXLANPort)
+	awsProvider, err := newAWSProvider(oc, awsCredentials, "default", instanceType, region, hasCustomVXLANPort)
 	if err != nil {
 		return nil, fmt.Errorf("error obtaining aws interface object: %v", err)
 	}
@@ -355,7 +352,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 		IAMInstanceProfile: &awsprovider.AWSResourceReference{
 			ID: instanceProfile.Name,
 		},
-		CredentialsSecret: &v1.LocalObjectReference{
+		CredentialsSecret: &core.LocalObjectReference{
 			Name: "aws-cloud-credentials",
 		},
 		SecurityGroups: []awsprovider.AWSResourceReference{
@@ -371,8 +368,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 			a.region,
 			*subnet.AvailabilityZone,
 		},
-		UserDataSecret: &v1.LocalObjectReference{Name: "windows-user-data"},
-		KeyName:        &a.sshKeyPair,
+		UserDataSecret: &core.LocalObjectReference{Name: "windows-user-data"},
 	}
 
 	rawBytes, err := json.Marshal(providerSpec)

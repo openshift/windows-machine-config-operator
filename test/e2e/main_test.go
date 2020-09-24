@@ -5,20 +5,19 @@ import (
 	"testing"
 	"time"
 
+	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	"github.com/pkg/errors"
+	core "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
+
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers"
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
-	"github.com/pkg/errors"
-	"k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 var (
 	// numberOfNodes represent the number of nodes to be dealt with in the test suite.
 	numberOfNodes int
-	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
-	sshKeyPair string
 	// privateKeyPath is the path of the private key file used to configure the Windows node
 	privateKeyPath string
 	// wmcoPath is the path to the WMCO binary that was used within the operator image
@@ -36,9 +35,7 @@ type globalContext struct {
 	// numberOfNodes to be used for the test suite.
 	numberOfNodes int32
 	// nodes are the Windows nodes created by the operator
-	nodes []v1.Node
-	// sshKeyPair is the name of the keypair that we can use to decrypt the Windows node created in AWS cloud
-	sshKeyPair string
+	nodes []core.Node
 	// privateKeyPath is the path of the private key file used to configure the Windows node
 	privateKeyPath string
 }
@@ -83,7 +80,7 @@ func NewTestContext(t *testing.T) (*testContext, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to determine if cluster is using custom VXLAN port")
 	}
-	cloudProvider, err := providers.NewCloudProvider(sshKeyPair, hasCustomVXLANPort)
+	cloudProvider, err := providers.NewCloudProvider(hasCustomVXLANPort)
 	if err != nil {
 		return nil, errors.Wrap(err, "cloud provider creation failed")
 	}
@@ -100,9 +97,6 @@ func (tc *testContext) cleanup() {
 
 func TestMain(m *testing.M) {
 	flag.IntVar(&numberOfNodes, "node-count", 2, "number of nodes to be created for testing")
-	// We're using openshift-dev as default value to be used in CI
-	flag.StringVar(&sshKeyPair, "ssh-key-pair", "openshift-dev", "SSH Key Pair to be used for decrypting "+
-		"the Windows Node password")
 	flag.StringVar(&wmcoPath, "wmco-path", "./build/_output/bin/windows-machine-config-operator",
 		"Path to the WMCO binary, used for version validation")
 	flag.StringVar(&privateKeyPath, "private-key-path", "",
