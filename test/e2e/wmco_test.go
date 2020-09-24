@@ -34,7 +34,6 @@ func TestWMCO(t *testing.T) {
 	// Reference:
 	// https://github.com/operator-framework/operator-sdk/blob/b448429687fd7cb2343d022814ed70c9d264612b/pkg/test/main_entry.go#L51
 	gc.numberOfNodes = int32(numberOfNodes)
-	gc.skipNodeDeletion = skipNodeDeletion
 	gc.sshKeyPair = sshKeyPair
 	require.NotEmpty(t, privateKeyPath, "private-key-path is not set")
 	gc.privateKeyPath = privateKeyPath
@@ -48,9 +47,8 @@ func TestWMCO(t *testing.T) {
 	// individual test suites after the operator is running
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
 	t.Run("create", creationTestSuite)
-	if !gc.skipNodeDeletion {
-		t.Run("destroy", deletionTestSuite)
-	}
+	t.Run("destroy", deletionTestSuite)
+
 }
 
 // setupWMCO setups the resources needed to run WMCO tests
