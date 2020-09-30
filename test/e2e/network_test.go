@@ -70,6 +70,17 @@ func testEastWestNetworking(t *testing.T) {
 		err = testCtx.waitUntilJobSucceeds(linuxCurlerJob.Name)
 		assert.NoError(t, err, "could not curl the Windows server from a linux container")
 
+		// Create a ClusterIP service
+		clusterIPSVC, err := testCtx.createService(winServerDeployment.Name, v1.ServiceTypeClusterIP, *winServerDeployment.Spec.Selector)
+		defer testCtx.deleteService(clusterIPSVC.Name)
+		require.NoError(t, err)
+		// This will install curl and then curl the windows server through the ClusterIP service.
+		linuxCurlerCommand = []string{"bash", "-c", "yum update; yum install curl -y; curl " + clusterIPSVC.Spec.ClusterIP}
+		linuxCurlerJob, err = testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), linuxCurlerCommand)
+		require.NoError(t, err, "could not create Linux job")
+		err = testCtx.waitUntilJobSucceeds(linuxCurlerJob.Name)
+		assert.NoError(t, err, "could not curl the Windows server from a linux container through a clusterIP service")
+
 		// test Windows <-> Windows on same node
 		winCurlerJob, err := testCtx.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID), winServerIP)
 		require.NoError(t, err, "could not create Windows job")
@@ -177,7 +188,7 @@ func testNorthSouthNetworking(t *testing.T) {
 // getThroughLoadBalancer does a GET request to the given webserver through a load balancer service
 func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) error {
 	// Create a load balancer svc to expose the webserver
-	loadBalancer, err := tc.createLoadBalancer(webserver.Name, *webserver.Spec.Selector)
+	loadBalancer, err := tc.createService(webserver.Name, v1.ServiceTypeLoadBalancer, *webserver.Spec.Selector)
 	if err != nil {
 		return errors.Wrap(err, "could not create load balancer for Windows Server")
 	}
@@ -211,14 +222,14 @@ func retryGET(url string) (*http.Response, error) {
 	return nil, fmt.Errorf("timed out trying to GET %s: %s", url, err)
 }
 
-// createLoadBalancer creates a new load balancer for pods matching the label selector
-func (tc *testContext) createLoadBalancer(name string, selector metav1.LabelSelector) (*v1.Service, error) {
+// createService creates a new service of type serviceType for pods matching the label selector
+func (tc *testContext) createService(name string, serviceType v1.ServiceType, selector metav1.LabelSelector) (*v1.Service, error) {
 	svcSpec := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
 		Spec: v1.ServiceSpec{
-			Type: v1.ServiceTypeLoadBalancer,
+			Type: serviceType,
 			Ports: []v1.ServicePort{
 				{
 					Protocol: v1.ProtocolTCP,
