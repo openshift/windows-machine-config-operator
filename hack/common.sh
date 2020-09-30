@@ -45,6 +45,25 @@ OSDK_WMCO_management() {
   fi
 }
 
+build_WMCO() {
+  local OSDK=$1
+  
+  if [ -z "$OPERATOR_IMAGE" ]; then
+      error-exit "OPERATOR_IMAGE not set"
+  fi
+
+  $OSDK build "$OPERATOR_IMAGE" --image-builder $CONTAINER_TOOL $noCache \
+    --go-build-args "-ldflags -X=github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}"
+  if [ $? -ne 0 ] ; then
+      error-exit "failed to build operator image"
+  fi
+
+  $CONTAINER_TOOL push "$OPERATOR_IMAGE"
+  if [ $? -ne 0 ] ; then
+      error-exit "failed to push operator image to remote repository"
+  fi
+}
+
 # Creates a temporary directory to hold edited manifests, validates the operator bundle
 # and prepares the cluster to run the operator and runs the operator on the cluster using OLM
 # Parameters:

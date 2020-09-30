@@ -20,7 +20,7 @@ function error-exit() {
 
 # specify the action. Either run or cleanup the operator
 ACTION=$1
-if [[ ! "$ACTION" =~ ^run|cleanup$ ]]; then
+if [[ ! "$ACTION" =~ ^build|run|cleanup$ ]]; then
     error-exit "Action (1st parameter) must be \"run\" or \"cleanup\""
 fi
 shift # shift position of the positional parameters for getopts
@@ -48,21 +48,12 @@ VERSION=$(get_version)
 # Builds the container image and pushes it to remote repository. Uses this built image to run the operator on the cluster.
 # It is user's responsibility to clean old/unused containers in container repository as well as local system.
 case "$ACTION" in
+    build)
+  build_WMCO $OSDK 
+
+    ;;
     run)
-  if [ -z "$OPERATOR_IMAGE" ]; then
-      error-exit "OPERATOR_IMAGE not set"
-  fi
-
-  $OSDK build "$OPERATOR_IMAGE" --image-builder $CONTAINER_TOOL $noCache \
-    --go-build-args "-ldflags -X=github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}"
-  if [ $? -ne 0 ] ; then
-      error-exit "failed to build operator image"
-  fi
-
-  $CONTAINER_TOOL push "$OPERATOR_IMAGE"
-  if [ $? -ne 0 ] ; then
-      error-exit "failed to push operator image to remote repository"
-  fi
+  build_WMCO $OSDK
 
   # Setup and run the operator
   run_WMCO $OSDK
