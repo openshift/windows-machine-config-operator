@@ -185,9 +185,18 @@ func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) erro
 		return errors.Wrap(err, "error waiting for load balancer ingress")
 	}
 
-	// Try and read from the webserver through the load balancer. The load balancer takes a fair amount of time,
-	// ~3 min, to start properly routing connections.
-	resp, err := retryGET("http://" + loadBalancer.Status.LoadBalancer.Ingress[0].Hostname)
+	// Try and read from the webserver through the load balancer.
+	// On AWS the LB ingress object contains a hostname, on Azure an IP.
+	// The load balancer takes a fair amount of time, ~3 min, to start properly routing connections.
+	var locator string
+	if loadBalancer.Status.LoadBalancer.Ingress[0].Hostname != "" {
+		locator = loadBalancer.Status.LoadBalancer.Ingress[0].Hostname
+	} else if loadBalancer.Status.LoadBalancer.Ingress[0].IP != "" {
+		locator = loadBalancer.Status.LoadBalancer.Ingress[0].IP
+	} else {
+		return errors.New("load balancer ingress object is empty")
+	}
+	resp, err := retryGET("http://" + locator)
 	if err != nil {
 		return fmt.Errorf("could not GET from load balancer: %v", loadBalancer)
 	}
