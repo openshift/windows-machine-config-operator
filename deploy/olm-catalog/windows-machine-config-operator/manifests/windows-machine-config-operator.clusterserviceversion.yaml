@@ -81,6 +81,15 @@ spec:
           - get
           - list
           - watch
+          - delete
+        - apiGroups:
+          - machine.openshift.io
+          resources:
+          - machinesets
+          verbs:
+          - list
+          - get
+          - watch
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator

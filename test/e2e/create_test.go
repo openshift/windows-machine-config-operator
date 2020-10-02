@@ -26,7 +26,6 @@ func creationTestSuite(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
 	require.NoError(t, testCtx.createPrivateKeySecret(), "could not create private key secret")
-	defer testCtx.deletePrivateKeySecret()
 
 	// The order of tests here are important. testValidateSecrets is what populates the windowsVMs slice in the gc.
 	// testNetwork needs that to check if the HNS networks have been installed. Ideally we would like to run testNetwork
@@ -76,7 +75,7 @@ func testWindowsNodeCreation(t *testing.T) {
 		if err := testCtx.createWindowsMachineSet(test.replicas, test.isWindows); err != nil {
 			t.Fatalf("failed to create Windows MachineSet %v ", err)
 		}
-		err := testCtx.waitForWindowsNodes(test.replicas, true, !test.isWindows)
+		err := testCtx.waitForWindowsNodes(test.replicas, true, !test.isWindows, false)
 
 		if err != nil && test.isWindows {
 			t.Fatalf("windows node creation failed  with %v", err)
@@ -104,10 +103,11 @@ func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool
 // if expectError = true, the function will wait for duration of 5 minutes for the nodes as the error would be thrown
 // immediately, else we will wait for the duration given by nodeCreationTime variable which is 20 minutes increasing
 // the overall wait time in test suite
-func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, expectError bool) error {
+func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, expectError, checkVersion bool) error {
 	var nodes *v1.NodeList
 	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, nodeconfig.VersionAnnotation}
 	var creationTime time.Duration
+	startTime := time.Now()
 	if expectError {
 		// The time we expect to wait, if the windowsLabel is
 		// not used while creating nodes.
@@ -148,6 +148,16 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 					return false, nil
 				}
 			}
+			if checkVersion {
+				operatorVersion, err := getWMCOVersion()
+				if err != nil {
+					log.Printf("error getting operator version : %v", err)
+					return false, nil
+				}
+				if node.Annotations[nodeconfig.VersionAnnotation] != operatorVersion {
+					return false, nil
+				}
+			}
 		}
 
 		return true, nil
@@ -155,6 +165,9 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 
 	// Initialize/update nodes to avoid staleness
 	gc.nodes = nodes.Items
+	// Log the time elapsed while waiting for creation of the nodes
+	endTime := time.Now()
+	log.Printf("%v time is required to configure %v nodes", endTime.Sub(startTime), gc.numberOfNodes)
 
 	return err
 }
@@ -187,9 +200,4 @@ func (tc *testContext) createPrivateKeySecret() error {
 	}
 	_, err = tc.kubeclient.CoreV1().Secrets(tc.namespace).Create(context.TODO(), &privateKeySecret, metav1.CreateOptions{})
 	return err
-}
-
-// deletePrivateKeySecret deletes the private key secret
-func (tc *testContext) deletePrivateKeySecret() error {
-	return tc.kubeclient.CoreV1().Secrets(tc.namespace).Delete(context.TODO(), secrets.PrivateKeySecret, metav1.DeleteOptions{})
 }
