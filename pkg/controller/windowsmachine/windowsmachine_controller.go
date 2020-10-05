@@ -104,18 +104,13 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 	// Watch for the Machine objects with label defined by windowsOSLabel
 	machinePredicate := predicate.Funcs{
-		// ignore create event for all Machines as WMCO should for Machine getting provisioned
+		// We need the create event to account for Machines that are in provisioned state but were created
+		// before WMCO started running
 		CreateFunc: func(e event.CreateEvent) bool {
-			return false
+			return isWindowsMachine(e.Meta.GetLabels())
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			labels := e.MetaNew.GetLabels()
-			if value, ok := labels[windowsOSLabel]; ok {
-				if value == "Windows" {
-					return true
-				}
-			}
-			return false
+			return isWindowsMachine(e.MetaNew.GetLabels())
 		},
 		// ignore delete event for all Machines as WMCO does not react to node getting deleted
 		DeleteFunc: func(e event.DeleteEvent) bool {
@@ -202,6 +197,17 @@ func (m *nodeToMachineMapper) Map(object handler.MapObject) []reconcile.Request 
 	return nil
 }
 
+// isWindowsMachine checks if the machine is a Windows machine or not
+func isWindowsMachine(labels map[string]string) bool {
+	windowsOSLabel := "machine.openshift.io/os-id"
+	if value, ok := labels[windowsOSLabel]; ok {
+		if value == "Windows" {
+			return true
+		}
+	}
+	return false
+}
+
 // blank assignment to verify that ReconcileWindowsMachine implements reconcile.Reconciler
 var _ reconcile.Reconciler = &ReconcileWindowsMachine{}
 
@@ -262,7 +268,8 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	runningPhase := "Running"
 	if machine.Status.Phase == nil {
 		// Phase is nil and should be ignored by WMCO until phase is set
-		return reconcile.Result{}, nil
+		// TODO: Instead of requeuing ignore certain events: https://issues.redhat.com/browse/WINC-500
+		return reconcile.Result{}, fmt.Errorf("could not get the phase associated with machine %s", machine.Name)
 	} else if *machine.Status.Phase == runningPhase {
 		// Machine has been configured into a node, we need to ensure that the version annotation exists. If it doesn't
 		// the machine was not fully configured and needs to be configured properly.
@@ -317,9 +324,10 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, errors.Wrapf(err, "error validating userData secret")
 	}
 
-	// Get the IP address associated with the Windows machine.
+	// Get the IP address associated with the Windows machine, if not error out to requeue again
 	if len(machine.Status.Addresses) == 0 {
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, errors.Errorf("machine %s doesn't have any ip addresses defined",
+			machine.Name)
 	}
 	ipAddress := ""
 	for _, address := range machine.Status.Addresses {
@@ -328,7 +336,8 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		}
 	}
 	if len(ipAddress) == 0 {
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, errors.Errorf("no internal ip address associated with machine %s",
+			machine.Name)
 	}
 
 	// Get the instance ID associated with the Windows machine.
