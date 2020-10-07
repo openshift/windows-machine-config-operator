@@ -65,6 +65,8 @@ type Windows interface {
 	// CopyFile copies the given file to the remote directory in the Windows VM. The remote directory is created if it
 	// does not exist
 	CopyFile(string, string) error
+	// FileExists ensures a specific file exists at the given path on the Windows VM
+	FileExists(string) (bool, error)
 	// Run executes the given command remotely on the Windows VM over a ssh connection and returns the combined output
 	// of stdout and stderr. If the bool is set, it implies that the cmd is to be execute in PowerShell. This function
 	// should be used in scenarios where you want to execute a command that runs in the background. In these cases we
@@ -144,6 +146,14 @@ func (vm *windows) CopyFile(filePath, remoteDir string) error {
 		return errors.Wrapf(err, "unable to transfer %s to remote dir %s", filePath, remoteDir)
 	}
 	return nil
+}
+
+func (vm *windows) FileExists(path string) (bool, error) {
+	out, err := vm.Run("Test-Path "+path, true)
+	if err != nil {
+		return false, errors.Wrapf(err, "error checking if file %s exists on Windows VM %s", path, vm.ID())
+	}
+	return strings.TrimSpace(out) == "True", nil
 }
 
 func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
@@ -321,11 +331,11 @@ func (vm *windows) transferFiles() error {
 		// of file that we want to transfer, WMCO team should cut a newer version of operator.
 		// The files are tightly coupled with the operator
 		// TODO: Remove this when we do in place upgrades
-		out, err := vm.Run("Test-Path "+dest+"\\"+filepath.Base(src), true)
+		fileExists, err := vm.FileExists(dest + "\\" + filepath.Base(src))
 		if err != nil {
-			return errors.Wrapf(err, "error checking if file %s exists. output: %s", dest+"\\"+filepath.Base(src), out)
+			return err
 		}
-		if strings.Contains(out, "True") {
+		if fileExists {
 			// The file already exists, don't copy it again
 			continue
 		}
