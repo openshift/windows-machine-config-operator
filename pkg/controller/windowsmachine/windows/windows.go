@@ -142,7 +142,7 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 
 	out, err := vm.interact.run(cmd)
 	if err != nil {
-		return "", errors.Wrapf(err, "error running %s", cmd)
+		return out, errors.Wrapf(err, "error running %s", cmd)
 	}
 	return out, nil
 }
@@ -283,8 +283,8 @@ func (vm *windows) createDirectories() error {
 		hybridOverlayLogDir,
 	}
 	for _, dir := range directoriesToCreate {
-		if _, err := vm.Run(mkdirCmd(dir), false); err != nil {
-			return errors.Wrapf(err, "unable to create remote directory %s", dir)
+		if out, err := vm.Run(mkdirCmd(dir), false); err != nil {
+			return errors.Wrapf(err, "unable to create remote directory %s. output: %s", dir, out)
 		}
 	}
 	return nil
@@ -312,7 +312,7 @@ func (vm *windows) transferFiles() error {
 		// TODO: Remove this when we do in place upgrades
 		out, err := vm.Run("Test-Path "+dest+"\\"+filepath.Base(src), true)
 		if err != nil {
-			return errors.Wrapf(err, "error while checking if the file %s exists", dest+"\\"+filepath.Base(src))
+			return errors.Wrapf(err, "error checking if file %s exists. output: %s", dest+"\\"+filepath.Base(src), out)
 		}
 		if strings.Contains(out, "True") {
 			// The file already exists, don't copy it again
