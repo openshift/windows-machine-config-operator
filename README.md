@@ -166,14 +166,14 @@ This deployment method is currently not supported. Please use the [CLI](#cli)
 
 #### CLI
 
-Create the windows-machine-config-operator namespace:
+Create the openshift-windows-machine-config-operator namespace:
 ```shell script
 oc apply -f deploy/namespace.yaml
 ```
 
-Switch to the windows-machine-config-operator project:
+Switch to the openshift-windows-machine-config-operator project:
 ```shell script
-oc project windows-machine-config-operator
+oc project openshift-windows-machine-config-operator
 ```
 
 ##### Create private key Secret

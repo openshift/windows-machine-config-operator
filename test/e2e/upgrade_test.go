@@ -23,6 +23,8 @@ const (
 	deploymentTimeout = time.Minute * 1
 	// resourceName is the name of a resource in the watched namespace (e.g pod name, deployment name)
 	resourceName = "windows-machine-config-operator"
+	// resourceNamespace is the namespace the resources are deployed in
+	resourceNamespace = "openshift-windows-machine-config-operator"
 )
 
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
@@ -122,7 +124,7 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 
 		patchData := fmt.Sprintf(`{"spec":{"replicas":%v}}`, desiredReplicas)
 
-		_, err = tc.kubeclient.AppsV1().Deployments(resourceName).Patch(context.TODO(), resourceName,
+		_, err = tc.kubeclient.AppsV1().Deployments(resourceNamespace).Patch(context.TODO(), resourceName,
 			types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			log.Printf("error patching operator deployment : %v", err)
@@ -137,7 +139,7 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 
 	// wait for the windows-machine-config-operator to scale up/down
 	err = wait.Poll(deploymentRetryInterval, deploymentTimeout, func() (done bool, err error) {
-		deployment, err := tc.kubeclient.AppsV1().Deployments(resourceName).Get(context.TODO(), resourceName,
+		deployment, err := tc.kubeclient.AppsV1().Deployments(resourceNamespace).Get(context.TODO(), resourceName,
 			metav1.GetOptions{})
 		if err != nil {
 			log.Printf("error getting operator deployment: %v", err)

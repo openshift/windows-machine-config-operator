@@ -71,7 +71,7 @@ func testWindowsNodeDeletion(t *testing.T) {
 	err = framework.Global.KubeClient.CoreV1().Secrets("openshift-machine-api").Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete userData secret")
 
-	err = framework.Global.KubeClient.CoreV1().Secrets("windows-machine-config-operator").Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
+	err = framework.Global.KubeClient.CoreV1().Secrets("openshift-windows-machine-config-operator").Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete privateKey secret")
 
 }

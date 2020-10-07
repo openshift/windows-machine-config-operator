@@ -5,10 +5,10 @@ metadata:
     alm-examples: '[]'
     capabilities: Basic Install
     operatorframework.io/cluster-monitoring: "true"
-    operatorframework.io/suggested-namespace: windows-machine-config-operator
+    operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     repository: https://github.com/openshift/windows-machine-config-operator
   name: windows-machine-config-operator.v0.0.0
-  namespace: windows-machine-config-operator
+  namespace: openshift-windows-machine-config-operator
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions: {}
