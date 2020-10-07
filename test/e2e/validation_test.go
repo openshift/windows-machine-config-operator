@@ -106,7 +106,7 @@ func testNodeTaint(t *testing.T) {
 // createSigner creates a signer using the private key retrieved from the secret
 func createSigner() (ssh.Signer, error) {
 	privateKeySecret := &core.Secret{}
-	err := framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "cloud-private-key", Namespace: "windows-machine-config-operator"}, privateKeySecret)
+	err := framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "cloud-private-key", Namespace: "openshift-windows-machine-config-operator"}, privateKeySecret)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to retrieve cloud private key secret")
 	}
