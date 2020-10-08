@@ -24,8 +24,7 @@ func testNetwork(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, testCtx.createNamespace(testCtx.workloadNamespace), "error creating test namespace")
 	defer testCtx.deleteNamespace(testCtx.workloadNamespace)
-	t.Run("East West Networking across Linux and Windows nodes", testEastWestNetworking)
-	t.Run("East West Networking across Windows nodes", testEastWestNetworkingAcrossWindowsNodes)
+	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
 }
 
@@ -33,114 +32,113 @@ var (
 	// ubi8Image is the name/location of the linux image we will use for testing
 	ubi8Image = "registry.access.redhat.com/ubi8/ubi:latest"
 	// retryCount is the amount of times we will retry an api operation
-	retryCount = 20
+	retryCount = 60
 	// retryInterval is the interval of time until we retry after a failure
 	retryInterval = 5 * time.Second
+)
+
+// operatingSystem is used to specify an operating system to run workloads on
+type operatingSystem string
+
+const (
+	linux   operatingSystem = "linux"
+	windows operatingSystem = "windows"
 )
 
 // testEastWestNetworking deploys Windows and Linux pods, and tests that the pods can communicate
 func testEastWestNetworking(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
-
-	for _, node := range gc.nodes {
-		affinity, err := getAffinityForNode(&node)
-		require.NoError(t, err, "could not get affinity for first node")
-
-		// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
-		// So trying multiple times
-		var winServerDeployment *appsv1.Deployment
-		for i := 0; i < deploymentRetries; i++ {
-			winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver-"+strings.ToLower(node.Status.NodeInfo.MachineID), affinity)
-			if err == nil {
-				break
-			}
-		}
-		require.NoError(t, err, "could not create Windows Server deployment")
-
-		// Get the pod so we can use its IP
-		winServerIP, err := testCtx.getPodIP(*winServerDeployment.Spec.Selector)
-		require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeployment.Spec.Selector)
-
-		// test Windows <-> Linux
-		// This will install curl and then curl the windows server.
-		linuxCurlerCommand := []string{"bash", "-c", "yum update; yum install curl -y; curl " + winServerIP}
-		linuxCurlerJob, err := testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), linuxCurlerCommand)
-		require.NoError(t, err, "could not create Linux job")
-		err = testCtx.waitUntilJobSucceeds(linuxCurlerJob.Name)
-		assert.NoError(t, err, "could not curl the Windows server from a linux container")
-
-		// test Windows <-> Windows on same node
-		winCurlerJob, err := testCtx.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID), winServerIP)
-		require.NoError(t, err, "could not create Windows job")
-		err = testCtx.waitUntilJobSucceeds(winCurlerJob.Name)
-		assert.NoError(t, err, "could not curl the Windows webserver pod from a separate Windows container")
-
-		// delete the deployments and jobs created
-		if err = testCtx.deleteDeployment(winServerDeployment.Name); err != nil {
-			t.Logf("could not delete deployment %s", winServerDeployment.Name)
-		}
-		if err = testCtx.deleteJob(linuxCurlerJob.Name); err != nil {
-			t.Logf("could not delete job %s", linuxCurlerJob.Name)
-		}
-		if err = testCtx.deleteJob(winCurlerJob.Name); err != nil {
-			t.Logf("could not delete job %s", winCurlerJob.Name)
-		}
-	}
-}
-
-//  testEastWestNetworkingAcrossWindowsNodes deploys Windows pods on two different Nodes, and tests that the pods can communicate
-func testEastWestNetworkingAcrossWindowsNodes(t *testing.T) {
-	testCtx, err := NewTestContext(t)
-	require.NoError(t, err)
 	defer testCtx.cleanup()
 
-	// Need at least two Windows nodes to run these tests, throwing error if this condition is not met
-	require.GreaterOrEqualf(t, len(gc.nodes), 2, "insufficient number of Windows nodes to run tests across"+
-		" nodes, Minimum node count: 2, Current node count: %d", len(gc.nodes))
-
-	firstNode := gc.nodes[0]
-	secondNode := gc.nodes[1]
-
-	affinityForFirstNode, err := getAffinityForNode(&firstNode)
-	require.NoError(t, err, "could not get affinity for first node")
-
-	// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
-	// So trying multiple times
-	var winServerDeploymentOnFirstNode *appsv1.Deployment
-	for i := 0; i < deploymentRetries; i++ {
-		winServerDeploymentOnFirstNode, err = testCtx.deployWindowsWebServer("win-webserver-"+strings.ToLower(firstNode.Status.NodeInfo.MachineID), affinityForFirstNode)
-		if err == nil {
-			break
-		}
+	testCases := []struct {
+		name            string
+		curlerOS        operatingSystem
+		useClusterIPSVC bool
+	}{
+		{
+			name:            "linux and windows",
+			curlerOS:        linux,
+			useClusterIPSVC: false,
+		},
+		{
+			name:            "windows and windows",
+			curlerOS:        windows,
+			useClusterIPSVC: false,
+		},
+		{
+			name:            "linux and windows through a clusterIP svc",
+			curlerOS:        linux,
+			useClusterIPSVC: true,
+		},
+		{
+			name:            "windows and windows through a clusterIP svc",
+			curlerOS:        windows,
+			useClusterIPSVC: true,
+		},
 	}
-	require.NoError(t, err, "could not create Windows Server deployment on first Node")
+	require.Greater(t, len(gc.nodes), 0, "test requires at least one Windows node to run")
+	firstNodeAffinity, err := getAffinityForNode(&gc.nodes[0])
+	require.NoError(t, err, "could not get affinity for node")
 
-	// Get the pod so we can use its IP
-	winServerIP, err := testCtx.getPodIP(*winServerDeploymentOnFirstNode.Spec.Selector)
-	require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeploymentOnFirstNode.Spec.Selector)
+	for _, node := range gc.nodes {
+		t.Run(node.Name, func(t *testing.T) {
+			affinity, err := getAffinityForNode(&node)
+			require.NoError(t, err, "could not get affinity for node")
 
-	// test Windows <-> Windows across nodes
-	winCurlerJobOnSecondNode, err := testCtx.createWinCurlerJob(strings.ToLower(secondNode.Status.NodeInfo.MachineID), winServerIP)
-	require.NoError(t, err, "could not create Windows job on second Node")
+			// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
+			// So trying multiple times
+			var winServerDeployment *appsv1.Deployment
+			for i := 0; i < deploymentRetries; i++ {
+				winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver-"+strings.ToLower(node.Status.NodeInfo.MachineID), affinity)
+				if err == nil {
+					break
+				}
+			}
+			require.NoError(t, err, "could not create Windows Server deployment")
+			defer testCtx.deleteDeployment(winServerDeployment.Name)
 
-	// This is prone to timing out due to having to pull the Windows image so trying multiple times
-	for i := 0; i < 10; i++ {
-		err = testCtx.waitUntilJobSucceeds(winCurlerJobOnSecondNode.Name)
-		if err == nil {
-			break
-		}
-	}
-	assert.NoError(t, err, "could not curl the Windows webserver pod on the first node from Windows container "+
-		"on the second node")
+			// Get the pod so we can use its IP
+			winServerIP, err := testCtx.getPodIP(*winServerDeployment.Spec.Selector)
+			require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeployment.Spec.Selector)
 
-	// delete the deployment and job created
-	if err = testCtx.deleteDeployment(winServerDeploymentOnFirstNode.Name); err != nil {
-		t.Logf("could not delete deployment %s", winServerDeploymentOnFirstNode.Name)
-	}
+			// Create a clusterIP service which can be used to reach the Windows webserver
+			intermediarySVC, err := testCtx.createService(winServerDeployment.Name, v1.ServiceTypeClusterIP, *winServerDeployment.Spec.Selector)
+			require.NoError(t, err, "could not create service")
+			defer testCtx.deleteService(intermediarySVC.Name)
 
-	if err = testCtx.deleteJob(winCurlerJobOnSecondNode.Name); err != nil {
-		t.Logf("could not delete job %s", winCurlerJobOnSecondNode.Name)
+			for _, tt := range testCases {
+				t.Run(tt.name, func(t *testing.T) {
+					var curlerJob *batchv1.Job
+					// Depending on the test the curler pod will reach the Windows webserver either directly or through a
+					// clusterIP service.
+					endpointIP := winServerIP
+					if tt.useClusterIPSVC {
+						endpointIP = intermediarySVC.Spec.ClusterIP
+					}
+
+					// create the curler job based on the specified curlerOS
+					if tt.curlerOS == linux {
+						curlerCommand := []string{"bash", "-c", "yum update; yum install curl -y; curl " + endpointIP}
+						curlerJob, err = testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), curlerCommand)
+						require.NoError(t, err, "could not create Linux job")
+					} else if tt.curlerOS == windows {
+						// Always deploy the Windows curler pod on the first node. Because we test scaling multiple
+						// Windows nodes, this allows us to test that Windows pods can communicate with other Windows
+						// pods located on both the same node, and other nodes.
+						curlerJob, err = testCtx.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID),
+							endpointIP, firstNodeAffinity)
+						require.NoError(t, err, "could not create Windows job")
+					} else {
+						t.Fatalf("unsupported curler OS %s", tt.curlerOS)
+					}
+					defer testCtx.deleteJob(curlerJob.Name)
+
+					err = testCtx.waitUntilJobSucceeds(curlerJob.Name)
+					assert.NoError(t, err, "could not curl the Windows server")
+				})
+			}
+		})
 	}
 }
 
@@ -177,7 +175,7 @@ func testNorthSouthNetworking(t *testing.T) {
 // getThroughLoadBalancer does a GET request to the given webserver through a load balancer service
 func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) error {
 	// Create a load balancer svc to expose the webserver
-	loadBalancer, err := tc.createLoadBalancer(webserver.Name, *webserver.Spec.Selector)
+	loadBalancer, err := tc.createService(webserver.Name, v1.ServiceTypeLoadBalancer, *webserver.Spec.Selector)
 	if err != nil {
 		return errors.Wrap(err, "could not create load balancer for Windows Server")
 	}
@@ -187,9 +185,18 @@ func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) erro
 		return errors.Wrap(err, "error waiting for load balancer ingress")
 	}
 
-	// Try and read from the webserver through the load balancer. The load balancer takes a fair amount of time,
-	// ~3 min, to start properly routing connections.
-	resp, err := retryGET("http://" + loadBalancer.Status.LoadBalancer.Ingress[0].Hostname)
+	// Try and read from the webserver through the load balancer.
+	// On AWS the LB ingress object contains a hostname, on Azure an IP.
+	// The load balancer takes a fair amount of time, ~3 min, to start properly routing connections.
+	var locator string
+	if loadBalancer.Status.LoadBalancer.Ingress[0].Hostname != "" {
+		locator = loadBalancer.Status.LoadBalancer.Ingress[0].Hostname
+	} else if loadBalancer.Status.LoadBalancer.Ingress[0].IP != "" {
+		locator = loadBalancer.Status.LoadBalancer.Ingress[0].IP
+	} else {
+		return errors.New("load balancer ingress object is empty")
+	}
+	resp, err := retryGET("http://" + locator)
 	if err != nil {
 		return fmt.Errorf("could not GET from load balancer: %v", loadBalancer)
 	}
@@ -211,14 +218,14 @@ func retryGET(url string) (*http.Response, error) {
 	return nil, fmt.Errorf("timed out trying to GET %s: %s", url, err)
 }
 
-// createLoadBalancer creates a new load balancer for pods matching the label selector
-func (tc *testContext) createLoadBalancer(name string, selector metav1.LabelSelector) (*v1.Service, error) {
+// createService creates a new service of type serviceType for pods matching the label selector
+func (tc *testContext) createService(name string, serviceType v1.ServiceType, selector metav1.LabelSelector) (*v1.Service, error) {
 	svcSpec := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
 		Spec: v1.ServiceSpec{
-			Type: v1.ServiceTypeLoadBalancer,
+			Type: serviceType,
 			Ports: []v1.ServicePort{
 				{
 					Protocol: v1.ProtocolTCP,
@@ -458,13 +465,13 @@ func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
 // createLinuxJob creates a job which will run the provided command with a ubi8 image
 func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.Job, error) {
 	linuxNodeSelector := map[string]string{"beta.kubernetes.io/os": "linux"}
-	return tc.createJob(name, ubi8Image, command, linuxNodeSelector, []v1.Toleration{})
+	return tc.createJob(name, ubi8Image, command, linuxNodeSelector, []v1.Toleration{}, nil)
 }
 
 //  createWinCurlerJob creates a Job to curl Windows server at given IP address
-func (tc *testContext) createWinCurlerJob(name string, winServerIP string) (*batchv1.Job, error) {
+func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affinity *v1.Affinity) (*batchv1.Job, error) {
 	winCurlerCommand := getWinCurlerCommand(winServerIP)
-	winCurlerJob, err := tc.createWindowsServerJob("win-curler-"+name, winCurlerCommand)
+	winCurlerJob, err := tc.createWindowsServerJob("win-curler-"+name, winCurlerCommand, affinity)
 	return winCurlerJob, err
 }
 
@@ -480,15 +487,16 @@ func getWinCurlerCommand(winServerIP string) []string {
 }
 
 // createWindowsServerJob creates a job which will run the provided command with a Windows Server image
-func (tc *testContext) createWindowsServerJob(name string, command []string) (*batchv1.Job, error) {
+func (tc *testContext) createWindowsServerJob(name string, command []string, affinity *v1.Affinity) (*batchv1.Job, error) {
 	windowsNodeSelector := map[string]string{"beta.kubernetes.io/os": "windows"}
 	windowsTolerations := []v1.Toleration{{Key: "os", Value: "Windows", Effect: v1.TaintEffectNoSchedule}}
 	windowsServerImage := tc.getWindowsServerContainerImage()
-	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations)
+	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations, affinity)
 }
 
+// createJob creates a job on the cluster using the given parameters
 func (tc *testContext) createJob(name, image string, command []string, selector map[string]string,
-	tolerations []v1.Toleration) (*batchv1.Job, error) {
+	tolerations []v1.Toleration, affinity *v1.Affinity) (*batchv1.Job, error) {
 	jobsClient := tc.kubeclient.BatchV1().Jobs(tc.workloadNamespace)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -497,6 +505,7 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 		Spec: batchv1.JobSpec{
 			Template: v1.PodTemplateSpec{
 				Spec: v1.PodSpec{
+					Affinity:      affinity,
 					RestartPolicy: v1.RestartPolicyNever,
 					Tolerations:   tolerations,
 					Containers: []v1.Container{

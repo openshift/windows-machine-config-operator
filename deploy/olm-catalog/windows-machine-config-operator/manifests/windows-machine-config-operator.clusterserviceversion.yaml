@@ -5,10 +5,10 @@ metadata:
     alm-examples: '[]'
     capabilities: Basic Install
     operatorframework.io/cluster-monitoring: "true"
-    operatorframework.io/suggested-namespace: windows-machine-config-operator
+    operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     repository: https://github.com/openshift/windows-machine-config-operator
   name: windows-machine-config-operator.v0.0.0
-  namespace: windows-machine-config-operator
+  namespace: openshift-windows-machine-config-operator
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions: {}
@@ -126,21 +126,7 @@ spec:
                 name: windows-machine-config-operator
                 resources: {}
               hostNetwork: true
-              nodeSelector:
-                node-role.kubernetes.io/master: ""
               serviceAccountName: windows-machine-config-operator
-              tolerations:
-              - effect: NoSchedule
-                key: node-role.kubernetes.io/master
-                operator: Exists
-              - effect: NoExecute
-                key: node.kubernetes.io/unreachable
-                operator: Exists
-                tolerationSeconds: 120
-              - effect: NoExecute
-                key: node.kubernetes.io/not-ready
-                operator: Exists
-                tolerationSeconds: 120
       permissions:
       - rules:
         - apiGroups:

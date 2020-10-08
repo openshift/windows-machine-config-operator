@@ -104,18 +104,13 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 	// Watch for the Machine objects with label defined by windowsOSLabel
 	machinePredicate := predicate.Funcs{
-		// ignore create event for all Machines as WMCO should for Machine getting provisioned
+		// We need the create event to account for Machines that are in provisioned state but were created
+		// before WMCO started running
 		CreateFunc: func(e event.CreateEvent) bool {
-			return false
+			return isWindowsMachine(e.Meta.GetLabels())
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			labels := e.MetaNew.GetLabels()
-			if value, ok := labels[windowsOSLabel]; ok {
-				if value == "Windows" {
-					return true
-				}
-			}
-			return false
+			return isWindowsMachine(e.MetaNew.GetLabels())
 		},
 		// ignore delete event for all Machines as WMCO does not react to node getting deleted
 		DeleteFunc: func(e event.DeleteEvent) bool {
@@ -202,6 +197,17 @@ func (m *nodeToMachineMapper) Map(object handler.MapObject) []reconcile.Request 
 	return nil
 }
 
+// isWindowsMachine checks if the machine is a Windows machine or not
+func isWindowsMachine(labels map[string]string) bool {
+	windowsOSLabel := "machine.openshift.io/os-id"
+	if value, ok := labels[windowsOSLabel]; ok {
+		if value == "Windows" {
+			return true
+		}
+	}
+	return false
+}
+
 // blank assignment to verify that ReconcileWindowsMachine implements reconcile.Reconciler
 var _ reconcile.Reconciler = &ReconcileWindowsMachine{}
 
@@ -262,7 +268,8 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	runningPhase := "Running"
 	if machine.Status.Phase == nil {
 		// Phase is nil and should be ignored by WMCO until phase is set
-		return reconcile.Result{}, nil
+		// TODO: Instead of requeuing ignore certain events: https://issues.redhat.com/browse/WINC-500
+		return reconcile.Result{}, fmt.Errorf("could not get the phase associated with machine %s", machine.Name)
 	} else if *machine.Status.Phase == runningPhase {
 		// Machine has been configured into a node, we need to ensure that the version annotation exists. If it doesn't
 		// the machine was not fully configured and needs to be configured properly.
@@ -317,9 +324,10 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, errors.Wrapf(err, "error validating userData secret")
 	}
 
-	// Get the IP address associated with the Windows machine.
+	// Get the IP address associated with the Windows machine, if not error out to requeue again
 	if len(machine.Status.Addresses) == 0 {
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, errors.Errorf("machine %s doesn't have any ip addresses defined",
+			machine.Name)
 	}
 	ipAddress := ""
 	for _, address := range machine.Status.Addresses {
@@ -328,7 +336,8 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		}
 	}
 	if len(ipAddress) == 0 {
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, errors.Errorf("no internal ip address associated with machine %s",
+			machine.Name)
 	}
 
 	// Get the instance ID associated with the Windows machine.
@@ -336,15 +345,17 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	if len(providerID) == 0 {
 		return reconcile.Result{}, nil
 	}
-	// Ex: aws:///us-east-1e/i-078285fdadccb2eaa. We always want the last entry which is the instanceID
+	// Ex: aws:///us-east-1e/i-078285fdadccb2eaa
+	// We always want the last entry which is the instanceID, and the first which is the provider name.
 	providerTokens := strings.Split(providerID, "/")
 	instanceID := providerTokens[len(providerTokens)-1]
 	if len(instanceID) == 0 {
 		return reconcile.Result{}, nil
 	}
+	providerName := strings.TrimSuffix(providerTokens[0], ":")
 
 	// Make the Machine a Windows Worker node
-	if err := r.addWorkerNode(ipAddress, instanceID); err != nil {
+	if err := r.addWorkerNode(ipAddress, providerName, instanceID); err != nil {
 		r.recorder.Eventf(machine, core.EventTypeWarning, "WMCO SetupFailure",
 			"Machine %s failed to be configured", machine.Name)
 		return reconcile.Result{}, err
@@ -356,9 +367,9 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 }
 
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
-func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID string) error {
+func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, providerName, instanceID string) error {
 	log.V(1).Info("configuring the Windows VM", "ID", instanceID)
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, r.clusterServiceCIDR, r.vxlanPort,
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, providerName, instanceID, r.clusterServiceCIDR, r.vxlanPort,
 		r.signer)
 	if err != nil {
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)

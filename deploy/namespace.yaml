@@ -1,4 +1,4 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: windows-machine-config-operator
+  name: openshift-windows-machine-config-operator

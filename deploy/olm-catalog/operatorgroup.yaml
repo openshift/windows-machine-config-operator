@@ -4,7 +4,7 @@ metadata:
   annotations:
     olm.providedAPIs: WindowsMachineConfig.v1alpha1.wmc.openshift.io
   name: windows-machine-config-operator
-  namespace: windows-machine-config-operator
+  namespace: openshift-windows-machine-config-operator
 spec:
   targetNamespaces:
-  - windows-machine-config-operator
+  - openshift-windows-machine-config-operator
