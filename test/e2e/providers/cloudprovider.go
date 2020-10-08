@@ -5,9 +5,11 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	"github.com/pkg/errors"
+
 	oc "github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	awsProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/aws"
-	"github.com/pkg/errors"
+	azureProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/azure"
 )
 
 type CloudProvider interface {
@@ -20,14 +22,16 @@ func NewCloudProvider(hasCustomVXLANPort bool) (CloudProvider, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "Getting OpenShift client failed")
 	}
-	cloudProvider, err := openshift.GetCloudProvider()
+	platformStatus, err := openshift.GetCloudProvider()
 	if err != nil {
 		return nil, errors.Wrap(err, "Getting cloud provider type")
 	}
-	switch provider := cloudProvider.Type; provider {
+	switch provider := platformStatus.Type; provider {
 	case config.AWSPlatformType:
 		// 	Setup the AWS cloud provider in the same region where the cluster is running
-		return awsProvider.SetupAWSCloudProvider(cloudProvider.AWS.Region, hasCustomVXLANPort)
+		return awsProvider.SetupAWSCloudProvider(platformStatus.AWS.Region, hasCustomVXLANPort)
+	case config.AzurePlatformType:
+		return azureProvider.New(openshift, hasCustomVXLANPort)
 	default:
 		return nil, fmt.Errorf("the '%v' cloud provider is not supported", provider)
 	}
