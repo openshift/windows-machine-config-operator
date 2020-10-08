@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	oconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
@@ -27,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/metrics"
@@ -50,8 +51,8 @@ var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new WindowsMachine Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and start it when the Manager is Started.
-func Add(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig, watchNamespace string) error {
-	reconciler, err := newReconciler(mgr, networkConfig, watchNamespace)
+func Add(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) error {
+	reconciler, err := newReconciler(mgr, clusterConfig, watchNamespace)
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s reconciler", ControllerName)
 	}
@@ -59,7 +60,7 @@ func Add(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig,
 }
 
 // newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetworkConfig, watchNamespace string) (reconcile.Reconciler, error) {
+func newReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) (reconcile.Reconciler, error) {
 	// The default client serves read requests from the cache which
 	// could be stale and result in a get call to return an older version
 	// of the object. Hence we are using a non-default-client referenced
@@ -79,7 +80,7 @@ func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetw
 		return nil, errors.Wrap(err, "error creating kubernetes clientset")
 	}
 
-	serviceCIDR, err := networkConfig.GetServiceCIDR()
+	serviceCIDR, err := clusterConfig.Network().GetServiceCIDR()
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting service CIDR")
 	}
@@ -94,7 +95,8 @@ func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetw
 			scheme:               mgr.GetScheme(),
 			k8sclientset:         clientset,
 			clusterServiceCIDR:   serviceCIDR,
-			vxlanPort:            networkConfig.VXLANPort(),
+			vxlanPort:            clusterConfig.Network().VXLANPort(),
+			platform:             clusterConfig.Platform(),
 			recorder:             mgr.GetEventRecorderFor(ControllerName),
 			watchNamespace:       watchNamespace,
 			prometheusNodeConfig: pc,
@@ -238,6 +240,11 @@ type ReconcileWindowsMachine struct {
 	watchNamespace string
 	// prometheusConfig stores information required to configure Prometheus
 	prometheusNodeConfig *metrics.PrometheusNodeConfig
+	// platform indicates the cloud on which OpenShift cluster is running
+	// TODO: Remove this once we figure out how to be provider agnostic. This is specific to proper usage of userData
+	// 		 in vSphere
+	//		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
+	platform oconfig.PlatformType
 }
 
 // Reconcile reads that state of the cluster for a Windows Machine object and makes changes based on the state read
@@ -371,11 +378,10 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	if len(instanceID) == 0 {
 		return reconcile.Result{}, errors.Errorf("unable to get instance ID from provider ID for machine %s", machine.Name)
 	}
-	providerName := strings.TrimSuffix(providerTokens[0], ":")
 
 	log.Info("processing", "namespace", request.Namespace, "name", request.Name)
 	// Make the Machine a Windows Worker node
-	if err := r.addWorkerNode(ipAddress, providerName, instanceID); err != nil {
+	if err := r.addWorkerNode(ipAddress, instanceID, r.platform); err != nil {
 		var authErr *windows.AuthErr
 		if errors.As(err, &authErr) {
 			// SSH authentication errors with the Machine are non recoverable, stemming from a mismatch with the
@@ -417,9 +423,9 @@ func (r *ReconcileWindowsMachine) deleteMachine(machine *mapi.Machine) error {
 }
 
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
-func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, providerName, instanceID string) error {
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, providerName, instanceID, r.clusterServiceCIDR, r.vxlanPort,
-		r.signer)
+func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID string, platform oconfig.PlatformType) error {
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, r.clusterServiceCIDR,
+		r.vxlanPort, r.signer, platform)
 	if err != nil {
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
 	}

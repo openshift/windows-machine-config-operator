@@ -1,11 +1,10 @@
-package clusternetwork
+package cluster
 
 import (
 	"context"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
 
-	v1 "github.com/openshift/api/config/v1"
+	oconfig "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	fakeconfigclient "github.com/openshift/client-go/config/clientset/versioned/fake"
@@ -13,7 +12,10 @@ import (
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 )
 
 // TestNetworkConfigurationFactory tests if NetworkConfigurationFactory function throws appropriate errors
@@ -34,10 +36,10 @@ func TestNetworkConfigurationFactory(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeConfigClient, fakeOperatorClient := createFakeClients(tt.networkType)
 			if tt.networkPatch != nil {
-				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, metav1.PatchOptions{})
+				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
 				require.Nil(t, err, "network patch should not throw error")
 			}
-			_, err := NetworkConfigurationFactory(fakeConfigClient, fakeOperatorClient)
+			_, err := networkConfigurationFactory(fakeConfigClient, fakeOperatorClient)
 			if tt.errorMessage == "" {
 				require.Nil(t, err, "Successful check for valid network type")
 			} else {
@@ -70,11 +72,11 @@ func TestNetworkConfigurationValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeConfigClient, fakeOperatorClient := createFakeClients(tt.networkType)
 			if tt.networkPatch != nil {
-				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, metav1.PatchOptions{})
+				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
 				require.Nil(t, err, "network patch should not throw error")
 			}
 
-			network, err := NetworkConfigurationFactory(fakeConfigClient, fakeOperatorClient)
+			network, err := networkConfigurationFactory(fakeConfigClient, fakeOperatorClient)
 			require.Nil(t, err, "networkConfigurationFactory should not throw error")
 			err = network.Validate()
 
@@ -95,7 +97,7 @@ func createFakeClients(networkType string) (configclient.Interface, operatorclie
 	fakeConfigClient := fakeconfigclient.NewSimpleClientset()
 	serviceNetworks := []string{"172.30.0.0/16", "134.20.0.0/16"}
 
-	testNetworkConfig := &v1.Network{}
+	testNetworkConfig := &oconfig.Network{}
 	testNetworkConfig.Name = "cluster"
 	testNetworkConfig.Spec.NetworkType = networkType
 	testNetworkConfig.Spec.ServiceNetwork = serviceNetworks
@@ -103,15 +105,47 @@ func createFakeClients(networkType string) (configclient.Interface, operatorclie
 	testNetworkOperator := &operatorv1.Network{}
 	testNetworkOperator.Name = "cluster"
 
-	_, err := fakeConfigClient.ConfigV1().Networks().Create(context.TODO(), testNetworkConfig, metav1.CreateOptions{})
+	_, err := fakeConfigClient.ConfigV1().Networks().Create(context.TODO(), testNetworkConfig, meta.CreateOptions{})
 	if err != nil {
 		return nil, nil
 	}
-	_, err = fakeOperatorClient.Networks().Create(context.TODO(), testNetworkOperator, metav1.CreateOptions{})
+	_, err = fakeOperatorClient.Networks().Create(context.TODO(), testNetworkOperator, meta.CreateOptions{})
 	if err != nil {
 		return nil, nil
 	}
 	return fakeConfigClient, fakeOperatorClient
+}
+
+// TestIsValidKubernetesVersion tests if validateK8sVersion function throws error if K8s version is not a supported k8s version
+func TestIsValidKubernetesVersion(t *testing.T) {
+	fakeConfigClient := fakeconfigclient.NewSimpleClientset()
+	var tests = []struct {
+		name         string
+		version      string
+		errorMessage string
+	}{
+		{"cluster version lower than supported version ", "v1.17.1", "Unsupported server version: v1.17.1. Supported version is v1.20.x"},
+		{"cluster version equals supported version", "v1.20.0", ""},
+		{"cluster version greater than supported version", "v1.21.0", "Unsupported server version: v1.21.0. Supported version is v1.20.x"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// specify version to be tested
+			fakeConfigClient.Discovery().(*fakediscovery.FakeDiscovery).FakedServerVersion = &version.Info{
+				GitVersion: tt.version,
+			}
+			clusterconfig := config{oclient: fakeConfigClient}
+			err := clusterconfig.validateK8sVersion()
+			if tt.errorMessage == "" {
+				require.Nil(t, err, "Successful check for valid network type")
+			} else {
+				require.Error(t, err, "Function getK8sVersion did not throw an error "+
+					"when it was expected to")
+				assert.Contains(t, err.Error(), tt.errorMessage)
+			}
+		})
+	}
 }
 
 // TestGetVXLANPort checks if the custom VXLAN port is available in the network object
@@ -142,7 +176,7 @@ func TestGetVXLANPort(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, fakeOperatorClient := createFakeClients("OVNKubernetes")
 			if tt.networkPatch != nil {
-				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, metav1.PatchOptions{})
+				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
 				require.Nil(t, err, "network patch should not throw error")
 			}
 			got, err := getVXLANPort(fakeOperatorClient)

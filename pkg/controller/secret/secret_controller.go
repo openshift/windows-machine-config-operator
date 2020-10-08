@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
 )
 
@@ -34,7 +34,7 @@ var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new Secret Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
-func Add(mgr manager.Manager, _ clusternetwork.ClusterNetworkConfig, watchNamespace string) error {
+func Add(mgr manager.Manager, _ cluster.Config, watchNamespace string) error {
 	reconciler, err := newReconciler(mgr)
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s reconciler", ControllerName)
