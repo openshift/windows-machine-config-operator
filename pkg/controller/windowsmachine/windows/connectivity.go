@@ -101,7 +101,7 @@ func (c *sshConnectivity) run(cmd string) (string, error) {
 
 	out, err := session.CombinedOutput(cmd)
 	if err != nil {
-		return "", err
+		return string(out), err
 	}
 	return string(out), nil
 }
