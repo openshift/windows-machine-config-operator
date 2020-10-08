@@ -7,10 +7,8 @@ import (
 	"os"
 	"strings"
 
-	configclient "github.com/openshift/client-go/config/clientset/versioned"
-	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
 	"github.com/openshift/windows-machine-config-operator/pkg/apis"
-	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/version"
@@ -40,22 +38,6 @@ var (
 	operatorMetricsPort int32 = 8686
 )
 var log = logf.Log.WithName("cmd")
-
-const (
-	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
-	// 1.19.x are supported for baseK8sVersion 1.18)
-	baseK8sVersion = "1.19"
-)
-
-// clusterConfig contains information specific to cluster configuration
-type clusterConfig struct {
-	// oclient is the OpenShift config client, we will use to interact with the OpenShift API
-	oclient configclient.Interface
-	// operatorClient is the OpenShift operator client, we will use to interact with OpenShift operator objects
-	operatorClient operatorv1.OperatorV1Interface
-	// network is the interface containing information on cluster network
-	network clusternetwork.ClusterNetworkConfig
-}
 
 func main() {
 	// Add the zap logger flag set to the CLI. The flag set must
@@ -106,14 +88,14 @@ func main() {
 	}
 
 	// get cluster configuration
-	clusterconfig, err := newClusterConfig(cfg)
+	clusterConfig, err := cluster.NewConfig(cfg)
 	if err != nil {
 		log.Error(err, "failed to get cluster configuration")
 		os.Exit(1)
 	}
 
 	// validate cluster for required configurations
-	if err := clusterconfig.validate(); err != nil {
+	if err := clusterConfig.Validate(); err != nil {
 		log.Error(err, "failed to validate required cluster configuration")
 		os.Exit(1)
 	}
@@ -174,7 +156,7 @@ func main() {
 	}
 
 	// Setup all Controllers
-	if err := controller.AddToManager(mgr, clusterconfig.network, namespace); err != nil {
+	if err := controller.AddToManager(mgr, clusterConfig, namespace); err != nil {
 		log.Error(err, "failed to add all Controllers to the Manager")
 		os.Exit(1)
 	}
@@ -267,65 +249,6 @@ func checkIfRequiredFilesExist(requiredFiles []string) error {
 
 	if len(errorMessages) > 0 {
 		return fmt.Errorf("errors encountered with required files: %s", strings.Join(errorMessages, ", "))
-	}
-	return nil
-}
-
-// newClusterConfig creates clusterConfig struct that holds information of the cluster configurations
-func newClusterConfig(config *rest.Config) (*clusterConfig, error) {
-	// get OpenShift API config client.
-	oclient, err := configclient.NewForConfig(config)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create config clientset")
-	}
-
-	// get OpenShift API operator client
-	operatorClient, err := operatorv1.NewForConfig(config)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create operator clientset")
-	}
-
-	// get cluster network configurations
-	network, err := clusternetwork.NetworkConfigurationFactory(oclient, operatorClient)
-	if err != nil {
-		return nil, errors.Wrap(err, "error getting cluster network")
-	}
-
-	return &clusterConfig{
-		oclient:        oclient,
-		operatorClient: operatorClient,
-		network:        network,
-	}, nil
-}
-
-// validateK8sVersion checks for valid k8s version in the cluster. It returns an error for all versions not equal
-// to supported major version. This is being done this way, and not by directly getting the cluster version, as OpenShift CI
-// returns version in the format 0.0.x and not the actual version attached to its clusters.
-func (c *clusterConfig) validateK8sVersion() error {
-	versionInfo, err := c.oclient.Discovery().ServerVersion()
-	if err != nil {
-		return errors.Wrap(err, "error retrieving server version ")
-	}
-	// split the version in the form Major.Minor. For e.g v1.18.0-rc.1 -> 1.18
-	k8sVersion := strings.TrimLeft(versionInfo.GitVersion, "v")
-	clusterBaseVersion := strings.Join(strings.SplitN(k8sVersion, ".", 3)[:2], ".")
-
-	if strings.Compare(clusterBaseVersion, baseK8sVersion) != 0 {
-		return errors.Errorf("Unsupported server version: v%v. Supported version is v%v.x", k8sVersion,
-			baseK8sVersion)
-	}
-	return nil
-}
-
-// validate method checks if the cluster configurations are as required. It throws an error if the configuration could not
-// be validated.
-func (c *clusterConfig) validate() error {
-	err := c.validateK8sVersion()
-	if err != nil {
-		return errors.Wrap(err, "error validating k8s version")
-	}
-	if err = c.network.Validate(); err != nil {
-		return errors.Wrap(err, "error validating network configuration")
 	}
 	return nil
 }

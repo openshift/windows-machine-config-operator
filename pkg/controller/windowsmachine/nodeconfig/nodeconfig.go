@@ -5,19 +5,21 @@ import (
 	"net/url"
 	"strings"
 
+	oconfig "github.com/openshift/api/config/v1"
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
-	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
+	"github.com/pkg/errors"
+	"golang.org/x/crypto/ssh"
+	core "k8s.io/api/core/v1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
-	"github.com/pkg/errors"
-	"golang.org/x/crypto/ssh"
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 const (
@@ -41,16 +43,16 @@ type nodeConfig struct {
 	// Windows holds the information related to the windows VM
 	windows.Windows
 	// Node holds the information related to node object
-	node *v1.Node
+	node *core.Node
 	// network holds the network information specific to the node
 	network *network
 	// clusterServiceCIDR holds the service CIDR for cluster
 	clusterServiceCIDR string
 }
 
-// discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint from the
+// discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
 func discoverKubeAPIServerEndpoint() (string, error) {
-	cfg, err := config.GetConfig()
+	cfg, err := crclientcfg.GetConfig()
 	if err != nil {
 		return "", errors.Wrap(err, "unable to get config to talk to kubernetes api server")
 	}
@@ -60,7 +62,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 		return "", errors.Wrap(err, "unable to get client from the given config")
 	}
 
-	host, err := client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	host, err := client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return "", errors.Wrap(err, "unable to get cluster infrastructure resource")
 	}
@@ -72,8 +74,8 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, providerName, instanceID, clusterServiceCIDR, vxlanPort string,
-	signer ssh.Signer) (*nodeConfig, error) {
+func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, clusterServiceCIDR,
+	vxlanPort string, signer ssh.Signer, platform oconfig.PlatformType) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -89,12 +91,14 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, providerName, ins
 		workerIgnitionEndpoint := "https://" + clusterAddress + ":22623/config/worker"
 		nodeConfigCache.workerIgnitionEndPoint = workerIgnitionEndpoint
 	}
-	if err = clusternetwork.ValidateCIDR(clusterServiceCIDR); err != nil {
+	if err = cluster.ValidateCIDR(clusterServiceCIDR); err != nil {
 		return nil, errors.Wrap(err, "error receiving valid CIDR value for "+
 			"creating new node config")
 	}
 
-	win, err := windows.New(ipAddress, providerName, instanceID, nodeConfigCache.workerIgnitionEndPoint, vxlanPort, signer)
+	win, err := windows.New(ipAddress, instanceID, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
+		signer, platform)
+
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
@@ -144,7 +148,7 @@ func (nc *nodeConfig) Configure() error {
 		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
 	}
 	nc.addVersionAnnotation()
-	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, metav1.UpdateOptions{})
+	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error updating node labels and annotations")
 	}
@@ -198,7 +202,7 @@ func (nc *nodeConfig) addVersionAnnotation() {
 func (nc *nodeConfig) setNode() error {
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
-			metav1.ListOptions{LabelSelector: WindowsOSLabel})
+			meta.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
 			log.V(1).Info("node object listing failed for", "Machine ID", nc.ID(), "error", err)
 			return false, nil
@@ -225,7 +229,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	nodeName := nc.node.GetName()
 	var found bool
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
-		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
+		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, meta.GetOptions{})
 		if err != nil {
 			log.V(1).Info("error getting node object associated with", "Machine ID", nc.ID(), "error", err)
 			return false, nil
