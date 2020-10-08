@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	oconfig "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -146,18 +147,23 @@ type windows struct {
 	interact connectivity
 	// vxlanPort is the custom VXLAN port
 	vxlanPort string
+	// platform indicates the cloud on which OpenShift cluster is running
+	// TODO: Remove this once we figure out how to be provider agnostic. This is specific to proper usage of userData
+	// 		 in vSphere
+	//		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
+	platform oconfig.PlatformType
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(ipAddress, providerName, instanceID, workerIgnitionEndpoint, vxlanPort string, signer ssh.Signer) (Windows, error) {
+func New(ipAddress, instanceID, workerIgnitionEndpoint, vxlanPort string, signer ssh.Signer,
+	platform oconfig.PlatformType) (Windows, error) {
 	if workerIgnitionEndpoint == "" {
 		return nil, errors.New("cannot use empty ignition endpoint")
 	}
-
 	// TODO: This should be changed so that the "core" user is used on all platforms for SSH connections.
 	// https://issues.redhat.com/browse/WINC-430
 	var adminUser string
-	if providerName == "azure" {
+	if platform == oconfig.AzurePlatformType {
 		adminUser = "capi"
 	} else {
 		adminUser = "Administrator"
@@ -177,6 +183,7 @@ func New(ipAddress, providerName, instanceID, workerIgnitionEndpoint, vxlanPort 
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			vxlanPort:              vxlanPort,
+			platform:               platform,
 		},
 		nil
 }
