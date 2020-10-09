@@ -186,6 +186,11 @@ Windows VMs. The private key should be in PEM encoded RSA format.
 oc create secret generic cloud-private-key --from-file=private-key.pem=$HOME/.ssh/$keyname
 ```
 
+If you do not have a PEM encoded private key in RSA format, you can generate one using:
+```shell script
+openssl genrsa -des3 -out <KEY_NAME>.pem 2048
+``` 
+
 ##### Running with bundle and index images
 You can skip this step if you want to run the operator for [developer testing purposes only](#development-workflow)
 
