@@ -119,7 +119,7 @@ func testEastWestNetworking(t *testing.T) {
 
 					// create the curler job based on the specified curlerOS
 					if tt.curlerOS == linux {
-						curlerCommand := []string{"bash", "-c", "yum update; yum install curl -y; curl " + endpointIP}
+						curlerCommand := []string{"bash", "-c", "curl " + endpointIP}
 						curlerJob, err = testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), curlerCommand)
 						require.NoError(t, err, "could not create Linux job")
 					} else if tt.curlerOS == windows {
