@@ -23,7 +23,7 @@ spec:
           args:
           - "--zap-level=debug"
           - "--zap-encoder=console"
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           env:
             - name: WATCH_NAMESPACE
               valueFrom:
