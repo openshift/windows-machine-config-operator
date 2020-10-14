@@ -12,6 +12,35 @@ More design details can be explored in the [WMCO enhancement](https://github.com
 ## Pre-requisites
 * OKD/OCP 4.6 cluster running on Azure or AWS, configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
 
+### Pre-configuration steps in case of vSphere cluster:
+#### Windows VM assumptions:
+- An updated version of Windows Server 1909 VM image and corresponding container images are used
+- The Windows image is configured with SSH so that WMCO can access it:
+  - SSH on the Windows VM is configured using the [powershell script](https://gist.githubusercontent.com/ravisantoshgudimetla/087bf49088f70edf7f97777386d12f18/raw/0f13048697130a0265ed1050591361fdebcee3ae/powershell.yaml)
+  - A new file called C:\Users\Administrator\.ssh\authorized_keys containing the public key to be used is created
+- VMWare tools is installed, configured and running on the Windows VM:
+  - The [tools.conf](https://docs.vmware.com/en/VMware-Tools/11.1.0/com.vmware.vsphere.vmwaretools.doc/GUID-EA16729B-43C9-4DF9-B780-9B358E71B4AB.html) file at C:\ProgramData\VMware\VMware Tools\tools.conf has the following entry to ensure that the cloned vNIC generated on the Windows VM by hybrid-overlay won't be ignored and the VM has an IP Address in the vCenter
+    - `exclude-nics=`
+  - The tools Windows service is running in the Windows VM.
+- The Windows image has been sysprep'ed and it is available for cloning using the following command:
+`C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /unattend:<path_to_unattend.xml>`
+
+Sample [unattend.xml](https://gist.github.com/ravisantoshgudimetla/9d8e26032810a8df0b71b8d67f4d906b)
+
+
+- Generally, ignition config files are available on the internal API Server URL in case of IPI however in case of 
+vSphere, the ignition files are available on both internal and external API Server URLs. WMCO as of now, downloads the
+ignition files from internal API server. So, add a new DNS entry for `api-int.<cluster-name>.domain.com` which points
+to external API server URL `api.<cluster-name>.domain.com`. The external api should have been created as part of 
+[cluster install](https://docs.openshift.com/container-platform/4.5/installing/installing_vsphere/installing-vsphere-installer-provisioned.html)
+This requirement will be removed in the future.
+
+vSphere Windows VMs are cloned off an existing template or VM, for every VM the following steps need to be done. It is assumed that sysprep has been run on the VM:
+- Change the hostname of the Windows VM to match Windows Machine you created. The following powershell command can be used to do so:
+```
+Rename-Computer -NewName <machine_name> -Force -Restart
+```
+This process is going to be automated in the future. This document will be updated accordingly.
 ## Usage
 The operator can be installed from the *community-operators* catalog on OperatorHub.
 It can also be build and installed from source manually, see the [development instructions](docs/HACKING.md).
@@ -36,6 +65,8 @@ the MachineSet should have following labels:
 * *machine.openshift.io/cluster-api-machine-role: worker*
 * *machine.openshift.io/cluster-api-machine-type: worker*
 
+### Creating a vSphere Windows MachineSet
+
 The following label has to be added to the Machine spec within the MachineSet spec:
 * *node-role.kubernetes.io/worker: ""*
 
@@ -46,11 +77,7 @@ Not having these labels will result in the Windows node not being marked as a wo
 oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
 
-`<location>` should be replaced with a valid Azure location like `centralus`.
-
-`<zone>` should be replaced with a valid Azure availability zone like `us-east-1a`.
-
-Please note that on Azure, Windows Machine names cannot be more than 15 characters long.
+Please note that on vSphere Windows Machine names cannot be more than 15 characters long.
 The MachineSet name can therefore not be more than 9 characters long, due to the way Machine names are generated from it.
 ```
 apiVersion: machine.openshift.io/v1beta1
@@ -80,37 +107,35 @@ spec:
           node-role.kubernetes.io/worker: ""
       providerSpec:
         value:
-          apiVersion: azureproviderconfig.openshift.io/v1beta1
+          apiVersion: vsphereprovider.openshift.io/v1beta1
           credentialsSecret:
-            name: azure-cloud-credentials
-            namespace: openshift-machine-api
-          image:
-            offer: WindowsServer
-            publisher: MicrosoftWindowsServer
-            resourceID: ""
-            sku: 2019-Datacenter-with-Containers
-            version: latest
-          kind: AzureMachineProviderSpec
-          location: <location>
-          managedIdentity: <infrastructureID>-identity
-          networkResourceGroup: <infrastructureID>-rg
-          osDisk:
-            diskSizeGB: 128
-            managedDisk:
-              storageAccountType: Premium_LRS
-            osType: Windows
-          publicIP: false
-          resourceGroup: <infrastructureID>-rg
-          subnet: <infrastructureID>-worker-subnet
+            name: vsphere-cloud-credentials
+          diskGiB: 128
+          kind: VSphereMachineProviderSpec
+          memoryMiB: 16384
+          metadata:
+            creationTimestamp: null
+          network:
+            devices:
+            - networkName: dev-segment
+          numCPUs: 4
+          numCoresPerSocket: 1
+          snapshot: ""
+          template: 1909-template-docker-ssh
           userDataSecret:
-            name: windows-user-data
-            namespace: openshift-machine-api
-          vmSize: Standard_D2s_v3
-          vnet: <infrastructureID>-vnet
-          zone: "<zone>"
+            name: worker-user-data-managed
+          workspace:
+            datacenter: xyz
+            datastore: abc
+            folder: folder_abc
+            resourcePool: resource_abc
+            server: vSphere_cluster
 ```
+
+
 Example MachineSet for other cloud providers:
 - [AWS](docs/machineset-aws.md)
+- [Azure](docs/machineset-azure.md)
 
 ## Windows nodes Kubernetes component upgrade
 
