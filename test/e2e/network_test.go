@@ -16,6 +16,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
 )
 
 // testNetwork runs all the cluster and node network tests
@@ -160,9 +162,14 @@ func testNorthSouthNetworking(t *testing.T) {
 	}
 	require.NoError(t, err, "could not create Windows Server deployment")
 
-	// Assert that we can successfully GET the webserver
-	err = testCtx.getThroughLoadBalancer(winServerDeployment)
-	assert.NoError(t, err, "unable to GET the webserver through a load balancer")
+	// Ignore the LoadBalancer test for vSphere as it has to be created manually
+	// https://docs.openshift.com/container-platform/4.5/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html#nw-using-load-balancer-getting-traffic_configuring-ingress-cluster-traffic-load-balancer
+	_, ok := testCtx.CloudProvider.(*vsphere.Provider)
+	if !ok {
+		// Assert that we can successfully GET the webserver
+		err = testCtx.getThroughLoadBalancer(winServerDeployment)
+		assert.NoError(t, err, "unable to GET the webserver through a load balancer")
+	}
 }
 
 // getThroughLoadBalancer does a GET request to the given webserver through a load balancer service
