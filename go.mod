@@ -42,7 +42,7 @@ require (
 	github.com/openshift/api v0.0.0-20200728200559-811027b63048
 	github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70
 	github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7
-	github.com/operator-framework/operator-sdk v0.18.1
+	github.com/operator-framework/operator-sdk v0.19.4
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
 	github.com/spf13/pflag v1.0.5

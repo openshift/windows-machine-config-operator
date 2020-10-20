@@ -10,7 +10,12 @@ the cluster as a worker node.
 More design details can be explored in the [WMCO enhancement](https://github.com/openshift/enhancements/blob/master/enhancements/windows-containers/windows-machine-config-operator.md).
 
 ## Pre-requisites
-* OKD/OCP 4.6 cluster running on Azure or AWS, configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
+- OKD/OCP 4.6 cluster running on Azure or AWS, configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
+- [Install](https://v0-19-x.sdk.operatorframework.io/docs/install-operator-sdk/) operator-sdk
+  v0.19.4
+- The operator is written using operator-sdk [v0.19.4](https://github.com/operator-framework/operator-sdk/releases/tag/v0.19.4)
+  and has the same [pre-requisites](https://v0-19-x.sdk.operatorframework.io/docs/install-operator-sdk/#prerequisites) as it
+  does.
 
 ## Usage
 The operator can be installed from the *community-operators* catalog on OperatorHub.
