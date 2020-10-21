@@ -76,7 +76,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, clusterServiceCIDR,
+func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machineName, clusterServiceCIDR,
 	vxlanPort string, signer ssh.Signer, platform oconfig.PlatformType) (*nodeConfig, error) {
 	// Update the logger name with the VM's cloud ID. Ideally this should be the Machine name but is not available at
 	// this point.
@@ -102,7 +102,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, clust
 			"creating new node config")
 	}
 
-	win, err := windows.New(ipAddress, instanceID, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
+	win, err := windows.New(ipAddress, instanceID, machineName, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
 		signer, platform)
 
 	if err != nil {

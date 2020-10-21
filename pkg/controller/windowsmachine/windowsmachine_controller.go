@@ -381,7 +381,7 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 
 	log.Info("processing", "namespace", request.Namespace, "name", request.Name)
 	// Make the Machine a Windows Worker node
-	if err := r.addWorkerNode(ipAddress, instanceID, r.platform); err != nil {
+	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name, r.platform); err != nil {
 		var authErr *windows.AuthErr
 		if errors.As(err, &authErr) {
 			// SSH authentication errors with the Machine are non recoverable, stemming from a mismatch with the
@@ -423,8 +423,8 @@ func (r *ReconcileWindowsMachine) deleteMachine(machine *mapi.Machine) error {
 }
 
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
-func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID string, platform oconfig.PlatformType) error {
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, r.clusterServiceCIDR,
+func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID, machineName string, platform oconfig.PlatformType) error {
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, machineName, r.clusterServiceCIDR,
 		r.vxlanPort, r.signer, platform)
 	if err != nil {
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
