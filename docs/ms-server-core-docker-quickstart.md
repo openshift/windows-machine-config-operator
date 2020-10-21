@@ -9,11 +9,11 @@ OpenShift.
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
 
-Start-Service ssh-agent
 Start-Service sshd
-
-Set-Service -Name ssh-agent -StartupType ‘Automatic’
 Set-Service -Name sshd -StartupType ‘Automatic’
+
+Start-Service ssh-agent
+Set-Service -Name ssh-agent -StartupType ‘Automatic’
 ```
 ## Configure administrators rsa key authentication
   - Run in admin powershell
