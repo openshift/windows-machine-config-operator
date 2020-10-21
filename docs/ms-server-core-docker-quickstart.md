@@ -38,7 +38,7 @@ $acl | Set-Acl
 ```
 
 ## Configure [WinRM Listener for Ansible] Connection
->  Uses this Ansible project [ConfigureRemotingForAnsible.ps1] Script
+>  Uses this Ansible project [ConfigureRemotingForAnsible.ps1] Script    
 >  Run in admin powershell
 >    
     
