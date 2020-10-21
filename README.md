@@ -10,12 +10,13 @@ the cluster as a worker node.
 More design details can be explored in the [WMCO enhancement](https://github.com/openshift/enhancements/blob/master/enhancements/windows-containers/windows-machine-config-operator.md).
 
 ## Pre-requisites
-- OKD/OCP 4.6 cluster running on Azure or AWS, configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
+- OKD/OCP 4.6 cluster running on Azure, AWS or vSphere configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
 - [Install](https://v0-19-x.sdk.operatorframework.io/docs/install-operator-sdk/) operator-sdk
   v0.19.4
 - The operator is written using operator-sdk [v0.19.4](https://github.com/operator-framework/operator-sdk/releases/tag/v0.19.4)
   and has the same [pre-requisites](https://v0-19-x.sdk.operatorframework.io/docs/install-operator-sdk/#prerequisites) as it
   does.
+- [vSphere prerequisites](docs/vsphere-prerequisites.md)
 
 ## Usage
 The operator can be installed from the *community-operators* catalog on OperatorHub.
@@ -24,7 +25,7 @@ It can also be build and installed from source manually, see the [development in
 Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
 the private key that will be used to access the Windows VMs. The private key should be in PEM encoded RSA format.
 The following commands will create a RSA key and a secret containing the key, please change path as necessary:
-```
+```bash
 # Create a 2048-bit RSA SSH key with empty passphrase
 ssh-keygen -q -t rsa -b 2048 -P "" -f /path/to/key
 
@@ -32,7 +33,7 @@ ssh-keygen -q -t rsa -b 2048 -P "" -f /path/to/key
 oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
 ```
 
-Below is the example of an Azure Windows MachineSet which can create Windows Machines that the WMCO can react upon.
+Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
 Please note that the windows-user-data secret will be created by the WMCO lazily when it is configuring the first
 Windows Machine. After that, the windows-user-data will be available for the subsequent MachineSets to be consumed.
 It might take around 10 minutes for the Windows VM to be configured so that it joins the cluster. Please note that
@@ -47,17 +48,20 @@ The following label has to be added to the Machine spec within the MachineSet sp
 Not having these labels will result in the Windows node not being marked as a worker.
 
 `<infrastructureID>` should be replaced with the output of:
-```
+```bash
 oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
+The following template variables need to be replaced as follows with values from your vSphere environment:
+* *\<Windows_VM_template\>*: template name
+* *\<VM Network Name\>*: network name
+* *\<vCenter DataCenter Name\>*: datacenter name
+* *\<Path to VM Folder in vCenter\>*: path where your OpenShift cluster is running
+* *\<vCenter Datastore Name\>*: datastore name
+* *\<vCenter Server FQDN/IP\>*: IP address or FQDN of the vCenter server
 
-`<location>` should be replaced with a valid Azure location like `centralus`.
-
-`<zone>` should be replaced with a valid Azure availability zone like `us-east-1a`.
-
-Please note that on Azure, Windows Machine names cannot be more than 15 characters long.
-The MachineSet name can therefore not be more than 9 characters long, due to the way Machine names are generated from it.
-```
+Please note that on vSphere, Windows Machine names cannot be more than 15 characters long. The MachineSet name therefore
+cannot be more than 9 characters long, due to the way Machine names are generated from it.
+```yaml
 apiVersion: machine.openshift.io/v1beta1
 kind: MachineSet
 metadata:
@@ -85,37 +89,34 @@ spec:
           node-role.kubernetes.io/worker: ""
       providerSpec:
         value:
-          apiVersion: azureproviderconfig.openshift.io/v1beta1
+          apiVersion: vsphereprovider.openshift.io/v1beta1
           credentialsSecret:
-            name: azure-cloud-credentials
-            namespace: openshift-machine-api
-          image:
-            offer: WindowsServer
-            publisher: MicrosoftWindowsServer
-            resourceID: ""
-            sku: 2019-Datacenter-with-Containers
-            version: latest
-          kind: AzureMachineProviderSpec
-          location: <location>
-          managedIdentity: <infrastructureID>-identity
-          networkResourceGroup: <infrastructureID>-rg
-          osDisk:
-            diskSizeGB: 128
-            managedDisk:
-              storageAccountType: Premium_LRS
-            osType: Windows
-          publicIP: false
-          resourceGroup: <infrastructureID>-rg
-          subnet: <infrastructureID>-worker-subnet
+            name: vsphere-cloud-credentials
+          diskGiB: 128
+          kind: VSphereMachineProviderSpec
+          memoryMiB: 16384
+          metadata:
+            creationTimestamp: null
+          network:
+            devices:
+            - networkName:  "<VM Network Name>"
+          numCPUs: 4
+          numCoresPerSocket: 1
+          snapshot: ""
+          template: <Windows_VM_template>
           userDataSecret:
-            name: windows-user-data
-            namespace: openshift-machine-api
-          vmSize: Standard_D2s_v3
-          vnet: <infrastructureID>-vnet
-          zone: "<zone>"
+            name: worker-user-data-managed
+          workspace:
+             datacenter: <vCenter DataCenter Name>
+             datastore: <vCenter Datastore Name>
+             folder: <Path to VM Folder in vCenter> # e.g. /DC/vm/ocp45-2tdrm
+             server: <vCenter Server FQDN/IP>
+
 ```
+
 Example MachineSet for other cloud providers:
 - [AWS](docs/machineset-aws.md)
+- [Azure](docs/machineset-azure.md)
 
 ## Windows nodes Kubernetes component upgrade
 
