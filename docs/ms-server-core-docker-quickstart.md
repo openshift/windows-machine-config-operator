@@ -33,3 +33,17 @@ $acl.SetAccessRule($administratorsRule)
 $acl.SetAccessRule($systemRule)
 $acl | Set-Acl
 ```
+
+## Configure [WinRM Listener for Ansible] Connection
+  - Uses this Ansible project [ConfigureRemotingForAnsible.ps1] Script
+  - Run in admin powershell
+    
+```sh
+$url = "https://git.io/fNG9x"
+$file = "$env:temp\ConfigureRemotingForAnsible.ps1"
+(New-Object -TypeName System.Net.WebClient).DownloadFile($url, $file)
+powershell.exe -ExecutionPolicy ByPass -File $file
+```
+
+[ConfigureRemotingForAnsible.ps1]:https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1
+[WinRM Listener for Ansible]:https://docs.ansible.com/ansible/latest/user_guide/windows_setup.html#winrm-setup
