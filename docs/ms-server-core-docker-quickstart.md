@@ -4,7 +4,9 @@ Datacenter (core) with containers ready to prepare as a worker node for
 OpenShift.
 
 ## Enable ssh service
-  - Run in admin powershell
+>  Run in admin powershell
+>    
+
 ```sh
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
@@ -13,7 +15,8 @@ Start-Service sshd
 Set-Service -Name sshd -StartupType Automatic
 ```
 ## Configure administrators rsa key authentication
-  - Run in admin powershell
+>  Run in admin powershell
+>    
     
   1. Write ssh public key to file
 ```sh
@@ -35,8 +38,9 @@ $acl | Set-Acl
 ```
 
 ## Configure [WinRM Listener for Ansible] Connection
-  - Uses this Ansible project [ConfigureRemotingForAnsible.ps1] Script
-  - Run in admin powershell
+>  Uses this Ansible project [ConfigureRemotingForAnsible.ps1] Script
+>  Run in admin powershell
+>    
     
   1. Create Listener
 ```sh
