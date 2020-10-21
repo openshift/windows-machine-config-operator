@@ -38,11 +38,16 @@ $acl | Set-Acl
   - Uses this Ansible project [ConfigureRemotingForAnsible.ps1] Script
   - Run in admin powershell
     
+  1. Create Listener
 ```sh
 $url = "https://git.io/fNG9x"
 $file = "$env:temp\ConfigureRemotingForAnsible.ps1"
 (New-Object -TypeName System.Net.WebClient).DownloadFile($url, $file)
 powershell.exe -ExecutionPolicy ByPass -File $file
+```
+  2. Verify Listener
+```sh
+winrm enumerate winrm/config/Listener
 ```
 
 [ConfigureRemotingForAnsible.ps1]:https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1
