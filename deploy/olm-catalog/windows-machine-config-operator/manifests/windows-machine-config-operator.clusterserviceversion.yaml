@@ -32,7 +32,8 @@ spec:
 
     ### Pre-requisites
     * A Red Hat OpenShift subscription
-    * OCP 4.6.8+ cluster running on Azure or AWS, configured with hybrid OVN Kubernetes networking
+    * OCP 4.6.8+ cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
+    * [vSphere prequisites](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/vsphere-prerequisites.md)
 
     ### Usage
     Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
@@ -45,7 +46,7 @@ spec:
     [private key](https://docs.openshift.com/container-platform/4.6/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default)
     used when installing the cluster
 
-    Below is an example Azure Windows MachineSet which creates Windows Machines that the WMCO can react upon.
+    Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
     Please note that the windows-user-data secret will be created by the WMCO lazily when it is configuring the first
     Windows Machine. After that, the windows-user-data will be available for the subsequent MachineSets to be consumed.
     It might take around 10 minutes for the Windows VM to be configured so that it joins the cluster. Please note that
@@ -64,13 +65,16 @@ spec:
     oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
     ```
 
-    `<location>` should be replaced with a valid Azure location like `centralus`.
+    The following template variables need to be replaced as follows with values from your vSphere environment:
+    * *\<Windows_VM_template\>*: template name
+    * *\<VM Network Name\>*: network name
+    * *\<vCenter DataCenter Name\>*: datacenter name
+    * *\<Path to VM Folder in vCenter\>*: path where your OpenShift cluster is running
+    * *\<vCenter Datastore Name\>*: datastore name
+    * *\<vCenter Server FQDN/IP\>*: IP address or FQDN of the vCenter server
 
-    `<zone>` should be replaced with a valid Azure availability zone like `us-east-1a`.
-
-    Please note that on Azure, Windows Machine names cannot be more than 15 characters long.
-    The MachineSet name can, therefore, not be more than 9 characters long, due to the way Machine names are generated from it.
-
+    Please note that on vSphere, Windows Machine names cannot be more than 15 characters long. The MachineSet name therefore
+    cannot be more than 9 characters long, due to the way Machine names are generated from it.
     ```
     apiVersion: machine.openshift.io/v1beta1
     kind: MachineSet
@@ -99,37 +103,33 @@ spec:
               node-role.kubernetes.io/worker: ""
           providerSpec:
             value:
-              apiVersion: azureproviderconfig.openshift.io/v1beta1
+              apiVersion: vsphereprovider.openshift.io/v1beta1
               credentialsSecret:
-                name: azure-cloud-credentials
+                name: vsphere-cloud-credentials
                 namespace: openshift-machine-api
-              image:
-                offer: WindowsServer
-                publisher: MicrosoftWindowsServer
-                resourceID: ""
-                sku: 2019-Datacenter-with-Containers
-                version: latest
-              kind: AzureMachineProviderSpec
-              location: <location>
-              managedIdentity: <infrastructureID>-identity
-              networkResourceGroup: <infrastructureID>-rg
-              osDisk:
-                diskSizeGB: 128
-                managedDisk:
-                  storageAccountType: Premium_LRS
-                osType: Windows
-              publicIP: false
-              resourceGroup: <infrastructureID>-rg
-              subnet: <infrastructureID>-worker-subnet
+              diskGiB: 128
+              kind: VSphereMachineProviderSpec
+              memoryMiB: 16384
+              metadata:
+                creationTimestamp: null
+              network:
+                devices:
+                - networkName: "<VM Network Name>"
+              numCPUs: 4
+              numCoresPerSocket: 1
+              snapshot: ""
+              template: <Windows_VM_template
               userDataSecret:
-                name: windows-user-data
-                namespace: openshift-machine-api
-              vmSize: Standard_D2s_v3
-              vnet: <infrastructureID>-vnet
-              zone: "<zone>"
+                name: worker-user-data-managed
+              workspace:
+                datacenter: <vCenter DataCenter Name>
+                datastore: <vCenter Datastore Name>
+                folder: <Path to VM Folder in vCenter> # e.g. /DC/vm/ocp45-2tdrm
+                server: <vCenter Server FQDN/IP>
     ```
     Example MachineSet for other cloud providers:
     - [AWS](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-aws.md)
+    - [Azure](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-azure.md)
 
     ### Reporting issues
     Support for this distribution of WMCO requires a Red Hat OpenShfit subscription. Support should be requested through the Red Hat Customer Portal.
