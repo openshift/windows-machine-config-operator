@@ -374,7 +374,7 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 
 	log.Info("processing", "namespace", request.Namespace, "name", request.Name)
 	// Make the Machine a Windows Worker node
-	if err := r.addWorkerNode(ipAddress, instanceID, r.platform); err != nil {
+	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name, r.platform); err != nil {
 		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
 			"Machine %s configuration failure", machine.Name)
 		return reconcile.Result{}, err
@@ -386,8 +386,8 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 }
 
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
-func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID string, platform oconfig.PlatformType) error {
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, r.clusterServiceCIDR,
+func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID, machineName string, platform oconfig.PlatformType) error {
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, machineName, r.clusterServiceCIDR,
 		r.vxlanPort, r.signer, platform)
 	if err != nil {
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
