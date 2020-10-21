@@ -11,12 +11,19 @@ Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
 
 Start-Service sshd
 Set-Service -Name sshd -StartupType Automatic
-
-Start-Service ssh-agent
-Set-Service -Name ssh-agent -StartupType Automatic
 ```
 ## Configure administrators rsa key authentication
   - Run in admin powershell
+    
+  1. Write ssh public key to file
+```sh
+$sshPubKey = 'ssh-rsa AAAAB3NzaC...TRUNCATED...AQAAAAB23V6s/L/yU= admin@bastion' 
+$sshPubKeyFile = 'administrators_authorized_keys'
+$sshDataDir = 'C:\ProgramData\ssh'
+New-Item -Path $sshDataDir -Name $sshPubKeyFile -ItemType "file" -Value $sshPubKey  
+```
+
+  2. Set permissions on public key file
 ```sh
 $acl = Get-Acl C:\ProgramData\ssh\administrators_authorized_keys
 $acl.SetAccessRuleProtection($true, $false)
