@@ -117,6 +117,17 @@ spec:
 Example MachineSet for other cloud providers:
 - [AWS](docs/machineset-aws.md)
 
+Alternatively, the [hack/machineset.sh](hack/machineset.sh) script can be used to generate MachineSets for AWS and Azure platforms.
+The hack script will generate a `MachineSet.yaml` file which can be edited before using or can be used as it is.
+The script takes optional arguments `apply` and `delete` to directly create/delete MachineSet on the cluster without 
+generating a `yaml` file.
+
+Usage:
+```
+./hack/machineset.sh                 # to generate yaml file
+./hack/machineset.sh apply/delete    # to create/delete MachineSet directly on cluster
+```
+
 ## Windows nodes Kubernetes component upgrade
 
 When a new version of WMCO is released that is compatible with the current cluster version, an operator upgrade will 
