@@ -34,7 +34,7 @@ var (
 	// ubi8Image is the name/location of the linux image we will use for testing
 	ubi8Image = "registry.access.redhat.com/ubi8/ubi-minimal:latest"
 	// retryCount is the amount of times we will retry an api operation
-	retryCount = 60
+	retryCount = 80
 	// retryInterval is the interval of time until we retry after a failure
 	retryInterval = 5 * time.Second
 )
