@@ -1,6 +1,6 @@
 [submodule "windows-machine-config-bootstrapper"]
 	path = windows-machine-config-bootstrapper
-	url = https://github.com/openshift/windows-machine-config-bootstrapper.git
+	url = https://github.com/openshift/windows-machine-config-bootstrapper
 	branch = release-4.6
 [submodule "ovn-kubernetes"]
 	path = ovn-kubernetes
@@ -8,7 +8,7 @@
 	branch = release-4.6
 [submodule "containernetworking-plugins"]
 	path = containernetworking-plugins
-	url = https://github.com/openshift/containernetworking-plugins/
+	url = https://github.com/openshift/containernetworking-plugins
 	branch = release-4.6
 [submodule "kubernetes"]
 	path = kubernetes
