@@ -22,6 +22,10 @@ find_files() {
         -o -wholename './target' \
         -o -wholename './.git' \
         -o -wholename '*/vendor/*' \
+	-o -wholename './containernetworking-plugins' \
+	-o -wholename './ovn-kubernetes' \
+	-o -wholename './kubernetes' \
+	-o -wholename './windows-machine-config-bootstrapper' \
       \) -prune \
     \) -name '*.go'
 }

@@ -30,7 +30,7 @@ func testNetwork(t *testing.T) {
 
 var (
 	// ubi8Image is the name/location of the linux image we will use for testing
-	ubi8Image = "registry.access.redhat.com/ubi8/ubi:latest"
+	ubi8Image = "registry.access.redhat.com/ubi8/ubi-minimal:latest"
 	// retryCount is the amount of times we will retry an api operation
 	retryCount = 60
 	// retryInterval is the interval of time until we retry after a failure
@@ -119,7 +119,7 @@ func testEastWestNetworking(t *testing.T) {
 
 					// create the curler job based on the specified curlerOS
 					if tt.curlerOS == linux {
-						curlerCommand := []string{"bash", "-c", "yum update; yum install curl -y; curl " + endpointIP}
+						curlerCommand := []string{"bash", "-c", "curl " + endpointIP}
 						curlerJob, err = testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), curlerCommand)
 						require.NoError(t, err, "could not create Linux job")
 					} else if tt.curlerOS == windows {

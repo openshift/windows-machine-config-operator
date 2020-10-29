@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Location of the manifests file
+MANIFEST_LOC=deploy/olm-catalog/windows-machine-config-operator
+
 get_operator_sdk() {
   # Download the operator-sdk binary only if it is not already available
   # We do not validate the version of operator-sdk if it is available already
@@ -10,7 +13,7 @@ get_operator_sdk() {
 
   DOWNLOAD_DIR=/tmp/operator-sdk
   # TODO: Make this download the same version we have in go dependencies in gomod
-  wget --no-verbose -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v0.18.1/operator-sdk-v0.18.1-x86_64-linux-gnu && chmod +x /tmp/operator-sdk || return
+  wget --no-verbose -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v0.19.4/operator-sdk-v0.19.4-x86_64-linux-gnu && chmod +x /tmp/operator-sdk || return
   echo $DOWNLOAD_DIR
 }
 
@@ -31,16 +34,11 @@ OSDK_WMCO_management() {
 
   local COMMAND=$1
   local OSDK_PATH=$2
-  local INCLUDE=""
-
-  if [[ "$1" = "run" ]]; then
-    INCLUDE="--include "$3"/windows-machine-config-operator/manifests/windows-machine-config-operator.clusterserviceversion.yaml"
-  fi
 
   # Currently this fails even on successes, adding this check to ignore the failure
   # https://github.com/operator-framework/operator-sdk/issues/2938
   if ! $OSDK_PATH $COMMAND packagemanifests --olm-namespace openshift-operator-lifecycle-manager --operator-namespace openshift-windows-machine-config-operator \
-  --operator-version 0.0.0 $INCLUDE; then
+  --operator-version 0.0.0 ; then
     echo operator-sdk $1 failed
   fi
 }
@@ -64,28 +62,24 @@ build_WMCO() {
   fi
 }
 
-# Creates a temporary directory to hold edited manifests, validates the operator bundle
-# and prepares the cluster to run the operator and runs the operator on the cluster using OLM
+# Updates the manifest file with the operator image, prepares the cluster to run the operator and
+# runs the operator on the cluster using OLM
 # Parameters:
 # 1: path to the operator-sdk binary to use
 run_WMCO() {
   local OSDK=$1
 
-  # Create a temporary directory to hold the edited manifests which will be removed on exit
-  MANIFEST_LOC=`mktemp -d`
-  trap "rm -r $MANIFEST_LOC" EXIT
-  cp -r deploy/olm-catalog/windows-machine-config-operator/ $MANIFEST_LOC
-  sed -i "s|REPLACE_IMAGE|$OPERATOR_IMAGE|g" $MANIFEST_LOC/windows-machine-config-operator/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+  transform_csv REPLACE_IMAGE $OPERATOR_IMAGE
 
   # Validate the operator bundle manifests
-  $OSDK bundle validate "$MANIFEST_LOC"/windows-machine-config-operator/
+  $OSDK bundle validate $MANIFEST_LOC
   if [ $? -ne 0 ] ; then
       error-exit "operator bundle validation failed"
   fi
 
   oc apply -f deploy/namespace.yaml
   # Run the operator in the openshift-windows-machine-config-operator namespace
-  OSDK_WMCO_management run $OSDK $MANIFEST_LOC
+  OSDK_WMCO_management run $OSDK
 
   # Additional guard that ensures that operator was deployed given the SDK flakes in error reporting
   if ! oc rollout status deployment windows-machine-config-operator -n openshift-windows-machine-config-operator --timeout=5s; then
@@ -93,13 +87,20 @@ run_WMCO() {
   fi
 }
 
-# Cleans up the installation of operator from the cluster and deletes the namespace
+# Reverts the changes made in manifests file and cleans up the installation of operator from the cluster and deletes the namespace
 # Parameters:
 # 1: path to the operator-sdk binary to use
 cleanup_WMCO() {
   local OSDK=$1
+
+  # Cleanup the operator and revert changes made to the csv
+  if ! OSDK_WMCO_management cleanup $OSDK; then
+      transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
+      error-exit "operator cleanup failed"
+  fi
+  transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
+
   # Remove the operator from openshift-windows-machine-config-operator namespace
-  OSDK_WMCO_management cleanup $OSDK
   oc delete -f deploy/namespace.yaml
 }
 
@@ -114,4 +115,16 @@ get_version() {
   fi
 
   echo $VERSION
+}
+
+# Given two parameters, replaces the value in first parameter with the second in the csv.
+# Parameters:
+# 1: parameter to determine value to be replaced in the csv
+# 2: parameter with new value to be replaced with in the csv
+transform_csv() {
+  if [ "$#" -lt 2 ]; then
+    echo incorrect parameter count for replace_csv_value $#
+    return 1
+  fi
+  sed -i "s|"$1"|"$2"|g" $MANIFEST_LOC/manifests/windows-machine-config-operator.clusterserviceversion.yaml
 }
