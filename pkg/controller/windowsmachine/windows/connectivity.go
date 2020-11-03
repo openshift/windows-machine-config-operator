@@ -128,7 +128,7 @@ func (c *sshConnectivity) transfer(filePath, remoteDir string) error {
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
-			log.Error(err, "error closing local file %s", filePath)
+			log.Error(err, "error closing local file", "file", filePath)
 		}
 	}()
 
@@ -149,7 +149,7 @@ func (c *sshConnectivity) transfer(filePath, remoteDir string) error {
 
 	// Forcefully close the file so that we can execute it later in the case of binaries
 	if err := dstFile.Close(); err != nil {
-		log.Error(err, "error closing remote file %s", remoteFile)
+		log.Error(err, "error closing remote file", "file", remoteFile)
 	}
 	return nil
 }

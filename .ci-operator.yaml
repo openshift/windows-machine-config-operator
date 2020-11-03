@@ -1,0 +1,5 @@
+# Defining this here allows us to atomically change both the code and the go version used to build the code in CI.
+build_root_image:
+  namespace: openshift
+  name: release
+  tag: golang-1.14

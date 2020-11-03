@@ -35,7 +35,7 @@ In order to build the operator ignoring the existing build image cache, run the 
 
 To clean-up the installation, use:
 ```shell script
-hack/olm.sh cleanup
+hack/olm.sh cleanup -c "<OPERATOR_IMAGE>"
 ```
 
 ### Running e2e tests on a cluster
