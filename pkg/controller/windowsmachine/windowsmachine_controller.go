@@ -297,7 +297,9 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 				if !r.isAllowedDeletion(machine) {
 					log.Info("machine deletion restricted", "name", machine.GetName(),
 						"minHealthyCount", minHealthyCount)
-					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted", "Machine %v deletion restricted due to exceeded number of unhealthy machines. ", machine.Name)
+					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted",
+						"Machine %v deletion restricted as minimum healthy machines needs to be %d",
+						machine.Name, minHealthyCount)
 					return reconcile.Result{RequeueAfter: requeueDuration}, nil
 				}
 				if !machine.GetDeletionTimestamp().IsZero() {
@@ -306,11 +308,13 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 				}
 
 				if err := r.client.Delete(context.TODO(), machine); err != nil {
-					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionFailed", "Machine %v deletion failed: unable to delete Machine object: %v", machine.Name, err)
+					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionFailed",
+						"Machine %v deletion failed: %v", machine.Name, err)
 					return reconcile.Result{}, err
 				}
 				log.Info("machine has been remediated by deletion", "name", machine.GetName())
-				r.recorder.Eventf(machine, core.EventTypeNormal, "MachineDeleted", "Machine %v has been remediated by requesting to delete Machine object", machine.Name)
+				r.recorder.Eventf(machine, core.EventTypeNormal, "MachineDeleted",
+					"Machine %v has been remediated by deleting the Machine object", machine.Name)
 				return reconcile.Result{}, nil
 			}
 			log.Info("machine has current version", "name", machine.GetName(),
@@ -367,12 +371,12 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	log.Info("processing", "namespace", request.Namespace, "name", request.Name)
 	// Make the Machine a Windows Worker node
 	if err := r.addWorkerNode(ipAddress, providerName, instanceID); err != nil {
-		r.recorder.Eventf(machine, core.EventTypeWarning, "WMCO SetupFailure",
-			"Machine %s failed to be configured", machine.Name)
+		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
+			"Machine %s configuration failure", machine.Name)
 		return reconcile.Result{}, err
 	}
-	r.recorder.Eventf(machine, core.EventTypeNormal, "WMCO Setup",
-		"Machine %s Configured Successfully", machine.Name)
+	r.recorder.Eventf(machine, core.EventTypeNormal, "MachineSetup",
+		"Machine %s configured successfully", machine.Name)
 
 	return reconcile.Result{}, nil
 }
