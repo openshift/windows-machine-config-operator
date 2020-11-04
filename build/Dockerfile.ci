@@ -106,7 +106,6 @@ ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
 
 # install make package
 RUN microdnf -y install make tar gzip wget
-RUN microdnf -y update
 
 # Copy go from build stage, install within this stage
 COPY --from=build /build/go/go.tar.gz .
