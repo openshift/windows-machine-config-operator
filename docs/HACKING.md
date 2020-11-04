@@ -27,9 +27,10 @@ export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
 
 To run the operator on a cluster, use: 
 ```shell script
-hack/olm.sh run -c "<OPERATOR_IMAGE>"
+hack/olm.sh run -c "<OPERATOR_IMAGE>" -k "<PRIVATE_KEY.PEM>"
 ```
-This command builds the operator image and pushes it to remote repository. Executing [Build](#build) step is not required. 
+This command builds the operator image, pushes it to remote repository and uses OLM to launch the operator. Executing
+the [Build](#build) step is not required.
 
 In order to build the operator ignoring the existing build image cache, run the above command with the `-i` option.
 
@@ -57,9 +58,11 @@ Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
 
        
 Example command to spin up 2 Windows nodes and retain them after test run:
-```
+```shell script
 hack/run-ci-e2e-test.sh -s -n 2      
 ```
+
+Please note that you do not need to run `hack/olm.sh run` before `hack/run-ci-e2e-test.sh`.
 
 ## Bundling the Windows Machine Config Operator
 This directory contains resources related to installing the WMCO onto a cluster using OLM.
