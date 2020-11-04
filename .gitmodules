@@ -17,3 +17,6 @@
 [submodule "promu"]
 	path = promu
 	url = git://github.com/openshift/prometheus-promu
+[submodule "windows_exporter"]
+	path = windows_exporter
+	url = git://github.com/openshift/prometheus-community-windows_exporter
