@@ -25,10 +25,8 @@ ENV PATH=${PATH}:/usr/local/go/bin
 # The source here corresponds to the code in the PR and is placed here by the CI infrastructure.
 RUN mkdir /build/windows-machine-config-operator
 WORKDIR /build/windows-machine-config-operator
-# Copy just enough git metadata so that we can generate the version for the WMCO binary
-COPY .git/HEAD .git/HEAD
-COPY .git/refs/heads/. .git/refs/heads
-RUN mkdir -p .git/objects
+# Copy .git metadata so that we can generate the version for the WMCO binary
+COPY .git .git
 # Copy files and directories needed to build the WMCO binary
 COPY build build
 COPY cmd cmd
