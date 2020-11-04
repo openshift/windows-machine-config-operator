@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/pkg/errors"
@@ -38,12 +37,11 @@ import (
 const (
 	// ControllerName is the name of the WindowsMachine controller
 	ControllerName = "windowsmachine-controller"
-	// minHealthyCount is the minimum number of nodes that are required to be in running phase at a given time.
-	minHealthyCount = 1
+	// maxUnhealthyCount is the maximum number of nodes that are not ready to serve at a given time.
+	// TODO: https://issues.redhat.com/browse/WINC-524
+	maxUnhealthyCount = 1
 	// windowsOSLabel is the label used to identify the Windows Machines.
 	windowsOSLabel = "machine.openshift.io/os-id"
-	// requeueDuration is the time after which the request is requeued.
-	requeueDuration = time.Minute * 5
 )
 
 var log = logf.Log.WithName(ControllerName)
@@ -296,11 +294,11 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 				log.Info("upgrading machineset", "name", machinesetName)
 				if !r.isAllowedDeletion(machine) {
 					log.Info("machine deletion restricted", "name", machine.GetName(),
-						"minHealthyCount", minHealthyCount)
+						"maxUnhealthyCount", maxUnhealthyCount)
 					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted",
-						"Machine %v deletion restricted as minimum healthy machines needs to be %d",
-						machine.Name, minHealthyCount)
-					return reconcile.Result{RequeueAfter: requeueDuration}, nil
+						"Machine %v deletion restricted as the maximum unhealthy machines can`t exceed %v count",
+						machine.Name, maxUnhealthyCount)
+					return reconcile.Result{Requeue: true}, nil
 				}
 				if !machine.GetDeletionTimestamp().IsZero() {
 					// Delete already initiated
@@ -441,19 +439,49 @@ func (r *ReconcileWindowsMachine) isAllowedDeletion(machine *mapi.Machine) bool 
 		return false
 	}
 
-	if minHealthyCount == *(windowsMachineSet.Spec.Replicas) {
+	// Allow deletion if there is only one machine in the Windows MachineSet
+	totalWindowsMachineCount := *windowsMachineSet.Spec.Replicas
+	if maxUnhealthyCount == totalWindowsMachineCount {
 		return true
 	}
 
 	totalHealthy := 0
 	for _, ma := range machines.Items {
-		// Machines are determined as Healthy when they are part of Windows MachineSet and are
-		// in the Running Status
-		if len(ma.OwnerReferences) != 0 && ma.OwnerReferences[0].Name == machinesetName {
-			if ma.Status.Phase != nil && *ma.Status.Phase == "Running" && ma.Status.NodeRef != nil {
-				totalHealthy += 1
-			}
+		// Increment the count if the machine is identified as healthy and is a part of given Windows MachineSet and
+		// on which deletion is not already initiated.
+		if len(machine.OwnerReferences) != 0 && ma.OwnerReferences[0].Name == machinesetName &&
+			r.isWindowsMachineHealthy(&ma) && ma.DeletionTimestamp.IsZero() {
+			totalHealthy += 1
 		}
 	}
-	return totalHealthy-1 >= minHealthyCount
+
+	unhealthyMachineCount := totalWindowsMachineCount - int32(totalHealthy)
+	log.Info("unhealthy machine count for machineset", "name", machinesetName, "total", totalWindowsMachineCount,
+		"unhealthy", unhealthyMachineCount)
+
+	return unhealthyMachineCount < maxUnhealthyCount
+}
+
+// isWindowsMachineHealthy determines if the given Machine object is healthy. A Windows machine is considered
+// unhealthy if -
+// 1. Machine is not in a 'Running' phase
+// 2. Machine is not associated with a Node object
+// 3. Associated Node object doesn't have a Version annotation
+func (r *ReconcileWindowsMachine) isWindowsMachineHealthy(machine *mapi.Machine) bool {
+	if (machine.Status.Phase == nil || *machine.Status.Phase != "Running") &&
+		machine.Status.NodeRef == nil {
+		return false
+	}
+
+	// Get node associated with the machine
+	node, err := r.k8sclientset.CoreV1().Nodes().Get(context.TODO(), machine.Status.NodeRef.Name, meta.GetOptions{})
+	if err != nil {
+		return false
+	}
+	_, present := node.Annotations[nodeconfig.VersionAnnotation]
+	if !present {
+		return false
+	}
+
+	return true
 }
