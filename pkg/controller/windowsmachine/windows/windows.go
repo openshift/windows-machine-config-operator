@@ -34,6 +34,8 @@ const (
 	cniDir = k8sDir + "cni\\"
 	// cniConfDir is the directory for storing CNI configuration
 	cniConfDir = cniDir + "config\\"
+	// windowsExporterPath is the location of the windows_exporter.exe
+	windowsExporterPath = k8sDir + "windows_exporter.exe"
 	// kubeProxyPath is the location of the kube-proxy exe
 	kubeProxyPath = k8sDir + "kube-proxy.exe"
 	// hybridOverlayPath is the location of the hybrid-overlay-node exe
@@ -51,6 +53,12 @@ const (
 	kubeProxyServiceName = "kube-proxy"
 	// kubeletServiceName is the name of the kubelet Windows service
 	kubeletServiceName = "kubelet"
+	// windowsExporterServiceName is the name of the windows_exporter Windows service
+	windowsExporterServiceName = "windows_exporter"
+	// windowsExporterServiceArgs specifies metrics for the windows_exporter service to collect
+	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
+	windowsExporterServiceArgs = "--collectors.enabled " +
+		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory\""
 	// remotePowerShellCmdPrefix holds the PowerShell prefix that needs to be prefixed  for every remote PowerShell
 	// command executed on the remote Windows VM
 	remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass "
@@ -80,6 +88,8 @@ type Windows interface {
 	ConfigureCNI(string) error
 	// ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
 	ConfigureHybridOverlay(string) error
+	// ConfigureWindowsExporter ensures that the Windows metrics exporter is running on the node
+	ConfigureWindowsExporter() error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy(string, string) error
 }
@@ -185,7 +195,30 @@ func (vm *windows) Configure() error {
 	if err := vm.transferFiles(); err != nil {
 		return errors.Wrap(err, "error transferring files to Windows VM")
 	}
+	if err := vm.ConfigureWindowsExporter(); err != nil {
+		return errors.Wrapf(err, "error configuring Windows exporter on the Windows VM %s", vm.ID())
+	}
+
 	return vm.runBootstrapper()
+}
+
+// Start Windows metrics exporter service, only if the file is present on the VM
+func (vm *windows) ConfigureWindowsExporter() error {
+	exists, err := vm.FileExists(windowsExporterPath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		windowsExporterService, err := newService(windowsExporterPath, windowsExporterServiceName, windowsExporterServiceArgs)
+		if err != nil {
+			return errors.Wrapf(err, "error creating %s service object", windowsExporterServiceName)
+		}
+
+		if err := vm.ensureServiceIsRunning(windowsExporterService); err != nil {
+			return errors.Wrapf(err, "error ensuring %s Windows service has started running", windowsExporterServiceName)
+		}
+	}
+	return nil
 }
 
 func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
@@ -305,6 +338,7 @@ func (vm *windows) transferFiles() error {
 		wkl.WmcbPath:                 k8sDir,
 		wkl.HybridOverlayPath:        k8sDir,
 		wkl.HNSPSModule:              remoteDir,
+		wkl.WindowsExporterPath:      k8sDir,
 		wkl.FlannelCNIPluginPath:     cniDir,
 		wkl.WinBridgeCNIPlugin:       cniDir,
 		wkl.HostLocalCNIPlugin:       cniDir,

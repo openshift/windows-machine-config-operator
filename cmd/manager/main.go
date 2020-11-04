@@ -119,6 +119,7 @@ func main() {
 	}
 
 	// Checking if required files exist before starting the operator
+	// Note that the metrics wellknownlocations.WindowsExporterPath is (temporarily) not a required file
 	requiredFiles := []string{
 		wkl.FlannelCNIPluginPath,
 		wkl.HostLocalCNIPlugin,

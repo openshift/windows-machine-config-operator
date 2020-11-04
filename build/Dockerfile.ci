@@ -53,6 +53,16 @@ COPY ovn-kubernetes/ .
 WORKDIR /build/ovn-kubernetes/go-controller/
 RUN make windows
 
+# Build promu utility tool, needed to build the windows_exporter.exe metrics binary
+WORKDIR /build/promu/
+COPY promu/ .
+RUN make build
+
+# Build windows_exporter
+WORKDIR /build/windows_exporter/
+COPY windows_exporter/ .
+RUN GOOS=windows /build/promu/promu build -v
+
 # Build Kubernetes node binaries
 WORKDIR /build/kubernetes/
 COPY kubernetes/ .
@@ -81,6 +91,7 @@ RUN ./build_windows.sh
 #├── powershell
 #│   └── wget-ignore-cert.ps1
 #│   └── hns.psm1
+#├── windows_exporter.exe
 #└── wmcb.exe
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
@@ -93,6 +104,9 @@ COPY --from=build /build/windows-machine-config-bootstrapper/wmcb.exe .
 
 # Copy hybrid-overlay-node.exe
 COPY --from=build /build/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
+
+# Copy windows_exporter.exe
+COPY --from=build /build/windows_exporter/windows_exporter.exe .
 
 # Copy kubelet.exe and kube-proxy.exe
 RUN mkdir /payload/kube-node/
