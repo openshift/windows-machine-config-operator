@@ -66,8 +66,18 @@ build_WMCO() {
 # runs the operator on the cluster using OLM
 # Parameters:
 # 1: path to the operator-sdk binary to use
+# 2 (optional): private key path. This is typically used only from olm.sh, to avoid having to manually create the key.
 run_WMCO() {
+  if [ "$#" -lt 1 ]; then
+      echo incorrect parameter count for run_WMCO $#
+      return 1
+  fi
+
   local OSDK=$1
+  local PRIVATE_KEY=""
+  if [ "$#" -eq 2 ]; then
+      local PRIVATE_KEY=$2
+  fi
 
   transform_csv REPLACE_IMAGE $OPERATOR_IMAGE
 
@@ -77,7 +87,19 @@ run_WMCO() {
       error-exit "operator bundle validation failed"
   fi
 
-  oc apply -f deploy/namespace.yaml
+  if ! oc apply -f deploy/namespace.yaml; then
+      return 1
+  fi
+
+  if [ -n "$PRIVATE_KEY" ]; then
+      if ! oc get secret cloud-private-key -n openshift-windows-machine-config-operator; then
+          echo "Creating private-key secret"
+          if ! oc create secret generic cloud-private-key --from-file=private-key.pem="$PRIVATE_KEY" -n openshift-windows-machine-config-operator; then
+              return 1
+          fi
+      fi
+  fi
+
   # Run the operator in the openshift-windows-machine-config-operator namespace
   OSDK_WMCO_management run $OSDK
 
