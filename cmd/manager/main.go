@@ -131,6 +131,7 @@ func main() {
 		wkl.WmcbPath,
 		wkl.CNIConfigTemplatePath,
 		wkl.HNSPSModule,
+		wkl.WindowsExporterPath,
 	}
 	if err := checkIfRequiredFilesExist(requiredFiles); err != nil {
 		log.Error(err, "could not start the operator")

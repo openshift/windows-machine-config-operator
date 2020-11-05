@@ -47,6 +47,7 @@ func creationTestSuite(t *testing.T) {
 	t.Run("UserData validation", func(t *testing.T) { testUserData(t) })
 	t.Run("UserData idempotent check", func(t *testing.T) { testUserDataTamper(t) })
 	t.Run("Node Logs", func(t *testing.T) { testNodeLogs(t) })
+	t.Run("Windows Exporter metrics test", func(t *testing.T) { testWindowsExporter(t) })
 }
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
