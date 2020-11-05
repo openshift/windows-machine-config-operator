@@ -23,7 +23,6 @@ func testNetwork(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
 	require.NoError(t, testCtx.createNamespace(testCtx.workloadNamespace), "error creating test namespace")
-	defer testCtx.deleteNamespace(testCtx.workloadNamespace)
 	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
 }
