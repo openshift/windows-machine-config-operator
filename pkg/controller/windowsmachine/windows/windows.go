@@ -116,11 +116,10 @@ func New(ipAddress, providerName, instanceID, workerIgnitionEndpoint, vxlanPort 
 		adminUser = "Administrator"
 	}
 
-	log.V(1).Info("configuring SSH access to the Windows VM for user", "user", adminUser)
 	// Update the logger name with the VM's cloud ID
 	log = logf.Log.WithName(fmt.Sprintf("VM %s", instanceID))
-	// For now, let's use the `Administrator` user for every node
 
+	log.V(1).Info("initializing SSH connection", "user", adminUser)
 	conn, err := newSshConnectivity(adminUser, ipAddress, signer)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instanceID)
@@ -142,6 +141,7 @@ func (vm *windows) ID() string {
 }
 
 func (vm *windows) CopyFile(filePath, remoteDir string) error {
+	log.V(1).Info("copy", "local file", filePath, "remote dir", remoteDir)
 	if err := vm.interact.transfer(filePath, remoteDir); err != nil {
 		return errors.Wrapf(err, "unable to transfer %s to remote dir %s", filePath, remoteDir)
 	}
@@ -163,8 +163,10 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 
 	out, err := vm.interact.run(cmd)
 	if err != nil {
+		log.Error(err, "error running", "cmd", cmd, "out", out)
 		return out, errors.Wrapf(err, "error running %s", cmd)
 	}
+	log.V(1).Info("run", "cmd", cmd, "out", out)
 	return out, nil
 }
 
@@ -176,6 +178,7 @@ func (vm *windows) Reinitialize() error {
 }
 
 func (vm *windows) Configure() error {
+	log.Info("configuring")
 	if err := vm.createDirectories(); err != nil {
 		return errors.Wrap(err, "error creating directories on Windows VM")
 	}
@@ -193,6 +196,8 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 
 	hybridOverlayServiceArgs := "--node " + nodeName + customVxlanPortArg + " --k8s-kubeconfig c:\\k\\kubeconfig " +
 		"--windows-service " + "--logfile " + hybridOverlayLogDir + "hybrid-overlay.log\" depend= " + kubeletServiceName
+
+	log.Info("configure", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
 
 	hybridOverlayService, err := newService(hybridOverlayPath, hybridOverlayServiceName, hybridOverlayServiceArgs)
 	if err != nil {
@@ -223,6 +228,7 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 		return errors.Wrap(err, "error waiting for OVN HNS networks to be created")
 	}
 
+	log.Info("configured", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
 	return nil
 }
 
@@ -239,10 +245,10 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 
 	out, err := vm.Run(configureCNICmd, true)
 	if err != nil {
-		log.Info("CNI configuration failed", "command", configureCNICmd, "output", out, "error", err)
 		return errors.Wrap(err, "CNI configuration failed")
 	}
 
+	log.Info("configured kubelet for CNI", "cmd", configureCNICmd, "output", out)
 	return nil
 }
 
@@ -266,7 +272,7 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 	if err := vm.ensureServiceIsRunning(kubeProxyService); err != nil {
 		return errors.Wrapf(err, "error ensuring %s Windows service has started running", kubeProxyServiceName)
 	}
-
+	log.Info("configured", "service", kubeProxyServiceName, "args", kubeProxyServiceArgs)
 	return nil
 }
 
@@ -284,8 +290,8 @@ func (vm *windows) createDirectories() error {
 		hybridOverlayLogDir,
 	}
 	for _, dir := range directoriesToCreate {
-		if out, err := vm.Run(mkdirCmd(dir), false); err != nil {
-			return errors.Wrapf(err, "unable to create remote directory %s. output: %s", dir, out)
+		if _, err := vm.Run(mkdirCmd(dir), false); err != nil {
+			return errors.Wrapf(err, "unable to create remote directory %s", dir)
 		}
 	}
 	return nil
@@ -293,6 +299,7 @@ func (vm *windows) createDirectories() error {
 
 // transferFiles copies various files required for configuring the Windows node, to the VM.
 func (vm *windows) transferFiles() error {
+	log.Info("transferring files")
 	srcDestPairs := map[string]string{
 		wkl.IgnoreWgetPowerShellPath: remoteDir,
 		wkl.WmcbPath:                 k8sDir,
@@ -334,8 +341,9 @@ func (vm *windows) runBootstrapper() error {
 	}
 	wmcbInitializeCmd := k8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
 		"worker.ign --kubelet-path " + k8sDir + "kubelet.exe"
+
 	out, err := vm.Run(wmcbInitializeCmd, true)
-	log.V(1).Info("output from wmcb", "output", out)
+	log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
 	if err != nil {
 		return errors.Wrap(err, "error running bootstrapper")
 	}
@@ -349,8 +357,7 @@ func (vm *windows) initializeBootstrapperFiles() error {
 	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
 	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server " + vm.workerIgnitionEndpoint + " -output " +
 		winTemp + "worker.ign" + " -acceptHeader " + ignitionAcceptHeaderSpec
-	out, err := vm.Run(ignitionFileDownloadCmd, true)
-	log.V(1).Info("ignition file download", "cmd", ignitionFileDownloadCmd, "output", out)
+	_, err := vm.Run(ignitionFileDownloadCmd, true)
 	if err != nil {
 		return errors.Wrap(err, "unable to download worker.ign")
 	}
@@ -380,10 +387,10 @@ func (vm *windows) createService(svc *service) error {
 	if svc == nil {
 		return errors.New("service object should not be nil")
 	}
-	out, err := vm.Run("sc.exe create "+svc.name+" binPath=\""+svc.binaryPath+" "+
-		svc.args+" start=auto", false)
+	svcCreateCmd := "sc.exe create " + svc.name + " binPath=\"" + svc.binaryPath + " " + svc.args + " start=auto"
+	_, err := vm.Run(svcCreateCmd, false)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create service with output: %s", out)
+		return errors.Wrapf(err, "failed to create service %s", svc.name)
 	}
 	return nil
 }
@@ -439,7 +446,6 @@ func (vm *windows) startService(svc *service) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to start %s service with output: %s", svc.name, out)
 	}
-	log.V(1).Info("started service", "name", svc.name, "binary", svc.binaryPath, "args", svc.args)
 	return nil
 }
 
@@ -495,7 +501,7 @@ func (vm *windows) getSourceVIP() (string, error) {
 		"where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()\""
 	out, err := vm.Run(cmd, true)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to get source VIP with output: %s", out)
+		return "", errors.Wrap(err, "failed to get source VIP")
 	}
 
 	// stdout will have trailing '\r\n', so need to trim it

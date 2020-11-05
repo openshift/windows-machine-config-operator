@@ -2,6 +2,7 @@ package nodeconfig
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -74,6 +76,11 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, providerName, instanceID, clusterServiceCIDR, vxlanPort string,
 	signer ssh.Signer) (*nodeConfig, error) {
+
+	// Update the logger name with the VM's cloud ID. Ideally this should be the Machine name but is not available at
+	// this point.
+	log = logf.Log.WithName(fmt.Sprintf("nodeconfig %s", instanceID))
+
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -118,7 +125,7 @@ func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
 
 	// Check if hostname is valid
 	if !strings.HasPrefix(hostName, "api-int.") {
-		return "", errors.New("invalid API server url format found: expected hostname to start with `api-int.`")
+		return "", fmt.Errorf("invalid API server url %s: expected hostname to start with `api-int.`", hostName)
 	}
 	return hostName, nil
 }
@@ -200,11 +207,11 @@ func (nc *nodeConfig) setNode() error {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			metav1.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
-			log.V(1).Info("node object listing failed for", "Machine ID", nc.ID(), "error", err)
+			log.V(1).Error(err, "node listing failed")
 			return false, nil
 		}
 		if len(nodes.Items) == 0 {
-			log.V(1).Info("got empty node list for", "Machine ID", nc.ID(), "error", err)
+			log.V(1).Error(err, "expected non-empty node list")
 			return false, nil
 		}
 		// get the node with given instance id
@@ -227,7 +234,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
 		if err != nil {
-			log.V(1).Info("error getting node object associated with", "Machine ID", nc.ID(), "error", err)
+			log.V(1).Error(err, "unable to get associated node object")
 			return false, nil
 		}
 		_, found := node.Annotations[annotation]
@@ -262,7 +269,7 @@ func (nc *nodeConfig) configureCNI() error {
 		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
 	}
 	if err = nc.network.cleanupTempConfig(configFile); err != nil {
-		log.Error(err, " could not delete temp CNI config file", "configFile",
+		log.Error(err, " error deleting temp CNI config", "file",
 			configFile)
 	}
 	return nil
