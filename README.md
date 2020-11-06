@@ -22,15 +22,14 @@ The operator can be installed from the *community-operators* catalog on Operator
 It can also be build and installed from source manually, see the [development instructions](docs/HACKING.md).
 
 Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
-the private key that will be used to access the Windows VMs. The private key should be in PEM encoded RSA format.
-The following commands will create a RSA key and a secret containing the key, please change path as necessary:
-```
-# Create a 2048-bit RSA SSH key with empty passphrase
-ssh-keygen -q -t rsa -b 2048 -P "" -f /path/to/key
-
-# Create secret containing key in openshift-windows-machine-config-operator namespace
+the private key that will be used to access the Windows VMs:
+```shell script
+# Create secret containing the private key in the openshift-windows-machine-config-operator namespace
 oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
 ```
+ We strongly recommend not using the same
+[private key](https://docs.openshift.com/container-platform/4.6/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default)
+used when installing the cluster
 
 Below is the example of an Azure Windows MachineSet which can create Windows Machines that the WMCO can react upon.
 Please note that the windows-user-data secret will be created by the WMCO lazily when it is configuring the first
@@ -47,7 +46,7 @@ The following label has to be added to the Machine spec within the MachineSet sp
 Not having these labels will result in the Windows node not being marked as a worker.
 
 `<infrastructureID>` should be replaced with the output of:
-```
+```shell script
 oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
 
@@ -57,7 +56,7 @@ oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 
 Please note that on Azure, Windows Machine names cannot be more than 15 characters long.
 The MachineSet name can therefore not be more than 9 characters long, due to the way Machine names are generated from it.
-```
+```yaml
 apiVersion: machine.openshift.io/v1beta1
 kind: MachineSet
 metadata:
@@ -123,7 +122,7 @@ The script takes optional arguments `apply` and `delete` to directly create/dele
 generating a `yaml` file.
 
 Usage:
-```
+```shell script
 ./hack/machineset.sh                 # to generate yaml file
 ./hack/machineset.sh apply/delete    # to create/delete MachineSet directly on cluster
 ```
