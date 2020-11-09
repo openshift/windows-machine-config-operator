@@ -12,12 +12,12 @@ LABEL stage=build
 RUN microdnf -y install rsync make git tar findutils diffutils
 RUN mkdir /build/
 
-# Install go 1.14
+# Install go 1.15
 RUN mkdir /build/go
 WORKDIR /build/go
-RUN curl https://golang.org/dl/go1.14.7.linux-amd64.tar.gz -L -o go.tar.gz
+RUN curl https://golang.org/dl/go1.15.4.linux-amd64.tar.gz -L -o go.tar.gz
 # Check sha256
-RUN echo "4a7fa60f323ee1416a4b1425aefc37ea359e9d64df19c326a58953a97ad41ea5  go.tar.gz" |sha256sum -c
+RUN echo "eb61005f0b932c93b424a3a4eaa67d72196c79129d9a3ea8578047683e2c80d5  go.tar.gz" |sha256sum -c
 RUN tar -C /usr/local -xzf go.tar.gz
 ENV PATH=${PATH}:/usr/local/go/bin
 
