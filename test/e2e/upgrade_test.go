@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -25,12 +26,18 @@ const (
 	resourceName = "windows-machine-config-operator"
 	// resourceNamespace is the namespace the resources are deployed in
 	resourceNamespace = "openshift-windows-machine-config-operator"
+	// windowsWorkloadTesterJob is the name of the job created to test Windows workloads
+	windowsWorkloadTesterJob = "windows-workload-tester"
 )
 
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
 func upgradeTestSuite(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
+
+	// test if Windows workloads are running by creating a Job that curls the workloads continuously.
+	err = testCtx.deployWindowsWorkloadTester()
+	require.NoError(t, err, "error testing Windows workloads")
 
 	// apply configuration steps before running the upgrade tests
 	err = testCtx.configureUpgradeTest()
@@ -51,6 +58,17 @@ func testUpgradeVersion(t *testing.T) {
 	require.NoError(t, err, "windows node upgrade failed")
 	// Test if the version annotation corresponds to the current operator version
 	testVersionAnnotation(t)
+
+	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
+	pods, err := testCtx.kubeclient.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(), metav1.ListOptions{FieldSelector: "status.phase=Failed",
+		LabelSelector: "job-name=" + windowsWorkloadTesterJob + "-job"})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, len(pods.Items), "unable to access Windows workloads for significant amount of time during upgrade")
+
+	// Delete Job
+	err = testCtx.deleteJob(windowsWorkloadTesterJob + "-job")
+	require.NoError(t, err)
 }
 
 // testTamperAnnotation tests if the operator deletes machines and recreates them, if the node annotation is changed to an invalid value
@@ -149,4 +167,35 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 	})
 
 	return err
+}
+
+// deployWindowsWorkloadTester tests if the Windows Webserver deployment is available.
+// This is achieved by creating a Job object that continuously curls the webserver every 5 seconds.
+func (tc *testContext) deployWindowsWorkloadTester() error {
+	// Get Windows Webserver deployment
+	deployment, err := tc.kubeclient.AppsV1().Deployments(tc.workloadNamespace).Get(context.TODO(), "win-webserver-deployment",
+		metav1.GetOptions{})
+	if err != nil {
+		return errors.Wrap(err, "error getting Windows Webserver deployment")
+	}
+
+	// Create a clusterIP service which can be used to reach the Windows webserver
+	intermediarySVC, err := tc.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
+	if err != nil {
+		return errors.Wrap(err, "could not create service ")
+	}
+
+	// Create a Job to curl Windows webserver
+	// Curl Windows webserver every 5 seconds. If the webserver is not accessible for few minutes
+	// exit the pod with an error.
+	command := []string{"bash", "-c",
+		" while true; do curl " + intermediarySVC.Spec.ClusterIP + "; if [ $? != 0 ]; then sleep 60; curl " +
+			intermediarySVC.Spec.ClusterIP + "|| exit 1;" + " fi; sleep 5; done"}
+
+	_, err = tc.createLinuxJob(windowsWorkloadTesterJob, command)
+
+	if err != nil {
+		return err
+	}
+	return nil
 }
