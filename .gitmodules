@@ -14,3 +14,9 @@
 	path = kubernetes
 	url = https://github.com/openshift/kubernetes
 	branch = release-4.6
+[submodule "promu"]
+	path = promu
+	url = git://github.com/openshift/prometheus-promu
+[submodule "windows_exporter"]
+	path = windows_exporter
+	url = git://github.com/openshift/prometheus-community-windows_exporter

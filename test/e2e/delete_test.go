@@ -74,4 +74,7 @@ func testWindowsNodeDeletion(t *testing.T) {
 	err = framework.Global.KubeClient.CoreV1().Secrets("openshift-windows-machine-config-operator").Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete privateKey secret")
 
+	// Cleanup wmco-test namespace created by us.
+	err = testCtx.deleteNamespace(testCtx.workloadNamespace)
+	require.NoError(t, err, "could not delete test namespace")
 }
