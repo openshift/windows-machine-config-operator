@@ -38,11 +38,7 @@ func creationTestSuite(t *testing.T) {
 		return
 	}
 	t.Run("Network validation", testNetwork)
-	// The label is not actually added by WMCO however we would like to validate if the Machine Api is properly
-	// adding the worker label, if it was specified in the MachineSet. The MachineSet created in the test suite has
-	// the worker label
-	t.Run("Label validation", func(t *testing.T) { testWorkerLabel(t) })
-	t.Run("Version annotation", func(t *testing.T) { testVersionAnnotation(t) })
+	t.Run("Node Metadata", func(t *testing.T) { testNodeMetadata(t) })
 	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
 	t.Run("UserData validation", func(t *testing.T) { testUserData(t) })
 	t.Run("UserData idempotent check", func(t *testing.T) { testUserDataTamper(t) })

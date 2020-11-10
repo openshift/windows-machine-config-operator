@@ -19,7 +19,8 @@ RUN curl https://golang.org/dl/go1.14.7.linux-amd64.tar.gz -L -o go.tar.gz
 # Check sha256
 RUN echo "4a7fa60f323ee1416a4b1425aefc37ea359e9d64df19c326a58953a97ad41ea5  go.tar.gz" |sha256sum -c
 RUN tar -C /usr/local -xzf go.tar.gz
-ENV PATH=${PATH}:/usr/local/go/bin
+ENV GOBIN=/usr/local/go/bin
+ENV PATH=${PATH}:${GOBIN}
 
 # Build WMCO
 # The source here corresponds to the code in the PR and is placed here by the CI infrastructure.
@@ -43,35 +44,35 @@ COPY tools.go tools.go
 RUN make build
 
 # Build WMCB
-WORKDIR /build/windows-machine-config-bootstrapper/
+WORKDIR /build/windows-machine-config-operator/windows-machine-config-bootstrapper/
 COPY windows-machine-config-bootstrapper/ .
 RUN make build
 
 # Build hybrid-overlay
-WORKDIR /build/ovn-kubernetes/
+WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
 COPY ovn-kubernetes/ .
-WORKDIR /build/ovn-kubernetes/go-controller/
+WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/go-controller/
 RUN make windows
 
 # Build promu utility tool, needed to build the windows_exporter.exe metrics binary
-WORKDIR /build/promu/
+WORKDIR /build/windows-machine-config-operator/promu/
 COPY promu/ .
-RUN make build
+RUN go install .
 
 # Build windows_exporter
-WORKDIR /build/windows_exporter/
+WORKDIR /build/windows-machine-config-operator/windows_exporter/
 COPY windows_exporter/ .
-RUN GOOS=windows /build/promu/promu build -v
+RUN GOOS=windows promu build -v
 
 # Build Kubernetes node binaries
-WORKDIR /build/kubernetes/
+WORKDIR /build/windows-machine-config-operator/kubernetes/
 COPY kubernetes/ .
 ENV KUBE_BUILD_PLATFORMS windows/amd64
 RUN make WHAT=cmd/kubelet
 RUN make WHAT=cmd/kube-proxy
 
 # Build CNI plugins
-WORKDIR /build/containernetworking-plugins/
+WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
 COPY containernetworking-plugins/ .
 ENV CGO_ENABLED=0
 RUN ./build_windows.sh
@@ -100,27 +101,27 @@ LABEL stage=operator
 # Copy wmcb.exe
 RUN mkdir /payload/
 WORKDIR /payload/
-COPY --from=build /build/windows-machine-config-bootstrapper/wmcb.exe .
+COPY --from=build /build/windows-machine-config-operator/windows-machine-config-bootstrapper/wmcb.exe .
 
 # Copy hybrid-overlay-node.exe
-COPY --from=build /build/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
+COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
 
 # Copy windows_exporter.exe
-COPY --from=build /build/windows_exporter/windows_exporter.exe .
+COPY --from=build /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe .
 
 # Copy kubelet.exe and kube-proxy.exe
 RUN mkdir /payload/kube-node/
 WORKDIR /payload/kube-node/
-COPY --from=build /build/kubernetes/_output/local/bin/windows/amd64/kubelet.exe .
-COPY --from=build /build/kubernetes/_output/local/bin/windows/amd64/kube-proxy.exe .
+COPY --from=build /build/windows-machine-config-operator/kubernetes/_output/local/bin/windows/amd64/kubelet.exe .
+COPY --from=build /build/windows-machine-config-operator/kubernetes/_output/local/bin/windows/amd64/kube-proxy.exe .
 
 # Copy CNI plugin binaries and CNI config template cni-conf-template.json
 RUN mkdir /payload/cni/
 WORKDIR /payload/cni/
-COPY --from=build /build/containernetworking-plugins/bin/flannel.exe .
-COPY --from=build /build/containernetworking-plugins/bin/host-local.exe .
-COPY --from=build /build/containernetworking-plugins/bin/win-bridge.exe .
-COPY --from=build /build/containernetworking-plugins/bin/win-overlay.exe .
+COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/flannel.exe .
+COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe .
+COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe .
+COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .
 COPY --from=build /build/windows-machine-config-operator/pkg/internal/cni-conf-template.json .
 
 # Copy required powershell scripts
