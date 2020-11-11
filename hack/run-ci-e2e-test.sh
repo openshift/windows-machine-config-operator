@@ -109,6 +109,9 @@ get_WMCO_logs
 # Run the upgrade tests and skip deletion of the Windows VMs
 OSDK_WMCO_test $OSDK "-run=TestWMCO/upgrade -v -timeout=90m -node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
 
+# Run the reconfiguration test
+OSDK_WMCO_test $OSDK "-run=TestWMCO/reconfigure -v -timeout=90m -node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
+
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
 if ! $SKIP_NODE_DELETION; then
