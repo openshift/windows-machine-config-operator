@@ -23,7 +23,6 @@ func testNetwork(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
 	require.NoError(t, testCtx.createNamespace(testCtx.workloadNamespace), "error creating test namespace")
-	defer testCtx.deleteNamespace(testCtx.workloadNamespace)
 	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
 }
@@ -147,25 +146,19 @@ func testNorthSouthNetworking(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
 
-	// Use the 0th node to test
+	// Require at least one node to test
 	require.NotEmpty(t, gc.nodes)
-	node := gc.nodes[0]
-
-	affinity, err := getAffinityForNode(&node)
-	require.NoError(t, err, "Could not get affinity for node")
 
 	// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
 	// So trying multiple times
 	var winServerDeployment *appsv1.Deployment
 	for i := 0; i < deploymentRetries; i++ {
-		winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver-"+
-			strings.ToLower(node.Status.NodeInfo.MachineID), affinity)
+		winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver", nil)
 		if err == nil {
 			break
 		}
 	}
 	require.NoError(t, err, "could not create Windows Server deployment")
-	defer testCtx.deleteDeployment(winServerDeployment.Name)
 
 	// Assert that we can successfully GET the webserver
 	err = testCtx.getThroughLoadBalancer(winServerDeployment)

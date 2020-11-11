@@ -132,7 +132,7 @@ type ReconcileSecret struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	reqLogger := log.WithValues("Request.Namespace", request.Namespace, "Request.Name", request.Name)
+	log = log.WithValues("namespace", request.Namespace, "name", request.Name)
 
 	privateKey, err := secrets.GetPrivateKey(request.NamespacedName, r.client)
 	if err != nil {
@@ -147,7 +147,7 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 	// Generate expected userData based on the existing private key
 	validUserData, err := secrets.GenerateUserData(privateKey)
 	if err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "error generating userData secret")
+		return reconcile.Result{}, errors.Wrapf(err, "error generating %s secret", userDataSecret)
 	}
 
 	userData := &core.Secret{}
@@ -155,7 +155,7 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 	err = r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: userDataSecret, Namespace: userDataNamespace}, userData)
 	if err != nil && k8sapierrors.IsNotFound(err) {
 		// Secret is deleted
-		reqLogger.Info("UserData secret not found, creating the secret.")
+		log.Info("secret not found, creating the secret", "name", userDataSecret)
 		err = r.client.Create(context.TODO(), validUserData)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -163,14 +163,14 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 		// Secret created successfully - don't requeue
 		return reconcile.Result{}, nil
 	} else if err != nil {
-		reqLogger.Error(err, "error retrieving the userData secret")
+		log.Error(err, "error retrieving the secret", "name", userDataSecret)
 		return reconcile.Result{}, err
 	} else if string(userData.Data["userData"][:]) == string(validUserData.Data["userData"][:]) {
 		// valid userData secret already exists
 		return reconcile.Result{}, nil
 	} else {
 		// secret is updated
-		reqLogger.Info("updating userdata secret")
+		log.Info("updating secret", "name", userDataSecret)
 		err = r.client.Update(context.TODO(), validUserData)
 		if err != nil {
 			return reconcile.Result{}, err

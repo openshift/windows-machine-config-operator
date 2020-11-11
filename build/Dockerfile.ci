@@ -25,25 +25,44 @@ ENV PATH=${PATH}:/usr/local/go/bin
 # The source here corresponds to the code in the PR and is placed here by the CI infrastructure.
 RUN mkdir /build/windows-machine-config-operator
 WORKDIR /build/windows-machine-config-operator
-COPY . .
+# Copy .git metadata so that we can generate the version for the WMCO binary
+COPY .git .git
+# Copy files and directories needed to build the WMCO binary
+COPY build build
+COPY cmd cmd
+COPY deploy deploy
+COPY hack hack
+COPY pkg pkg
+COPY test test
+COPY vendor vendor
+COPY version version
+COPY go.mod go.mod
+COPY go.sum go.sum
+COPY Makefile Makefile
+COPY tools.go tools.go
 RUN make build
 
 # Build WMCB
-WORKDIR /build/windows-machine-config-operator/windows-machine-config-bootstrapper/
+WORKDIR /build/windows-machine-config-bootstrapper/
+COPY windows-machine-config-bootstrapper/ .
 RUN make build
 
 # Build hybrid-overlay
-WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/go-controller/
+WORKDIR /build/ovn-kubernetes/
+COPY ovn-kubernetes/ .
+WORKDIR /build/ovn-kubernetes/go-controller/
 RUN make windows
 
 # Build Kubernetes node binaries
-WORKDIR /build/windows-machine-config-operator/kubernetes/
+WORKDIR /build/kubernetes/
+COPY kubernetes/ .
 ENV KUBE_BUILD_PLATFORMS windows/amd64
 RUN make WHAT=cmd/kubelet
 RUN make WHAT=cmd/kube-proxy
 
 # Build CNI plugins
-WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
+WORKDIR /build/containernetworking-plugins/
+COPY containernetworking-plugins/ .
 ENV CGO_ENABLED=0
 RUN ./build_windows.sh
 
@@ -70,24 +89,24 @@ LABEL stage=operator
 # Copy wmcb.exe
 RUN mkdir /payload/
 WORKDIR /payload/
-COPY --from=build /build/windows-machine-config-operator/windows-machine-config-bootstrapper/wmcb.exe .
+COPY --from=build /build/windows-machine-config-bootstrapper/wmcb.exe .
 
 # Copy hybrid-overlay-node.exe
-COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
+COPY --from=build /build/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
 
 # Copy kubelet.exe and kube-proxy.exe
 RUN mkdir /payload/kube-node/
 WORKDIR /payload/kube-node/
-COPY --from=build /build/windows-machine-config-operator/kubernetes/_output/local/bin/windows/amd64/kubelet.exe .
-COPY --from=build /build/windows-machine-config-operator/kubernetes/_output/local/bin/windows/amd64/kube-proxy.exe .
+COPY --from=build /build/kubernetes/_output/local/bin/windows/amd64/kubelet.exe .
+COPY --from=build /build/kubernetes/_output/local/bin/windows/amd64/kube-proxy.exe .
 
 # Copy CNI plugin binaries and CNI config template cni-conf-template.json
 RUN mkdir /payload/cni/
 WORKDIR /payload/cni/
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/flannel.exe .
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe .
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe .
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .
+COPY --from=build /build/containernetworking-plugins/bin/flannel.exe .
+COPY --from=build /build/containernetworking-plugins/bin/host-local.exe .
+COPY --from=build /build/containernetworking-plugins/bin/win-bridge.exe .
+COPY --from=build /build/containernetworking-plugins/bin/win-overlay.exe .
 COPY --from=build /build/windows-machine-config-operator/pkg/internal/cni-conf-template.json .
 
 # Copy required powershell scripts
@@ -106,7 +125,6 @@ ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
 
 # install make package
 RUN microdnf -y install make tar gzip wget
-RUN microdnf -y update
 
 # Copy go from build stage, install within this stage
 COPY --from=build /build/go/go.tar.gz .

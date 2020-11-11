@@ -1,8 +1,12 @@
 FROM scratch
 
-# These directories map to the layout of the directories in the WMCO dist-git repository.
-COPY manifests /manifests/
-COPY metadata/annotations.yaml /metadata/annotations.yaml
+# This block are standard Red Hat container labels
+LABEL name="openshift4/windows-machine-config-operator-bundle" \
+    License="ASL 2.0" \
+    io.k8s.display-name="Windows Machine Config Operator bundle" \
+    io.k8s.description="Windows Machine Config Operator's OLM bundle image" \
+    summary="Windows Machine Config Operator's OLM bundle image" \
+    maintainer="Team Windows Containers <team-winc@redhat.com>"
 
 # These are three labels needed to control how the pipeline should handle this container image
 # This first label tells the pipeline that this is a bundle image and should be
@@ -34,11 +38,6 @@ LABEL version="v0.0.0"
 # This label maps to the brew build target
 LABEL com.redhat.component="windows-machine-config-operator-bundle-container"
 
-# This last block are standard Red Hat container labels
-LABEL \
-    name="openshift4/windows-machine-config-operator-bundle" \
-    License="ASL 2.0" \
-    io.k8s.display-name="Windows Machine Config Operator bundle" \
-    io.k8s.description="Windows Machine Config Operator's OLM bundle image" \
-    summary="Windows Machine Config Operator's OLM bundle image" \
-    maintainer="Team Windows Containers <team-winc@redhat.com>"
+# COPY manifests and metadata directories
+COPY deploy/olm-catalog/windows-machine-config-operator/manifests /manifests/
+COPY deploy/olm-catalog/windows-machine-config-operator/metadata /metadata/

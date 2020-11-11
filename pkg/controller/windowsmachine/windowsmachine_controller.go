@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/pkg/errors"
@@ -38,12 +37,11 @@ import (
 const (
 	// ControllerName is the name of the WindowsMachine controller
 	ControllerName = "windowsmachine-controller"
-	// minHealthyCount is the minimum number of nodes that are required to be in running phase at a given time.
-	minHealthyCount = 1
+	// maxUnhealthyCount is the maximum number of nodes that are not ready to serve at a given time.
+	// TODO: https://issues.redhat.com/browse/WINC-524
+	maxUnhealthyCount = 1
 	// windowsOSLabel is the label used to identify the Windows Machines.
 	windowsOSLabel = "machine.openshift.io/os-id"
-	// requeueDuration is the time after which the request is requeued.
-	requeueDuration = time.Minute * 5
 )
 
 var log = logf.Log.WithName(ControllerName)
@@ -237,7 +235,7 @@ type ReconcileWindowsMachine struct {
 // Note: The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	log.Info("reconciling", "namespace", request.Namespace, "name", request.Name)
+	log.V(1).Info("reconciling", "namespace", request.Namespace, "name", request.Name)
 	// Get the private key that will be used to configure the instance
 	// Doing this before fetching the machine allows us to warn the user better about the missing private key
 	privateKey, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
@@ -287,12 +285,20 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		}
 
 		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; present {
-			// version annotation doesn`t match the current operator version
+			// version annotation doesn't match the current operator version
 			if node.Annotations[nodeconfig.VersionAnnotation] != version.Get() {
-
+				machinesetName := "unknown"
+				if len(machine.OwnerReferences) > 0 {
+					machinesetName = machine.OwnerReferences[0].Name
+				}
+				log.Info("upgrading machineset", "name", machinesetName)
 				if !r.isAllowedDeletion(machine) {
-					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted", "Machine %v deletion restricted due to exceeded number of unhealthy machines. ", machine.Name)
-					return reconcile.Result{RequeueAfter: requeueDuration}, nil
+					log.Info("machine deletion restricted", "name", machine.GetName(),
+						"maxUnhealthyCount", maxUnhealthyCount)
+					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted",
+						"Machine %v deletion restricted as the maximum unhealthy machines can`t exceed %v count",
+						machine.Name, maxUnhealthyCount)
+					return reconcile.Result{Requeue: true}, nil
 				}
 				if !machine.GetDeletionTimestamp().IsZero() {
 					// Delete already initiated
@@ -300,16 +306,22 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 				}
 
 				if err := r.client.Delete(context.TODO(), machine); err != nil {
-					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionFailed", "Machine %v deletion failed: unable to delete Machine object: %v", machine.Name, err)
+					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionFailed",
+						"Machine %v deletion failed: %v", machine.Name, err)
 					return reconcile.Result{}, err
 				}
-				r.recorder.Eventf(machine, core.EventTypeNormal, "MachineDeleted", "Machine %v has been remediated by requesting to delete Machine object", machine.Name)
+				log.Info("machine has been remediated by deletion", "name", machine.GetName())
+				r.recorder.Eventf(machine, core.EventTypeNormal, "MachineDeleted",
+					"Machine %v has been remediated by deleting the Machine object", machine.Name)
 				return reconcile.Result{}, nil
 			}
+			log.Info("machine has current version", "name", machine.GetName(),
+				"version", node.Annotations[nodeconfig.VersionAnnotation])
 			// version annotation exists with a valid value, node is fully configured, do nothing.
 			return reconcile.Result{}, nil
 		}
 	} else if *machine.Status.Phase != provisionedPhase {
+		log.V(1).Info("machine not provisioned", "phase", *machine.Status.Phase)
 		// Machine is not in provisioned or running state, nothing we should do as of now
 		return reconcile.Result{}, nil
 	}
@@ -343,32 +355,32 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	// Get the instance ID associated with the Windows machine.
 	providerID := *machine.Spec.ProviderID
 	if len(providerID) == 0 {
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, errors.Errorf("empty provider ID associated with machine %s", machine.Name)
 	}
 	// Ex: aws:///us-east-1e/i-078285fdadccb2eaa
 	// We always want the last entry which is the instanceID, and the first which is the provider name.
 	providerTokens := strings.Split(providerID, "/")
 	instanceID := providerTokens[len(providerTokens)-1]
 	if len(instanceID) == 0 {
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, errors.Errorf("unable to get instance ID from provider ID for machine %s", machine.Name)
 	}
 	providerName := strings.TrimSuffix(providerTokens[0], ":")
 
+	log.Info("processing", "namespace", request.Namespace, "name", request.Name)
 	// Make the Machine a Windows Worker node
 	if err := r.addWorkerNode(ipAddress, providerName, instanceID); err != nil {
-		r.recorder.Eventf(machine, core.EventTypeWarning, "WMCO SetupFailure",
-			"Machine %s failed to be configured", machine.Name)
+		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
+			"Machine %s configuration failure", machine.Name)
 		return reconcile.Result{}, err
 	}
-	r.recorder.Eventf(machine, core.EventTypeNormal, "WMCO Setup",
-		"Machine %s Configured Successfully", machine.Name)
+	r.recorder.Eventf(machine, core.EventTypeNormal, "MachineSetup",
+		"Machine %s configured successfully", machine.Name)
 
 	return reconcile.Result{}, nil
 }
 
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
 func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, providerName, instanceID string) error {
-	log.V(1).Info("configuring the Windows VM", "ID", instanceID)
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, providerName, instanceID, r.clusterServiceCIDR, r.vxlanPort,
 		r.signer)
 	if err != nil {
@@ -379,7 +391,7 @@ func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, providerName, instanc
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
 	}
 
-	log.Info("Windows VM has joined the cluster as a worker node", "ID", nc.ID())
+	log.Info("Windows VM has been configured as a worker node", "ID", nc.ID())
 	return nil
 }
 
@@ -427,19 +439,49 @@ func (r *ReconcileWindowsMachine) isAllowedDeletion(machine *mapi.Machine) bool 
 		return false
 	}
 
-	if minHealthyCount == *(windowsMachineSet.Spec.Replicas) {
+	// Allow deletion if there is only one machine in the Windows MachineSet
+	totalWindowsMachineCount := *windowsMachineSet.Spec.Replicas
+	if maxUnhealthyCount == totalWindowsMachineCount {
 		return true
 	}
 
 	totalHealthy := 0
 	for _, ma := range machines.Items {
-		// Machines are determined as Healthy when they are part of Windows MachineSet and are
-		// in the Running Status
-		if len(ma.OwnerReferences) != 0 && ma.OwnerReferences[0].Name == machinesetName {
-			if ma.Status.Phase != nil && *ma.Status.Phase == "Running" && ma.Status.NodeRef != nil {
-				totalHealthy += 1
-			}
+		// Increment the count if the machine is identified as healthy and is a part of given Windows MachineSet and
+		// on which deletion is not already initiated.
+		if len(machine.OwnerReferences) != 0 && ma.OwnerReferences[0].Name == machinesetName &&
+			r.isWindowsMachineHealthy(&ma) && ma.DeletionTimestamp.IsZero() {
+			totalHealthy += 1
 		}
 	}
-	return totalHealthy-1 >= minHealthyCount
+
+	unhealthyMachineCount := totalWindowsMachineCount - int32(totalHealthy)
+	log.Info("unhealthy machine count for machineset", "name", machinesetName, "total", totalWindowsMachineCount,
+		"unhealthy", unhealthyMachineCount)
+
+	return unhealthyMachineCount < maxUnhealthyCount
+}
+
+// isWindowsMachineHealthy determines if the given Machine object is healthy. A Windows machine is considered
+// unhealthy if -
+// 1. Machine is not in a 'Running' phase
+// 2. Machine is not associated with a Node object
+// 3. Associated Node object doesn't have a Version annotation
+func (r *ReconcileWindowsMachine) isWindowsMachineHealthy(machine *mapi.Machine) bool {
+	if (machine.Status.Phase == nil || *machine.Status.Phase != "Running") &&
+		machine.Status.NodeRef == nil {
+		return false
+	}
+
+	// Get node associated with the machine
+	node, err := r.k8sclientset.CoreV1().Nodes().Get(context.TODO(), machine.Status.NodeRef.Name, meta.GetOptions{})
+	if err != nil {
+		return false
+	}
+	_, present := node.Annotations[nodeconfig.VersionAnnotation]
+	if !present {
+		return false
+	}
+
+	return true
 }
