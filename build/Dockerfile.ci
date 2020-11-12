@@ -9,7 +9,7 @@
 # to install it.
 FROM registry.access.redhat.com/ubi8/ubi-minimal as build
 LABEL stage=build
-RUN microdnf -y install rsync make git tar findutils diffutils
+RUN microdnf -y install rsync make git tar findutils diffutils && microdnf clean all
 RUN mkdir /build/
 
 # Install go 1.14
@@ -105,7 +105,7 @@ ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
 # Changes needed for our CI
 
 # install make package
-RUN microdnf -y install make tar gzip wget
+RUN microdnf -y install make tar gzip wget && microdnf clean all
 
 # Copy go from build stage, install within this stage
 COPY --from=build /build/go/go.tar.gz .
