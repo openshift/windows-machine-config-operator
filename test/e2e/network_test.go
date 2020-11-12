@@ -33,7 +33,7 @@ var (
 	// ubi8Image is the name/location of the linux image we will use for testing
 	ubi8Image = "registry.access.redhat.com/ubi8/ubi-minimal:latest"
 	// retryCount is the amount of times we will retry an api operation
-	retryCount = 60
+	retryCount = 120
 	// retryInterval is the interval of time until we retry after a failure
 	retryInterval = 5 * time.Second
 )
@@ -479,7 +479,7 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affin
 func getWinCurlerCommand(winServerIP string) []string {
 	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
 	// takes some time to finish initial network setup.
-	winCurlerCommand := []string{"pwsh.exe", "-command", "for (($i =0), ($j = 0); $i -lt 10; $i++) { " +
+	winCurlerCommand := []string{"pwsh.exe", "-command", "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
 		"$response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP +
 		"; $code = $response.StatusCode; echo \"GET returned code $code\";" +
 		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"}
