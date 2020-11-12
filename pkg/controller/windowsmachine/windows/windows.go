@@ -6,11 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
-	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/apimachinery/pkg/util/wait"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/payload"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 )
 
 const (
@@ -40,6 +42,7 @@ const (
 	kubeProxyPath = k8sDir + "kube-proxy.exe"
 	// hybridOverlayPath is the location of the hybrid-overlay-node exe
 	hybridOverlayPath = k8sDir + "hybrid-overlay-node.exe"
+
 	// hybridOverlayServiceName is the name of the hybrid-overlay-node Windows service
 	hybridOverlayServiceName = "hybrid-overlay-node"
 	// hybridOverlayConfigurationTime is the approximate time taken for the hybrid-overlay to complete reconfiguring
@@ -66,14 +69,48 @@ const (
 
 var log = logf.Log.WithName("windows")
 
+// filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
+var filesToTransfer map[*payload.FileInfo]string
+
+// getFilesToTransfer returns the properly populated filesToTransfer map
+func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
+	if filesToTransfer != nil {
+		return filesToTransfer, nil
+	}
+	srcDestPairs := map[string]string{
+		payload.IgnoreWgetPowerShellPath: remoteDir,
+		payload.WmcbPath:                 k8sDir,
+		payload.HybridOverlayPath:        k8sDir,
+		payload.HNSPSModule:              remoteDir,
+		payload.WindowsExporterPath:      k8sDir,
+		payload.FlannelCNIPluginPath:     cniDir,
+		payload.WinBridgeCNIPlugin:       cniDir,
+		payload.HostLocalCNIPlugin:       cniDir,
+		payload.WinOverlayCNIPlugin:      cniDir,
+		payload.KubeProxyPath:            k8sDir,
+		payload.KubeletPath:              k8sDir,
+	}
+	files := make(map[*payload.FileInfo]string)
+	for src, dest := range srcDestPairs {
+		f, err := payload.NewFileInfo(src)
+		if err != nil {
+			return nil, errors.Wrapf(err, "could not create FileInfo object for file %s", src)
+		}
+		files[f] = dest
+	}
+	filesToTransfer = files
+	return filesToTransfer, nil
+}
+
 // Windows contains all the  methods needed to configure a Windows VM to become a worker node
 type Windows interface {
 	// ID returns the cloud provider ID of the VM
 	ID() string
-	// CopyFile copies the given file to the remote directory in the Windows VM. The remote directory is created if it
-	// does not exist
-	CopyFile(string, string) error
-	// FileExists ensures a specific file exists at the given path on the Windows VM
+	// EnsureFile ensures the given file exists within the specified directory on the Windows VM. The file will be copied
+	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
+	// does not exist.
+	EnsureFile(*payload.FileInfo, string) error
+	// FileExists returns true if a specific file exists at the given path on the Windows VM
 	FileExists(string) (bool, error)
 	// Run executes the given command remotely on the Windows VM over a ssh connection and returns the combined output
 	// of stdout and stderr. If the bool is set, it implies that the cmd is to be execute in PowerShell. This function
@@ -150,10 +187,28 @@ func (vm *windows) ID() string {
 	return vm.id
 }
 
-func (vm *windows) CopyFile(filePath, remoteDir string) error {
-	log.V(1).Info("copy", "local file", filePath, "remote dir", remoteDir)
-	if err := vm.interact.transfer(filePath, remoteDir); err != nil {
-		return errors.Wrapf(err, "unable to transfer %s to remote dir %s", filePath, remoteDir)
+func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
+	// Only copy the file to the Windows VM if it does not already exist wth the desired content
+	remotePath := remoteDir + "\\" + filepath.Base(file.Path)
+	fileExists, err := vm.FileExists(remotePath)
+	if err != nil {
+		return errors.Wrapf(err, "error checking if file '%s' exists on the Windows VM", remotePath)
+	}
+	if fileExists {
+		remoteFile, err := vm.newFileInfo(remotePath)
+		if err != nil {
+			return errors.Wrapf(err, "error getting info on file '%s' on the Windows VM", remotePath)
+		}
+		if file.SHA256 == remoteFile.SHA256 {
+			// The file already exists with the expected content, do nothing
+			log.V(1).Info("file already exists on VM with expected content", "file", file.Path)
+			return nil
+		}
+	}
+
+	log.V(1).Info("copy", "local file", file.Path, "remote dir", remoteDir)
+	if err := vm.interact.transfer(file.Path, remoteDir); err != nil {
+		return errors.Wrapf(err, "unable to transfer %s to remote dir %s", file.Path, remoteDir)
 	}
 	return nil
 }
@@ -187,8 +242,25 @@ func (vm *windows) Reinitialize() error {
 	return nil
 }
 
+// ensureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
+func (vm *windows) ensureRequiredServicesStopped() error {
+	// This slice order matters due to service dependencies
+	requiredSVCs := []string{windowsExporterServiceName, kubeProxyServiceName, hybridOverlayServiceName,
+		kubeletServiceName}
+	for _, svcName := range requiredSVCs {
+		svc := &service{name: svcName}
+		if err := vm.ensureServiceNotRunning(svc); err != nil {
+			return errors.Wrap(err, "could not stop service %d")
+		}
+	}
+	return nil
+}
+
 func (vm *windows) Configure() error {
 	log.Info("configuring")
+	if err := vm.ensureRequiredServicesStopped(); err != nil {
+		return errors.Wrap(err, "unable to stop required services")
+	}
 	if err := vm.createDirectories(); err != nil {
 		return errors.Wrap(err, "error creating directories on Windows VM")
 	}
@@ -262,7 +334,11 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 
 func (vm *windows) ConfigureCNI(configFile string) error {
 	// copy the CNI config file to the Windows VM
-	if err := vm.CopyFile(configFile, cniConfDir); err != nil {
+	file, err := payload.NewFileInfo(configFile)
+	if err != nil {
+		return errors.Wrap(err, "unable to get info for the CNI config file")
+	}
+	if err := vm.EnsureFile(file, cniConfDir); err != nil {
 		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniConfDir)
 	}
 
@@ -328,35 +404,13 @@ func (vm *windows) createDirectories() error {
 // transferFiles copies various files required for configuring the Windows node, to the VM.
 func (vm *windows) transferFiles() error {
 	log.Info("transferring files")
-	srcDestPairs := map[string]string{
-		wkl.IgnoreWgetPowerShellPath: remoteDir,
-		wkl.WmcbPath:                 k8sDir,
-		wkl.HybridOverlayPath:        k8sDir,
-		wkl.HNSPSModule:              remoteDir,
-		wkl.WindowsExporterPath:      k8sDir,
-		wkl.FlannelCNIPluginPath:     cniDir,
-		wkl.WinBridgeCNIPlugin:       cniDir,
-		wkl.HostLocalCNIPlugin:       cniDir,
-		wkl.WinOverlayCNIPlugin:      cniDir,
-		wkl.KubeProxyPath:            k8sDir,
-		wkl.KubeletPath:              k8sDir,
+	filesToTransfer, err := getFilesToTransfer()
+	if err != nil {
+		return errors.Wrapf(err, "error getting list of files to transfer")
 	}
-	for src, dest := range srcDestPairs {
-		// Assumption: Ignore transferring files, if they are already present. This is with assumption that Windows VMs
-		// configuration is immutable for a given version of operator. To make it clear, if we want a newer version
-		// of file that we want to transfer, WMCO team should cut a newer version of operator.
-		// The files are tightly coupled with the operator
-		// TODO: Remove this when we do in place upgrades
-		fileExists, err := vm.FileExists(dest + "\\" + filepath.Base(src))
-		if err != nil {
-			return err
-		}
-		if fileExists {
-			// The file already exists, don't copy it again
-			continue
-		}
-		if err := vm.CopyFile(src, dest); err != nil {
-			return errors.Wrapf(err, "error copying %s to %s ", src, dest)
+	for src, dest := range filesToTransfer {
+		if err := vm.EnsureFile(src, dest); err != nil {
+			return errors.Wrapf(err, "error copying %s to %s ", src.Path, dest)
 		}
 	}
 	return nil
@@ -424,15 +478,59 @@ func (vm *windows) createService(svc *service) error {
 	return nil
 }
 
+// ensureServiceNotRunning stops a service if it exists and is running
+func (vm *windows) ensureServiceNotRunning(svc *service) error {
+	if svc == nil {
+		return errors.New("service object should not be nil")
+	}
+
+	exists, err := vm.serviceExists(svc.name)
+	if err != nil {
+		return errors.Wrap(err, "error checking if service exists")
+	}
+	if !exists {
+		// service does not exist, therefore it is not running
+		return nil
+	}
+
+	running, err := vm.isRunning(svc.name)
+	if err != nil {
+		return errors.Wrap(err, "unable to check if service is running")
+	}
+	if !running {
+		return nil
+	}
+	if err := vm.stopService(svc); err != nil {
+		return errors.Wrap(err, "unable to stop service")
+	}
+	return nil
+
+}
+
 // stopService stops the service that was already running
 func (vm *windows) stopService(svc *service) error {
 	if svc == nil {
 		return errors.New("service object should not be nil")
 	}
+	// Success here means that the stop has initiated, not necessarily completed
 	out, err := vm.Run("sc.exe stop "+svc.name, false)
 	if err != nil {
 		return errors.Wrapf(err, "failed to stop %s service with output: %s", svc.name, out)
 	}
+
+	// Wait until the service has stopped
+	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		serviceRunning, err := vm.isRunning(svc.name)
+		if err != nil {
+			log.V(1).Error(err, "unable to check if Windows service is running", "service", svc.name)
+			return false, nil
+		}
+		return !serviceRunning, nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "error waiting for the %s service to stop", svc.name)
+	}
+
 	return nil
 }
 
@@ -539,6 +637,20 @@ func (vm *windows) getSourceVIP() (string, error) {
 		return "", fmt.Errorf("source VIP is empty")
 	}
 	return sourceVIP, nil
+}
+
+// newFileInfo returns a pointer to a FileInfo object created from the specified file on the Windows VM
+func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
+	// Get-FileHash returns an object with multiple properties, we are interested in the `Hash` property
+	command := "$out = Get-FileHash " + path + " -Algorithm SHA256; $out.Hash"
+	out, err := vm.Run(command, true)
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting file hash")
+	}
+	// The returned hash will be in all caps with newline characters, doing ToLower() to
+	// make the output normalized with the go sha256 library
+	sha := strings.ToLower(strings.TrimSpace(out))
+	return &payload.FileInfo{Path: path, SHA256: sha}, nil
 }
 
 // Generic helper methods

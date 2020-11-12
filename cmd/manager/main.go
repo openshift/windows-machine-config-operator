@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/apis"
 	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller"
-	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/payload"
 	"github.com/openshift/windows-machine-config-operator/version"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	kubemetrics "github.com/operator-framework/operator-sdk/pkg/kube-metrics"
@@ -120,18 +120,18 @@ func main() {
 
 	// Checking if required files exist before starting the operator
 	requiredFiles := []string{
-		wkl.FlannelCNIPluginPath,
-		wkl.HostLocalCNIPlugin,
-		wkl.WinBridgeCNIPlugin,
-		wkl.WinOverlayCNIPlugin,
-		wkl.HybridOverlayPath,
-		wkl.KubeletPath,
-		wkl.KubeProxyPath,
-		wkl.IgnoreWgetPowerShellPath,
-		wkl.WmcbPath,
-		wkl.CNIConfigTemplatePath,
-		wkl.HNSPSModule,
-		wkl.WindowsExporterPath,
+		payload.FlannelCNIPluginPath,
+		payload.HostLocalCNIPlugin,
+		payload.WinBridgeCNIPlugin,
+		payload.WinOverlayCNIPlugin,
+		payload.HybridOverlayPath,
+		payload.KubeletPath,
+		payload.KubeProxyPath,
+		payload.IgnoreWgetPowerShellPath,
+		payload.WmcbPath,
+		payload.CNIConfigTemplatePath,
+		payload.HNSPSModule,
+		payload.WindowsExporterPath,
 	}
 	if err := checkIfRequiredFilesExist(requiredFiles); err != nil {
 		log.Error(err, "could not start the operator")

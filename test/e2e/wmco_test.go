@@ -47,6 +47,7 @@ func TestWMCO(t *testing.T) {
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
 	t.Run("create", creationTestSuite)
 	t.Run("upgrade", upgradeTestSuite)
+	t.Run("reconfigure", reconfigurationTest)
 	t.Run("destroy", deletionTestSuite)
 }
 

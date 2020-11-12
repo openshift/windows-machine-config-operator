@@ -8,8 +8,8 @@ import (
 
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
-	wkl "github.com/openshift/windows-machine-config-operator/pkg/controller/wellknownlocations"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
 	"github.com/pkg/errors"
@@ -260,7 +260,7 @@ func (nc *nodeConfig) configureCNI() error {
 		return errors.Wrapf(err, "error populating host subnet in node network")
 	}
 	// populate the CNI config file with the host subnet and the service network CIDR
-	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, wkl.CNIConfigTemplatePath)
+	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, payload.CNIConfigTemplatePath)
 	if err != nil {
 		return errors.Wrapf(err, "error populating CNI config file %s", configFile)
 	}
