@@ -22,10 +22,12 @@ find_files() {
         -o -wholename './target' \
         -o -wholename './.git' \
         -o -wholename '*/vendor/*' \
-	-o -wholename './containernetworking-plugins' \
-	-o -wholename './ovn-kubernetes' \
-	-o -wholename './kubernetes' \
-	-o -wholename './windows-machine-config-bootstrapper' \
+        -o -wholename './containernetworking-plugins' \
+        -o -wholename './kubernetes' \
+        -o -wholename './ovn-kubernetes' \
+        -o -wholename './promu' \
+        -o -wholename './windows-machine-config-bootstrapper' \
+        -o -wholename './windows_exporter' \
       \) -prune \
     \) -name '*.go'
 }
