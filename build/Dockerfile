@@ -2,7 +2,7 @@
 # to install it.
 FROM registry.access.redhat.com/ubi8/ubi-minimal as build
 LABEL stage=build
-RUN microdnf -y install rsync make git tar findutils diffutils
+RUN microdnf -y install rsync make git tar findutils diffutils && microdnf clean all
 RUN mkdir /build/
 
 # Install go 1.14
