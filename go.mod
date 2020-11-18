@@ -39,6 +39,7 @@ replace (
 
 require (
 	github.com/aws/aws-sdk-go v1.25.48
+	github.com/coreos/prometheus-operator v0.38.1-0.20200424145508-7e176fda06cc
 	github.com/openshift/api v0.0.0-20200728200559-811027b63048
 	github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70
 	github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7
