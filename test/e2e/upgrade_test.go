@@ -56,8 +56,8 @@ func testUpgradeVersion(t *testing.T) {
 
 	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, true)
 	require.NoError(t, err, "windows node upgrade failed")
-	// Test if the version annotation corresponds to the current operator version
-	testVersionAnnotation(t)
+	// Test the node metadata and if the version annotation corresponds to the current operator version
+	testNodeMetadata(t)
 
 	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
 	pods, err := testCtx.kubeclient.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(), metav1.ListOptions{FieldSelector: "status.phase=Failed",
@@ -93,8 +93,8 @@ func testTamperAnnotation(t *testing.T) {
 
 	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, true)
 	require.NoError(t, err, "windows node upgrade failed")
-	// Test if the version annotation corresponds to the current operator version
-	testVersionAnnotation(t)
+	// Test the node metadata and if the version annotation corresponds to the current operator version
+	testNodeMetadata(t)
 }
 
 // configureUpgradeTest carries out steps required before running tests for upgrade scenario.

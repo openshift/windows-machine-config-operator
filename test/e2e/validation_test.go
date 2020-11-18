@@ -24,6 +24,39 @@ import (
 	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 )
 
+// testNodeMetadata tests if all nodes have a worker label and kubelet version and are annotated with the version of
+// the currently deployed WMCO
+func testNodeMetadata(t *testing.T) {
+	operatorVersion, err := getWMCOVersion()
+	require.NoError(t, err, "could not get WMCO version")
+
+	clusterKubeletVersion, err := getClusterKubeVersion()
+	require.NoError(t, err, "could not get cluster kube version")
+
+	for _, node := range gc.nodes {
+		t.Run(node.GetName()+" Validation Tests", func(t *testing.T) {
+			t.Run("Kubelet Version", func(t *testing.T) {
+				isValidVersion := strings.HasPrefix(node.Status.NodeInfo.KubeletVersion, clusterKubeletVersion)
+				assert.True(t, isValidVersion,
+					"expected kubelet version was not present on %s", node.GetName())
+			})
+			// The worker label is not actually added by WMCO however we would like to validate if the Machine Api is
+			// properly adding the worker label, if it was specified in the MachineSet. The MachineSet created in the
+			// test suite has the worker label
+			t.Run("Worker Label", func(t *testing.T) {
+				assert.Contains(t, node.Labels, nc.WorkerLabel, "expected node label %s was not present on %s",
+					nc.WorkerLabel, node.GetName())
+			})
+			t.Run("Version Annotation", func(t *testing.T) {
+				require.Containsf(t, node.Annotations, nc.VersionAnnotation, "node %s missing version annotation",
+					node.GetName())
+				assert.Equal(t, operatorVersion, node.Annotations[nc.VersionAnnotation],
+					"WMCO version annotation mismatch")
+			})
+		})
+	}
+}
+
 // getInstanceID gets the instanceID of VM for a given cloud provider ID
 // Ex: aws:///us-east-1e/i-078285fdadccb2eaa. We always want the last entry which is the instanceID
 func getInstanceID(providerID string) string {
@@ -43,13 +76,17 @@ func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
 	return instanceIDs, nil
 }
 
-// testWorkerLabel tests if the worker label has been applied properly
-func testWorkerLabel(t *testing.T) {
-	testCtx := framework.NewTestCtx(t)
-	defer testCtx.Cleanup()
-	for _, node := range gc.nodes {
-		assert.Contains(t, node.Labels, nc.WorkerLabel, "expected node label %s was not present on %s", nc.WorkerLabel, node.GetName())
+// getClusterKubeVersion returns the major and minor Kubernetes version of the cluster
+func getClusterKubeVersion() (string, error) {
+	serverVersion, err := framework.Global.KubeClient.Discovery().ServerVersion()
+	if err != nil {
+		return "", errors.Wrapf(err, "error getting cluster kube version")
 	}
+	versionSplit := strings.Split(serverVersion.GitVersion, ".")
+	if versionSplit == nil {
+		return "", fmt.Errorf("unexpected cluster kube version output")
+	}
+	return strings.Join(versionSplit[0:2], "."), nil
 }
 
 // getWMCOVersion returns the version of the operator. This is sourced from the WMCO binary used to create the operator image.
@@ -67,18 +104,6 @@ func getWMCOVersion() (string, error) {
 		return "", fmt.Errorf("unexpected version output")
 	}
 	return versionSplit[1], nil
-}
-
-// testVersionAnnotation tests all nodes are annotated with the version of the currently deployed WMCO
-func testVersionAnnotation(t *testing.T) {
-	operatorVersion, err := getWMCOVersion()
-	require.NoError(t, err, "could not get WMCO version")
-	for _, node := range gc.nodes {
-		t.Run(node.GetName(), func(t *testing.T) {
-			require.Containsf(t, node.Annotations, nc.VersionAnnotation, "node %s missing version annotation", node.GetName())
-			assert.Equal(t, operatorVersion, node.Annotations[nc.VersionAnnotation], "WMCO version annotation mismatch")
-		})
-	}
 }
 
 // testNodeTaint tests if the Windows node has the Windows taint
