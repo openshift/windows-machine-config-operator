@@ -161,6 +161,17 @@ spec:
           - delete
           - get
           - update
+          - patch
+        - apiGroups:
+          - ""
+          resources:
+          - endpoints
+          verbs:
+          - create
+          - delete
+          - get
+          - update
+          - patch
         - apiGroups:
           - ""
           resources:
@@ -176,6 +187,8 @@ spec:
           verbs:
           - get
           - create
+          - update
+          - list
         - apiGroups:
           - apps
           resourceNames:
