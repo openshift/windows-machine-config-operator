@@ -58,6 +58,8 @@ func testUpgradeVersion(t *testing.T) {
 	require.NoError(t, err, "windows node upgrade failed")
 	// Test the node metadata and if the version annotation corresponds to the current operator version
 	testNodeMetadata(t)
+	// Test if prometheus is reconfigured with ip addresses of newly configured nodes
+	testPrometheus(t)
 
 	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
 	pods, err := testCtx.kubeclient.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(), metav1.ListOptions{FieldSelector: "status.phase=Failed",
@@ -95,6 +97,8 @@ func testTamperAnnotation(t *testing.T) {
 	require.NoError(t, err, "windows node upgrade failed")
 	// Test the node metadata and if the version annotation corresponds to the current operator version
 	testNodeMetadata(t)
+	// Test if prometheus is reconfigured with ip address of newly configured node
+	testPrometheus(t)
 }
 
 // configureUpgradeTest carries out steps required before running tests for upgrade scenario.

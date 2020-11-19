@@ -24,6 +24,17 @@ rules:
   - delete
   - get
   - update
+  - patch
+- apiGroups:
+    - ""
+  resources:
+    - endpoints
+  verbs:
+    - create
+    - delete
+    - get
+    - update
+    - patch
 - apiGroups:
   - ""
   resources:
@@ -39,6 +50,8 @@ rules:
   verbs:
   - get
   - create
+  - update
+  - list
 # deployment/finalizers permissions needed for the metrics server
 - apiGroups:
   - apps
