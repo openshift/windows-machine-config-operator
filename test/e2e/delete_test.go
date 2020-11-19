@@ -67,6 +67,9 @@ func testWindowsNodeDeletion(t *testing.T) {
 		assert.NoError(t, framework.Global.Client.Delete(context.TODO(), machineSet))
 	}
 
+	// Test if prometheus configuration is updated to have no node entries in the endpoints object
+	testPrometheus(t)
+
 	// Cleanup secrets created by us.
 	err = framework.Global.KubeClient.CoreV1().Secrets("openshift-machine-api").Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete userData secret")
