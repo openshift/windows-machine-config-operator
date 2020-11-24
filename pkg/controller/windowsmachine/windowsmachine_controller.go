@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
@@ -82,13 +83,20 @@ func newReconciler(mgr manager.Manager, networkConfig clusternetwork.ClusterNetw
 		return nil, errors.Wrap(err, "error getting service CIDR")
 	}
 
+	// Initialize prometheus configuration
+	pc, err := metrics.NewPrometheusNodeConfig(clientset)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to initialize Prometheus configuration")
+	}
+
 	return &ReconcileWindowsMachine{client: client,
-			scheme:             mgr.GetScheme(),
-			k8sclientset:       clientset,
-			clusterServiceCIDR: serviceCIDR,
-			vxlanPort:          networkConfig.VXLANPort(),
-			recorder:           mgr.GetEventRecorderFor(ControllerName),
-			watchNamespace:     watchNamespace,
+			scheme:               mgr.GetScheme(),
+			k8sclientset:         clientset,
+			clusterServiceCIDR:   serviceCIDR,
+			vxlanPort:            networkConfig.VXLANPort(),
+			recorder:             mgr.GetEventRecorderFor(ControllerName),
+			watchNamespace:       watchNamespace,
+			prometheusNodeConfig: pc,
 		},
 		nil
 }
@@ -228,6 +236,8 @@ type ReconcileWindowsMachine struct {
 	recorder record.EventRecorder
 	// watchNamespace is the namespace the operator is watching as defined by the operator CSV
 	watchNamespace string
+	// prometheusConfig stores information required to configure Prometheus
+	prometheusNodeConfig *metrics.PrometheusNodeConfig
 }
 
 // Reconcile reads that state of the cluster for a Windows Machine object and makes changes based on the state read
@@ -317,11 +327,21 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 			}
 			log.Info("machine has current version", "name", machine.GetName(),
 				"version", node.Annotations[nodeconfig.VersionAnnotation])
-			// version annotation exists with a valid value, node is fully configured, do nothing.
+			// version annotation exists with a valid value, node is fully configured.
+			// configure Prometheus when we have already configured Windows Nodes. This is required to update Endpoints object if
+			// it gets reverted when the operator pod restarts.
+			if err := r.prometheusNodeConfig.Configure(); err != nil {
+				return reconcile.Result{}, errors.Wrap(err, "unable to configure Prometheus")
+			}
 			return reconcile.Result{}, nil
 		}
 	} else if *machine.Status.Phase != provisionedPhase {
 		log.V(1).Info("machine not provisioned", "phase", *machine.Status.Phase)
+		// configure Prometheus when a machine is not in `Running` or `Provisioned` phase. This configuration is
+		// required to update Endpoints object when Windows machines are being deleted.
+		if err := r.prometheusNodeConfig.Configure(); err != nil {
+			return reconcile.Result{}, errors.Wrap(err, "unable to configure Prometheus")
+		}
 		// Machine is not in provisioned or running state, nothing we should do as of now
 		return reconcile.Result{}, nil
 	}
@@ -375,7 +395,10 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	}
 	r.recorder.Eventf(machine, core.EventTypeNormal, "MachineSetup",
 		"Machine %s configured successfully", machine.Name)
-
+	// configure Prometheus after a Windows machine is configured as a Node.
+	if err := r.prometheusNodeConfig.Configure(); err != nil {
+		return reconcile.Result{}, errors.Wrap(err, "unable to configure Prometheus")
+	}
 	return reconcile.Result{}, nil
 }
 
