@@ -86,26 +86,12 @@ fi
 # https://steps.svc.ci.openshift.org/help/ci-operator#release
 OPERATOR_IMAGE=${OPERATOR_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//stable:windows-machine-config-operator-test}}
 
-# OO_INDEX points to the WMCO bundle index image created through https://docs.ci.openshift.org/docs/how-tos/testing-operator-sdk-operators/ workflow in CI.
-# Setup and run the operator only if $OO_INDEX is not set in CI, and the operator deployment is not available.
-OO_INDEX=${OO_INDEX:-}
-
-# SKIP_OPERATOR_RUN_CLEANUP will skip operator deployment and cleanup if set to true
-SKIP_OPERATOR_RUN_CLEANUP=${SKIP_OPERATOR_RUN_CLEANUP:-"false"}
-
-# TODO: Remove the deployment status check once optional operator testing workflow is implemented
-if [ ! -z "$OO_INDEX" ] && oc rollout status deployment windows-machine-config-operator -n openshift-windows-machine-config-operator; then
-   SKIP_OPERATOR_RUN_CLEANUP="true"
-fi
-
-if ! $SKIP_OPERATOR_RUN_CLEANUP; then
-  # Setup and run the operator
-  if ! run_WMCO $OSDK; then
-    # Try to get the WMCO logs if possible
-    get_WMCO_logs
-    cleanup_WMCO $OSDK
-    exit 1
-  fi
+# Setup and run the operator
+if ! run_WMCO $OSDK; then
+  # Try to get the WMCO logs if possible
+  get_WMCO_logs
+  cleanup_WMCO $OSDK
+  exit 1
 fi
 
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
@@ -133,10 +119,8 @@ if ! $SKIP_NODE_DELETION; then
   # Get logs on success before cleanup
   printf "\n####### WMCO logs for upgrade and deletion tests #######\n"
   get_WMCO_logs
-  if ! $SKIP_OPERATOR_RUN_CLEANUP; then
-    # Cleanup the operator resources
-    cleanup_WMCO $OSDK
-  fi
+  # Cleanup the operator resources
+  cleanup_WMCO $OSDK
 else
   # Get logs on success
   printf "\n####### WMCO logs for upgrade tests #######\n"
