@@ -35,12 +35,11 @@ OSDK_WMCO_management() {
   local COMMAND=$1
   local OSDK_PATH=$2
 
-  # Currently this fails even on successes, adding this check to ignore the failure
-  # https://github.com/operator-framework/operator-sdk/issues/2938
-  if ! $OSDK_PATH $COMMAND packagemanifests --olm-namespace openshift-operator-lifecycle-manager --operator-namespace openshift-windows-machine-config-operator \
-  --operator-version 0.0.0 ; then
-    echo operator-sdk $1 failed
-  fi
+  $OSDK_PATH $COMMAND packagemanifests \
+    --olm-namespace openshift-operator-lifecycle-manager \
+    --operator-namespace openshift-windows-machine-config-operator \
+    --operator-version 0.0.0 \
+    --timeout 5m
 }
 
 build_WMCO() {
