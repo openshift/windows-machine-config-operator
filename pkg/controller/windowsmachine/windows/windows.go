@@ -65,6 +65,12 @@ const (
 	// remotePowerShellCmdPrefix holds the PowerShell prefix that needs to be prefixed  for every remote PowerShell
 	// command executed on the remote Windows VM
 	remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass "
+	// serviceQueryCmd is the Windows command used to query a service
+	serviceQueryCmd = "sc.exe qc "
+	// serviceNotFound is part of the error message returned when a service does not exist. 1060 is an error code
+	// representing ERROR_SERVICE_DOES_NOT_EXIST
+	// referenced: https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
+	serviceNotFound = "status 1060"
 )
 
 var log = logf.Log.WithName("windows")
@@ -228,7 +234,10 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 
 	out, err := vm.interact.run(cmd)
 	if err != nil {
-		log.Error(err, "error running", "cmd", cmd, "out", out)
+		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services.
+		if !(strings.HasPrefix(cmd, serviceQueryCmd) && strings.HasSuffix(err.Error(), serviceNotFound)) {
+			log.Error(err, "error running", "cmd", cmd, "out", out)
+		}
 		return out, errors.Wrapf(err, "error running %s", cmd)
 	}
 	log.V(1).Info("run", "cmd", cmd, "out", out)
@@ -536,11 +545,9 @@ func (vm *windows) stopService(svc *service) error {
 
 // serviceExists checks if the given service exists on Windows VM
 func (vm *windows) serviceExists(serviceName string) (bool, error) {
-	_, err := vm.Run("sc.exe qc "+serviceName, false)
+	_, err := vm.Run(serviceQueryCmd+serviceName, false)
 	if err != nil {
-		// 1060 is an error code representing ERROR_SERVICE_DOES_NOT_EXIST
-		// referenced: https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
-		if strings.Contains(err.Error(), "status 1060") {
+		if strings.Contains(err.Error(), serviceNotFound) {
 			return false, nil
 		}
 		return false, err
