@@ -35,20 +35,11 @@ OSDK_WMCO_management() {
   local COMMAND=$1
   local OSDK_PATH=$2
 
-  local retries=5
-  for ((i=0; i<retries; i++)); do
-    $OSDK_PATH $COMMAND packagemanifests \
-      --olm-namespace openshift-operator-lifecycle-manager \
-      --operator-namespace openshift-windows-machine-config-operator \
-      --operator-version 0.0.0 \
-      && break
-    echo operator-sdk $1 packagemanifests failed, retrying...
-    sleep 15
-  done
-  if ((i == retries)); then
-    echo operator-sdk $1 packagemanifests failed
-    exit 1
-  fi
+  $OSDK_PATH $COMMAND packagemanifests \
+    --olm-namespace openshift-operator-lifecycle-manager \
+    --operator-namespace openshift-windows-machine-config-operator \
+    --operator-version 0.0.0 \
+    --timeout 5m
 }
 
 build_WMCO() {
