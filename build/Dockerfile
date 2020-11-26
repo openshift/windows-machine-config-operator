@@ -1,19 +1,5 @@
-# We cannot use a golang image as building the kubelet requires rsync and that is not present plus there is no easy way
-# to install it.
-FROM registry.access.redhat.com/ubi8/ubi-minimal as build
+FROM docker.io/openshift/origin-release:golang-1.15 as build
 LABEL stage=build
-RUN microdnf -y install rsync make git tar findutils diffutils && microdnf clean all
-RUN mkdir /build/
-
-# Install go 1.14
-RUN mkdir /build/go
-WORKDIR /build/go
-RUN curl https://golang.org/dl/go1.14.7.linux-amd64.tar.gz -L -o go.tar.gz
-# Check sha256
-RUN echo "4a7fa60f323ee1416a4b1425aefc37ea359e9d64df19c326a58953a97ad41ea5  go.tar.gz" |sha256sum -c
-RUN tar -C /usr/local -xzf go.tar.gz
-ENV GOBIN=/usr/local/go/bin
-ENV PATH=${PATH}:${GOBIN}
 
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
@@ -74,7 +60,6 @@ FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 LABEL stage=operator
 
 # Copy wmcb.exe
-RUN mkdir /payload/
 WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-operator/windows-machine-config-bootstrapper/wmcb.exe .
 
@@ -85,13 +70,11 @@ COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-contr
 COPY --from=build /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe .
 
 # Copy kubelet.exe and kube-proxy.exe
-RUN mkdir /payload/kube-node/
 WORKDIR /payload/kube-node/
 COPY --from=build /build/windows-machine-config-operator/kubernetes/_output/local/bin/windows/amd64/kubelet.exe .
 COPY --from=build /build/windows-machine-config-operator/kubernetes/_output/local/bin/windows/amd64/kube-proxy.exe .
 
 # Copy CNI plugin binaries and CNI config template cni-conf-template.json
-RUN mkdir /payload/cni/
 WORKDIR /payload/cni/
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/flannel.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe .
@@ -100,7 +83,6 @@ COPY --from=build /build/windows-machine-config-operator/containernetworking-plu
 COPY pkg/internal/cni-conf-template.json .
 
 # Copy required powershell scripts
-RUN mkdir /payload/powershell/
 WORKDIR /payload/powershell/
 COPY pkg/internal/wget-ignore-cert.ps1 .
 COPY pkg/internal/hns.psm1 .
