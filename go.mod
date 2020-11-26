@@ -38,7 +38,7 @@ replace (
 )
 
 require (
-	github.com/aws/aws-sdk-go v1.25.48
+	github.com/aws/aws-sdk-go v1.27.0
 	github.com/coreos/prometheus-operator v0.38.1-0.20200424145508-7e176fda06cc
 	github.com/openshift/api v0.0.0-20200728200559-811027b63048
 	github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70
@@ -46,6 +46,7 @@ require (
 	github.com/operator-framework/operator-sdk v0.19.4
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
+	github.com/prometheus/promu v0.7.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.5.1
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
