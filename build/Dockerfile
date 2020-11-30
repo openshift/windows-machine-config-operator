@@ -4,6 +4,9 @@ LABEL stage=build
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
+# Install promu utility tool, needed to build the windows_exporter.exe metrics binary
+COPY build/_output/bin/promu $GOPATH/bin
+
 # Build WMCB
 WORKDIR /build/windows-machine-config-operator/windows-machine-config-bootstrapper/
 COPY windows-machine-config-bootstrapper/ .
@@ -14,11 +17,6 @@ WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
 COPY ovn-kubernetes/ .
 WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/go-controller/
 RUN make windows
-
-# Build promu utility tool, needed to build the windows_exporter.exe metrics binary
-WORKDIR /build/windows-machine-config-operator/promu/
-COPY promu/ .
-RUN go install .
 
 # Build windows_exporter
 WORKDIR /build/windows-machine-config-operator/windows_exporter/

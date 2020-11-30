@@ -29,3 +29,7 @@ goflags=${GOFLAGS:-}
 
 
 CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build ${GOFLAGS} -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${MAIN_PACKAGE}
+
+# Build promu utility tool from vendor dir. Promu is used for building prometheus projects like windows_exporter
+echo "building promu..."
+CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build ${GOFLAGS} -o ${BIN_DIR}/promu "github.com/prometheus/promu"
