@@ -5,7 +5,7 @@
 [submodule "ovn-kubernetes"]
 	path = ovn-kubernetes
 	url = https://github.com/openshift/ovn-kubernetes
-	branch = release-4.6
+	branch = release-4.7
 [submodule "containernetworking-plugins"]
 	path = containernetworking-plugins
 	url = https://github.com/openshift/containernetworking-plugins
