@@ -1,7 +1,7 @@
 FROM scratch
 
 # This block are standard Red Hat container labels
-LABEL name="openshift4/windows-machine-config-operator-bundle" \
+LABEL name="openshift4-wincw/windows-machine-config-operator-bundle" \
     License="ASL 2.0" \
     io.k8s.display-name="Windows Machine Config Operator bundle" \
     io.k8s.description="Windows Machine Config Operator's OLM bundle image" \
