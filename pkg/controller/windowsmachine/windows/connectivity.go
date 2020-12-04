@@ -5,15 +5,33 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/apimachinery/pkg/util/wait"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
 )
 
 // sshPort is the default SSH port
 const sshPort = "22"
+
+// AuthErr occurs when our authentication into the VM is rejected
+type AuthErr struct {
+	err string
+}
+
+func (e *AuthErr) Error() string {
+	return fmt.Sprintf("SSH authentication failed: %s", e.err)
+}
+
+// newAuthErr returns a new AuthErr
+func newAuthErr(err error) *AuthErr {
+	return &AuthErr{err: err.Error()}
+}
 
 type connectivity interface {
 	// run executes the given command on the remote system
@@ -64,16 +82,19 @@ func (c *sshConnectivity) init() error {
 	}
 	var err error
 	var sshClient *ssh.Client
-	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data. We
-	// cannot reuse the entries in the retry package as they are too granular.
-	for retries := 0; retries < 5; retries++ {
+	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data
+	err = wait.PollImmediate(time.Minute, retry.Timeout, func() (bool, error) {
 		sshClient, err = ssh.Dial("tcp", c.ipAddress+":"+sshPort, config)
 		if err == nil {
-			break
+			return true, nil
 		}
 		log.V(1).Info("SSH dial", "IP Address", c.ipAddress, "error", err)
-		time.Sleep(1 * time.Minute)
-	}
+		if strings.Contains(err.Error(), "unable to authenticate") {
+			// Authentication failure is a special case that must be handled differently
+			return false, newAuthErr(err)
+		}
+		return false, nil
+	})
 	if err != nil {
 		return errors.Wrapf(err, "unable to connect to Windows VM %s", c.ipAddress)
 	}

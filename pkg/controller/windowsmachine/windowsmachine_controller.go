@@ -32,6 +32,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
@@ -309,20 +310,7 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 						machine.Name, maxUnhealthyCount)
 					return reconcile.Result{Requeue: true}, nil
 				}
-				if !machine.GetDeletionTimestamp().IsZero() {
-					// Delete already initiated
-					return reconcile.Result{}, nil
-				}
-
-				if err := r.client.Delete(context.TODO(), machine); err != nil {
-					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionFailed",
-						"Machine %v deletion failed: %v", machine.Name, err)
-					return reconcile.Result{}, err
-				}
-				log.Info("machine has been remediated by deletion", "name", machine.GetName())
-				r.recorder.Eventf(machine, core.EventTypeNormal, "MachineDeleted",
-					"Machine %v has been remediated by deleting the Machine object", machine.Name)
-				return reconcile.Result{}, nil
+				return reconcile.Result{}, r.deleteMachine(machine)
 			}
 			log.Info("machine has current version", "name", machine.GetName(),
 				"version", node.Annotations[nodeconfig.VersionAnnotation])
@@ -388,6 +376,15 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	log.Info("processing", "namespace", request.Namespace, "name", request.Name)
 	// Make the Machine a Windows Worker node
 	if err := r.addWorkerNode(ipAddress, providerName, instanceID); err != nil {
+		var authErr *windows.AuthErr
+		if errors.As(err, &authErr) {
+			// SSH authentication errors with the Machine are non recoverable, stemming from a mismatch with the
+			// userdata used to provision the machine and the current private key secret. The machine must be deleted and
+			// re-provisioned.
+			r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
+				"Machine %s authentication failure", machine.Name)
+			return reconcile.Result{}, r.deleteMachine(machine)
+		}
 		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
 			"Machine %s configuration failure", machine.Name)
 		return reconcile.Result{}, err
@@ -399,6 +396,24 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, errors.Wrap(err, "unable to configure Prometheus")
 	}
 	return reconcile.Result{}, nil
+}
+
+// deleteMachine deletes the specified Machine
+func (r *ReconcileWindowsMachine) deleteMachine(machine *mapi.Machine) error {
+	if !machine.GetDeletionTimestamp().IsZero() {
+		// Delete already initiated
+		return nil
+	}
+
+	if err := r.client.Delete(context.TODO(), machine); err != nil {
+		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionFailed",
+			"Machine %v deletion failed: %v", machine.Name, err)
+		return err
+	}
+	log.Info("machine has been remediated by deletion", "name", machine.GetName())
+	r.recorder.Eventf(machine, core.EventTypeNormal, "MachineDeleted",
+		"Machine %v has been remediated by deleting the Machine object", machine.Name)
+	return nil
 }
 
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
