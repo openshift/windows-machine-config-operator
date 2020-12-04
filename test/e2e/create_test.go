@@ -1,13 +1,19 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"io/ioutil"
 	"log"
 	"math"
 	"testing"
 	"time"
 
+	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -16,17 +22,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 )
 
 func creationTestSuite(t *testing.T) {
-	// Ensure that the private key secret is created
-	testCtx, err := NewTestContext(t)
-	require.NoError(t, err)
-	require.NoError(t, testCtx.createPrivateKeySecret(), "could not create private key secret")
-
 	// The order of tests here are important. testValidateSecrets is what populates the windowsVMs slice in the gc.
 	// testNetwork needs that to check if the HNS networks have been installed. Ideally we would like to run testNetwork
 	// before testValidateSecrets and testConfigMapValidation but we cannot as the source of truth for the credentials
@@ -67,10 +70,26 @@ func testWindowsNodeCreation(t *testing.T) {
 	}
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
+	// Create a private key secret with a randomly generated value. This is changed to the provided private key later in
+	// the test.
+	require.NoError(t, testCtx.createPrivateKeySecret(false), "could not create private key secret")
 
 	for _, test := range testCases {
 		if err := testCtx.createWindowsMachineSet(test.replicas, test.isWindows); err != nil {
 			t.Fatalf("failed to create Windows MachineSet %v ", err)
+		}
+		if test.isWindows {
+			// We need to cover the case where a user changes the private key secret before the WMCO has a chance to
+			// configure the Machine. In order to simulate that case we need to wait for the MachineSet to be fully
+			// provisioned and then change the key. The the correct amount of nodes being configured is proof that the
+			// mismatched Machine created with the mismatched key was deleted and replaced.
+			// Depending on timing and configuration flakes this will either cause all Machines, or all Machines after
+			// the first configured Machines to hit this scenario.
+			err := testCtx.waitForWindowsMachines(int(test.replicas), "Provisioned")
+			require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
+			err = testCtx.createPrivateKeySecret(true)
+			require.NoError(t, err, "error replacing private key secret")
+
 		}
 		err := testCtx.waitForWindowsNodes(test.replicas, true, !test.isWindows, false)
 
@@ -92,6 +111,35 @@ func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool
 	return framework.Global.Client.Create(context.TODO(), machineSet,
 		&framework.CleanupOptions{TestContext: tc.osdkTestCtx,
 			Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
+}
+
+// waitForWindowsMachines waits for a certain amount of Windows Machines to reach a certain phase
+func (tc *testContext) waitForWindowsMachines(machineCount int, phase string) error {
+	machineCreationTimeLimit := time.Minute * 5
+	return wait.Poll(retryInterval, machineCreationTimeLimit, func() (done bool, err error) {
+		var machines mapi.MachineList
+		err = framework.Global.Client.List(context.TODO(), &machines,
+			[]client.ListOption{client.MatchingLabels{windowsmachine.MachineOSLabel: "Windows"},
+				client.InNamespace("openshift-machine-api")}...)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Printf("waiting for %d Windows Machines", machineCount)
+				return false, nil
+			}
+			log.Printf("machine object listing failed: %v", err)
+			return false, nil
+		}
+		if len(machines.Items) != machineCount {
+			log.Printf("waiting for %d/%d Windows Machines", machineCount-len(machines.Items), machineCount)
+			return false, nil
+		}
+		for _, machine := range machines.Items {
+			if machine.Status.Phase == nil || *machine.Status.Phase != phase {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
 }
 
 // waitForWindowsNode waits until there exists nodeCount Windows nodes with the correct set of annotations.
@@ -169,23 +217,42 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 	return err
 }
 
+// generatePrivateKey generates a random RSA private key
+func generatePrivateKey() ([]byte, error) {
+	var keyData []byte
+	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		return nil, errors.Wrap(err, "error generating key")
+	}
+	var privateKey = &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}
+	buf := bytes.NewBuffer(keyData)
+	err = pem.Encode(buf, privateKey)
+	if err != nil {
+		return nil, errors.Wrap(err, "error encoding generated private key")
+	}
+	return buf.Bytes(), nil
+}
+
 // createPrivateKeySecret ensures that a private key secret exists with the correct data
-func (tc *testContext) createPrivateKeySecret() error {
-	secretsClient := tc.kubeclient.CoreV1().Secrets(tc.namespace)
-	if _, err := secretsClient.Get(context.TODO(), secrets.PrivateKeySecret, metav1.GetOptions{}); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return errors.Wrap(err, "could not get private key secret")
+func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
+	if err := tc.ensurePrivateKeyDeleted(); err != nil {
+		return errors.Wrap(err, "error ensuring any existing private key is removed")
+	}
+	var keyData []byte
+	var err error
+	if useKnownKey {
+		keyData, err = ioutil.ReadFile(gc.privateKeyPath)
+		if err != nil {
+			return errors.Wrapf(err, "unable to read private key data from file %s", gc.privateKeyPath)
 		}
 	} else {
-		// Secret already exists, delete it
-		if err := secretsClient.Delete(context.TODO(), secrets.PrivateKeySecret, metav1.DeleteOptions{}); err != nil {
-			return errors.Wrap(err, "unable to delete existing private key secret")
+		keyData, err = generatePrivateKey()
+		if err != nil {
+			return errors.Wrap(err, "error generating private key")
 		}
-	}
-
-	keyData, err := ioutil.ReadFile(gc.privateKeyPath)
-	if err != nil {
-		return errors.Wrapf(err, "unable to read private key data from file %s", gc.privateKeyPath)
 	}
 
 	privateKeySecret := core.Secret{
@@ -197,4 +264,18 @@ func (tc *testContext) createPrivateKeySecret() error {
 	}
 	_, err = tc.kubeclient.CoreV1().Secrets(tc.namespace).Create(context.TODO(), &privateKeySecret, metav1.CreateOptions{})
 	return err
+}
+
+// ensurePrivateKeyDeleted ensures that the privateKeySecret is deleted
+func (tc *testContext) ensurePrivateKeyDeleted() error {
+	secretsClient := tc.kubeclient.CoreV1().Secrets(tc.namespace)
+	if _, err := secretsClient.Get(context.TODO(), secrets.PrivateKeySecret, metav1.GetOptions{}); err != nil {
+		if apierrors.IsNotFound(err) {
+			// secret doesnt exist, do nothing
+			return nil
+		}
+		return errors.Wrap(err, "could not get private key secret")
+	}
+	// Secret exists, delete it
+	return secretsClient.Delete(context.TODO(), secrets.PrivateKeySecret, metav1.DeleteOptions{})
 }
