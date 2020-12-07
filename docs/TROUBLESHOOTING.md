@@ -46,9 +46,9 @@ Once the SSH bastion has been setup, you can use either method to access the Win
 * You can now RDP into the Windows node at *localhost:2020* using an RDP client
 
 ## How to collect Kubernetes node logs
-All Kubernetes node logs are in *C:\k\logs*. To view all the directories under *C:\k\logs*, execute:
+Kubernetes node log files are in *C:\k\logs*. To view all the directories under *C:\k\logs*, execute:
 ```shell script
-# oc adm node-logs -l kubernetes.io/os=windows --path=/
+$ oc adm node-logs -l kubernetes.io/os=windows --path=/
 ip-10-0-138-252.us-east-2.compute.internal containers/
 ip-10-0-138-252.us-east-2.compute.internal hybrid-overlay/
 ip-10-0-138-252.us-east-2.compute.internal kube-proxy/
@@ -58,12 +58,24 @@ ip-10-0-138-252.us-east-2.compute.internal pods/
 You can now list files in the directories using the same command and view the individual log files. For example to view
 the kubelet logs, you can execute:
 ```shell script
-oc adm node-logs -l kubernetes.io/os=windows --path=/kubelet/kubelet.log
+$ oc adm node-logs -l kubernetes.io/os=windows --path=/kubelet/kubelet.log
+```
+## How to collect Windows application event logs
+
+The Get-WinEvent shim on the kubelet logs endpoint can be used to collect application event logs from Windows machines.
+E.g. for the docker runtime service:
+```shell script
+$ oc adm node-logs -l kubernetes.io/os=windows --path=journal -u docker
+```
+The same command is executed when collecting logs with `oc adm must-gather`.
+
+Other Windows application logs from the EventLog can also be collected by specifying the respective service on a `-u` flag.
+To view logs from all applications logging to the event logs on the Windows machine, run:
+```shell script
+$ oc adm node-logs -l kubernetes.io/os=windows --path=journal
 ```
 
-## How to collect Docker logs
-The Windows Docker service does not log to stdout but instead logs to the Windows' event log. You can view the Docker
-event logs using the following steps:
+Alternatively, the Docker event logs can be viewed using SSH with the following steps:
 * SSH into the Windows node and enter PowerShell:
   ```powershell
   <username>@<node-name> C:\Users\username> powershell
