@@ -20,10 +20,6 @@ spec:
     Please ensure that when installing this operator, the startingCSV you subscribe to is supported on the
     version of OKD/OCP you are using. This CSV is meant for OKD/OCP 4.6.
 
-    Upgrading the OKD/OCP cluster from version 4.6 to 4.7 while running this operator is not supported. When upgrading
-    a cluster, remove all Windows MachineSets and uninstall this operator. Once the cluster upgrade process has completed,
-    you can reinstall the operator, and recreate all Windows MachineSets.
-
     ## Documentation
 
     ### Introduction
