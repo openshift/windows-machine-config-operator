@@ -127,7 +127,7 @@ cleanup_WMCO() {
 
 # returns the operator version in `Version+GitHash` format
 get_version() {
-  OPERATOR_VERSION=0.0.1
+  OPERATOR_VERSION=1.0.0
   GIT_COMMIT=$(git rev-parse --short HEAD)
   VERSION="${OPERATOR_VERSION}+${GIT_COMMIT}"
 
