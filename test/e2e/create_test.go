@@ -1,13 +1,7 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
-	"io/ioutil"
 	"log"
 	"math"
 	"testing"
@@ -15,16 +9,13 @@ import (
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"k8s.io/api/core/v1"
-	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 )
@@ -235,67 +226,4 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 	log.Printf("%v time is required to configure %v nodes", endTime.Sub(startTime), gc.numberOfNodes)
 
 	return err
-}
-
-// generatePrivateKey generates a random RSA private key
-func generatePrivateKey() ([]byte, error) {
-	var keyData []byte
-	key, err := rsa.GenerateKey(rand.Reader, 1024)
-	if err != nil {
-		return nil, errors.Wrap(err, "error generating key")
-	}
-	var privateKey = &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
-	}
-	buf := bytes.NewBuffer(keyData)
-	err = pem.Encode(buf, privateKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "error encoding generated private key")
-	}
-	return buf.Bytes(), nil
-}
-
-// createPrivateKeySecret ensures that a private key secret exists with the correct data
-func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
-	if err := tc.ensurePrivateKeyDeleted(); err != nil {
-		return errors.Wrap(err, "error ensuring any existing private key is removed")
-	}
-	var keyData []byte
-	var err error
-	if useKnownKey {
-		keyData, err = ioutil.ReadFile(gc.privateKeyPath)
-		if err != nil {
-			return errors.Wrapf(err, "unable to read private key data from file %s", gc.privateKeyPath)
-		}
-	} else {
-		keyData, err = generatePrivateKey()
-		if err != nil {
-			return errors.Wrap(err, "error generating private key")
-		}
-	}
-
-	privateKeySecret := core.Secret{
-		Data: map[string][]byte{secrets.PrivateKeySecretKey: keyData},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secrets.PrivateKeySecret,
-			Namespace: tc.namespace,
-		},
-	}
-	_, err = tc.kubeclient.CoreV1().Secrets(tc.namespace).Create(context.TODO(), &privateKeySecret, metav1.CreateOptions{})
-	return err
-}
-
-// ensurePrivateKeyDeleted ensures that the privateKeySecret is deleted
-func (tc *testContext) ensurePrivateKeyDeleted() error {
-	secretsClient := tc.kubeclient.CoreV1().Secrets(tc.namespace)
-	if _, err := secretsClient.Get(context.TODO(), secrets.PrivateKeySecret, metav1.GetOptions{}); err != nil {
-		if apierrors.IsNotFound(err) {
-			// secret doesnt exist, do nothing
-			return nil
-		}
-		return errors.Wrap(err, "could not get private key secret")
-	}
-	// Secret exists, delete it
-	return secretsClient.Delete(context.TODO(), secrets.PrivateKeySecret, metav1.DeleteOptions{})
 }
