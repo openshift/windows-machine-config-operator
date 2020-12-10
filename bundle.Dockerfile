@@ -29,8 +29,8 @@ LABEL operators.operatorframework.io.bundle.mediatype.v1=registry+v1 \
     operators.operatorframework.io.bundle.manifests.v1=manifests/ \
     operators.operatorframework.io.bundle.metadata.v1=metadata/ \
     operators.operatorframework.io.bundle.package.v1=windows-machine-config-operator \
-    operators.operatorframework.io.bundle.channels.v1=preview \
-    operators.operatorframework.io.bundle.channel.default.v1=preview
+    operators.operatorframework.io.bundle.channels.v1=preview,stable \
+    operators.operatorframework.io.bundle.channel.default.v1=stable
 
 # This label gets replaced by render_templates, so it is safer to keep it on its own
 LABEL version="v0.0.0"
