@@ -9,6 +9,7 @@ import (
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/api/core/v1"
@@ -68,10 +69,18 @@ func testWindowsNodeCreation(t *testing.T) {
 		// the first configured Machines to hit this scenario.
 		err = testCtx.waitForWindowsMachines(int(gc.numberOfNodes), "Provisioned")
 		require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
-		err = testCtx.createPrivateKeySecret(true)
+		err = testCtx.createPrivateKeySecret(false)
 		require.NoError(t, err, "error replacing private key secret")
 		err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, false)
 		assert.NoError(t, err, "Windows node creation failed")
+
+		t.Run("Changing the private key ensures all Windows nodes use the new private key", func(t *testing.T) {
+			// Replace private key and check that new Machines are created using the new private key
+			err = testCtx.createPrivateKeySecret(true)
+			require.NoError(t, err, "error replacing private key secret")
+			err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, false)
+			assert.NoError(t, err, "error waiting for Windows nodes configured with newly created private key")
+		})
 	})
 }
 
@@ -123,7 +132,8 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string) er
 // nodeCreationTime variable which is 20 minutes increasing the overall wait time in test suite
 func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, expectError, checkVersion bool) error {
 	var nodes *v1.NodeList
-	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, nodeconfig.VersionAnnotation}
+	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, nodeconfig.VersionAnnotation,
+		nodeconfig.PubKeyHashAnnotation}
 	var creationTime time.Duration
 	startTime := time.Now()
 	if expectError {
@@ -138,11 +148,17 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 		creationTime = nodeCreationTime
 	}
 
+	pubKey, err := getExpectedPublicKey()
+	if err != nil {
+		return errors.Wrap(err, "error getting the expected public key")
+	}
+	pubKeyAnnotation := nodeconfig.CreatePubKeyHashAnnotation(pubKey)
+
 	// We are waiting 20 minutes for each windows VM to be shown up in the cluster. The value comes from
 	// nodeCreationTime variable.  If we are testing a scale down from n nodes to 0, then we should
 	// not take the number of nodes into account. If we are testing node creation without applying Windows label, we
 	// should throw error within 5 mins.
-	err := wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*creationTime, func() (done bool, err error) {
+	err = wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*creationTime, func() (done bool, err error) {
 		nodes, err = tc.kubeclient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -195,6 +211,11 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 				if node.Annotations[nodeconfig.VersionAnnotation] != operatorVersion {
 					return false, nil
 				}
+			}
+			if node.Annotations[nodeconfig.PubKeyHashAnnotation] != pubKeyAnnotation {
+				log.Printf("node %s has unexpected pubkey annotation value: %s", node.GetName(),
+					node.Annotations[nodeconfig.PubKeyHashAnnotation])
+				return false, nil
 			}
 		}
 

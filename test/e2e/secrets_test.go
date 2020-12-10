@@ -26,36 +26,52 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
 )
 
-// createSigner creates a signer using the private key retrieved from the secret
-func createSigner() (ssh.Signer, error) {
+// getExpectedPublicKey returns the public key associated with the private key within the cloud-private-key secret
+func getExpectedPublicKey() (ssh.PublicKey, error) {
+	privateKey, err := getCloudPrivateKey()
+	if err != nil {
+		return nil, errors.Wrap(err, "error retrieving private key")
+	}
+	signer, err := ssh.ParsePrivateKey(privateKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to parse private key")
+	}
+
+	return signer.PublicKey(), nil
+}
+
+// getCloudPrivateKey returns the private key present within the cloud-private-key secret
+func getCloudPrivateKey() ([]byte, error) {
 	privateKeySecret := &core.Secret{}
 	err := framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "cloud-private-key", Namespace: "openshift-windows-machine-config-operator"}, privateKeySecret)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to retrieve cloud private key secret")
+		return []byte{}, errors.Wrapf(err, "failed to retrieve cloud private key secret")
 	}
 
 	privateKeyBytes := privateKeySecret.Data[secrets.PrivateKeySecretKey][:]
 	if privateKeyBytes == nil {
-		return nil, errors.New("failed to retrieve private key using cloud private key secret")
+		return []byte{}, errors.New("failed to retrieve private key using cloud private key secret")
 	}
+	return privateKeyBytes, nil
+}
 
-	signer, err := ssh.ParsePrivateKey(privateKeyBytes)
+// getUserDataContents returns the contents of the windows-user-data secret
+func getUserDataContents() (string, error) {
+	secret := &core.Secret{}
+	err := framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data", Namespace: "openshift-machine-api"}, secret)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to parse private key")
+		return "", err
 	}
-	return signer, nil
+	return string(secret.Data["userData"]), nil
 }
 
 // testUserData tests if the userData created in the 'openshift-machine-api' namespace is valid
 func testUserData(t *testing.T) {
-	signer, err := createSigner()
-	require.NoError(t, err, "error creating signer using private key")
-	pubKeyBytes := ssh.MarshalAuthorizedKey(signer.PublicKey())
-	require.NotNil(t, pubKeyBytes, "failed to retrieve public key using signer for private key")
-	found := &core.Secret{}
-	err = framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data", Namespace: "openshift-machine-api"}, found)
-	require.NoError(t, err, "could not find Windows user data secret in required namespace")
-	assert.Contains(t, string(found.Data["userData"][:]), string(pubKeyBytes[:]), "expected user data not present in required namespace")
+	pubKey, err := getExpectedPublicKey()
+	require.NoError(t, err, "error determining expected public key")
+	userData, err := getUserDataContents()
+	require.NoError(t, err, "could not retrieve userdata contents")
+	assert.Contains(t, userData, string(ssh.MarshalAuthorizedKey(pubKey)), "public key not found within Windows userdata")
 }
 
 // testUserDataTamper tests if userData reverts to previous value if updated
