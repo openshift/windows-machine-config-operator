@@ -24,6 +24,10 @@ func testNodeMetadata(t *testing.T) {
 	clusterKubeletVersion, err := getClusterKubeVersion()
 	require.NoError(t, err, "could not get cluster kube version")
 
+	pubKey, err := getExpectedPublicKey()
+	require.NoError(t, err, "error getting the expected public key")
+	pubKeyAnnotation := nc.CreatePubKeyHashAnnotation(pubKey)
+
 	for _, node := range gc.nodes {
 		t.Run(node.GetName()+" Validation Tests", func(t *testing.T) {
 			t.Run("Kubelet Version", func(t *testing.T) {
@@ -43,6 +47,12 @@ func testNodeMetadata(t *testing.T) {
 					node.GetName())
 				assert.Equal(t, operatorVersion, node.Annotations[nc.VersionAnnotation],
 					"WMCO version annotation mismatch")
+			})
+			t.Run("Public Key Annotation", func(t *testing.T) {
+				require.Containsf(t, node.Annotations, nc.PubKeyHashAnnotation, "node %s missing public key annotation",
+					node.GetName())
+				assert.Equal(t, pubKeyAnnotation, node.Annotations[nc.PubKeyHashAnnotation],
+					"public key annotation mismatch")
 			})
 		})
 	}
