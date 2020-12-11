@@ -328,8 +328,8 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(podList.Items) != 1 {
-		return "", errors.Errorf("expected one pod matching %s, but found %d", selectorString,
+	if len(podList.Items) < 1 {
+		return "", errors.Errorf("expected at least one matching pod %s, but found %d", selectorString,
 			len(podList.Items))
 	}
 
@@ -351,7 +351,7 @@ func (tc *testContext) getWindowsServerContainerImage() string {
 // createWindowsServerDeployment creates a deployment with a Windows Server 2019 container
 func (tc *testContext) createWindowsServerDeployment(name string, command []string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	deploymentsClient := tc.kubeclient.AppsV1().Deployments(tc.workloadNamespace)
-	replicaCount := int32(1)
+	replicaCount := int32(3)
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	containerUserName := "ContainerAdministrator"
 	deployment := &appsv1.Deployment{
