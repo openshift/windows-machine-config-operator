@@ -42,7 +42,6 @@ source $WMCO_ROOT/hack/common.sh
 
 cd $WMCO_ROOT
 OSDK=$(get_operator_sdk)
-VERSION=$(get_version)
 
 # Builds the container image and pushes it to remote repository. Uses this built image to run the operator on the cluster.
 # It is user's responsibility to clean old/unused containers in container repository as well as local system.
