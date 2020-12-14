@@ -347,7 +347,7 @@ spec:
     - email: team-winc@redhat.com
       name: Red Hat OpenShift for Windows Containers team
   maturity: stable
-  minKubeVersion: 1.19.0
+  minKubeVersion: 1.20.0
   provider:
     name: Red Hat
   version: 0.0.0
