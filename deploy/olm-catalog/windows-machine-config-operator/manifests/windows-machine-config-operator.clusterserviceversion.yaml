@@ -26,7 +26,12 @@ spec:
     container runtime installed. The operator completes all the necessary steps to configure the underlying VM so that it can join
     the cluster as a worker node.
 
+    Usage of this operator requires a Red Hat OpenShift subscription. Users looking to deploy Windows containers workloads in
+    production clusters should acquire a subscription before attempting to install this operator. Users without a subscription
+    can try the community operator, a distribution which lacks official support.
+
     ### Pre-requisites
+    * A Red Hat OpenShift subscription
     * OCP 4.6.8+ cluster running on Azure or AWS, configured with hybrid OVN Kubernetes networking
 
     ### Usage
@@ -127,9 +132,9 @@ spec:
     - [AWS](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-aws.md)
 
     ### Reporting issues
-    Issues with this distribution of WMCO can be opened against the [Windows Container Bugzilla component](https://bugzilla.redhat.com/buglist.cgi?product=OpenShift%20Container%20Platform&component=Windows%20Containers&resolution=---).
-    Please read through the [troubleshooting document](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/TROUBLESHOOTING.md)
-    before opening an issue.
+    Support for this distribution of WMCO requires a Red Hat OpenShfit subscription. Support should be requested through the Red Hat Customer Portal.
+    Please read through the [troubleshooting document](https://docs.openshift.com/container-platform/4.6/support/troubleshooting/troubleshooting-windows-container-workload-issues.html)
+    before opening a support case.
 
   displayName: Windows Machine Config Operator
   icon:
@@ -332,7 +337,7 @@ spec:
   - windows
   maintainers:
     - email: team-winc@redhat.com
-      name: Red Hat OpenShift for Windows Containers team
+      name: Red Hat, Windows Container Support for OpenShift
   maturity: stable
   minKubeVersion: 1.19.0
   provider:
