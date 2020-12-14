@@ -97,26 +97,30 @@ func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool
 // waitForWindowsNode waits until there exists nodeCount Windows nodes with the correct set of annotations.
 // if waitForAnnotations = false, the function will return when the node object is first seen and not wait until
 // the expected annotations are present.
-// if expectError = true, the function will wait for duration of 5 minutes for the nodes as the error would be thrown
-// immediately, else we will wait for the duration given by nodeCreationTime variable which is 20 minutes increasing
-// the overall wait time in test suite
+// if expectError = true, the function will wait for duration of 10 minutes if we are deleting all nodes i.e. 0 nodesCount
+// else 5 minutes for the nodes as the error would be thrown immediately, else we will wait for the duration given by
+// nodeCreationTime variable which is 20 minutes increasing the overall wait time in test suite
 func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, expectError, checkVersion bool) error {
 	var nodes *v1.NodeList
 	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, nodeconfig.VersionAnnotation}
 	var creationTime time.Duration
 	startTime := time.Now()
 	if expectError {
-		// The time we expect to wait, if the windowsLabel is
-		// not used while creating nodes.
-		creationTime = time.Minute * 5
+		if nodeCount == 0 {
+			creationTime = time.Minute * 10
+		} else {
+			// The time we expect to wait, if the windowsLabel is
+			// not used while creating nodes.
+			creationTime = time.Minute * 5
+		}
 	} else {
 		creationTime = nodeCreationTime
 	}
 
-	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster, so to be on safe
-	// side, let's make it as 20 minutes per node. The value comes from nodeCreationTime variable.  If we are testing a
-	// scale down from n nodes to 0, then we should not take the number of nodes into account. If we are testing node
-	// creation without applying Windows label, we should throw error within 5 mins.
+	// We are waiting 20 minutes for each windows VM to be shown up in the cluster. The value comes from
+	// nodeCreationTime variable.  If we are testing a scale down from n nodes to 0, then we should
+	// not take the number of nodes into account. If we are testing node creation without applying Windows label, we
+	// should throw error within 5 mins.
 	err := wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*creationTime, func() (done bool, err error) {
 		nodes, err = tc.kubeclient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
 		if err != nil {
