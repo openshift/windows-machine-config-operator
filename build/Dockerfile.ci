@@ -14,25 +14,10 @@ RUN curl -L -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.6.4/o
     && tar -xzf openshift-origin-client-tools.tar.gz \
     && rm -rf ./{openshift*,README.md}
 
-# Build WMCO
 # The source here corresponds to the code in the PR and is placed here by the CI infrastructure.
 WORKDIR /build/windows-machine-config-operator/
 # Copy .git metadata so that we can generate the version for the WMCO binary
 COPY .git .git
-# Copy files and directories needed to build the WMCO binary
-COPY build build
-COPY cmd cmd
-COPY deploy deploy
-COPY hack hack
-COPY pkg pkg
-COPY test test
-COPY vendor vendor
-COPY version version
-COPY go.mod go.mod
-COPY go.sum go.sum
-COPY Makefile Makefile
-COPY tools.go tools.go
-RUN make build
 
 # Build WMCB
 WORKDIR /build/windows-machine-config-operator/windows-machine-config-bootstrapper/
@@ -57,6 +42,24 @@ WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
 COPY containernetworking-plugins/ .
 ENV CGO_ENABLED=0
 RUN ./build_windows.sh
+
+# Build WMCO
+WORKDIR /build/windows-machine-config-operator
+# Copy files and directories needed to build the WMCO binary
+COPY build build
+COPY cmd cmd
+COPY deploy deploy
+COPY hack hack
+COPY pkg pkg
+COPY test test
+COPY vendor vendor
+COPY version version
+COPY go.mod go.mod
+COPY go.sum go.sum
+COPY Makefile Makefile
+COPY tools.go tools.go
+COPY .gitignore .gitignore
+RUN make build
 
 # Build the operator image with following payload structure
 # /payload/
