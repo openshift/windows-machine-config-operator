@@ -5,7 +5,7 @@
 ## Build
 To build the operator image, execute:
 ```shell script
-operator-sdk build quay.io/<insert username>/wmco:$VERSION_TAG --image-builder podman
+podman build . -t quay.io/<insert username>/wmco:$VERSION_TAG -f build/Dockerfile
 ```
 
 The operator image needs to be pushed to a remote repository:
