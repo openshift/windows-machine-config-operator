@@ -53,7 +53,7 @@ func testWindowsNodeDeletion(t *testing.T) {
 	if err := framework.Global.Client.Update(context.TODO(), windowsMachineSet); err != nil {
 		t.Fatalf("error updating windowsMachineSet custom resource  %v", err)
 	}
-	// As per testing, each windows VM is taking roughly 12 minutes to be shown up in the cluster
+	// we are waiting 10 minutes for all windows machines to get deleted.
 	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, true, false)
 	if err != nil {
 		t.Fatalf("windows node deletion failed  with %v", err)
