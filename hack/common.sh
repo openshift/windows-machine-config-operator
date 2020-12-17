@@ -49,8 +49,7 @@ build_WMCO() {
       error-exit "OPERATOR_IMAGE not set"
   fi
 
-  $OSDK build "$OPERATOR_IMAGE" --image-builder $CONTAINER_TOOL $noCache \
-    --go-build-args "-ldflags -X=github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}"
+  $CONTAINER_TOOL build . -t "$OPERATOR_IMAGE" -f build/Dockerfile $noCache
   if [ $? -ne 0 ] ; then
       error-exit "failed to build operator image"
   fi
@@ -126,12 +125,15 @@ cleanup_WMCO() {
 }
 
 # returns the operator version in `Version+GitHash` format
+# we are just checking the status of files that affect the building of the operator binary
+# the files here are selected based on the files that we are transferring while building the
+# operator binary in `build/Dockerfile`
 get_version() {
   OPERATOR_VERSION=0.0.1
   GIT_COMMIT=$(git rev-parse --short HEAD)
   VERSION="${OPERATOR_VERSION}+${GIT_COMMIT}"
 
-  if [ -n "$(git status --porcelain)" ]; then
+  if [ -n "$(git status version tools.go go.mod go.sum vendor Makefile build cmd hack pkg --porcelain)" ]; then
     VERSION="${VERSION}-dirty"
   fi
 
