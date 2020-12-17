@@ -215,7 +215,7 @@ func retryGET(url string) (*http.Response, error) {
 func (tc *testContext) createService(name string, serviceType v1.ServiceType, selector metav1.LabelSelector) (*v1.Service, error) {
 	svcSpec := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
+			GenerateName: name + "-",
 		},
 		Spec: v1.ServiceSpec{
 			Type: serviceType,
