@@ -1,6 +1,15 @@
 # Creating an AWS Windows MachineSet
 
 _\<windows_container_ami\>_ should be replaced with the AMI ID of a Windows image with a container run-time installed. 
+ You must use Windows Server 2019 with a version 10.0.17763.1457 or earlier. Run the following command to list AWS image info:
+  ```shell script
+  $ aws ec2 describe-images \
+    --filters Name=name,Values=Windows_Server-2019-English-Full-ContainersLatest-2020.09.09 \
+    --region <region> \
+    --query 'Images[*].[ImageId]' \
+    --output=json | jq .[0][0]
+```
+                                                                           
 _\<infrastructureID\>_ should be replaced with the output of:
 ```shell script
  oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
