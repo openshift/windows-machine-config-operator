@@ -41,8 +41,8 @@ const (
 	// maxUnhealthyCount is the maximum number of nodes that are not ready to serve at a given time.
 	// TODO: https://issues.redhat.com/browse/WINC-524
 	maxUnhealthyCount = 1
-	// windowsOSLabel is the label used to identify the Windows Machines.
-	windowsOSLabel = "machine.openshift.io/os-id"
+	// MachineOSLabel is the label used to identify the Windows Machines.
+	MachineOSLabel = "machine.openshift.io/os-id"
 )
 
 var log = logf.Log.WithName(ControllerName)
@@ -108,7 +108,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s", ControllerName)
 	}
-	// Watch for the Machine objects with label defined by windowsOSLabel
+	// Watch for the Machine objects with label defined by MachineOSLabel
 	machinePredicate := predicate.Funcs{
 		// We need the create event to account for Machines that are in provisioned state but were created
 		// before WMCO started running
@@ -182,7 +182,7 @@ func (m *nodeToMachineMapper) Map(object handler.MapObject) []reconcile.Request 
 	// Map the Node to the associated Machine through the Node's UID
 	machines := &mapi.MachineList{}
 	err := m.client.List(context.TODO(), machines,
-		client.MatchingLabels(map[string]string{windowsOSLabel: "Windows"}))
+		client.MatchingLabels(map[string]string{MachineOSLabel: "Windows"}))
 	if err != nil {
 		log.Error(err, "could not get a list of machines")
 	}
@@ -205,8 +205,7 @@ func (m *nodeToMachineMapper) Map(object handler.MapObject) []reconcile.Request 
 
 // isWindowsMachine checks if the machine is a Windows machine or not
 func isWindowsMachine(labels map[string]string) bool {
-	windowsOSLabel := "machine.openshift.io/os-id"
-	if value, ok := labels[windowsOSLabel]; ok {
+	if value, ok := labels[MachineOSLabel]; ok {
 		if value == "Windows" {
 			return true
 		}
@@ -449,7 +448,7 @@ func (r *ReconcileWindowsMachine) isAllowedDeletion(machine *mapi.Machine) bool 
 
 	machines := &mapi.MachineList{}
 	err := r.client.List(context.TODO(), machines,
-		client.MatchingLabels(map[string]string{windowsOSLabel: "Windows"}))
+		client.MatchingLabels(map[string]string{MachineOSLabel: "Windows"}))
 	if err != nil {
 		return false
 	}
