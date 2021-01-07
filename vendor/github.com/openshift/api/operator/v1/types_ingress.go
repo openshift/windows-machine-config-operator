@@ -99,6 +99,13 @@ type IngressControllerSpec struct {
 	// the generated certificate's CA will be automatically integrated with the
 	// cluster's trust store.
 	//
+	// If a wildcard certificate is used and shared by multiple
+	// HTTP/2 enabled routes (which implies ALPN) then clients
+	// (i.e., notably browsers) are at liberty to reuse open
+	// connections. This means a client can reuse a connection to
+	// another route and that is likely to fail. This behaviour is
+	// generally known as connection coalescing.
+	//
 	// The in-use certificate (whether generated or user-specified) will be
 	// automatically integrated with OpenShift's built-in OAuth server.
 	//
@@ -653,8 +660,26 @@ const (
 
 // IngressControllerCaptureHTTPCookie describes an HTTP cookie that should be
 // captured.
-// +union
 type IngressControllerCaptureHTTPCookie struct {
+	IngressControllerCaptureHTTPCookieUnion `json:",inline"`
+
+	// maxLength specifies a maximum length of the string that will be
+	// logged, which includes the cookie name, cookie value, and
+	// one-character delimiter.  If the log entry exceeds this length, the
+	// value will be truncated in the log message.  Note that the ingress
+	// controller may impose a separate bound on the total length of HTTP
+	// headers in a request.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=1024
+	// +required
+	MaxLength int `json:"maxLength"`
+}
+
+// IngressControllerCaptureHTTPCookieUnion describes optional fields of an HTTP cookie that should be captured.
+// +union
+type IngressControllerCaptureHTTPCookieUnion struct {
 	// matchType specifies the type of match to be performed on the cookie
 	// name.  Allowed values are "Exact" for an exact string match and
 	// "Prefix" for a string prefix match.  If "Exact" is specified, a name
@@ -686,19 +711,6 @@ type IngressControllerCaptureHTTPCookie struct {
 	// +kubebuilder:validation:MaxLength=1024
 	// +optional
 	NamePrefix string `json:"namePrefix"`
-
-	// maxLength specifies a maximum length of the string that will be
-	// logged, which includes the cookie name, cookie value, and
-	// one-character delimiter.  If the log entry exceeds this length, the
-	// value will be truncated in the log message.  Note that the ingress
-	// controller may impose a separate bound on the total length of HTTP
-	// headers in a request.
-	//
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=1024
-	// +required
-	MaxLength int `json:"maxLength"`
 }
 
 // AccessLogging describes how client requests should be logged.
@@ -803,6 +815,16 @@ type IngressControllerHTTPUniqueIdHeaderPolicy struct {
 	Format string `json:"format,omitempty"`
 }
 
+// IngressControllerHTTPHeaderNameCaseAdjustment is the name of an HTTP header
+// (for example, "X-Forwarded-For") in the desired capitalization.  The value
+// must be a valid HTTP header name as defined in RFC 2616 section 4.2.
+//
+// +optional
+// +kubebuilder:validation:Pattern="^$|^[-!#$%&'*+.0-9A-Z^_`a-z|~]+$"
+// +kubebuilder:validation:MinLength=0
+// +kubebuilder:validation:MaxLength=1024
+type IngressControllerHTTPHeaderNameCaseAdjustment string
+
 // IngressControllerHTTPHeaders specifies how the IngressController handles
 // certain HTTP headers.
 type IngressControllerHTTPHeaders struct {
@@ -839,6 +861,26 @@ type IngressControllerHTTPHeaders struct {
 	//
 	// +optional
 	UniqueId IngressControllerHTTPUniqueIdHeaderPolicy `json:"uniqueId,omitempty"`
+
+	// headerNameCaseAdjustments specifies case adjustments that can be
+	// applied to HTTP header names.  Each adjustment is specified as an
+	// HTTP header name with the desired capitalization.  For example,
+	// specifying "X-Forwarded-For" indicates that the "x-forwarded-for"
+	// HTTP header should be adjusted to have the specified capitalization.
+	//
+	// These adjustments are only applied to cleartext, edge-terminated, and
+	// re-encrypt routes, and only when using HTTP/1.
+	//
+	// For request headers, these adjustments are applied only for routes
+	// that have the haproxy.router.openshift.io/h1-adjust-case=true
+	// annotation.  For response headers, these adjustments are applied to
+	// all HTTP responses.
+	//
+	// If this field is empty, no request headers are adjusted.
+	//
+	// +nullable
+	// +optional
+	HeaderNameCaseAdjustments []IngressControllerHTTPHeaderNameCaseAdjustment `json:"headerNameCaseAdjustments,omitempty"`
 }
 
 var (

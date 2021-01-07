@@ -35,8 +35,8 @@ var log = logf.Log.WithName("cmd")
 
 const (
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
-	// 1.19.x are supported for baseK8sVersion 1.18)
-	baseK8sVersion = "1.19"
+	// 1.20.x are supported for baseK8sVersion 1.20)
+	baseK8sVersion = "1.20"
 )
 
 // clusterConfig contains information specific to cluster configuration
