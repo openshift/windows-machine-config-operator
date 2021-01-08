@@ -116,10 +116,10 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		// We need the create event to account for Machines that are in provisioned state but were created
 		// before WMCO started running
 		CreateFunc: func(e event.CreateEvent) bool {
-			return isWindowsMachine(e.Meta.GetLabels())
+			return isValidMachine(e.Object) && isWindowsMachine(e.Meta.GetLabels())
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return isWindowsMachine(e.MetaNew.GetLabels())
+			return isValidMachine(e.ObjectNew) && isWindowsMachine(e.MetaNew.GetLabels())
 		},
 		// ignore delete event for all Machines as WMCO does not react to node getting deleted
 		DeleteFunc: func(e event.DeleteEvent) bool {
@@ -192,7 +192,11 @@ func (m *nodeToMachineMapper) Map(object handler.MapObject) []reconcile.Request 
 		log.Error(err, "could not get a list of machines")
 	}
 	for _, machine := range machines.Items {
-		if machine.Status.NodeRef != nil && machine.Status.NodeRef.UID == object.Meta.GetUID() {
+		ok := machine.Status.Phase != nil &&
+			len(machine.Status.Addresses) > 0 &&
+			machine.Status.NodeRef != nil &&
+			machine.Status.NodeRef.UID == object.Meta.GetUID()
+		if ok {
 			return []reconcile.Request{
 				{
 					NamespacedName: types.NamespacedName{
@@ -216,6 +220,39 @@ func isWindowsMachine(labels map[string]string) bool {
 		}
 	}
 	return false
+}
+
+func isValidMachine(obj runtime.Object) bool {
+	machine := &mapi.Machine{}
+
+	// If this function is called on an object that equals nil, return false
+	if obj == nil {
+		log.Error(errors.New("expected machine object to not equal nil"), "object", obj)
+		return false
+	}
+
+	// If for some reason this function is called on an object which is not a Machine, return false
+	if kind := obj.GetObjectKind().GroupVersionKind(); kind.Kind != machine.Kind {
+		log.Error(errors.New("object is not of kind machine"), "kind", kind.Kind)
+		return false
+	}
+
+	var ok bool
+	machine, ok = obj.(*mapi.Machine)
+	if !ok {
+		log.Error(errors.New("unable to typecast object to machine"), "object", obj)
+		return false
+	}
+	if machine.Status.Phase == nil {
+		log.V(1).Info("machine object has no phase associated with it", "name", machine.Name)
+		return false
+	}
+	if len(machine.Status.Addresses) == 0 {
+		log.V(1).Info("machine object has no address associated with it", "name", machine.Name)
+		return false
+	}
+
+	return true
 }
 
 // blank assignment to verify that ReconcileWindowsMachine implements reconcile.Reconciler
@@ -289,8 +326,7 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 	// runningPhase is the status of the machine when it is in the `Running` state, indicating that it is configured into a node
 	runningPhase := "Running"
 	if machine.Status.Phase == nil {
-		// Phase is nil and should be ignored by WMCO until phase is set
-		// TODO: Instead of requeuing ignore certain events: https://issues.redhat.com/browse/WINC-500
+		// This condition should never be true as machine objects without a phase will be filtered out via the predicate functions
 		return reconcile.Result{}, fmt.Errorf("could not get the phase associated with machine %s", machine.Name)
 	} else if *machine.Status.Phase == runningPhase {
 		// Machine has been configured into a node, we need to ensure that the version annotation exists. If it doesn't
