@@ -9,6 +9,7 @@ import (
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -42,64 +43,45 @@ func creationTestSuite(t *testing.T) {
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
 func testWindowsNodeCreation(t *testing.T) {
-	testCases := []struct {
-		testCase  string
-		isWindows bool
-		replicas  int32
-	}{
-		{
-			// We need to create Windows MachineSet without label first, as we are using waitForWindowsNodes method.
-			testCase:  "Create a Windows MachineSet without label",
-			isWindows: false,
-			replicas:  1,
-		},
-		{
-			testCase:  "Create a Windows MachineSet with label",
-			isWindows: true,
-			replicas:  gc.numberOfNodes,
-		},
-	}
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
 	// Create a private key secret with a randomly generated value. This is changed to the provided private key later in
 	// the test.
 	require.NoError(t, testCtx.createPrivateKeySecret(false), "could not create private key secret")
 
-	for _, test := range testCases {
-		if err := testCtx.createWindowsMachineSet(test.replicas, test.isWindows); err != nil {
-			t.Fatalf("failed to create Windows MachineSet %v ", err)
-		}
-		if test.isWindows {
-			// We need to cover the case where a user changes the private key secret before the WMCO has a chance to
-			// configure the Machine. In order to simulate that case we need to wait for the MachineSet to be fully
-			// provisioned and then change the key. The the correct amount of nodes being configured is proof that the
-			// mismatched Machine created with the mismatched key was deleted and replaced.
-			// Depending on timing and configuration flakes this will either cause all Machines, or all Machines after
-			// the first configured Machines to hit this scenario.
-			err := testCtx.waitForWindowsMachines(int(test.replicas), "Provisioned")
-			require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
-			err = testCtx.createPrivateKeySecret(true)
-			require.NoError(t, err, "error replacing private key secret")
+	t.Run("Windows Machines without the Windows label are not configured", func(t *testing.T) {
+		ms, err := testCtx.createWindowsMachineSet(1, false)
+		require.NoError(t, err, "failed to create Windows MachineSet")
+		defer framework.Global.Client.Delete(context.TODO(), ms)
+		err = testCtx.waitForWindowsNodes(1, true, false, false)
+		assert.Error(t, err, "Windows node creation failed")
+	})
 
-		}
-		err := testCtx.waitForWindowsNodes(test.replicas, true, !test.isWindows, false)
-
-		if err != nil && test.isWindows {
-			t.Fatalf("windows node creation failed  with %v", err)
-		}
-		if test.isWindows {
-			log.Printf("Created %d Windows worker nodes", test.replicas)
-		}
-	}
+	t.Run("Windows Machines with the Windows label are configured", func(t *testing.T) {
+		_, err := testCtx.createWindowsMachineSet(gc.numberOfNodes, true)
+		require.NoError(t, err, "failed to create Windows MachineSet")
+		// We need to cover the case where a user changes the private key secret before the WMCO has a chance to
+		// configure the Machine. In order to simulate that case we need to wait for the MachineSet to be fully
+		// provisioned and then change the key. The the correct amount of nodes being configured is proof that the
+		// mismatched Machine created with the mismatched key was deleted and replaced.
+		// Depending on timing and configuration flakes this will either cause all Machines, or all Machines after
+		// the first configured Machines to hit this scenario.
+		err = testCtx.waitForWindowsMachines(int(gc.numberOfNodes), "Provisioned")
+		require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
+		err = testCtx.createPrivateKeySecret(true)
+		require.NoError(t, err, "error replacing private key secret")
+		err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, false)
+		assert.NoError(t, err, "Windows node creation failed")
+	})
 }
 
 // createWindowsMachineSet creates given number of Windows Machines.
-func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool) error {
+func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool) (*mapi.MachineSet, error) {
 	machineSet, err := tc.CloudProvider.GenerateMachineSet(windowsLabel, replicas)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.Global.Client.Create(context.TODO(), machineSet,
+	return machineSet, framework.Global.Client.Create(context.TODO(), machineSet,
 		&framework.CleanupOptions{TestContext: tc.osdkTestCtx,
 			Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
 }
