@@ -86,6 +86,11 @@ fi
 # https://steps.svc.ci.openshift.org/help/ci-operator#release
 OPERATOR_IMAGE=${OPERATOR_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//stable:windows-machine-config-operator-test}}
 
+# generate the WMCO binary if we are not running the test through CI. This binary is used to validate WMCO version
+# while running the validation test. For CI, we use different `wmcoPath` based on how we generate the container image.
+if [ -z "$OPENSHIFT_CI" ]; then
+  make build
+fi
 # Setup and run the operator
 if ! run_WMCO $OSDK; then
   # Try to get the WMCO logs if possible

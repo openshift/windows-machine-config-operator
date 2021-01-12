@@ -38,6 +38,23 @@ COPY containernetworking-plugins/ .
 ENV CGO_ENABLED=0
 RUN ./build_windows.sh
 
+WORKDIR /build/windows-machine-config-operator/
+# Copy files and directories needed to build the WMCO binary
+# `make build` uses `get_version()` in `hack/common.sh` to determine the version of binary created.
+# Any new file added here should be reflected in `hack/common.sh` if it dirties the git working tree.
+COPY version version
+COPY tools.go tools.go
+COPY go.mod go.mod
+COPY go.sum go.sum
+COPY vendor vendor
+COPY .gitignore .gitignore
+COPY Makefile Makefile
+COPY build build
+COPY cmd cmd
+COPY hack hack
+COPY pkg pkg
+RUN make build
+
 # Build the operator image with following payload structure
 # /payload/
 #├── cni
@@ -94,7 +111,7 @@ ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
     USER_NAME=windows-machine-config-operator
 
 # install operator binary
-COPY build/_output/bin/windows-machine-config-operator ${OPERATOR}
+COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-machine-config-operator ${OPERATOR}
 
 COPY build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
