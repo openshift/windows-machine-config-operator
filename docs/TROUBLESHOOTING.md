@@ -85,6 +85,18 @@ Alternatively, the Docker event logs can be viewed using SSH with the following 
   PS C:\Users\username> Get-EventLog -LogName Application -Source Docker
   ```
 
+## How to collect a packet trace on Windows nodes
+* An SSH [bastion](https://github.com/eparis/ssh-bastion) must first be deployed
+* Use the hack/packet_trace.sh utility to start a trace
+  ```shell script
+  packet_trace.sh -i $SSH_KEY start $WIN_NODE_NAME
+  ```
+* Start the activity you wish to trace
+* Stop the packet trace, downloading the trace files to the current directory
+  ```shell script
+  packet_trace.sh -i $SSH_KEY stop $WIN_NODE_NAME
+  ```
+
 ## External troubleshooting references
 * [Containers on Windows troubleshooting](https://docs.microsoft.com/en-us/virtualization/windowscontainers/troubleshooting)
 * [Troubleshoot host and container image mismatches](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/update-containers#troubleshoot-host-and-container-image-mismatches)
