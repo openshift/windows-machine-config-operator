@@ -6,8 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/clusternetwork"
 	"github.com/pkg/errors"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 )
 
 // cniConf contains the structure of the CNI template
@@ -55,7 +56,7 @@ func newNetwork() *network {
 
 // setHostSubnet sets the value for hostSubnet field in the network struct
 func (nw *network) setHostSubnet(hostSubnet string) error {
-	if hostSubnet == "" || clusternetwork.ValidateCIDR(hostSubnet) != nil {
+	if hostSubnet == "" || cluster.ValidateCIDR(hostSubnet) != nil {
 		return errors.Errorf("error receiving valid value for node hostSubnet")
 	}
 	nw.hostSubnet = hostSubnet
