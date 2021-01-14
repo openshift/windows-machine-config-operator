@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	monclient "github.com/coreos/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/operator-framework/operator-sdk/pkg/metrics"
 	"github.com/pkg/errors"
@@ -96,6 +97,13 @@ func Add(ctx context.Context, cfg *rest.Config, namespace string) error {
 			return errors.Wrap(err, "install prometheus-operator in your cluster to create ServiceMonitor objects")
 
 		}
+	}
+
+	// The ServiceMonitor created by the operator-sdk metrics package doesn't have fields required to display
+	// node graphs for Windows. Update the Service monitor with the required fields.
+	err = updateServiceMonitors(cfg, namespace)
+	if err != nil {
+		return errors.Wrap(err, "error updating service monitor")
 	}
 
 	oclient, err := k8sclient.NewForConfig(cfg)
@@ -228,4 +236,27 @@ func isEndpointsValid(nodes *v1.NodeList, endpoints *v1.Endpoints) bool {
 		}
 	}
 	return true
+}
+
+// updateServiceMonitors patches the metrics Service Monitor to include required fields to display node graphs on the
+// OpenShift console. Console graph queries require metrics endpoint target name to be node name, however
+// windows_exporter returns node IP. We replace the target name by adding `replace` action field to the ServiceMonitor
+// object that replaces node IP to node name as the metrics endpoint target.
+func updateServiceMonitors(cfg *rest.Config, namespace string) error {
+
+	patchData := fmt.Sprintf("[{\"op\": \"replace\", \"path\": \"/spec/endpoints/0\", "+
+		"\"value\":{\"path\": \"/%s\",\"port\": \"%s\",\"relabelings\": [{\"action\": \"replace\", \"regex\": \"(.*)\", "+
+		"\"replacement\": \"$1\", \"sourceLabels\": [\"__meta_kubernetes_endpoint_address_target_name\"],"+
+		"\"targetLabel\": \"instance\"}]}}]", PortName, PortName)
+
+	mclient, err := monclient.NewForConfig(cfg)
+	if err != nil {
+		return errors.Wrap(err, "error creating monitoring client")
+	}
+	_, err = mclient.ServiceMonitors(namespace).Patch(context.TODO(), windowsMetricsEndpoints, types.JSONPatchType, []byte(patchData),
+		metav1.PatchOptions{})
+	if err != nil {
+		return errors.Wrap(err, "unable to patch service monitor")
+	}
+	return nil
 }
