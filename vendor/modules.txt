@@ -141,6 +141,7 @@ github.com/onsi/gomega/types
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
+github.com/openshift/api/route/v1
 # github.com/openshift/client-go v0.0.0-20200422192633-6f6c07fc2a70 => github.com/openshift/client-go v0.0.0-20200729195840-c2b1adc6bed6
 ## explicit
 github.com/openshift/client-go/config/clientset/versioned
