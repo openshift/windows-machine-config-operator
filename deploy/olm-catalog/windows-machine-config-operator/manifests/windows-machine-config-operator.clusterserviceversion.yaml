@@ -312,6 +312,7 @@ spec:
           - create
           - update
           - list
+          - patch
         - apiGroups:
           - apps
           resourceNames:
