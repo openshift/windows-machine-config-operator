@@ -2,11 +2,17 @@ package e2e
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
 
 	monitoringv1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
+	route "github.com/openshift/api/route/v1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -18,9 +24,16 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/metrics"
 )
 
+const (
+	prometheusRule      = "windows-prometheus-k8s-rules"
+	monitoringNamespace = "openshift-monitoring"
+	windowsRuleName     = "windows.rules"
+)
+
 func testMetrics(t *testing.T) {
 	t.Run("Windows Exporter configuration validation", testWindowsExporter)
 	t.Run("Prometheus configuration validation", testPrometheus)
+	t.Run("Windows Prometheus rules validation", testWindowsPrometheusRules)
 }
 
 // testWindowsExporter deploys Linux pod and tests that it can communicate with Windows node's metrics port
@@ -119,4 +132,145 @@ func checkTargetNodes(windowsEndpoints *core.Endpoints) error {
 	}
 
 	return nil
+}
+
+// PrometheusQuery defines the result of the /query request
+// Example Reference of Prometheus Query Response: https://prometheus.io/docs/prometheus/latest/querying/api/
+type PrometheusQuery struct {
+	Status string `json:"status"`
+	Data   Data   `json:"data"`
+}
+
+// Data defines the response content of the prometheus server to the given request
+type Data struct {
+	Result []Result `json:"result"`
+}
+
+// Result specifies information about the metric in the query and the resulting value
+type Result struct {
+	Metric Metric        `json:"metric"`
+	Value  []interface{} `json:"value"`
+}
+
+// Metric holds information regarding the metric defined in the query
+type Metric struct {
+	Instance string `json:"instance"`
+}
+
+// testWindowsPrometheusRules tests if prometheus rules specific to Windows are defined by WMCO
+// It also tests the Prometheus queries by sending http requests to Prometheus server.
+func testWindowsPrometheusRules(t *testing.T) {
+	err := framework.AddToFrameworkScheme(monitoringv1.AddToScheme, &monitoringv1.PrometheusRule{})
+	require.NoError(t, err)
+	err = framework.AddToFrameworkScheme(route.AddToScheme, &route.Route{})
+	require.NoError(t, err)
+
+	// test if PrometheusRule object exists in WMCO repo
+	promRule := &monitoringv1.PrometheusRule{}
+	err = framework.Global.Client.Get(context.TODO(),
+		types.NamespacedName{Namespace: "openshift-windows-machine-config-operator",
+			Name: prometheusRule}, promRule)
+	require.NoError(t, err)
+	// test if rules specific to windows exist
+	require.Equal(t, windowsRuleName, promRule.Spec.Groups[0].Name)
+
+	// get route to access Prometheus server instance in monitoring namespace
+	prometheusRoute := &route.Route{}
+	err = framework.Global.Client.Get(context.TODO(),
+		types.NamespacedName{Namespace: monitoringNamespace, Name: "prometheus-k8s"}, prometheusRoute)
+	require.NoError(t, err)
+
+	// get Authorization token
+	prometheusToken, err := getPrometheusToken()
+	require.NoError(t, err, "Error getting Prometheus token")
+	// define authorization token required to call Prometheus API
+	var bearer = "Bearer " + prometheusToken
+	// InsecureSkipVerify is required to avoid errors due to bad certificate
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+
+	// Following tests carry out api calls to Prometheus server with all the queries defined in the Windows PrometheusRule
+	// object. The tests check if the query results have instances corresponding to configured Windows Nodes.
+	// They also test if the metrics returned have a non-zero value.
+	for _, rules := range promRule.Spec.Groups {
+		if rules.Name != windowsRuleName {
+			continue
+		}
+		for _, winRules := range rules.Rules {
+			t.Run("Query: "+winRules.Record, func(t *testing.T) {
+				// url consists of prometheus host, appended with a Record defined in the Windows PrometheusRuleObject
+				url := "https://" + prometheusRoute.Spec.Host + "/api/v1/query?query=" + winRules.Record
+				// create a Get request
+				req, err := http.NewRequest("GET", url, nil)
+				require.NoError(t, err)
+				// add Authorization Header to get access Prometheus server
+				req.Header.Set("Authorization", bearer)
+
+				resp, err := client.Do(req)
+				require.NoError(t, err)
+				// Convert the request response as a data type.
+				body, _ := ioutil.ReadAll(resp.Body)
+				var promQuery = new(PrometheusQuery)
+				err = json.Unmarshal(body, &promQuery)
+				require.NoError(t, err)
+
+				// test if query status is successful
+				require.Equal(t, "success", promQuery.Status)
+				queryResult := promQuery.Data.Result
+
+				// test query result against every Windows node
+				for _, node := range gc.nodes {
+					t.Run(node.Name, func(t *testing.T) {
+						for _, metric := range queryResult {
+							if metric.Metric.Instance == node.Name {
+								// metricValue is of format : [unixTime, "value"]. Convert string value to float
+								metricValue, err := strconv.ParseFloat(metric.Value[1].(string), 64)
+								require.NoError(t, err)
+								// test if the metric value is non-zero
+								require.Truef(t, metricValue > float64(0), "expected a non zero metric value for "+
+									"metric %v for instance %v", winRules.Record, node.Name)
+							}
+						}
+
+					})
+				}
+			})
+		}
+
+	}
+}
+
+// getPrometheusToken returns authorization token required to access Prometheus server
+func getPrometheusToken() (string, error) {
+	// get secrets from monitoring namespace
+	monitoringSecrets, err := framework.Global.KubeClient.CoreV1().Secrets(monitoringNamespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return "", err
+	}
+
+	// access prometheus-k8s-token-* secret
+	var secretName string
+	for _, secret := range monitoringSecrets.Items {
+		if strings.Contains(secret.Name, "prometheus-k8s-token") {
+			secretName = secret.Name
+			break
+		}
+	}
+
+	if len(secretName) == 0 {
+		return "", fmt.Errorf("could not get 'prometheus-k8s-token' secret")
+	}
+
+	secret, err := framework.Global.KubeClient.CoreV1().Secrets(monitoringNamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	token, ok := secret.Data["token"]
+
+	if !ok {
+		return "", fmt.Errorf("could not get bearer token for secret %v", secretName)
+	}
+	return string(token), nil
 }
