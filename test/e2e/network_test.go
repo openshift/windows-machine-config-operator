@@ -356,7 +356,7 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 	containerUserName := "ContainerAdministrator"
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name + "-deployment",
+			GenerateName: name + "-deployment-",
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicaCount,
@@ -493,7 +493,7 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 	jobsClient := tc.kubeclient.BatchV1().Jobs(tc.workloadNamespace)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name + "-job",
+			GenerateName: name + "-job-",
 		},
 		Spec: batchv1.JobSpec{
 			Template: v1.PodTemplateSpec{
