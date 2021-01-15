@@ -191,6 +191,22 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 			log.Printf("waiting for annotations to be present on %d Windows nodes", nodeCount)
 		}
 		for _, node := range nodes.Items {
+			// check node status
+			readyCondition := false
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == v1.NodeReady {
+					readyCondition = true
+				}
+				if readyCondition && condition.Status != v1.ConditionTrue {
+					log.Printf("node %v is expected to be in Ready state", node.Name)
+					return false, nil
+				}
+			}
+			if !readyCondition {
+				log.Printf("expected node Status to have condition type Ready for node %v", node.Name)
+				return false, nil
+			}
+
 			for _, annotation := range annotations {
 				_, found := node.Annotations[annotation]
 				if !found {
