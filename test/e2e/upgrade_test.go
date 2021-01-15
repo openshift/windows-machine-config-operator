@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -36,7 +37,7 @@ func upgradeTestSuite(t *testing.T) {
 	require.NoError(t, err)
 
 	// test if Windows workloads are running by creating a Job that curls the workloads continuously.
-	err = testCtx.deployWindowsWorkloadTester()
+	testerJob, err := testCtx.deployWindowsWorkloadAndTester()
 	require.NoError(t, err, "error testing Windows workloads")
 
 	// apply configuration steps before running the upgrade tests
@@ -45,6 +46,10 @@ func upgradeTestSuite(t *testing.T) {
 
 	t.Run("Operator version upgrade", testUpgradeVersion)
 	t.Run("Version annotation tampering", testTamperAnnotation)
+
+	// Delete Job
+	err = testCtx.deleteJob(testerJob.Name)
+	require.NoError(t, err)
 }
 
 // testUpgradeVersion tests the upgrade scenario of the operator. The node version annotation is changed when
@@ -66,9 +71,6 @@ func testUpgradeVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(pods.Items), "unable to access Windows workloads for significant amount of time during upgrade")
 
-	// Delete Job
-	err = testCtx.deleteJob(windowsWorkloadTesterJob + "-job")
-	require.NoError(t, err)
 }
 
 // testTamperAnnotation tests if the operator deletes machines and recreates them, if the node annotation is changed to an invalid value
@@ -169,22 +171,22 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 	return err
 }
 
-// deployWindowsWorkloadTester tests if the Windows Webserver deployment is available.
+// deployWindowsWorkloadAndTester tests if the Windows Webserver deployment is available.
 // This is achieved by creating a Job object that continuously curls the webserver every 5 seconds.
-func (tc *testContext) deployWindowsWorkloadTester() error {
-	// Get Windows Webserver deployment
-	deployment, err := tc.kubeclient.AppsV1().Deployments(tc.workloadNamespace).Get(context.TODO(), "win-webserver-deployment",
-		metav1.GetOptions{})
+func (tc *testContext) deployWindowsWorkloadAndTester() (*batchv1.Job, error) {
+	// Create a Windows Webserver deployment
+	deployment, err := tc.deployWindowsWebServer("win-webserver", nil)
 	if err != nil {
-		return errors.Wrap(err, "error getting Windows Webserver deployment")
+		return nil, errors.Wrap(err, "error creating Windows Webserver deployment for upgrade test")
 	}
+	defer tc.deleteDeployment(deployment.Name)
 
 	// Create a clusterIP service which can be used to reach the Windows webserver
 	intermediarySVC, err := tc.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
 	if err != nil {
-		return errors.Wrap(err, "could not create service ")
+		return nil, errors.Wrap(err, "could not create service ")
 	}
-
+	defer tc.deleteService(intermediarySVC.Name)
 	// Create a Job to curl Windows webserver
 	// Curl Windows webserver every 5 seconds. If the webserver is not accessible for few minutes
 	// exit the pod with an error.
@@ -192,10 +194,9 @@ func (tc *testContext) deployWindowsWorkloadTester() error {
 		" while true; do curl " + intermediarySVC.Spec.ClusterIP + "; if [ $? != 0 ]; then sleep 60; curl " +
 			intermediarySVC.Spec.ClusterIP + "|| exit 1;" + " fi; sleep 5; done"}
 
-	_, err = tc.createLinuxJob(windowsWorkloadTesterJob, command)
-
+	job, err := tc.createLinuxJob(windowsWorkloadTesterJob, command)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return job, nil
 }
