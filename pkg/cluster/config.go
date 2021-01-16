@@ -1,23 +1,41 @@
-package clusternetwork
+package cluster
 
 import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 
+	oconfig "github.com/openshift/api/config/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
 	"github.com/pkg/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 )
 
-const ovnKubernetesNetwork = "OVNKubernetes"
+const (
+	ovnKubernetesNetwork = "OVNKubernetes"
+	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
+	// 1.20.x are supported for baseK8sVersion 1.20)
+	baseK8sVersion = "1.20"
+)
 
-// ClusterNetworkConfig interface contains methods to validate network configuration of a cluster
-type ClusterNetworkConfig interface {
+// Network interface contains methods to interact with cluster network objects
+type Network interface {
 	Validate() error
 	GetServiceCIDR() (string, error)
 	VXLANPort() string
+}
+
+// Config interface contains methods to expose cluster config related information
+type Config interface {
+	// Validate checks if the cluster configurations are as required.
+	Validate() error
+	// Platform returns cloud provider on which OpenShift is running
+	Platform() oconfig.PlatformType
+	// Network returns network configuration for the OpenShift cluster
+	Network() Network
 }
 
 // networkType holds information for a required network type
@@ -26,6 +44,99 @@ type networkType struct {
 	name string
 	// operatorClient is the OpenShift operator client, we will use to interact with OpenShift operator objects
 	operatorClient operatorv1.OperatorV1Interface
+}
+
+// config encapsulates cluster configuration
+type config struct {
+	// oclient is the OpenShift config client that will be used to interact with the OpenShift API
+	oclient configclient.Interface
+	// operatorClient is the OpenShift operator client that that will be used to interact with operator APIs
+	operatorClient operatorv1.OperatorV1Interface
+	// network is the interface containing information on cluster network
+	network Network
+	// platform indicates the cloud on which OpenShift cluster is running
+	// TODO: Remove this once we figure out how to be provider agnostic
+	platform oconfig.PlatformType
+}
+
+func (c *config) Platform() oconfig.PlatformType {
+	return c.platform
+}
+
+func (c *config) Network() Network {
+	return c.network
+}
+
+// NewConfig returns a Config struct pertaining to the cluster configuration
+func NewConfig(restConfig *rest.Config) (Config, error) {
+	// get OpenShift API config client.
+	oclient, err := configclient.NewForConfig(restConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not create config clientset")
+	}
+
+	// get OpenShift API operator client
+	operatorClient, err := operatorv1.NewForConfig(restConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not create operator clientset")
+	}
+
+	// get cluster network configurations
+	network, err := networkConfigurationFactory(oclient, operatorClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting cluster network")
+	}
+
+	// get the platform type here
+	infra, err := oclient.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting cluster network")
+	}
+	platformStatus := infra.Status.PlatformStatus
+	if platformStatus == nil {
+		return nil, errors.New("error getting infrastructure status")
+	}
+	if len(platformStatus.Type) == 0 {
+		return nil, errors.New("error getting platform type")
+	}
+	return &config{
+		oclient:        oclient,
+		operatorClient: operatorClient,
+		network:        network,
+		platform:       platformStatus.Type,
+	}, nil
+}
+
+// validateK8sVersion checks for valid k8s version in the cluster. It returns an error for all versions not equal
+// to supported major version. This is being done this way, and not by directly getting the cluster version, as OpenShift CI
+// returns version in the format 0.0.x and not the actual version attached to its clusters.
+func (c *config) validateK8sVersion() error {
+	versionInfo, err := c.oclient.Discovery().ServerVersion()
+	if err != nil {
+		return errors.Wrap(err, "error retrieving server version ")
+	}
+	// split the version in the form Major.Minor. For e.g v1.18.0-rc.1 -> 1.18
+	k8sVersion := strings.TrimLeft(versionInfo.GitVersion, "v")
+	clusterBaseVersion := strings.Join(strings.SplitN(k8sVersion, ".", 3)[:2], ".")
+
+	if strings.Compare(clusterBaseVersion, baseK8sVersion) != 0 {
+		return errors.Errorf("Unsupported server version: v%v. Supported version is v%v.x", k8sVersion,
+			baseK8sVersion)
+	}
+	return nil
+}
+
+// Validate method checks if the cluster configurations are as required. It throws an error if the configuration could not
+// be validated.
+func (c *config) Validate() error {
+	err := c.validateK8sVersion()
+	if err != nil {
+		return errors.Wrap(err, "error validating k8s version")
+	}
+	if err = c.network.Validate(); err != nil {
+		return errors.Wrap(err, "error validating network configuration")
+	}
+	return nil
 }
 
 // clusterNetworkCfg struct holds the information for the cluster network
@@ -42,8 +153,8 @@ type ovnKubernetes struct {
 	clusterNetworkConfig *clusterNetworkCfg
 }
 
-// NetworkConfigurationFactory is a factory method that returns information specific to network type
-func NetworkConfigurationFactory(oclient configclient.Interface, operatorClient operatorv1.OperatorV1Interface) (ClusterNetworkConfig, error) {
+// networkConfigurationFactory is a factory method that returns information specific to network type
+func networkConfigurationFactory(oclient configclient.Interface, operatorClient operatorv1.OperatorV1Interface) (Network, error) {
 	network, err := getNetworkType(oclient)
 	if err != nil {
 		return nil, errors.Wrap(err, "error getting cluster network type")
@@ -104,7 +215,7 @@ func (ovn *ovnKubernetes) VXLANPort() string {
 // Validate for OVN Kubernetes checks for network type and hybrid overlay.
 func (ovn *ovnKubernetes) Validate() error {
 	//check if hybrid overlay is enabled for the cluster
-	networkCR, err := ovn.operatorClient.Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	networkCR, err := ovn.operatorClient.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error getting cluster network.operator object")
 	}
@@ -123,7 +234,7 @@ func (ovn *ovnKubernetes) Validate() error {
 // getNetworkType returns network type of the cluster
 func getNetworkType(oclient configclient.Interface) (string, error) {
 	// Get the cluster network object so that we can find the network type
-	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return "", errors.Wrap(err, "error getting cluster network object")
 	}
@@ -133,7 +244,7 @@ func getNetworkType(oclient configclient.Interface) (string, error) {
 // getServiceNetworkCIDR gets the serviceCIDR using cluster config required for cni configuration
 func getServiceNetworkCIDR(oclient configclient.Interface) (string, error) {
 	// Get the cluster network object so that we can find the service network
-	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return "", errors.Wrap(err, "error getting cluster network object")
 	}
@@ -152,7 +263,7 @@ func getServiceNetworkCIDR(oclient configclient.Interface) (string, error) {
 // this argument to a powershell command
 func getVXLANPort(operatorClient operatorv1.OperatorV1Interface) (string, error) {
 	// Get the cluster network object so that we can find the service network
-	networkCR, err := operatorClient.Networks().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	networkCR, err := operatorClient.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return "", errors.Wrap(err, "error getting cluster network object")
 	}

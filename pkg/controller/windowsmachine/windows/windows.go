@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	oconfig "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -152,18 +153,29 @@ type windows struct {
 	interact connectivity
 	// vxlanPort is the custom VXLAN port
 	vxlanPort string
+	// platform indicates the cloud on which OpenShift cluster is running
+	// TODO: Remove this once we figure out how to be provider agnostic. This is specific to proper usage of userData
+	// 		 in vSphere
+	//		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
+	platform oconfig.PlatformType
+	// hostName is the name of the Windows VM that we need to configure in vSphere clusters. This is currently not set
+	// in case of vSphere VMs. In case of Linux, ignition was handling it. As we don't have an equivalent of ignition
+	// in Windows, we are setting this in WMCO currently
+	// TODO: Remove this once we figure out how to do this via guestInfo in vSphere
+	// 		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
+	hostName string
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(ipAddress, providerName, instanceID, workerIgnitionEndpoint, vxlanPort string, signer ssh.Signer) (Windows, error) {
+func New(ipAddress, instanceID, machineName, workerIgnitionEndpoint, vxlanPort string, signer ssh.Signer,
+	platform oconfig.PlatformType) (Windows, error) {
 	if workerIgnitionEndpoint == "" {
 		return nil, errors.New("cannot use empty ignition endpoint")
 	}
-
 	// TODO: This should be changed so that the "core" user is used on all platforms for SSH connections.
 	// https://issues.redhat.com/browse/WINC-430
 	var adminUser string
-	if providerName == "azure" {
+	if platform == oconfig.AzurePlatformType {
 		adminUser = "capi"
 	} else {
 		adminUser = "Administrator"
@@ -183,6 +195,8 @@ func New(ipAddress, providerName, instanceID, workerIgnitionEndpoint, vxlanPort 
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			vxlanPort:              vxlanPort,
+			platform:               platform,
+			hostName:               machineName,
 		},
 		nil
 }
@@ -269,6 +283,12 @@ func (vm *windows) Configure() error {
 	log.Info("configuring")
 	if err := vm.ensureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop required services")
+	}
+	// Set the hostName of the Windows VM in case of vSphere
+	if vm.platform == oconfig.VSpherePlatformType {
+		if err := vm.ensureHostName(); err != nil {
+			return err
+		}
 	}
 	if err := vm.createDirectories(); err != nil {
 		return errors.Wrap(err, "error creating directories on Windows VM")
@@ -390,6 +410,44 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 }
 
 // Interface helper methods
+
+// ensureHostName ensures hostname of the Windows VM matches the machine name
+func (vm *windows) ensureHostName() error {
+	hostNameChangedNeeded, err := vm.isHostNameChangeNeeded()
+	if err != nil {
+		return err
+	}
+	if hostNameChangedNeeded {
+		if err := vm.changeHostName(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// isHostNameChangeNeeded tells if we need to update the host name of the Windows VM
+func (vm *windows) isHostNameChangeNeeded() (bool, error) {
+	out, err := vm.Run("hostname", true)
+	if err != nil {
+		return false, errors.Wrapf(err, "error getting the host name for %s with stdout %s", vm.ID(), out)
+	}
+	return !strings.Contains(out, vm.hostName), nil
+}
+
+// changeHostName changes the hostName of the Windows VM to match with the machine name
+func (vm *windows) changeHostName() error {
+	changeHostNameCommand := "Rename-Computer -NewName " + vm.hostName + " -Force -Restart"
+	out, err := vm.Run(changeHostNameCommand, true)
+	if err != nil {
+		log.Info("changing host name failed", "command", changeHostNameCommand, "output", out)
+		return errors.Wrap(err, "changing host name failed")
+	}
+	//Reinitialize the SSH connection given changing the host name requires a VM restart
+	if err := vm.Reinitialize(); err != nil {
+		return errors.Wrap(err, "error reinitializing VM after changing hostname")
+	}
+	return nil
+}
 
 // createDirectories creates directories required for configuring the Windows node on the VM
 func (vm *windows) createDirectories() error {
