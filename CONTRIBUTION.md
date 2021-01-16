@@ -29,6 +29,17 @@ follow a [rebase workflow](https://www.atlassian.com/git/tutorials/merging-vs-re
 
 Thanks for contributing!
 
+### Format of the pull request (PR)
+
+- The PR header for a feature should be prefixed with the Jira issue. Example: `WINC-123:`
+- The PR header for a bug should be prefixed with the Bugzilla number. Example: `Bug 123:`
+- Correctly prefixing the PR header will automatically associate the PR with the Jira issue or Bugzilla bug.
+  - In the case of bug fix PRs, this will also automatically transition the associated Bugzilla bug.
+    - Opening the PR: `ASSIGNED` --> `POST`
+    - PR merges: `POST` --> `MODIFIED`
+    - `MODIFIED` to the `ON_QA` transition will have to be done manually by the PR author.
+- The individual commit messages should not be prefixed 
+
 ### Format of the commit message
 
 We follow a convention for commit messages that is designed to answer two questions: what changed and why. The
@@ -55,9 +66,6 @@ Follow-up to Id5e7cbb1.
 The first line is the subject and should be no longer than 50 characters, the second line is always blank, and other
 lines should be wrapped at 80 characters. This allows the message to be easier to read on GitHub as well as in various
 git tools. If it is a bug ticket, the bug number should be mentioned at the start of the subject.
-
-For example - Subject for a sample bug 123 should be:
-`Bug 123: Bug fix subject`
 
 ### PR workflow
 
