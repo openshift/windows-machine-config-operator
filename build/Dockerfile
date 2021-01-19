@@ -18,12 +18,13 @@ RUN make windows
 # Build promu utility tool, needed to build the windows_exporter.exe metrics binary
 WORKDIR /build/windows-machine-config-operator/promu/
 COPY promu/ .
-RUN go install .
+# Explicitly set the $GOBIN path for promu installation
+RUN GOBIN=/build/windows-machine-config-operator/windows_exporter/ go install .
 
 # Build windows_exporter
 WORKDIR /build/windows-machine-config-operator/windows_exporter/
 COPY windows_exporter/ .
-RUN GOOS=windows promu build -v
+RUN GOOS=windows ./promu build -v
 
 # Build Kubernetes node binaries
 WORKDIR /build/windows-machine-config-operator/kubernetes/
