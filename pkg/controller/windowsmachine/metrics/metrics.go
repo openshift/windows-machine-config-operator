@@ -10,6 +10,7 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/metrics"
 	"github.com/pkg/errors"
 	"k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -82,6 +83,20 @@ func Add(ctx context.Context, cfg *rest.Config, namespace string) error {
 	service, err := metrics.CreateMetricsService(ctx, cfg, servicePorts)
 	if err != nil {
 		return errors.Wrap(err, "could not create metrics Service")
+	}
+
+	// Create a monitoring client to interact with the ServiceMonitor object
+	mclient, err := monclient.NewForConfig(cfg)
+	if err != nil {
+		return errors.Wrap(err, "could not create monitoring client")
+	}
+
+	// In the case of an operator restart, a previous SM object will be deleted and a new one will
+	// be created. We are deleting to ensure that the SM always exists with the correct spec. Otherwise,
+	// metrics may exhibit unexpected behavior if created by a previous version of WMCO.
+	err = mclient.ServiceMonitors(namespace).Delete(context.TODO(), windowsMetricsEndpoints, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return errors.Wrap(err, "could not delete existing ServiceMonitor object")
 	}
 
 	// CreateServiceMonitors will automatically create the prometheus-operator ServiceMonitor resources
