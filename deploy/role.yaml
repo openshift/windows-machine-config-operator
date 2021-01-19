@@ -53,6 +53,7 @@ rules:
   - update
   - list
   - patch
+  - delete
 # deployment/finalizers permissions needed for the metrics server
 - apiGroups:
   - apps
