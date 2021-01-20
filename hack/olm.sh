@@ -30,7 +30,7 @@ shift # shift position of the positional parameters for getopts
 PRIVATE_KEY=""
 while getopts ":ic:k:" opt; do
     case "$opt" in
-	i) noCache="--image-build-args=\"--no-cache\"";;
+	i) noCache="--no-cache";;
 	c) OPERATOR_IMAGE="$OPTARG";;
 	k) PRIVATE_KEY="$OPTARG";;
 	?) error-exit "Unknown option"
