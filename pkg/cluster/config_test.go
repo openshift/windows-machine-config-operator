@@ -120,13 +120,14 @@ func createFakeClients(networkType string) (configclient.Interface, operatorclie
 func TestIsValidKubernetesVersion(t *testing.T) {
 	fakeConfigClient := fakeconfigclient.NewSimpleClientset()
 	var tests = []struct {
-		name         string
-		version      string
-		errorMessage string
+		name    string
+		version string
+		error   bool
 	}{
-		{"cluster version lower than supported version ", "v1.17.1", "Unsupported server version: v1.17.1. Supported version is v1.20.x"},
-		{"cluster version equals supported version", "v1.20.0", ""},
-		{"cluster version greater than supported version", "v1.21.0", "Unsupported server version: v1.21.0. Supported version is v1.20.x"},
+		{"cluster version lower than supported version ", "v1.17.1", true},
+		{"cluster version equals supported version", "v1.20.0", false},
+		{"cluster version equals supported version", "v1.21.4", false},
+		{"cluster version greater than supported version ", "v1.22.2", true},
 	}
 
 	for _, tt := range tests {
@@ -137,12 +138,11 @@ func TestIsValidKubernetesVersion(t *testing.T) {
 			}
 			clusterconfig := config{oclient: fakeConfigClient}
 			err := clusterconfig.validateK8sVersion()
-			if tt.errorMessage == "" {
-				require.Nil(t, err, "Successful check for valid network type")
-			} else {
+			if tt.error {
 				require.Error(t, err, "Function getK8sVersion did not throw an error "+
 					"when it was expected to")
-				assert.Contains(t, err.Error(), tt.errorMessage)
+			} else {
+				require.Nil(t, err, "Successful check for valid network type")
 			}
 		})
 	}
