@@ -2,6 +2,8 @@ package secret
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
@@ -22,6 +24,8 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
 )
 
 const (
@@ -169,12 +173,41 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 		// valid userData secret already exists
 		return reconcile.Result{}, nil
 	} else {
-		// secret is updated
+		// userdata secret data does not match what is expected
+		// Mark nodes configured with the previous private key for deletion
+		signer, err := signer.Create(privateKey)
+		if err != nil {
+			return reconcile.Result{}, errors.Wrap(err, "error creating signer from private key")
+		}
+		nodes := &core.NodeList{}
+		err = r.client.List(context.TODO(), nodes, client.HasLabels{nodeconfig.WindowsOSLabel})
+		if err != nil {
+			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
+		}
+		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(signer.PublicKey())
+		escapedPubKeyAnnotation := strings.Replace(nodeconfig.PubKeyHashAnnotation, "/", "~1", -1)
+		patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`, escapedPubKeyAnnotation)
+		for _, node := range nodes.Items {
+			existingPubKeyAnno := node.Annotations[nodeconfig.PubKeyHashAnnotation]
+			if existingPubKeyAnno == expectedPubKeyAnno {
+				continue
+			}
+			node.Annotations[nodeconfig.PubKeyHashAnnotation] = ""
+			err = r.client.Patch(context.TODO(), &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(patchData)))
+			if err != nil {
+				return reconcile.Result{}, errors.Wrapf(err, "error clearing public key annotation on node %s",
+					node.GetName())
+			}
+			log.V(1).Info("patched node object", "node", node.GetName(), "patch", patchData)
+		}
+
+		// Set userdata to expected value
 		log.Info("updating secret", "name", userDataSecret)
 		err = r.client.Update(context.TODO(), validUserData)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
+
 		// Secret updated successfully
 		return reconcile.Result{}, nil
 	}

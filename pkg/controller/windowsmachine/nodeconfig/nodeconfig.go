@@ -2,6 +2,7 @@ package nodeconfig
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/url"
 	"strings"
@@ -35,6 +36,8 @@ const (
 	WorkerLabel = "node-role.kubernetes.io/worker"
 	// VersionAnnotation indicates the version of WMCO that configured the node
 	VersionAnnotation = "windowsmachineconfig.openshift.io/version"
+	// PubKeyHashAnnotation corresponds to the public key present on the VM
+	PubKeyHashAnnotation = "windowsmachineconfig.openshift.io/pub-key-hash"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
@@ -48,6 +51,8 @@ type nodeConfig struct {
 	node *core.Node
 	// network holds the network information specific to the node
 	network *network
+	// publicKeyHash is the hash of the public key present on the VM
+	publicKeyHash string
 	// clusterServiceCIDR holds the service CIDR for cluster
 	clusterServiceCIDR string
 }
@@ -110,7 +115,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machi
 	}
 
 	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(),
-		clusterServiceCIDR: clusterServiceCIDR}, nil
+		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey())}, nil
 }
 
 // getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
@@ -154,6 +159,7 @@ func (nc *nodeConfig) Configure() error {
 		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
 	}
 	nc.addVersionAnnotation()
+	nc.addPubKeyHashAnnotation()
 	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error updating node labels and annotations")
@@ -202,6 +208,11 @@ func (nc *nodeConfig) configureNetwork() error {
 // addVersionAnnotation adds the version annotation to nc.node
 func (nc *nodeConfig) addVersionAnnotation() {
 	nc.node.Annotations[VersionAnnotation] = version.Get()
+}
+
+// addPubKeyHashAnnotation adds the public key annotation to nc.node
+func (nc *nodeConfig) addPubKeyHashAnnotation() {
+	nc.node.Annotations[PubKeyHashAnnotation] = nc.publicKeyHash
 }
 
 // setNode identifies the node from the instanceID provided and sets the node object in the nodeconfig.
@@ -283,4 +294,12 @@ func (nc *nodeConfig) configureCNI() error {
 func getInstanceIDfromProviderID(providerID string) string {
 	providerTokens := strings.Split(providerID, "/")
 	return providerTokens[len(providerTokens)-1]
+}
+
+// CreatePubKeyHashAnnotation returns a formatted string which can be used for a public key annotation on a node.
+// The annotation is the sha256 of the public key
+func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
+	pubKey := string(ssh.MarshalAuthorizedKey(key))
+	trimmedKey := strings.TrimSuffix(pubKey, "\n")
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(trimmedKey)))
 }
