@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
@@ -19,6 +20,7 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
 	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
+	"golang.org/x/mod/semver"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -36,7 +38,7 @@ var log = logf.Log.WithName("cmd")
 const (
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
 	// 1.19.x are supported for baseK8sVersion 1.18)
-	baseK8sVersion = "1.19"
+	baseK8sVersion = "v1.19"
 )
 
 // clusterConfig contains information specific to cluster configuration
@@ -232,23 +234,29 @@ func newClusterConfig(config *rest.Config) (*clusterConfig, error) {
 	}, nil
 }
 
-// validateK8sVersion checks for valid k8s version in the cluster. It returns an error for all versions not equal
-// to supported major version. This is being done this way, and not by directly getting the cluster version, as OpenShift CI
-// returns version in the format 0.0.x and not the actual version attached to its clusters.
+// validateK8sVersion checks for valid k8s version in the cluster. It returns an error for all versions that are not in
+// range of given base version(x.y.z) and x.y+1.z version.
 func (c *clusterConfig) validateK8sVersion() error {
 	versionInfo, err := c.oclient.Discovery().ServerVersion()
 	if err != nil {
 		return errors.Wrap(err, "error retrieving server version ")
 	}
-	// split the version in the form Major.Minor. For e.g v1.18.0-rc.1 -> 1.18
-	k8sVersion := strings.TrimLeft(versionInfo.GitVersion, "v")
-	clusterBaseVersion := strings.Join(strings.SplitN(k8sVersion, ".", 3)[:2], ".")
-
-	if strings.Compare(clusterBaseVersion, baseK8sVersion) != 0 {
-		return errors.Errorf("Unsupported server version: v%v. Supported version is v%v.x", k8sVersion,
-			baseK8sVersion)
+	// split the version in the form Major.Minor. For e.g v1.18.0-rc.1 -> v1.18
+	clusterBaseVersion := semver.MajorMinor(versionInfo.GitVersion)
+	// Convert base version to float and add 1 to Minor version
+	baseVersion, err := strconv.ParseFloat(strings.TrimPrefix(baseK8sVersion, "v"), 64)
+	if err != nil {
+		return errors.Wrapf(err, "error converting %s k8s version to float", baseK8sVersion)
 	}
-	return nil
+	maxK8sVersion := fmt.Sprintf("v%.2f", baseVersion+0.01)
+
+	// validate cluster version is in the range of baseK8sVersion and maxK8sVersion
+	if semver.Compare(clusterBaseVersion, baseK8sVersion) >= 0 && semver.Compare(clusterBaseVersion, maxK8sVersion) <= 0 {
+		return nil
+	}
+
+	return errors.Errorf("Unsupported server version: %v. Supported versions are %v.x to %v.x", versionInfo.GitVersion,
+		baseK8sVersion, maxK8sVersion)
 }
 
 // validate method checks if the cluster configurations are as required. It throws an error if the configuration could not
