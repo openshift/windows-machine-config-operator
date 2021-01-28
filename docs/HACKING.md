@@ -147,25 +147,23 @@ opm index rm --from-index $INDEX_REPOSITORY:$INDEX_TAG
 ## Updating Git submodules
 This project contains git submodules for the following components:
 - windows-machine-config-bootstrapper
-- kubernetes\
-  Note that the kubernetes submodule has been pinned to a commit before go 1.15 became a requirement 
-  using the commands below.
-  ```shell script
-  $ cd kubernetes
-  $ git checkout f5121a6a6a02ddfafd2bfbf5201b092dc5097ab0
-  ```
-  TODO: Check out to latest commit on release-4.6 in https://issues.redhat.com/browse/WINC-460
+- kubernetes
 - ovn-kubernetes
 - containernetworking-plugins
 - promu
 - windows_exporter
 
-To update all git submodules use:
+To update git submodules you can use the script hack/update_submodules.sh
+Use the help command for up to date instructions:
 ```shell script
-git submodule update --recursive
+hack/update_submodules.sh -h
 ```
 
-To update individual git submodules use:
+Alternatively, it can be done manually via:
 ```shell script
+# To update all git submodules
+git submodule update --recursive
+
+# To update a specific submodule
 git submodule update --remote <path_to_submodule>
 ```
