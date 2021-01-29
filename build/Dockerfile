@@ -1,4 +1,4 @@
-FROM registry.svc.ci.openshift.org/origin/builder:golang-1.15 as build
+FROM docker.io/openshift/origin-release:golang-1.15 as build
 LABEL stage=build
 
 WORKDIR /build/windows-machine-config-operator/
