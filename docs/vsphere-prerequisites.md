@@ -27,3 +27,5 @@ on the configured VM can communicate with the internal API server. In the case o
 on every node which helps in resolving the internal API server URL. The external API endpoint should have been
 created as part of the
 [cluster install](https://docs.openshift.com/container-platform/4.5/installing/installing_vsphere/installing-vsphere-installer-provisioned.html).
+
+An example to automate the VM golden image creation can be found [here](vsphere_ci/README.md)

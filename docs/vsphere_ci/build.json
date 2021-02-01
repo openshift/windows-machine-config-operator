@@ -1,0 +1,81 @@
+{
+   "builders":[
+      {
+         "CPUs":"{{user `vm-cpu-num`}}",
+         "RAM":"{{user `vm-mem-size`}}",
+         "RAM_reserve_all":true,
+         "cluster":"{{user `vsphere-cluster`}}",
+         "communicator":"ssh",
+         "convert_to_template":"true",
+         "datacenter":"{{user `vsphere-datacenter`}}",
+         "datastore":"{{user `vsphere-datastore`}}",
+         "disk_controller_type":"lsilogic-sas",
+         "firmware":"bios",
+         "floppy_files":[
+            "scripts/autounattend.xml",
+            "scripts/install-vm-tools.cmd",
+            "scripts/powershell.ps1",
+            "scripts/authorized_keys",
+            "scripts/win-updates.ps1",
+            "scripts/install-docker.ps1"
+         ],
+         "folder":"{{user `vsphere-folder`}}",
+         "guest_os_type":"windows9Server64Guest",
+         "insecure_connection":"true",
+         "iso_paths":[
+            "{{user `os_iso_path`}}",
+            "[WorkloadDatastore] iso/windows.iso"
+         ],
+         "network_adapters":[
+            {
+               "network":"{{user `vsphere-network`}}",
+               "network_card":"vmxnet3"
+            }
+         ],
+         "password":"{{user `vsphere-password`}}",
+         "storage":[
+            {
+               "disk_size":"{{user `vm-disk-size`}}",
+               "disk_thin_provisioned":true
+            }
+         ],
+         "type":"vsphere-iso",
+         "username":"{{user `vsphere-user`}}",
+         "vcenter_server":"{{user `vsphere-server`}}",
+         "vm_name":"{{user `vm-name`}}",
+         "ssh_password":"{{user `winadmin-password`}}",
+         "ssh_username":"Administrator",
+         "ssh_timeout":"50m"
+      }
+   ],
+   "provisioners":[
+      {
+	"pause_before": "120s",
+	"inline":["ipconfig"],
+        "type":"powershell",
+	"elevated_user": "Administrator",
+        "elevated_password": "{{user `winadmin-password`}}",
+	"max_retries":"10"
+      }
+   ],
+   "sensitive-variables":[
+      "vsphere_password",
+      "winadmin_password"
+   ],
+   "variables":{
+      "os_iso_path":"[WorkloadDatastore] iso/1909_Jan2021.iso",
+      "vm-cpu-num":"2",
+      "vm-disk-size":"128000",
+      "vm-mem-size":"4096",
+      "vm-name":"Win1909-Template-Base",
+      "vsphere-cluster":"Cluster-1",
+      "vsphere-datacenter":"SDDC-Datacenter",
+      "vsphere-datastore":"WorkloadDatastore",
+      "vsphere-folder":"windows-eval-iso",
+      "vsphere-network":"dev-segment",
+      "vsphere-password":"Your_password",
+      "vsphere-server":"vcenter_url",
+      "vsphere-user":"Your_username", 
+      "winadmin-password":"Some random password"
+   }
+}
