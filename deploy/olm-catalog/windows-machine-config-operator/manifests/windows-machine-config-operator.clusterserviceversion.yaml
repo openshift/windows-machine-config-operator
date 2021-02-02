@@ -13,6 +13,7 @@ metadata:
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     repository: https://github.com/openshift/windows-machine-config-operator
     support: "Red Hat"
+    olm.skipRange: ">=1.0.0 <2.0.0"
   name: windows-machine-config-operator.v0.0.0
   namespace: openshift-windows-machine-config-operator
 spec:
