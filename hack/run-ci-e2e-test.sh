@@ -91,13 +91,25 @@ OPERATOR_IMAGE=${OPERATOR_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//stabl
 if [ -z "$OPENSHIFT_CI" ]; then
   make build
 fi
+
 # Setup and run the operator
-if ! run_WMCO $OSDK; then
-  # Try to get the WMCO logs if possible
-  get_WMCO_logs
-  cleanup_WMCO $OSDK
-  exit 1
-fi
+# Spinning up a cluster is a long operation and operator deployment through this method has been prone to transient
+# errors. Retrying WMCO deployment allows us to save time in CI.
+retries=0
+while ! run_WMCO $OSDK
+do
+    if [[ $retries -eq 5 ]]; then
+         echo "Max retries reached, exiting"
+         # Try to get the WMCO logs if possible
+         get_WMCO_logs
+         cleanup_WMCO $OSDK
+         exit 1
+    fi
+    cleanup_WMCO $OSDK
+    echo "Failed to deploy operator, retrying"
+    sleep 5
+    retries+=1
+done
 
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
