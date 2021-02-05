@@ -15,6 +15,8 @@ import (
 
 type CloudProvider interface {
 	GenerateMachineSet(bool, int32) (*mapi.MachineSet, error)
+	// GetType returns the cloud provider type ex: AWS, Azure etc
+	GetType() config.PlatformType
 }
 
 // NewCloudProvider returns a CloudProvider interface or an error
