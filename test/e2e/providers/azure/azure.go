@@ -194,3 +194,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 	}
 	return machineSet, nil
 }
+
+func (p *Provider) GetType() config.PlatformType {
+	return config.AzurePlatformType
+}
