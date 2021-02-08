@@ -5,8 +5,8 @@ $containerLogsPort = "10250"
 New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $containerLogsPort -EdgeTraversalPolicy Allow
 Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
 Install-Module -Force OpenSSHUtils
-Set-Service -Name ssh-agent -StartupType ‘Automatic’
-Set-Service -Name sshd -StartupType ‘Automatic’
+Set-Service -Name ssh-agent -StartupType 'Automatic'
+Set-Service -Name sshd -StartupType 'Automatic'
 Start-Service ssh-agent
 Start-Service sshd
 $pubKeyConf = (Get-Content -path C:\ProgramData\ssh\sshd_config) -replace '#PubkeyAuthentication yes','PubkeyAuthentication yes'

@@ -3,7 +3,7 @@
 * Create the VM from an updated version of Windows Server 1909 VM image which includes the [patch](https://support.microsoft.com/en-us/help/4565351/windows-10-update-kb4565351)
 * Configure SSH on the VM:
   * SSH on the Windows VM is configured using the [powershell script](powershell.ps1)
-  * A file, *C:\Users\Administrator\.ssh\authorized_keys* containing the public key corresponding to the private key in the [secret](https://github.com/openshift/windows-machine-config-operator#usage)
+  * A file, `C:\Users\Administrator\.ssh\authorized_keys` containing the public key corresponding to the private key in the [secret](https://github.com/openshift/windows-machine-config-operator#usage)
 * Install and configure VMWare tools on the VM:
   * Version 11.0.6 or greater is a requirement
   * The [tools.conf](https://docs.vmware.com/en/VMware-Tools/11.2.0/com.vmware.vsphere.vmwaretools.doc/GUID-594192DA-0306-425D-B0CD-CB141C4C6874.html)
