@@ -3,13 +3,14 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/types"
 	"strings"
 	"testing"
 
+	config "github.com/openshift/api/config/v1"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
@@ -21,6 +22,11 @@ import (
 func reconfigurationTest(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
+
+	// Test is platform agnostic so is not needed to be run for every supported platform.
+	if testCtx.CloudProvider.GetType() != config.AzurePlatformType {
+		t.Skipf("Skipping for %s", testCtx.CloudProvider.GetType())
+	}
 
 	nodes, err := testCtx.kubeclient.CoreV1().Nodes().List(context.TODO(),
 		metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
