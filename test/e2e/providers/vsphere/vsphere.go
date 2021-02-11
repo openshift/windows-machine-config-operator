@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/pkg/errors"
 
+	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	vsphere "github.com/openshift/machine-api-operator/pkg/apis/vsphereprovider/v1beta1"
 	core "k8s.io/api/core/v1"
@@ -138,4 +139,8 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 		},
 	}
 	return machineSet, nil
+}
+
+func (p *Provider) GetType() config.PlatformType {
+	return config.VSpherePlatformType
 }
