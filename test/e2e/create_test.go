@@ -19,8 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/controllers/windowsmachine"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
 
 func creationTestSuite(t *testing.T) {

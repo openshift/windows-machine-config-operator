@@ -10,7 +10,7 @@ import (
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
 
 const (

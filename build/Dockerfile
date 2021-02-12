@@ -52,6 +52,8 @@ COPY .gitignore .gitignore
 COPY Makefile Makefile
 COPY build build
 COPY cmd cmd
+COPY controllers controllers
+COPY apis apis
 COPY hack hack
 COPY pkg pkg
 RUN make build

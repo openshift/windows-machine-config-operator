@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/payload"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 const (
