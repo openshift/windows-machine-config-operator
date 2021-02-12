@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 )
 
 func deletionTestSuite(t *testing.T) {

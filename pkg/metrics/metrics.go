@@ -19,7 +19,7 @@ import (
 	"k8s.io/client-go/rest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
 
 var (

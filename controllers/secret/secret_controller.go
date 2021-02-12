@@ -23,9 +23,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
 
 const (

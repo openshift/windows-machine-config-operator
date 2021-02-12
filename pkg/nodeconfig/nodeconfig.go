@@ -19,9 +19,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/payload"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/windows"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
