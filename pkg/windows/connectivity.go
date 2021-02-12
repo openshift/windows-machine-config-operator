@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/retry"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 // sshPort is the default SSH port
