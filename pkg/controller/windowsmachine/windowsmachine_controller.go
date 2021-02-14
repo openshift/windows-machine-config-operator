@@ -144,7 +144,9 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			if e.MetaNew.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() {
+			if e.MetaNew.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() ||
+				e.MetaNew.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] !=
+					e.MetaOld.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] {
 				return true
 			}
 			return false
@@ -302,13 +304,11 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		}
 
 		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; present {
-			// version annotation doesn't match the current operator version
-			if node.Annotations[nodeconfig.VersionAnnotation] != version.Get() {
-				machinesetName := "unknown"
-				if len(machine.OwnerReferences) > 0 {
-					machinesetName = machine.OwnerReferences[0].Name
-				}
-				log.Info("upgrading machineset", "name", machinesetName)
+			// If either the version annotation doesn't match the current operator version, or the private key used
+			// to configure the machine is out of date, the machine should be deleted
+			if node.Annotations[nodeconfig.VersionAnnotation] != version.Get() ||
+				node.Annotations[nodeconfig.PubKeyHashAnnotation] != nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
+				log.Info("deleting machine", "name", machine.GetName())
 				if !r.isAllowedDeletion(machine) {
 					log.Info("machine deletion restricted", "name", machine.GetName(),
 						"maxUnhealthyCount", maxUnhealthyCount)
@@ -340,7 +340,7 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, nil
 	}
 
-	// Update the signer with the existing privateKey
+	// Update the signer with the current privateKey
 	r.signer, err = signer.Create(privateKey)
 	if err != nil {
 		return reconcile.Result{}, errors.Wrap(err, "error creating signer")
