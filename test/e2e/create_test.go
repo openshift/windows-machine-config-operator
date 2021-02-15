@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
@@ -46,9 +47,8 @@ func creationTestSuite(t *testing.T) {
 func testWindowsNodeCreation(t *testing.T) {
 	testCtx, err := NewTestContext(t)
 	require.NoError(t, err)
-	// Create a private key secret with a randomly generated value. This is changed to the provided private key later in
-	// the test.
-	require.NoError(t, testCtx.createPrivateKeySecret(false), "could not create private key secret")
+	// Create a private key secret with the known private key.
+	require.NoError(t, testCtx.createPrivateKeySecret(true), "could not create known private key secret")
 
 	t.Run("Windows Machines without the Windows label are not configured", func(t *testing.T) {
 		ms, err := testCtx.createWindowsMachineSet(1, false)
@@ -66,17 +66,26 @@ func testWindowsNodeCreation(t *testing.T) {
 		// provisioned and then change the key. The the correct amount of nodes being configured is proof that the
 		// mismatched Machine created with the mismatched key was deleted and replaced.
 		// Depending on timing and configuration flakes this will either cause all Machines, or all Machines after
-		// the first configured Machines to hit this scenario.
+		// the first configured Machines to hit this scenario. This is a platform agonistic test so we run it only on
+		// AWS.
 		err = testCtx.waitForWindowsMachines(int(gc.numberOfNodes), "Provisioned")
 		require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
-		err = testCtx.createPrivateKeySecret(false)
-		require.NoError(t, err, "error replacing private key secret")
+		if testCtx.CloudProvider.GetType() == config.AWSPlatformType {
+			// Replace the known private key with a randomly generated one.
+			err = testCtx.createPrivateKeySecret(false)
+			require.NoError(t, err, "error replacing private key secret")
+		}
 		err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, false)
 		assert.NoError(t, err, "Windows node creation failed")
 
 		t.Run("Changing the private key ensures all Windows nodes use the new private key", func(t *testing.T) {
+			// This test cannot be run on vSphere because this random key is not part of the vSphere template image.
+			// Moreover this test is platform agnostic so is not needed to be run for every supported platform.
+			if testCtx.CloudProvider.GetType() != config.AWSPlatformType {
+				t.Skip()
+			}
 			// Replace private key and check that new Machines are created using the new private key
-			err = testCtx.createPrivateKeySecret(true)
+			err = testCtx.createPrivateKeySecret(false)
 			require.NoError(t, err, "error replacing private key secret")
 			err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, false)
 			assert.NoError(t, err, "error waiting for Windows nodes configured with newly created private key")
