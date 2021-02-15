@@ -3,6 +3,11 @@
 # Location of the manifests file
 MANIFEST_LOC=deploy/olm-catalog/windows-machine-config-operator
 
+error-exit() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
 get_operator_sdk() {
   # Download the operator-sdk binary only if it is not already available
   # We do not validate the version of operator-sdk if it is available already
