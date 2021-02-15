@@ -3,6 +3,8 @@ package vsphere
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+
 	"github.com/pkg/errors"
 
 	config "github.com/openshift/api/config/v1"
@@ -46,7 +48,7 @@ func newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSphereMachinePro
 		DiskGiB:   int32(128),
 		MemoryMiB: int64(16384),
 		Network: vsphere.NetworkSpec{
-			Devices: []vsphere.NetworkDeviceSpec{{NetworkName: "ci-segment"}},
+			Devices: []vsphere.NetworkDeviceSpec{{NetworkName: getNetwork()}},
 		},
 		NumCPUs:           int32(4),
 		NumCoresPerSocket: int32(1),
@@ -61,6 +63,21 @@ func newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSphereMachinePro
 			Server:       "vcenter.sddc-44-236-21-251.vmwarevmc.com",
 		},
 	}, nil
+}
+
+// getNetwork returns the network that needs to be used in the MachineSet
+func getNetwork() string {
+	// Default network for dev environment
+	networkSegment := "dev-segment"
+	if os.Getenv("OPENSHIFT_CI") == "true" {
+		// $LEASED_RESOURCE holds the network the CI cluster is in
+		networkSegment = os.Getenv("LEASED_RESOURCE")
+		// Default to "ci-segment" if the environment variable is not set.
+		if networkSegment == "" {
+			networkSegment = "ci-segment"
+		}
+	}
+	return networkSegment
 }
 
 // GenerateMachineSet generates the MachineSet object which is vSphere provider specific
