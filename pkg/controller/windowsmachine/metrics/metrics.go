@@ -26,11 +26,11 @@ var (
 	log = logf.Log.WithName("metrics")
 	// metricsEnabled specifies if metrics are enabled in the current cluster
 	metricsEnabled = true
+	// windowsMetricsResource is the name of an object created for Windows metrics
+	windowsMetricsResource = ""
 )
 
 const (
-	// windowsMetricsEndpoints is the name of the Endpoints object for Windows metrics
-	windowsMetricsEndpoints = "windows-machine-config-operator-metrics"
 	// metricsPortName specifies the portname used for Prometheus monitoring
 	PortName = "metrics"
 	// Host is the host address used by Windows metrics
@@ -85,6 +85,9 @@ func Add(ctx context.Context, cfg *rest.Config, namespace string) error {
 		return errors.Wrap(err, "could not create metrics Service")
 	}
 
+	// the name for the metrics resources is set during creation of metrics service and is equivalent to the service name
+	windowsMetricsResource = service.GetName()
+
 	// Create a monitoring client to interact with the ServiceMonitor object
 	mclient, err := monclient.NewForConfig(cfg)
 	if err != nil {
@@ -94,7 +97,7 @@ func Add(ctx context.Context, cfg *rest.Config, namespace string) error {
 	// In the case of an operator restart, a previous SM object will be deleted and a new one will
 	// be created. We are deleting to ensure that the SM always exists with the correct spec. Otherwise,
 	// metrics may exhibit unexpected behavior if created by a previous version of WMCO.
-	err = mclient.ServiceMonitors(namespace).Delete(context.TODO(), windowsMetricsEndpoints, metav1.DeleteOptions{})
+	err = mclient.ServiceMonitors(namespace).Delete(context.TODO(), windowsMetricsResource, metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return errors.Wrap(err, "could not delete existing ServiceMonitor object")
 	}
@@ -168,7 +171,7 @@ func (pc *PrometheusNodeConfig) syncMetricsEndpoint(nodeEndpointAdressess []v1.E
 	}
 
 	_, err = pc.k8sclientset.CoreV1().Endpoints(pc.namespace).
-		Patch(context.TODO(), windowsMetricsEndpoints, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
+		Patch(context.TODO(), windowsMetricsResource, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
 	return errors.Wrap(err, "unable to sync metrics endpoints")
 }
 
@@ -188,9 +191,9 @@ func (pc *PrometheusNodeConfig) Configure() error {
 
 	// get Metrics Endpoints object
 	endpoints, err := pc.k8sclientset.CoreV1().Endpoints(pc.namespace).Get(context.TODO(),
-		windowsMetricsEndpoints, metav1.GetOptions{})
+		windowsMetricsResource, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "could not get metrics endpoints %v", windowsMetricsEndpoints)
+		return errors.Wrapf(err, "could not get metrics endpoints %v", windowsMetricsResource)
 	}
 
 	if !isEndpointsValid(nodes, endpoints) {
@@ -201,7 +204,7 @@ func (pc *PrometheusNodeConfig) Configure() error {
 			return errors.Wrap(err, "error updating endpoints object with list of endpoint addresses")
 		}
 	}
-	log.Info("Prometheus configured", "endpoints", windowsMetricsEndpoints, "port", Port, "name", PortName)
+	log.Info("Prometheus configured", "endpoints", windowsMetricsResource, "port", Port, "name", PortName)
 	return nil
 }
 
@@ -268,7 +271,7 @@ func updateServiceMonitors(cfg *rest.Config, namespace string) error {
 	if err != nil {
 		return errors.Wrap(err, "error creating monitoring client")
 	}
-	_, err = mclient.ServiceMonitors(namespace).Patch(context.TODO(), windowsMetricsEndpoints, types.JSONPatchType, []byte(patchData),
+	_, err = mclient.ServiceMonitors(namespace).Patch(context.TODO(), windowsMetricsResource, types.JSONPatchType, []byte(patchData),
 		metav1.PatchOptions{})
 	if err != nil {
 		return errors.Wrap(err, "unable to patch service monitor")
