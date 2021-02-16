@@ -1,7 +1,7 @@
 package controller
 
 import (
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine"
+	"github.com/openshift/windows-machine-config-operator/controllers/windowsmachine"
 )
 
 func init() {
