@@ -114,7 +114,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 	}
 
 	// Inspect master-0 to get Azure Location and Zone
-	machines, err := p.oc.MachineClient.Machines("openshift-machine-api").Get(context.TODO(), clusterID+"-master-0", meta.GetOptions{})
+	machines, err := p.oc.Machine.Machines("openshift-machine-api").Get(context.TODO(), clusterID+"-master-0", meta.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)
 	}

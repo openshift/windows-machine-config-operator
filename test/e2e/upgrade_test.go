@@ -34,7 +34,7 @@ const (
 
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
 func upgradeTestSuite(t *testing.T) {
-	testCtx, err := NewTestContext(t)
+	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
 	// Test is platform agnostic so is not needed to be run for every supported platform.
@@ -45,6 +45,7 @@ func upgradeTestSuite(t *testing.T) {
 	// test if Windows workloads are running by creating a Job that curls the workloads continuously.
 	testerJob, err := testCtx.deployWindowsWorkloadAndTester()
 	require.NoError(t, err, "error testing Windows workloads")
+	defer testCtx.deleteJob(testerJob.Name)
 
 	// apply configuration steps before running the upgrade tests
 	err = testCtx.configureUpgradeTest()
@@ -52,17 +53,13 @@ func upgradeTestSuite(t *testing.T) {
 
 	t.Run("Operator version upgrade", testUpgradeVersion)
 	t.Run("Version annotation tampering", testTamperAnnotation)
-
-	// Delete Job
-	err = testCtx.deleteJob(testerJob.Name)
-	require.NoError(t, err)
 }
 
 // testUpgradeVersion tests the upgrade scenario of the operator. The node version annotation is changed when
 // the operator is shut-down. The function tests if the operator on restart deletes the machines and recreates
 // them on version annotation mismatch.
 func testUpgradeVersion(t *testing.T) {
-	testCtx, err := NewTestContext(t)
+	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
 	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, true)
@@ -73,7 +70,7 @@ func testUpgradeVersion(t *testing.T) {
 	testPrometheus(t)
 
 	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
-	pods, err := testCtx.kubeclient.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(), metav1.ListOptions{FieldSelector: "status.phase=Failed",
+	pods, err := testCtx.client.K8s.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(), metav1.ListOptions{FieldSelector: "status.phase=Failed",
 		LabelSelector: "job-name=" + windowsWorkloadTesterJob + "-job"})
 
 	require.NoError(t, err)
@@ -84,17 +81,17 @@ func testUpgradeVersion(t *testing.T) {
 // testTamperAnnotation tests if the operator deletes machines and recreates them, if the node annotation is changed to an invalid value
 // with the expected annotation when the operator is in running state
 func testTamperAnnotation(t *testing.T) {
-	testCtx, err := NewTestContext(t)
+	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
 	// tamper node annotation
-	nodes, err := testCtx.kubeclient.CoreV1().Nodes().List(context.TODO(),
+	nodes, err := testCtx.client.K8s.CoreV1().Nodes().List(context.TODO(),
 		metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
 	require.NoError(t, err)
 
 	for _, node := range nodes.Items {
 		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
-		_, err := testCtx.kubeclient.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
+		_, err := testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
 		require.NoError(t, err)
 		if err == nil {
 			break
@@ -121,7 +118,7 @@ func (tc *testContext) configureUpgradeTest() error {
 	}
 
 	// Override the Windows Node Version Annotation
-	nodes, err := tc.kubeclient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+	nodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
 	if err != nil {
 		return err
 	}
@@ -131,7 +128,7 @@ func (tc *testContext) configureUpgradeTest() error {
 
 	for _, node := range nodes.Items {
 		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
-		_, err := tc.kubeclient.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
+		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			return err
 		}
@@ -154,7 +151,7 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 
 		patchData := fmt.Sprintf(`{"spec":{"replicas":%v}}`, desiredReplicas)
 
-		_, err = tc.kubeclient.AppsV1().Deployments(resourceNamespace).Patch(context.TODO(), resourceName,
+		_, err = tc.client.K8s.AppsV1().Deployments(resourceNamespace).Patch(context.TODO(), resourceName,
 			types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			log.Printf("error patching operator deployment : %v", err)
@@ -169,7 +166,7 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 
 	// wait for the windows-machine-config-operator to scale up/down
 	err = wait.Poll(deploymentRetryInterval, deploymentTimeout, func() (done bool, err error) {
-		deployment, err := tc.kubeclient.AppsV1().Deployments(resourceNamespace).Get(context.TODO(), resourceName,
+		deployment, err := tc.client.K8s.AppsV1().Deployments(resourceNamespace).Get(context.TODO(), resourceName,
 			metav1.GetOptions{})
 		if err != nil {
 			log.Printf("error getting operator deployment: %v", err)
