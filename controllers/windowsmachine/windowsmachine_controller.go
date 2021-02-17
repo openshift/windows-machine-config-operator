@@ -266,6 +266,11 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		}
 		return reconcile.Result{}, errors.Wrapf(err, "unable to get secret %s", request.NamespacedName)
 	}
+	// Update the signer with the current privateKey
+	r.signer, err = signer.Create(privateKey)
+	if err != nil {
+		return reconcile.Result{}, errors.Wrap(err, "error creating signer")
+	}
 
 	// Fetch the Machine instance
 	machine := &mapi.Machine{}
@@ -340,11 +345,6 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, nil
 	}
 
-	// Update the signer with the current privateKey
-	r.signer, err = signer.Create(privateKey)
-	if err != nil {
-		return reconcile.Result{}, errors.Wrap(err, "error creating signer")
-	}
 	// validate userData secret
 	if err := r.validateUserData(privateKey); err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "error validating userData secret")
