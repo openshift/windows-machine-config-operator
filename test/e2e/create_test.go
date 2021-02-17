@@ -9,7 +9,6 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,10 +16,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/controllers/windowsmachine"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
 func creationTestSuite(t *testing.T) {
@@ -45,7 +44,7 @@ func creationTestSuite(t *testing.T) {
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
 func testWindowsNodeCreation(t *testing.T) {
-	testCtx, err := NewTestContext(t)
+	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 	// Create a private key secret with the known private key.
 	require.NoError(t, testCtx.createPrivateKeySecret(true), "could not create known private key secret")
@@ -57,7 +56,7 @@ func testWindowsNodeCreation(t *testing.T) {
 		}
 		ms, err := testCtx.createWindowsMachineSet(1, false)
 		require.NoError(t, err, "failed to create Windows MachineSet")
-		defer framework.Global.Client.Delete(context.TODO(), ms)
+		defer testCtx.deleteMachineSet(ms)
 		err = testCtx.waitForWindowsNodes(1, true, false, false)
 		assert.Error(t, err, "Windows node creation failed")
 	})
@@ -103,19 +102,21 @@ func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool
 	if err != nil {
 		return nil, err
 	}
-	return machineSet, framework.Global.Client.Create(context.TODO(), machineSet,
-		&framework.CleanupOptions{TestContext: tc.osdkTestCtx,
-			Timeout: cleanupTimeout, RetryInterval: cleanupRetryInterval})
+	return tc.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Create(context.TODO(), machineSet, metav1.CreateOptions{})
+}
+
+// deleteMachineSet deletes the MachineSet passed to it
+func (tc *testContext) deleteMachineSet(ms *mapi.MachineSet) error {
+	return tc.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Delete(context.TODO(), ms.GetName(),
+		metav1.DeleteOptions{})
 }
 
 // waitForWindowsMachines waits for a certain amount of Windows Machines to reach a certain phase
 func (tc *testContext) waitForWindowsMachines(machineCount int, phase string) error {
 	machineCreationTimeLimit := time.Minute * 5
 	return wait.Poll(retryInterval, machineCreationTimeLimit, func() (done bool, err error) {
-		var machines mapi.MachineList
-		err = framework.Global.Client.List(context.TODO(), &machines,
-			[]client.ListOption{client.MatchingLabels{windowsmachine.MachineOSLabel: "Windows"},
-				client.InNamespace("openshift-machine-api")}...)
+		machines, err := tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), metav1.ListOptions{
+			LabelSelector: windowsmachine.MachineOSLabel + "=Windows"})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("waiting for %d Windows Machines", machineCount)
@@ -161,7 +162,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 		creationTime = nodeCreationTime
 	}
 
-	pubKey, err := getExpectedPublicKey()
+	pubKey, err := tc.getExpectedPublicKey()
 	if err != nil {
 		return errors.Wrap(err, "error getting the expected public key")
 	}
@@ -172,7 +173,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 	// not take the number of nodes into account. If we are testing node creation without applying Windows label, we
 	// should throw error within 5 mins.
 	err = wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*creationTime, func() (done bool, err error) {
-		nodes, err = tc.kubeclient.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
+		nodes, err = tc.client.K8s.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("waiting for %d Windows nodes", gc.numberOfNodes)

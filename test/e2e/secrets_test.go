@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,15 +19,15 @@ import (
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
 // getExpectedPublicKey returns the public key associated with the private key within the cloud-private-key secret
-func getExpectedPublicKey() (ssh.PublicKey, error) {
-	privateKey, err := getCloudPrivateKey()
+func (tc *testContext) getExpectedPublicKey() (ssh.PublicKey, error) {
+	privateKey, err := tc.getCloudPrivateKey()
 	if err != nil {
 		return nil, errors.Wrap(err, "error retrieving private key")
 	}
@@ -41,9 +40,9 @@ func getExpectedPublicKey() (ssh.PublicKey, error) {
 }
 
 // getCloudPrivateKey returns the private key present within the cloud-private-key secret
-func getCloudPrivateKey() ([]byte, error) {
-	privateKeySecret := &core.Secret{}
-	err := framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "cloud-private-key", Namespace: "openshift-windows-machine-config-operator"}, privateKeySecret)
+func (tc *testContext) getCloudPrivateKey() ([]byte, error) {
+	privateKeySecret, err := tc.client.K8s.CoreV1().Secrets("openshift-windows-machine-config-operator").Get(context.TODO(),
+		secrets.PrivateKeySecret, meta.GetOptions{})
 	if err != nil {
 		return []byte{}, errors.Wrapf(err, "failed to retrieve cloud private key secret")
 	}
@@ -56,9 +55,8 @@ func getCloudPrivateKey() ([]byte, error) {
 }
 
 // getUserDataContents returns the contents of the windows-user-data secret
-func getUserDataContents() (string, error) {
-	secret := &core.Secret{}
-	err := framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data", Namespace: "openshift-machine-api"}, secret)
+func (tc *testContext) getUserDataContents() (string, error) {
+	secret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(), "windows-user-data", meta.GetOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -67,17 +65,23 @@ func getUserDataContents() (string, error) {
 
 // testUserData tests if the userData created in the 'openshift-machine-api' namespace is valid
 func testUserData(t *testing.T) {
-	pubKey, err := getExpectedPublicKey()
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	pubKey, err := tc.getExpectedPublicKey()
 	require.NoError(t, err, "error determining expected public key")
-	userData, err := getUserDataContents()
+	userData, err := tc.getUserDataContents()
 	require.NoError(t, err, "could not retrieve userdata contents")
 	assert.Contains(t, userData, string(ssh.MarshalAuthorizedKey(pubKey)), "public key not found within Windows userdata")
 }
 
 // testUserDataTamper tests if userData reverts to previous value if updated
 func testUserDataTamper(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
 	secretInstance := &core.Secret{}
-	validUserDataSecret, err := framework.Global.KubeClient.CoreV1().Secrets("openshift-machine-api").Get(context.TODO(), "windows-user-data", meta.GetOptions{})
+	validUserDataSecret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(), "windows-user-data", meta.GetOptions{})
 	require.NoError(t, err, "could not find Windows userData secret in required namespace")
 
 	var tests = []struct {
@@ -94,18 +98,18 @@ func testUserDataTamper(t *testing.T) {
 			if tt.operation == "Update" {
 				updatedSecret := validUserDataSecret.DeepCopy()
 				updatedSecret.Data["userData"] = []byte("invalid data")
-				err := framework.Global.Client.Update(context.TODO(), updatedSecret)
+				_, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Update(context.TODO(), updatedSecret,
+					meta.UpdateOptions{})
 				require.NoError(t, err, "could not update userData secret")
 			}
 			if tt.operation == "Delete" {
-				err := framework.Global.KubeClient.CoreV1().Secrets("openshift-machine-api").Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})
+				err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})
 				require.NoError(t, err, "could not delete userData secret")
 			}
 
 			// wait for userData secret creation / update to take effect.
 			err := wait.Poll(5*time.Second, 20*time.Second, func() (done bool, err error) {
-				err = framework.Global.Client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data",
-					Namespace: "openshift-machine-api"}, secretInstance)
+				secretInstance, err = tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(), "windows-user-data", meta.GetOptions{})
 				if err != nil {
 					if apierrors.IsNotFound(err) {
 						log.Printf("still waiting for user data secret: %v", err)
@@ -169,13 +173,13 @@ func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 			Namespace: tc.namespace,
 		},
 	}
-	_, err = tc.kubeclient.CoreV1().Secrets(tc.namespace).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
+	_, err = tc.client.K8s.CoreV1().Secrets(tc.namespace).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
 	return err
 }
 
 // ensurePrivateKeyDeleted ensures that the privateKeySecret is deleted
 func (tc *testContext) ensurePrivateKeyDeleted() error {
-	secretsClient := tc.kubeclient.CoreV1().Secrets(tc.namespace)
+	secretsClient := tc.client.K8s.CoreV1().Secrets(tc.namespace)
 	if _, err := secretsClient.Get(context.TODO(), secrets.PrivateKeySecret, meta.GetOptions{}); err != nil {
 		if apierrors.IsNotFound(err) {
 			// secret doesnt exist, do nothing
