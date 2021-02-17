@@ -11,17 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	monitoringv1 "github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1"
-	route "github.com/openshift/api/route/v1"
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
+	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-
-	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 )
 
 const (
@@ -38,7 +33,7 @@ func testMetrics(t *testing.T) {
 
 // testWindowsExporter deploys Linux pod and tests that it can communicate with Windows node's metrics port
 func testWindowsExporter(t *testing.T) {
-	testCtx, err := NewTestContext(t)
+	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
 	// Need at least one Windows node to run these tests, throwing error if this condition is not met
@@ -73,26 +68,21 @@ func testWindowsExporter(t *testing.T) {
 
 // testPrometheus tests if Prometheus is configured to scrape metrics endpoints
 func testPrometheus(t *testing.T) {
-	testCtx, err := NewTestContext(t)
-	require.NoError(t, err)
-
-	err = framework.AddToFrameworkScheme(monitoringv1.AddToScheme, &monitoringv1.ServiceMonitor{})
+	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
 	// check that service exists
-	_, err = testCtx.kubeclient.CoreV1().Services("openshift-windows-machine-config-operator").Get(context.TODO(),
+	_, err = testCtx.client.K8s.CoreV1().Services("openshift-windows-machine-config-operator").Get(context.TODO(),
 		"windows-machine-config-operator-metrics", metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// check that SM existS
-	windowsServiceMonitor := &monitoringv1.ServiceMonitor{}
-	err = framework.Global.Client.Get(context.TODO(),
-		types.NamespacedName{Namespace: "openshift-windows-machine-config-operator",
-			Name: "windows-machine-config-operator-metrics"}, windowsServiceMonitor)
-	require.NoError(t, err)
+	_, err = testCtx.client.Monitoring.ServiceMonitors(testCtx.namespace).Get(context.TODO(),
+		"windows-machine-config-operator-metrics", metav1.GetOptions{})
+	require.NoError(t, err, "error getting service monitor")
 
 	// check that endpoints exists
-	windowsEndpoints, err := testCtx.kubeclient.CoreV1().Endpoints(
+	windowsEndpoints, err := testCtx.client.K8s.CoreV1().Endpoints(
 		"openshift-windows-machine-config-operator").Get(context.TODO(),
 		"windows-machine-config-operator-metrics", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -160,28 +150,20 @@ type Metric struct {
 // testWindowsPrometheusRules tests if prometheus rules specific to Windows are defined by WMCO
 // It also tests the Prometheus queries by sending http requests to Prometheus server.
 func testWindowsPrometheusRules(t *testing.T) {
-	err := framework.AddToFrameworkScheme(monitoringv1.AddToScheme, &monitoringv1.PrometheusRule{})
+	tc, err := NewTestContext()
 	require.NoError(t, err)
-	err = framework.AddToFrameworkScheme(route.AddToScheme, &route.Route{})
-	require.NoError(t, err)
-
 	// test if PrometheusRule object exists in WMCO repo
-	promRule := &monitoringv1.PrometheusRule{}
-	err = framework.Global.Client.Get(context.TODO(),
-		types.NamespacedName{Namespace: "openshift-windows-machine-config-operator",
-			Name: prometheusRule}, promRule)
+	promRule, err := tc.client.Monitoring.PrometheusRules(tc.namespace).Get(context.TODO(), prometheusRule, metav1.GetOptions{})
 	require.NoError(t, err)
 	// test if rules specific to windows exist
 	require.Equal(t, windowsRuleName, promRule.Spec.Groups[0].Name)
 
 	// get route to access Prometheus server instance in monitoring namespace
-	prometheusRoute := &route.Route{}
-	err = framework.Global.Client.Get(context.TODO(),
-		types.NamespacedName{Namespace: monitoringNamespace, Name: "prometheus-k8s"}, prometheusRoute)
-	require.NoError(t, err)
+	prometheusRoute, err := tc.client.Route.Routes(monitoringNamespace).Get(context.TODO(), "prometheus-k8s", metav1.GetOptions{})
+	require.NoError(t, err, "error getting route")
 
 	// get Authorization token
-	prometheusToken, err := getPrometheusToken()
+	prometheusToken, err := tc.getPrometheusToken()
 	require.NoError(t, err, "Error getting Prometheus token")
 	// define authorization token required to call Prometheus API
 	var bearer = "Bearer " + prometheusToken
@@ -243,9 +225,9 @@ func testWindowsPrometheusRules(t *testing.T) {
 }
 
 // getPrometheusToken returns authorization token required to access Prometheus server
-func getPrometheusToken() (string, error) {
+func (tc *testContext) getPrometheusToken() (string, error) {
 	// get secrets from monitoring namespace
-	monitoringSecrets, err := framework.Global.KubeClient.CoreV1().Secrets(monitoringNamespace).List(context.TODO(), metav1.ListOptions{})
+	monitoringSecrets, err := tc.client.K8s.CoreV1().Secrets(monitoringNamespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -263,7 +245,7 @@ func getPrometheusToken() (string, error) {
 		return "", fmt.Errorf("could not get 'prometheus-k8s-token' secret")
 	}
 
-	secret, err := framework.Global.KubeClient.CoreV1().Secrets(monitoringNamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
+	secret, err := tc.client.K8s.CoreV1().Secrets(monitoringNamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}

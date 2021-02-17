@@ -7,17 +7,22 @@ import (
 	config "github.com/openshift/api/config/v1"
 	configClient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorClient "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
+	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 	mapiClient "github.com/openshift/machine-api-operator/pkg/generated/clientset/versioned/typed/machine/v1beta1"
+	monitoringClient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sclient "k8s.io/client-go/kubernetes"
 	ctrlruntimecfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
-// OpenShift is an Client struct which will be used for all OpenShift related functions to interact with the existing
-// Cluster.
+// OpenShift contains clients for interacting with the OpenShift API
 type OpenShift struct {
-	ConfigClient   *configClient.Clientset
-	OperatorClient operatorClient.OperatorV1Interface
-	MachineClient  mapiClient.MachineV1beta1Interface
+	Config     *configClient.Clientset
+	Operator   operatorClient.OperatorV1Interface
+	Machine    mapiClient.MachineV1beta1Interface
+	Monitoring monitoringClient.MonitoringV1Interface
+	Route      routeClient.RouteV1Interface
+	K8s        k8sclient.Interface
 }
 
 // GetOpenShift creates client for the current OpenShift cluster. If KUBECONFIG env var is set, it is used to
@@ -42,10 +47,28 @@ func GetOpenShift() (*OpenShift, error) {
 		return nil, err
 	}
 
+	monc, err := monitoringClient.NewForConfig(rc)
+	if err != nil {
+		return nil, err
+	}
+
+	routec, err := routeClient.NewForConfig(rc)
+	if err != nil {
+		return nil, err
+	}
+
+	kc, err := k8sclient.NewForConfig(rc)
+	if err != nil {
+		return nil, err
+	}
+
 	return &OpenShift{
-		ConfigClient:   cc,
-		OperatorClient: oc,
-		MachineClient:  mapic,
+		Config:     cc,
+		Operator:   oc,
+		Machine:    mapic,
+		Monitoring: monc,
+		Route:      routec,
+		K8s:        kc,
 	}, nil
 }
 
@@ -76,7 +99,7 @@ func (o *OpenShift) GetCloudProvider() (*config.PlatformStatus, error) {
 
 // getInfrastructure returns the information of current Infrastructure referred by the OpenShift client or an error.
 func (o *OpenShift) getInfrastructure() (*config.Infrastructure, error) {
-	infra, err := o.ConfigClient.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
+	infra, err := o.Config.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +108,7 @@ func (o *OpenShift) getInfrastructure() (*config.Infrastructure, error) {
 
 // HasCustomVXLANPort tells if the custom VXLAN port is set or not in the cluster
 func (o *OpenShift) HasCustomVXLANPort() (bool, error) {
-	networkCR, err := o.OperatorClient.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
+	networkCR, err := o.Operator.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return false, err
 	}

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,13 +17,15 @@ import (
 // testNodeMetadata tests if all nodes have a worker label and kubelet version and are annotated with the version of
 // the currently deployed WMCO
 func testNodeMetadata(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
 	operatorVersion, err := getWMCOVersion()
 	require.NoError(t, err, "could not get WMCO version")
 
-	clusterKubeletVersion, err := getClusterKubeVersion()
+	clusterKubeletVersion, err := tc.getClusterKubeVersion()
 	require.NoError(t, err, "could not get cluster kube version")
 
-	pubKey, err := getExpectedPublicKey()
+	pubKey, err := tc.getExpectedPublicKey()
 	require.NoError(t, err, "error getting the expected public key")
 	pubKeyAnnotation := nc.CreatePubKeyHashAnnotation(pubKey)
 
@@ -78,8 +79,8 @@ func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
 }
 
 // getClusterKubeVersion returns the major and minor Kubernetes version of the cluster
-func getClusterKubeVersion() (string, error) {
-	serverVersion, err := framework.Global.KubeClient.Discovery().ServerVersion()
+func (tc *testContext) getClusterKubeVersion() (string, error) {
+	serverVersion, err := tc.client.K8s.Discovery().ServerVersion()
 	if err != nil {
 		return "", errors.Wrapf(err, "error getting cluster kube version")
 	}

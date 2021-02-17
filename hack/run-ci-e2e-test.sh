@@ -115,24 +115,24 @@ done
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
 
 # Test that the operator is running when the private key secret is not present
-OSDK_WMCO_test $OSDK "-run=TestWMCO/operator_deployed_without_private_key_secret -v -node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
+go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the creation tests of the Windows VMs
-OSDK_WMCO_test $OSDK "-run=TestWMCO/create -v -timeout=120m -node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
+go test ./test/e2e/... -run=TestWMCO/create -v -timeout=120m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 # Get logs for the creation tests
 printf "\n####### WMCO logs for creation tests #######\n"
 get_WMCO_logs
 
 # Run the upgrade tests and skip deletion of the Windows VMs
-OSDK_WMCO_test $OSDK "-run=TestWMCO/upgrade -v -timeout=90m -node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
+go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the reconfiguration test
-OSDK_WMCO_test $OSDK "-run=TestWMCO/reconfigure -v -timeout=90m -node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION"
+go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
 if ! $SKIP_NODE_DELETION; then
-  OSDK_WMCO_test $OSDK "-run=TestWMCO/destroy -v -timeout=60m --private-key-path=$KUBE_SSH_KEY_PATH"
+  go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args --private-key-path=$KUBE_SSH_KEY_PATH
   # Get logs on success before cleanup
   printf "\n####### WMCO logs for upgrade and deletion tests #######\n"
   get_WMCO_logs
