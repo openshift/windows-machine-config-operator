@@ -29,11 +29,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/signer"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/metrics"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/windows"
+	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 

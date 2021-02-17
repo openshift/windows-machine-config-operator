@@ -1,7 +1,7 @@
 package controller
 
 import (
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/secret"
+	"github.com/openshift/windows-machine-config-operator/controllers/secret"
 )
 
 func init() {
