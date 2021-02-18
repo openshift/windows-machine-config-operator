@@ -23,8 +23,6 @@ rules:
   - create
   - delete
   - get
-  - update
-  - patch
 - apiGroups:
     - ""
   resources:
@@ -44,15 +42,19 @@ rules:
   - get
   - update
 - apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors
   verbs:
   - get
   - create
-  - update
   - list
-  - patch
   - delete
 # deployment/finalizers permissions needed for the metrics server
 - apiGroups:

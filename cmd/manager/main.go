@@ -22,7 +22,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/apis"
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
-	winmetrics "github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
@@ -131,7 +131,7 @@ func main() {
 	// Create a new Cmd to provide shared dependencies and start components
 	mgr, err := manager.New(cfg, manager.Options{
 		NewCache:           cache.MultiNamespacedCacheBuilder(namespaces),
-		MetricsBindAddress: fmt.Sprintf("%s:%d", winmetrics.Host, winmetrics.Port),
+		MetricsBindAddress: fmt.Sprintf("%s:%d", metrics.Host, metrics.Port),
 	})
 	if err != nil {
 		log.Error(err, "failed to create a new Manager")
@@ -152,9 +152,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Add the Metrics Service and Service Monitor
-	if err := winmetrics.Add(ctx, cfg, namespace); err != nil {
-		log.Error(err, "failed to add Metrics Service and Service Monitor")
+	metricsConfig, err := metrics.NewConfig(mgr, cfg, namespace)
+	if err != nil {
+		log.Error(err, "failed to create MetricsConfig object")
+		os.Exit(1)
+	}
+
+	// Configure the metric resources
+	if err := metricsConfig.Configure(ctx); err != nil {
+		log.Error(err, "error setting up metrics")
+		os.Exit(1)
 	}
 
 	log.Info("starting the Cmd.")
