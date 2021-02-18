@@ -36,7 +36,7 @@ const (
 	Port int32 = 9182
 	// WindowsMetricsResource is the name for objects created for Prometheus monitoring
 	// by current operator version. Its name is defined through the bundle manifests
-	WindowsMetricsResource = "windows-machine-config-operator-metrics"
+	WindowsMetricsResource = "windows-exporter"
 )
 
 // PrometheusNodeConfig holds the information required to configure Prometheus, so that it can scrape metrics from the
@@ -255,6 +255,47 @@ func (c *Config) validate(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// RemoveStaleResources deletes stale resources that could be left behind during the
+// upgrade process due to the renaming of resources between current and previous operator version
+func (c *Config) RemoveStaleResources(ctx context.Context) {
+	wmcoNamespace, err := c.CoreV1().Namespaces().Get(ctx, c.namespace, metav1.GetOptions{})
+	if err != nil {
+		log.Error(err, "error getting operator namespace")
+	}
+
+	operatorName, err := k8sutil.GetOperatorName()
+	if err != nil {
+		log.Error(err, "error getting operator name")
+	}
+
+	// staleResourceName is the metrics object name created for Prometheus monitoring by previous operator versions
+	staleResourceName := operatorName + "-metrics"
+
+	// remove stale service objects
+	err = c.CoreV1().Services(c.namespace).Delete(ctx, staleResourceName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		c.recorder.Event(wmcoNamespace, v1.EventTypeWarning, "serviceDeletionFailed",
+			"Stale service deletion failure")
+		log.Error(err, "error deleting stale service object")
+	}
+
+	// remove stale endpoint objects
+	err = c.CoreV1().Endpoints(c.namespace).Delete(ctx, staleResourceName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		c.recorder.Event(wmcoNamespace, v1.EventTypeWarning, "endpointDeletionFailed",
+			"Stale endpoint deletion failure")
+		log.Error(err, "error deleting stale endpoint object")
+	}
+
+	// remove stale serviceMonitor objects
+	err = c.ServiceMonitors(c.namespace).Delete(ctx, staleResourceName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		c.recorder.Event(wmcoNamespace, v1.EventTypeWarning, "serviceMonitorDeletionFailed",
+			"Stale serviceMonitor deletion failure")
+		log.Error(err, "error deleting stale serviceMonitor object")
+	}
 }
 
 // createEndpoint creates an endpoint object in the operator namespace.

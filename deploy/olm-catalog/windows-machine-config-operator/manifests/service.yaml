@@ -1,9 +1,9 @@
 kind: Service
 apiVersion: v1
 metadata:
-  name: windows-machine-config-operator-metrics
+  name: windows-exporter
   labels:
-    name: windows-machine-config-operator
+    name: windows-exporter
 spec:
   ports:
     - name: metrics

@@ -3,8 +3,8 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   labels:
-    name: windows-machine-config-operator
-  name: windows-machine-config-operator-metrics
+    name: windows-exporter
+  name: windows-exporter
 spec:
   endpoints:
     - path: /metrics
@@ -20,4 +20,4 @@ spec:
           targetLabel: instance
   selector:
     matchLabels:
-      name: windows-machine-config-operator
+      name: windows-exporter

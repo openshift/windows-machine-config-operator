@@ -158,6 +158,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Best effort to delete stale metric resources from previous operator version.
+	// Logs and creates events if stale resource deletion fails.
+	metricsConfig.RemoveStaleResources(ctx)
+
 	// Configure the metric resources
 	if err := metricsConfig.Configure(ctx); err != nil {
 		log.Error(err, "error setting up metrics")
