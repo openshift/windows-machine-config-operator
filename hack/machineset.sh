@@ -12,12 +12,10 @@
 #    aws                  to fetch Windows AMI id for AWS platform (only required for clusters running on AWS)
 set -euo pipefail
 
-ACTION=${1:-}
+WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
+source $WMCO_ROOT/hack/common.sh
 
-error-exit() {
-    echo "Error: $*" >&2
-    exit 1
-}
+ACTION=${1:-}
 
 # get_spec returns the template yaml common for all cloud providers
 get_spec() {
