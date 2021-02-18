@@ -284,8 +284,6 @@ spec:
           - create
           - delete
           - get
-          - update
-          - patch
         - apiGroups:
           - ""
           resources:
@@ -305,15 +303,19 @@ spec:
           - get
           - update
         - apiGroups:
+          - ""
+          resources:
+          - namespaces
+          verbs:
+          - get
+        - apiGroups:
           - monitoring.coreos.com
           resources:
           - servicemonitors
           verbs:
           - get
           - create
-          - update
           - list
-          - patch
           - delete
         - apiGroups:
           - apps
