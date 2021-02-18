@@ -152,8 +152,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Add the Metrics Service and Service Monitor
-	if err := winmetrics.Add(ctx, cfg, namespace); err != nil {
+	// Validate if Metrics Service and Service Monitor are created.
+	if err := winmetrics.Validate(ctx, cfg, namespace); err != nil {
 		log.Error(err, "failed to add Metrics Service and Service Monitor")
 	}
 

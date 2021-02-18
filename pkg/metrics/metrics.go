@@ -6,14 +6,11 @@ import (
 	"fmt"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
-	"github.com/operator-framework/operator-sdk/pkg/metrics"
 	"github.com/pkg/errors"
 	monclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	"k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	k8sclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -71,71 +68,44 @@ func NewPrometheusNodeConfig(clientset *kubernetes.Clientset) (*PrometheusNodeCo
 	}, err
 }
 
-// Add will create the Services and Service Monitors that allows the operator to export the metrics by using
+// Validate will create the Services and Service Monitors that allows the operator to export the metrics by using
 // the Prometheus operator
-func Add(ctx context.Context, cfg *rest.Config, namespace string) error {
-	// Add to the below struct any other metrics ports you want to expose.
-	servicePorts := []v1.ServicePort{
-		{Port: Port, Name: PortName, Protocol: v1.ProtocolTCP, TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: Port}},
+func Validate(ctx context.Context, cfg *rest.Config, namespace string) error {
+	oclient, err := k8sclient.NewForConfig(cfg)
+	if err != nil {
+		return errors.Wrap(err, "could not create config clientset")
 	}
 
-	// Create Service object to expose the metrics port(s).
-	service, err := metrics.CreateMetricsService(ctx, cfg, servicePorts)
+	// Validate if metrics label is added to namespace
+	wincNamespace, err := oclient.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrap(err, "could not create metrics Service")
+		return err
+	}
+	if wincNamespace.Labels["openshift.io/cluster-monitoring"] != "true" {
+		metricsEnabled = false
+	}
+
+	// Check if metrics service exists
+	serviceList, err := oclient.CoreV1().Services(namespace).List(ctx,
+		metav1.ListOptions{LabelSelector: "name=windows-machine-config-operator"})
+	if err != nil || len(serviceList.Items) == 0 {
+		metricsEnabled = false
+		return errors.Wrap(err, "could not get metrics Service")
 	}
 
 	// the name for the metrics resources is set during creation of metrics service and is equivalent to the service name
-	windowsMetricsResource = service.GetName()
+	windowsMetricsResource = serviceList.Items[0].Name
 
 	// Create a monitoring client to interact with the ServiceMonitor object
 	mclient, err := monclient.NewForConfig(cfg)
 	if err != nil {
 		return errors.Wrap(err, "could not create monitoring client")
 	}
-
-	// In the case of an operator restart, a previous SM object will be deleted and a new one will
-	// be created. We are deleting to ensure that the SM always exists with the correct spec. Otherwise,
-	// metrics may exhibit unexpected behavior if created by a previous version of WMCO.
-	err = mclient.ServiceMonitors(namespace).Delete(context.TODO(), windowsMetricsResource, metav1.DeleteOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		return errors.Wrap(err, "could not delete existing ServiceMonitor object")
-	}
-
-	// CreateServiceMonitors will automatically create the prometheus-operator ServiceMonitor resources
-	// necessary to configure Prometheus to scrape metrics from this operator.
-	services := []*v1.Service{service}
-	_, err = metrics.CreateServiceMonitors(cfg, namespace, services)
+	// Check if Service Monitor exists.
+	_, err = mclient.ServiceMonitors(namespace).Get(ctx, windowsMetricsResource, metav1.GetOptions{})
 	if err != nil {
-		log.Error(err, "could not create ServiceMonitor object")
-		// If this operator is deployed to a cluster without the prometheus-operator running, it will return
-		// ErrServiceMonitorNotPresent, which can be used to safely skip ServiceMonitor creation.
-		if err == metrics.ErrServiceMonitorNotPresent {
-			metricsEnabled = false
-			return errors.Wrap(err, "install prometheus-operator in your cluster to create ServiceMonitor objects")
-
-		}
-	}
-
-	// The ServiceMonitor created by the operator-sdk metrics package doesn't have fields required to display
-	// node graphs for Windows. Update the Service monitor with the required fields.
-	err = updateServiceMonitors(cfg, namespace)
-	if err != nil {
-		return errors.Wrap(err, "error updating service monitor")
-	}
-
-	oclient, err := k8sclient.NewForConfig(cfg)
-	if err != nil {
-		return errors.Wrap(err, "could not create config clientset")
-	}
-	// When a selector is present in a headless service i.e. spec.ClusterIP=None, Kubernetes manages the
-	// list of endpoints reverting all the changes made by the operator. Remove selector from Metrics Service to avoid
-	// reverting changes in the Endpoints object.
-	patchData := fmt.Sprintf(`{"spec":{"selector": null }}`)
-	service, err = oclient.CoreV1().Services(namespace).Patch(ctx, service.Name, types.MergePatchType,
-		[]byte(patchData), metav1.PatchOptions{})
-	if err != nil {
-		return errors.Wrap(err, "could not remove selector from metrics service")
+		metricsEnabled = false
+		return errors.Wrap(err, "could not get metrics Service")
 	}
 
 	return nil
