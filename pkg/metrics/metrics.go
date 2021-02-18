@@ -87,7 +87,7 @@ func Validate(ctx context.Context, cfg *rest.Config, namespace string) error {
 
 	// Check if metrics service exists
 	serviceList, err := oclient.CoreV1().Services(namespace).List(ctx,
-		metav1.ListOptions{LabelSelector: "name=windows-machine-config-operator"})
+		metav1.ListOptions{LabelSelector: "app.kubernetes.io/name=windows-exporter"})
 	if err != nil || len(serviceList.Items) == 0 {
 		metricsEnabled = false
 		return errors.Wrap(err, "could not get metrics Service")

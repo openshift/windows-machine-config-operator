@@ -4,8 +4,8 @@ kind: ServiceMonitor
 metadata:
   labels:
     control-plane: controller-manager
-    name: windows-machine-config-operator
-  name: windows-machine-config-operator-metrics
+    app.kubernetes.io/name: windows-exporter
+  name: windows-exporter
 spec:
   endpoints:
     - path: /metrics
@@ -22,4 +22,5 @@ spec:
   selector:
     matchLabels:
       control-plane: controller-manager
-      name: windows-machine-config-operator
+      app.kubernetes.io/name: windows-exporter
+

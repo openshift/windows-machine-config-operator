@@ -1,12 +1,13 @@
 kind: Service
 apiVersion: v1
 metadata:
-  name: windows-machine-config-operator-metrics
+  name: windows-exporter
   labels:
-    name: windows-machine-config-operator
+    app.kubernetes.io/name: windows-exporter
 spec:
   ports:
     - name: metrics
       protocol: TCP
       port: 9182
       targetPort: 9182
+

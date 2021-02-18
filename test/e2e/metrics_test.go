@@ -84,7 +84,7 @@ func testPrometheus(t *testing.T) {
 	// check that endpoints exists
 	windowsEndpoints, err := testCtx.client.K8s.CoreV1().Endpoints(
 		"openshift-windows-machine-config-operator").Get(context.TODO(),
-		"windows-machine-config-operator-metrics", metav1.GetOptions{})
+		"windows-exporter", metav1.GetOptions{})
 	require.NoError(t, err)
 
 	if gc.numberOfNodes == 0 {
