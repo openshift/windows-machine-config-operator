@@ -33,7 +33,7 @@ spec:
 
     ### Pre-requisites
     * A Red Hat OpenShift subscription
-    * OCP 4.6.8+ cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
+    * OCP 4.7 cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
     * [vSphere prequisites](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/vsphere-prerequisites.md)
 
     ### Usage
@@ -67,12 +67,12 @@ spec:
     ```
 
     The following template variables need to be replaced as follows with values from your vSphere environment:
-    * *\<Windows_VM_template\>*: template name
-    * *\<VM Network Name\>*: network name
-    * *\<vCenter DataCenter Name\>*: datacenter name
-    * *\<Path to VM Folder in vCenter\>*: path where your OpenShift cluster is running
-    * *\<vCenter Datastore Name\>*: datastore name
-    * *\<vCenter Server FQDN/IP\>*: IP address or FQDN of the vCenter server
+    * `<Windows_VM_template>`: template name
+    * `<VM Network Name>`: network name
+    * `<vCenter DataCenter Name>`: datacenter name
+    * `<Path to VM Folder in vCenter>`: path where your OpenShift cluster is running
+    * `<vCenter Datastore Name>`: datastore name
+    * `<vCenter Server FQDN/IP>`: IP address or FQDN of the vCenter server
 
     Please note that on vSphere, Windows Machine names cannot be more than 15 characters long. The MachineSet name therefore
     cannot be more than 9 characters long, due to the way Machine names are generated from it.
