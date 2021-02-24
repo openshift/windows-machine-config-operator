@@ -53,12 +53,9 @@ github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
-# github.com/blang/semver v3.5.1+incompatible
-github.com/blang/semver
 # github.com/cespare/xxhash/v2 v2.1.1
 github.com/cespare/xxhash/v2
 # github.com/coreos/prometheus-operator v0.38.1-0.20200424145508-7e176fda06cc => github.com/coreos/prometheus-operator v0.38.1-0.20200424145508-7e176fda06cc
-## explicit
 github.com/coreos/prometheus-operator/pkg/apis/monitoring
 github.com/coreos/prometheus-operator/pkg/apis/monitoring/v1
 github.com/coreos/prometheus-operator/pkg/client/versioned/scheme
@@ -73,8 +70,6 @@ github.com/form3tech-oss/jwt-go
 github.com/go-logr/logr
 # github.com/go-logr/zapr v0.1.1 => github.com/go-logr/zapr v0.2.0
 github.com/go-logr/zapr
-# github.com/gobuffalo/envy v1.7.1
-github.com/gobuffalo/envy
 # github.com/gogo/protobuf v1.3.1
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
@@ -105,31 +100,18 @@ github.com/hashicorp/golang-lru
 github.com/hashicorp/golang-lru/simplelru
 # github.com/imdario/mergo v0.3.8
 github.com/imdario/mergo
-# github.com/inconshreveable/mousetrap v1.0.0
-github.com/inconshreveable/mousetrap
 # github.com/jmespath/go-jmespath v0.0.0-20180206201540-c2b33e8439af
 github.com/jmespath/go-jmespath
-# github.com/joho/godotenv v1.3.0
-github.com/joho/godotenv
 # github.com/json-iterator/go v1.1.10
 github.com/json-iterator/go
-# github.com/konsorten/go-windows-terminal-sequences v1.0.3
-github.com/konsorten/go-windows-terminal-sequences
 # github.com/kr/fs v0.1.0
 github.com/kr/fs
-# github.com/markbates/inflect v1.0.4
-github.com/markbates/inflect
 # github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/mitchellh/go-homedir v1.1.0
-github.com/mitchellh/go-homedir
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
 github.com/modern-go/concurrent
 # github.com/modern-go/reflect2 v1.0.1
 github.com/modern-go/reflect2
-# github.com/onsi/gomega v1.10.1
-github.com/onsi/gomega/gstruct/errors
-github.com/onsi/gomega/types
 # github.com/openshift/api v0.0.0-20201214114959-164a2fb63b5f => github.com/openshift/api v0.0.0-20201214114959-164a2fb63b5f
 ## explicit
 github.com/openshift/api/config/v1
@@ -150,6 +132,8 @@ github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1
 github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1/fake
 github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alpha1
 github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alpha1/fake
+github.com/openshift/client-go/route/clientset/versioned/scheme
+github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
 # github.com/openshift/cluster-api-provider-gcp v0.0.1-0.20200713133651-5c8a640669ac
 github.com/openshift/cluster-api-provider-gcp/pkg/apis/gcpprovider/v1beta1
 # github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7
@@ -159,29 +143,13 @@ github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1
 github.com/openshift/machine-api-operator/pkg/apis/vsphereprovider/v1beta1
 github.com/openshift/machine-api-operator/pkg/generated/clientset/versioned/scheme
 github.com/openshift/machine-api-operator/pkg/generated/clientset/versioned/typed/machine/v1beta1
-# github.com/operator-framework/api v0.3.13
-github.com/operator-framework/api/pkg/operators
-# github.com/operator-framework/operator-registry v1.13.4
-github.com/operator-framework/operator-registry/pkg/api
-github.com/operator-framework/operator-registry/pkg/image
-github.com/operator-framework/operator-registry/pkg/registry
 # github.com/operator-framework/operator-sdk v0.19.4
 ## explicit
-github.com/operator-framework/operator-sdk/internal/scaffold
-github.com/operator-framework/operator-sdk/internal/scaffold/input
-github.com/operator-framework/operator-sdk/internal/scaffold/internal/deps
-github.com/operator-framework/operator-sdk/internal/util/fileutil
-github.com/operator-framework/operator-sdk/internal/util/k8sutil
-github.com/operator-framework/operator-sdk/internal/util/kubebuilder
-github.com/operator-framework/operator-sdk/internal/util/projutil
 github.com/operator-framework/operator-sdk/pkg/k8sutil
 github.com/operator-framework/operator-sdk/pkg/leader
 github.com/operator-framework/operator-sdk/pkg/log/zap
 github.com/operator-framework/operator-sdk/pkg/metrics
-github.com/operator-framework/operator-sdk/pkg/test
 github.com/operator-framework/operator-sdk/version
-# github.com/pborman/uuid v1.2.0
-github.com/pborman/uuid
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
@@ -212,17 +180,6 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/rogpeppe/go-internal v1.5.0
-github.com/rogpeppe/go-internal/modfile
-github.com/rogpeppe/go-internal/module
-github.com/rogpeppe/go-internal/semver
-# github.com/sirupsen/logrus v1.6.0
-github.com/sirupsen/logrus
-# github.com/spf13/afero v1.2.2
-github.com/spf13/afero
-github.com/spf13/afero/mem
-# github.com/spf13/cobra v1.1.1
-github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.5
 ## explicit
 github.com/spf13/pflag
@@ -257,7 +214,6 @@ golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 golang.org/x/crypto/ssh/terminal
 # golang.org/x/mod v0.3.0
 ## explicit
-golang.org/x/mod/module
 golang.org/x/mod/semver
 # golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
 golang.org/x/net/context
@@ -266,8 +222,6 @@ golang.org/x/net/http/httpguts
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
-golang.org/x/net/internal/timeseries
-golang.org/x/net/trace
 # golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 golang.org/x/oauth2
 golang.org/x/oauth2/google
@@ -286,20 +240,6 @@ golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 # golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 golang.org/x/time/rate
-# golang.org/x/tools v0.0.0-20200616133436-c1934b75d054
-golang.org/x/tools/go/ast/astutil
-golang.org/x/tools/imports
-golang.org/x/tools/internal/event
-golang.org/x/tools/internal/event/core
-golang.org/x/tools/internal/event/keys
-golang.org/x/tools/internal/event/label
-golang.org/x/tools/internal/fastwalk
-golang.org/x/tools/internal/gocommand
-golang.org/x/tools/internal/gopathwalk
-golang.org/x/tools/internal/imports
-# golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
-golang.org/x/xerrors
-golang.org/x/xerrors/internal
 # gomodules.xyz/jsonpatch/v2 v2.0.1
 gomodules.xyz/jsonpatch/v2
 # google.golang.org/appengine v1.6.5
@@ -313,49 +253,6 @@ google.golang.org/appengine/internal/modules
 google.golang.org/appengine/internal/remote_api
 google.golang.org/appengine/internal/urlfetch
 google.golang.org/appengine/urlfetch
-# google.golang.org/genproto v0.0.0-20201110150050-8816d57aaa9a
-google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.30.0
-google.golang.org/grpc
-google.golang.org/grpc/attributes
-google.golang.org/grpc/backoff
-google.golang.org/grpc/balancer
-google.golang.org/grpc/balancer/base
-google.golang.org/grpc/balancer/grpclb/state
-google.golang.org/grpc/balancer/roundrobin
-google.golang.org/grpc/binarylog/grpc_binarylog_v1
-google.golang.org/grpc/codes
-google.golang.org/grpc/connectivity
-google.golang.org/grpc/credentials
-google.golang.org/grpc/credentials/internal
-google.golang.org/grpc/encoding
-google.golang.org/grpc/encoding/proto
-google.golang.org/grpc/grpclog
-google.golang.org/grpc/internal
-google.golang.org/grpc/internal/backoff
-google.golang.org/grpc/internal/balancerload
-google.golang.org/grpc/internal/binarylog
-google.golang.org/grpc/internal/buffer
-google.golang.org/grpc/internal/channelz
-google.golang.org/grpc/internal/envconfig
-google.golang.org/grpc/internal/grpclog
-google.golang.org/grpc/internal/grpcrand
-google.golang.org/grpc/internal/grpcsync
-google.golang.org/grpc/internal/grpcutil
-google.golang.org/grpc/internal/resolver/dns
-google.golang.org/grpc/internal/resolver/passthrough
-google.golang.org/grpc/internal/serviceconfig
-google.golang.org/grpc/internal/status
-google.golang.org/grpc/internal/syscall
-google.golang.org/grpc/internal/transport
-google.golang.org/grpc/keepalive
-google.golang.org/grpc/metadata
-google.golang.org/grpc/peer
-google.golang.org/grpc/resolver
-google.golang.org/grpc/serviceconfig
-google.golang.org/grpc/stats
-google.golang.org/grpc/status
-google.golang.org/grpc/tap
 # google.golang.org/protobuf v1.25.0
 google.golang.org/protobuf/encoding/prototext
 google.golang.org/protobuf/encoding/protowire
@@ -444,7 +341,6 @@ k8s.io/api/storage/v1beta1
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1
-k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme
 # k8s.io/apimachinery v0.20.0 => k8s.io/apimachinery v0.20.0
 ## explicit
 k8s.io/apimachinery/pkg/api/equality
@@ -496,8 +392,6 @@ k8s.io/apimachinery/third_party/forked/golang/reflect
 # k8s.io/client-go v12.0.0+incompatible => k8s.io/client-go v0.20.0
 ## explicit
 k8s.io/client-go/discovery
-k8s.io/client-go/discovery/cached
-k8s.io/client-go/discovery/cached/memory
 k8s.io/client-go/discovery/fake
 k8s.io/client-go/dynamic
 k8s.io/client-go/kubernetes
@@ -580,7 +474,6 @@ k8s.io/client-go/util/flowcontrol
 k8s.io/client-go/util/homedir
 k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
-k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
 # k8s.io/klog v1.0.0
 k8s.io/klog
@@ -637,8 +530,6 @@ sigs.k8s.io/controller-runtime/pkg/webhook/admission
 sigs.k8s.io/controller-runtime/pkg/webhook/conversion
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/certwatcher
 sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
-# sigs.k8s.io/kubebuilder v1.0.9-0.20200618125005-36aa113dbe99
-sigs.k8s.io/kubebuilder/pkg/model/config
 # sigs.k8s.io/structured-merge-diff/v4 v4.0.2
 sigs.k8s.io/structured-merge-diff/v4/value
 # sigs.k8s.io/yaml v1.2.0

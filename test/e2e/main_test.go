@@ -2,13 +2,12 @@ package e2e
 
 import (
 	"flag"
+	"os"
 	"testing"
 	"time"
 
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
@@ -47,12 +46,10 @@ type globalContext struct {
 // information should be easily accessible by other methods within the same test suite.
 // Some of the fields we have here can be exposed by via flags to the test suite.
 type testContext struct {
-	// namespace is the test namespace, we get this from the operator SDK's test framework.
+	// namespace is the namespace the operator is deployed in
 	namespace string
-	// osdkTestCtx is the operator sdk framework's test Context
-	osdkTestCtx *framework.TestCtx
-	// kubeclient is the kube client
-	kubeclient kubernetes.Interface
+	// client is the OpenShift client
+	client *clusterinfo.OpenShift
 	// retryInterval to check for existence of resource in kube api server
 	retryInterval time.Duration
 	// timeout to terminate checking for the existence of resource in kube apiserver
@@ -66,12 +63,7 @@ type testContext struct {
 }
 
 // NewTestContext returns a new test context to be used by every test.
-func NewTestContext(t *testing.T) (*testContext, error) {
-	fmwkTestContext := framework.NewTestCtx(t)
-	namespace, err := fmwkTestContext.GetNamespace()
-	if err != nil {
-		return nil, errors.Wrap(err, "test context instantiation failed")
-	}
+func NewTestContext() (*testContext, error) {
 	oc, err := clusterinfo.GetOpenShift()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize OpenShift client")
@@ -85,14 +77,9 @@ func NewTestContext(t *testing.T) (*testContext, error) {
 		return nil, errors.Wrap(err, "cloud provider creation failed")
 	}
 	// number of nodes, retry interval and timeout should come from user-input flags
-	return &testContext{osdkTestCtx: fmwkTestContext, kubeclient: framework.Global.KubeClient,
-		timeout: retry.Timeout, retryInterval: retry.Interval, namespace: namespace, CloudProvider: cloudProvider,
+	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
+		namespace: "openshift-windows-machine-config-operator", CloudProvider: cloudProvider,
 		hasCustomVXLAN: hasCustomVXLANPort, workloadNamespace: "wmco-test"}, nil
-}
-
-// cleanup cleans up the test context
-func (tc *testContext) cleanup() {
-	tc.osdkTestCtx.Cleanup()
 }
 
 func TestMain(m *testing.M) {
@@ -101,5 +88,7 @@ func TestMain(m *testing.M) {
 		"Path to the WMCO binary, used for version validation")
 	flag.StringVar(&privateKeyPath, "private-key-path", "",
 		"path of the private key file used to configure the Windows node")
-	framework.MainEntry(m)
+	flag.Parse()
+
+	os.Exit(m.Run())
 }
