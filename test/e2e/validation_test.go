@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
@@ -57,6 +59,17 @@ func testNodeMetadata(t *testing.T) {
 			})
 		})
 	}
+	t.Run("Windows node metadata not applied to Linux nodes", func(t *testing.T) {
+		nodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(), meta.ListOptions{
+			LabelSelector: core.LabelOSStable + "=linux"})
+		require.NoError(t, err, "error listing Linux nodes")
+		for _, node := range nodes.Items {
+			assert.NotContainsf(t, node.Annotations, nc.VersionAnnotation,
+				"version annotation applied to Linux node %s", node.GetName())
+			assert.NotContainsf(t, node.Annotations, nc.PubKeyHashAnnotation,
+				"public key annotation applied to Linux node %s", node.GetName())
+		}
+	})
 }
 
 // getInstanceID gets the instanceID of VM for a given cloud provider ID
