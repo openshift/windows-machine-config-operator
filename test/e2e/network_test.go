@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -300,7 +301,7 @@ func (tc *testContext) deleteNamespace(name string) error {
 // deployWindowsWebServer creates a deployment with a single Windows Server pod, listening on port 80
 func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	// This will run a Server on the container, which can be reached with a GET request
-	winServerCommand := []string{"pwsh.exe", "-command",
+	winServerCommand := []string{tc.getPowerShellExe(), "-command",
 		"$listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start(); " +
 			"Write-Host('Listening at http://*:80/'); while ($listener.IsListening) { " +
 			"$context = $listener.GetContext(); $response = $context.Response; " +
@@ -346,9 +347,12 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 // getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
 func (tc *testContext) getWindowsServerContainerImage() string {
 	var windowsServerImage string
-	// If we're using a custom VXLANPort we need to use 1909 or else use Windows Server 2019
+	// If we're using a custom VXLANPort we need to use 1909. On Azure we are testing 20H2. For other providers we use
+	// 1809
 	if tc.hasCustomVXLAN {
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1909"
+	} else if tc.CloudProvider.GetType() == config.AzurePlatformType {
+		windowsServerImage = "mcr.microsoft.com/windows/servercore:20H2"
 	} else {
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1809"
 	}
@@ -470,16 +474,16 @@ func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.J
 
 //  createWinCurlerJob creates a Job to curl Windows server at given IP address
 func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affinity *v1.Affinity) (*batchv1.Job, error) {
-	winCurlerCommand := getWinCurlerCommand(winServerIP)
+	winCurlerCommand := tc.getWinCurlerCommand(winServerIP)
 	winCurlerJob, err := tc.createWindowsServerJob("win-curler-"+name, winCurlerCommand, affinity)
 	return winCurlerJob, err
 }
 
 // getWinCurlerCommand generates a command to curl a Windows server from the given IP address
-func getWinCurlerCommand(winServerIP string) []string {
+func (tc *testContext) getWinCurlerCommand(winServerIP string) []string {
 	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
 	// takes some time to finish initial network setup.
-	winCurlerCommand := []string{"pwsh.exe", "-command", "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
+	winCurlerCommand := []string{tc.getPowerShellExe(), "-command", "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
 		"$response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP +
 		"; $code = $response.StatusCode; echo \"GET returned code $code\";" +
 		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"}
@@ -556,4 +560,15 @@ func (tc *testContext) waitUntilJobSucceeds(name string) error {
 	}
 	events, _ := tc.getPodEvents(name)
 	return errors.Errorf("job %v timed out: %v", job, events)
+}
+
+// getPowerShellExe returns the PowerShell executable name. This depends on the container image used which is figured
+// out transitively based on the cloud provider as we use different images in each cloud provider.
+func (tc *testContext) getPowerShellExe() string {
+	powerShellExe := "pwsh.exe"
+	// We use the servercore image on Azure, where the PowerShell exe is powershell.exe
+	if tc.CloudProvider.GetType() == config.AzurePlatformType {
+		powerShellExe = "powershell.exe"
+	}
+	return powerShellExe
 }
