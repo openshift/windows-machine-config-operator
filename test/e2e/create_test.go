@@ -51,6 +51,10 @@ func testWindowsNodeCreation(t *testing.T) {
 	require.NoError(t, testCtx.createPrivateKeySecret(true), "could not create known private key secret")
 
 	t.Run("Windows Machines without the Windows label are not configured", func(t *testing.T) {
+		// Test is platform agnostic so is not needed to be run for every supported platform.
+		if testCtx.CloudProvider.GetType() != config.AzurePlatformType {
+			t.Skipf("Skipping for %s", testCtx.CloudProvider.GetType())
+		}
 		ms, err := testCtx.createWindowsMachineSet(1, false)
 		require.NoError(t, err, "failed to create Windows MachineSet")
 		defer framework.Global.Client.Delete(context.TODO(), ms)
@@ -82,7 +86,7 @@ func testWindowsNodeCreation(t *testing.T) {
 			// This test cannot be run on vSphere because this random key is not part of the vSphere template image.
 			// Moreover this test is platform agnostic so is not needed to be run for every supported platform.
 			if testCtx.CloudProvider.GetType() != config.AWSPlatformType {
-				t.Skip()
+				t.Skipf("Skipping for %s", testCtx.CloudProvider.GetType())
 			}
 			// Replace private key and check that new Machines are created using the new private key
 			err = testCtx.createPrivateKeySecret(false)
