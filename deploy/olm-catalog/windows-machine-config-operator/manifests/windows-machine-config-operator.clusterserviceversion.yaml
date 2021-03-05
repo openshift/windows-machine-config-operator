@@ -314,6 +314,7 @@ spec:
           - update
           - list
           - patch
+          - delete
         - apiGroups:
           - apps
           resourceNames:
