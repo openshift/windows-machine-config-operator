@@ -9,7 +9,7 @@
 [submodule "containernetworking-plugins"]
 	path = containernetworking-plugins
 	url = https://github.com/openshift/containernetworking-plugins
-	branch = release-4.7
+	branch = release-4.8
 [submodule "kubernetes"]
 	path = kubernetes
 	url = https://github.com/openshift/kubernetes
