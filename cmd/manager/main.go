@@ -7,11 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/apis"
-	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller"
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/payload"
-	"github.com/openshift/windows-machine-config-operator/version"
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
 	"github.com/operator-framework/operator-sdk/pkg/log/zap"
@@ -24,7 +19,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 
-	winmetrics "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/metrics"
+	"github.com/openshift/windows-machine-config-operator/apis"
+	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	winmetrics "github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
+	"github.com/openshift/windows-machine-config-operator/version"
 )
 
 var log = logf.Log.WithName("cmd")

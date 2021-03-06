@@ -23,7 +23,7 @@ import (
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/controller/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 )
 
 // getExpectedPublicKey returns the public key associated with the private key within the cloud-private-key secret

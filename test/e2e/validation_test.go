@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 
-	nc "github.com/openshift/windows-machine-config-operator/pkg/controller/windowsmachine/nodeconfig"
+	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
 
 // testNodeMetadata tests if all nodes have a worker label and kubelet version and are annotated with the version of
