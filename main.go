@@ -7,17 +7,16 @@ import (
 	"os"
 	"strings"
 
-	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
-	"github.com/operator-framework/operator-sdk/pkg/leader"
-	"github.com/operator-framework/operator-sdk/pkg/log/zap"
+	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	"github.com/operator-framework/operator-lib/leader"
 	"github.com/spf13/pflag"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/openshift/windows-machine-config-operator/apis"
 	"github.com/openshift/windows-machine-config-operator/controllers"
@@ -27,18 +26,28 @@ import (
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
-var log = logf.Log.WithName("cmd")
+var (
+	scheme   = runtime.NewScheme()
+	setupLog = ctrl.Log.WithName("setup")
+)
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(mapi.AddToScheme(scheme))
+}
 
 func main() {
-	// Add the zap logger flag set to the CLI. The flag set must
-	// be added before calling pflag.Parse().
-	pflag.CommandLine.AddFlagSet(zap.FlagSet())
+	var debugLogging bool
+	flag.BoolVar(&debugLogging, "debugLogging", false, "Log debug messages")
 
 	// Add flags registered by imported packages (e.g. glog and
 	// controller-runtime)
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 
 	pflag.Parse()
+
+	opts := zap.Options{Development: debugLogging}
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// add version subcommand to query the operator version
 	if len(os.Args) > 1 {
@@ -58,35 +67,25 @@ func main() {
 		}
 	}
 
-	// Use a zap logr.Logger implementation. If none of the zap
-	// flags are configured (or if the zap flag set is not being
-	// used), this defaults to a production zap logger.
-	//
-	// The logger instantiated here can be changed to any logger
-	// implementing the logr.Logger interface. This logger will
-	// be propagated through the whole operator, generating
-	// uniform and structured logs.
-	logf.SetLogger(zap.Logger())
-
 	version.Print()
 
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
 	if err != nil {
-		log.Error(err, "failed to get the config for talking to a Kubernetes API server")
+		setupLog.Error(err, "failed to get the config for talking to a Kubernetes API server")
 		os.Exit(1)
 	}
 
 	// get cluster configuration
 	clusterConfig, err := cluster.NewConfig(cfg)
 	if err != nil {
-		log.Error(err, "failed to get cluster configuration")
+		setupLog.Error(err, "failed to get cluster configuration")
 		os.Exit(1)
 	}
 
 	// validate cluster for required configurations
 	if err := clusterConfig.Validate(); err != nil {
-		log.Error(err, "failed to validate required cluster configuration")
+		setupLog.Error(err, "failed to validate required cluster configuration")
 		os.Exit(1)
 	}
 
@@ -106,14 +105,7 @@ func main() {
 		payload.WindowsExporterPath,
 	}
 	if err := checkIfRequiredFilesExist(requiredFiles); err != nil {
-		log.Error(err, "could not start the operator")
-		os.Exit(1)
-	}
-
-	// The watched namespace defined by the WMCO CSV
-	namespace, err := k8sutil.GetWatchNamespace()
-	if err != nil {
-		log.Error(err, "failed to get watch namespace")
+		setupLog.Error(err, "could not start the operator")
 		os.Exit(1)
 	}
 
@@ -121,40 +113,74 @@ func main() {
 	// Become the leader before proceeding
 	err = leader.Become(ctx, "windows-machine-config-operator-lock")
 	if err != nil {
-		log.Error(err, "failed to become a leader within current namespace")
+		setupLog.Error(err, "failed to become a leader within current namespace")
 		os.Exit(1)
 	}
 
-	// Allow for the watching of cluster-wide resources with "", so that we can watch nodes,
-	// as well as resources within the `openshift-machine-api` and WMCO namespace
-	namespaces := []string{"", "openshift-machine-api", namespace}
-	// Create a new Cmd to provide shared dependencies and start components
-	mgr, err := manager.New(cfg, manager.Options{
-		NewCache:           cache.MultiNamespacedCacheBuilder(namespaces),
+	// Create a new Manager to provide shared dependencies and start components
+	// TODO: https://issues.redhat.com/browse/WINC-599
+	//       The NewCache field is not being set, as the default is a cluster wide scope, which is what we want
+	//       as we need to watch Nodes. A MultiNamespacedCache cannot be used at this point as it has issues working
+	//       with cluster scoped resources. Once those issues are resolved, it may be worth switching to using that
+	//       cache type.
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+		Scheme:             scheme,
 		MetricsBindAddress: fmt.Sprintf("%s:%d", metrics.Host, metrics.Port),
+		Port:               9443,
 	})
 	if err != nil {
-		log.Error(err, "failed to create a new Manager")
+		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-
-	log.Info("registering Components.")
 
 	// Setup Scheme for all resources
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
-		log.Error(err, "failed to add all Resources to the Scheme")
+		setupLog.Error(err, "failed to add all Resources to the Scheme")
+		os.Exit(1)
+	}
+
+	// Get the watched namespace. This is originally sourced from from the OperatorGroup associated with the CSV.
+	// Because the WMCO CSV only supports the OwnNamespace InstallMode, the watch namespace will always be the namespace
+	// that WMCO is deployed in.
+	watchNamespace, err := getWatchNamespace()
+	if err != nil {
+		setupLog.Error(err, "failed to get watch namespace")
+		os.Exit(1)
+	}
+	// This is a defensive check to ensure that the WMCO CSV was not changed from only supporting OwnNamespace only.
+	// Check that the OperatorGroup + CSV were not deployed with a cluster scope (namespace = ""), and that the
+	// OperatorGroup does not target multiple namespaces. This should not be able to happen as both `AllNamespaces` and
+	// `MultiNamespaces` are not supported InstallModes.
+	if watchNamespace == "" || strings.Contains(watchNamespace, ",") {
+		setupLog.Error(err, "WMCO has an invalid target namespace. "+
+			"OperatorGroup target namespace must be a single, non-cluster-scoped value", "target namespace",
+			watchNamespace)
 		os.Exit(1)
 	}
 
 	// Setup all Controllers
-	if err := controllers.AddToManager(mgr, clusterConfig, namespace); err != nil {
-		log.Error(err, "failed to add all Controllers to the Manager")
+	winMachineReconciler, err := controllers.NewWindowsMachineReconciler(mgr, clusterConfig, watchNamespace)
+	if err != nil {
+		setupLog.Error(err, "unable to create Windows Machine reconciler")
+		os.Exit(1)
+	}
+	if err = winMachineReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create Windows Machine controller")
 		os.Exit(1)
 	}
 
-	metricsConfig, err := metrics.NewConfig(mgr, cfg, namespace)
+	secretReconciler := controllers.NewSecretReconciler(mgr, watchNamespace)
+	if err = secretReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create Secret controller")
+		os.Exit(1)
+	}
+	if err := secretReconciler.RemoveInvalidAnnotationsFromLinuxNodes(mgr.GetConfig()); err != nil {
+		setupLog.Error(err, "error removing invalid annotations from Linux nodes")
+	}
+
+	metricsConfig, err := metrics.NewConfig(mgr, cfg, watchNamespace)
 	if err != nil {
-		log.Error(err, "failed to create MetricsConfig object")
+		setupLog.Error(err, "failed to create MetricsConfig object")
 		os.Exit(1)
 	}
 
@@ -164,15 +190,14 @@ func main() {
 
 	// Configure the metric resources
 	if err := metricsConfig.Configure(ctx); err != nil {
-		log.Error(err, "error setting up metrics")
+		setupLog.Error(err, "error setting up metrics")
 		os.Exit(1)
 	}
 
-	log.Info("starting the Cmd.")
+	setupLog.Info("starting manager")
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "problem running manager")
 
-	// Start the Cmd
-	if err := mgr.Start(signals.SetupSignalHandler()); err != nil {
-		log.Error(err, "manager exited non-zero")
 		os.Exit(1)
 	}
 }
@@ -194,4 +219,16 @@ func checkIfRequiredFilesExist(requiredFiles []string) error {
 		return fmt.Errorf("errors encountered with required files: %s", strings.Join(errorMessages, ", "))
 	}
 	return nil
+}
+
+// getWatchNamespace returns the Namespace the operator should be watching for changes
+// An empty value means the operator is running with cluster scope.
+func getWatchNamespace() (string, error) {
+	var watchNamespaceEnvVar = "WATCH_NAMESPACE"
+
+	ns, found := os.LookupEnv(watchNamespaceEnvVar)
+	if !found {
+		return "", fmt.Errorf("%s must be set", watchNamespaceEnvVar)
+	}
+	return ns, nil
 }
