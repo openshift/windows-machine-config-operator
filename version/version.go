@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"runtime"
 
-	sdkVersion "github.com/operator-framework/operator-sdk/version"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-var log = logf.Log.WithName("version")
+var log = ctrl.Log.WithName("version")
 
 var (
 	Version   = "" // version will be replaced while building the binary using ldflags
@@ -19,7 +18,6 @@ var (
 func Print() {
 	log.Info("operator", "version", Version)
 	log.Info("go", "version", GoVersion)
-	log.Info("operator-sdk", "version", sdkVersion.Version)
 }
 
 // Get() returns the operator version

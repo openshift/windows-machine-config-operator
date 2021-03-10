@@ -12,136 +12,115 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/config"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
 
 const (
-	SecretControllerName = "secret_controller"
-	userDataSecret       = "windows-user-data"
-	userDataNamespace    = "openshift-machine-api"
+	userDataSecret    = "windows-user-data"
+	userDataNamespace = "openshift-machine-api"
 )
 
-// AddSecretController creates a new Secret Controller and adds it to the Manager. The Manager will set fields on the Controller
-// and Start it when the Manager is Started.
-func AddSecretController(mgr manager.Manager, _ cluster.Config, watchNamespace string) error {
-	reconciler, err := newSecretReconciler(mgr)
-	if err != nil {
-		return errors.Wrapf(err, "could not create %s reconciler", SecretControllerName)
-	}
-	return addSecretController(mgr, reconciler, watchNamespace)
+// NewSecretReconciler returns a pointer to a SecretReconciler
+func NewSecretReconciler(mgr manager.Manager, watchNamespace string) *SecretReconciler {
+	reconciler := &SecretReconciler{
+		client:         mgr.GetClient(),
+		scheme:         mgr.GetScheme(),
+		log:            ctrl.Log.WithName("controller").WithName("secret"),
+		watchNamespace: watchNamespace}
+	return reconciler
 }
 
-// newSecretReconciler returns a new reconcile.Reconciler
-func newSecretReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
-	cfg, err := config.GetConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := client.New(cfg, client.Options{Scheme: mgr.GetScheme()})
-	if err != nil {
-		return nil, err
-	}
-
-	log := logf.Log.WithName(SecretControllerName)
-	reconciler := &ReconcileSecret{client: client, scheme: mgr.GetScheme(), log: log}
-	if err = reconciler.removeInvalidAnnotationsFromLinuxNodes(); err != nil {
-		log.Error(err, "unable to clean up annotations on Linux nodes")
-	}
-
-	return reconciler, nil
-}
-
-// addSecretController adds a new Controller to mgr with r as the reconcile.Reconciler
-func addSecretController(mgr manager.Manager, r reconcile.Reconciler, watchNamespace string) error {
-	// Create a new controller
-	c, err := controller.New(SecretControllerName, mgr, controller.Options{Reconciler: r})
-	if err != nil {
-		return errors.Wrapf(err, "could not create the controller: %v", SecretControllerName)
-	}
-
+// SetupWithManager sets up a new Secret controller
+func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Check that the private key exists, if it doesn't, log a warning
-	_, err = secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: watchNamespace, Name: secrets.PrivateKeySecret}, mgr.GetClient())
+	_, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, mgr.GetClient())
 	if err != nil {
-		log := logf.Log.WithName(SecretControllerName)
-		log.Error(err, "Unable to retrieve private key, please ensure it is created")
+		r.log.Error(err, "Unable to retrieve private key, please ensure it is created")
 	}
-
-	// Watch for changes to the userData secret and enqueue the cloud-private-key if changed
-	// Name and namespace cannot be used to watch for specific secrets, so we filter out all the other secrets we
-	// dont care about.
-	// https://github.com/kubernetes-sigs/controller-runtime/issues/244
-	err = c.Watch(&source.Kind{Type: &core.Secret{}},
-		&handler.EnqueueRequestsFromMapFunc{ToRequests: newUserDataMapper(watchNamespace)},
-		predicate.Funcs{
-			CreateFunc: func(e event.CreateEvent) bool {
-				return isPrivateKeySecret(e.Meta, watchNamespace) || isUserDataSecret(e.Meta)
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				return isPrivateKeySecret(e.Meta, watchNamespace) || isUserDataSecret(e.Meta)
-			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				// get update event only when secret data is changed
-				if isPrivateKeySecret(e.MetaNew, watchNamespace) {
-					if string(e.ObjectOld.(*core.Secret).Data[secrets.PrivateKeySecretKey]) !=
-						string(e.ObjectNew.(*core.Secret).Data[secrets.PrivateKeySecretKey]) {
-						return true
-					}
-				} else if isUserDataSecret(e.MetaNew) {
-					if string(e.ObjectOld.(*core.Secret).Data["userData"][:]) != string(e.ObjectNew.(*core.Secret).Data["userData"][:]) {
-						return true
-					}
+	privateKeyPredicate := builder.WithPredicates(predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return isPrivateKeySecret(e.Object, r.watchNamespace)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return isPrivateKeySecret(e.Object, r.watchNamespace)
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			// get update event only when secret data is changed
+			if isPrivateKeySecret(e.ObjectNew, r.watchNamespace) {
+				if string(e.ObjectOld.(*core.Secret).Data[secrets.PrivateKeySecretKey]) !=
+					string(e.ObjectNew.(*core.Secret).Data[secrets.PrivateKeySecretKey]) {
+					return true
 				}
-				return false
-			},
-		})
-	if err != nil {
-		return err
-	}
-	return nil
+			}
+			return false
+		},
+	})
+	mappingPredicate := builder.WithPredicates(predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return isUserDataSecret(e.Object)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return isUserDataSecret(e.Object)
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			// get update event only when secret data is changed
+			if isUserDataSecret(e.ObjectNew) {
+				if string(e.ObjectOld.(*core.Secret).Data["userData"][:]) !=
+					string(e.ObjectNew.(*core.Secret).Data["userData"][:]) {
+					return true
+				}
+			}
+			return false
+		},
+	})
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&core.Secret{}, privateKeyPredicate).
+		Watches(&source.Kind{Type: &core.Secret{}}, handler.EnqueueRequestsFromMapFunc(r.mapToPrivateKeySecret),
+			mappingPredicate).
+		Complete(r)
 }
 
-// isUserDataSecret returns true if the object meta indicates that the object is the userData Secret
-func isUserDataSecret(meta meta.Object) bool {
-	return meta.GetName() == userDataSecret && meta.GetNamespace() == userDataNamespace
+// isUserDataSecret returns true if the provided object is the userData Secret
+func isUserDataSecret(obj client.Object) bool {
+	return obj.GetName() == userDataSecret && obj.GetNamespace() == userDataNamespace
 }
 
-// isPrivateKeySecret returns true if the object meta indicates that the object is the private key secret
-func isPrivateKeySecret(meta meta.Object, keyNamespace string) bool {
-	return meta.GetName() == secrets.PrivateKeySecret && meta.GetNamespace() == keyNamespace
+// isPrivateKeySecret returns true if the provided object is the private key secret
+func isPrivateKeySecret(obj client.Object, keyNamespace string) bool {
+	return obj.GetName() == secrets.PrivateKeySecret && obj.GetNamespace() == keyNamespace
 }
 
-// blank assignment to verify that ReconcileSecret implements reconcile.Reconciler
-var _ reconcile.Reconciler = &ReconcileSecret{}
-
-// ReconcileSecret reconciles a Secret object
-type ReconcileSecret struct {
+// SecretReconciler is used to create a controller which manages Secret objects
+type SecretReconciler struct {
 	// This client, initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
 	client client.Client
 	scheme *runtime.Scheme
 	log    logr.Logger
+	// watchNamespace is the namespace the operator is watching as defined by the operator CSV
+	watchNamespace string
 }
 
 // Reconcile reads that state of the cluster for a Secret object and makes changes based on the state read
 // and what is in the Secret.Spec
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
-func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result, error) {
+func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) (reconcile.Result, error) {
 	log := r.log.WithValues("secret", request.NamespacedName)
 
 	privateKey, err := secrets.GetPrivateKey(request.NamespacedName, r.client)
@@ -162,11 +141,11 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 
 	userData := &core.Secret{}
 	// Fetch UserData instance
-	err = r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: userDataSecret, Namespace: userDataNamespace}, userData)
+	err = r.client.Get(ctx, kubeTypes.NamespacedName{Name: userDataSecret, Namespace: userDataNamespace}, userData)
 	if err != nil && k8sapierrors.IsNotFound(err) {
 		// Secret is deleted
 		log.Info("secret not found, creating the secret", "name", userDataSecret)
-		err = r.client.Create(context.TODO(), validUserData)
+		err = r.client.Create(ctx, validUserData)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -186,7 +165,7 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 			return reconcile.Result{}, errors.Wrap(err, "error creating signer from private key")
 		}
 		nodes := &core.NodeList{}
-		err = r.client.List(context.TODO(), nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
+		err = r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
 		if err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
 		}
@@ -199,7 +178,7 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 				continue
 			}
 			node.Annotations[nodeconfig.PubKeyHashAnnotation] = ""
-			err = r.client.Patch(context.TODO(), &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(patchData)))
+			err = r.client.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(patchData)))
 			if err != nil {
 				return reconcile.Result{}, errors.Wrapf(err, "error clearing public key annotation on node %s",
 					node.GetName())
@@ -209,7 +188,7 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 
 		// Set userdata to expected value
 		log.Info("updating secret", "name", userDataSecret)
-		err = r.client.Update(context.TODO(), validUserData)
+		err = r.client.Update(ctx, validUserData)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
@@ -219,12 +198,17 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 	}
 }
 
-// removeInvalidAnnotationsFromLinuxNodes corrects annotations applied by previous versions of WMCO.
-func (r *ReconcileSecret) removeInvalidAnnotationsFromLinuxNodes() error {
-	nodes := &core.NodeList{}
-	err := r.client.List(context.TODO(), nodes, client.MatchingLabels{core.LabelOSStable: "linux"})
+// RemoveInvalidAnnotationsFromLinuxNodes makes a best effort to remove annotations applied by previous versions of WMCO.
+func (r *SecretReconciler) RemoveInvalidAnnotationsFromLinuxNodes(config *rest.Config) error {
+	// create a new clientset as this function will be called before the manager's client is started
+	kc, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return errors.Wrapf(err, "error getting node list")
+		return errors.Wrap(err, "error creating kubernetes clientset")
+	}
+
+	nodes, err := kc.CoreV1().Nodes().List(context.TODO(), meta.ListOptions{LabelSelector: core.LabelOSStable + "=linux"})
+	if err != nil {
+		return errors.Wrap(err, "error getting Linux node list")
 	}
 	// The public key hash was accidentally added to Linux nodes in WMCO 2.0 and must be removed.
 	// The `/` in the annotation key needs to be escaped in order to not be considered a "directory" in the path.
@@ -232,7 +216,8 @@ func (r *ReconcileSecret) removeInvalidAnnotationsFromLinuxNodes() error {
 	patchData := fmt.Sprintf(`[{"op":"remove","path":"/metadata/annotations/%s"}]`, escapedPubKeyAnnotation)
 	for _, node := range nodes.Items {
 		if _, present := node.Annotations[nodeconfig.PubKeyHashAnnotation]; present == true {
-			err = r.client.Patch(context.TODO(), &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(patchData)))
+			_, err = kc.CoreV1().Nodes().Patch(context.TODO(), node.GetName(), kubeTypes.JSONPatchType,
+				[]byte(patchData), meta.PatchOptions{})
 			if err != nil {
 				return errors.Wrapf(err, "error removing public key annotation from node %s", node.GetName())
 			}
@@ -241,20 +226,9 @@ func (r *ReconcileSecret) removeInvalidAnnotationsFromLinuxNodes() error {
 	return nil
 }
 
-// userDataMapper is a simple implementation of the Mapper interface allowing for the mapping from the userData secret
-// to the private key secret
-type userDataMapper struct {
-	// watchNamespace is the namespace the operator is watching as defined by the CSV
-	watchNamespace string
-}
-
-// newUserDataMapper returns a pointer to a new userDataMapper
-func newUserDataMapper(namespace string) *userDataMapper {
-	return &userDataMapper{watchNamespace: namespace}
-}
-
-func (m *userDataMapper) Map(_ handler.MapObject) []reconcile.Request {
+// mapToPrivateKeySecret is a mapping function that will always return a request for the cloud private key secret
+func (r *SecretReconciler) mapToPrivateKeySecret(_ client.Object) []reconcile.Request {
 	return []reconcile.Request{
-		{NamespacedName: kubeTypes.NamespacedName{Namespace: m.watchNamespace, Name: secrets.PrivateKeySecret}},
+		{NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret}},
 	}
 }
