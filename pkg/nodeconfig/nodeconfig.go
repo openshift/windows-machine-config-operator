@@ -16,8 +16,8 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
@@ -107,7 +107,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machi
 
 	// Update the logger name with the VM's cloud ID. Ideally this should be the Machine name but is not available at
 	// this point.
-	log := logf.Log.WithName(fmt.Sprintf("nodeconfig %s", instanceID))
+	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", instanceID))
 	win, err := windows.New(ipAddress, instanceID, machineName, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
 		signer, platform)
 

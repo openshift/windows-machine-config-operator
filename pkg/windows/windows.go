@@ -11,7 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
@@ -181,7 +181,7 @@ func New(ipAddress, instanceID, machineName, workerIgnitionEndpoint, vxlanPort s
 		adminUser = "Administrator"
 	}
 
-	log := logf.Log.WithName(fmt.Sprintf("VM %s", instanceID))
+	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", instanceID))
 	log.V(1).Info("initializing SSH connection", "user", adminUser)
 	conn, err := newSshConnectivity(adminUser, ipAddress, signer, log)
 	if err != nil {
