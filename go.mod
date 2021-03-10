@@ -5,6 +5,7 @@ go 1.15
 replace github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503-38ab9da00309 // Required by Helm
 
 replace (
+	github.com/apache/thrift => github.com/apache/thrift v0.14.1 // For fixing https://bugzilla.redhat.com/show_bug.cgi?id=1928809
 	github.com/coreos/prometheus-operator => github.com/coreos/prometheus-operator v0.38.1-0.20200424145508-7e176fda06cc
 	github.com/go-logr/logr => github.com/go-logr/logr v0.2.1-0.20200730175230-ee2de8da5be6 // Compatibility issues - https://github.com/go-logr/logr/issues/19, bumping to latest operator-sdk might remove this
 	github.com/go-logr/zapr => github.com/go-logr/zapr v0.2.0 // Same the logr compatibility issue
