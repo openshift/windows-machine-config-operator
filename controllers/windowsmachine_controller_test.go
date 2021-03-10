@@ -7,7 +7,7 @@ import (
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -16,7 +16,7 @@ func strToPtr(str string) *string {
 }
 
 func TestIsValidMachine(t *testing.T) {
-	r := ReconcileWindowsMachine{log: logf.Log}
+	r := WindowsMachineReconciler{log: logf.Log}
 	invalidMachine1 := core.Node{}
 	invalidMachine2 := mapi.Machine{}
 	invalidMachine2.Name = "invalid_1"
@@ -43,7 +43,7 @@ func TestIsValidMachine(t *testing.T) {
 	}
 
 	var tests = []struct {
-		machineObj     runtime.Object
+		machineObj     client.Object
 		isValidMachine bool
 	}{
 		{

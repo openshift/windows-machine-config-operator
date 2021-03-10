@@ -1,7 +1,7 @@
 package nodeconfig
 
 import (
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // cache holds the information of the nodeConfig that is invariant for multiple reconciliation cycles. We'll use this
@@ -23,7 +23,7 @@ var nodeConfigCache = cache{}
 // init populates the cache that we need for nodeConfig
 func init() {
 	var kubeAPIServerEndpoint string
-	log := logf.Log.WithName("nodeconfig").WithName("init")
+	log := ctrl.Log.WithName("nodeconfig").WithName("init")
 
 	kubeAPIServerEndpoint, err := discoverKubeAPIServerEndpoint()
 	if err != nil {
