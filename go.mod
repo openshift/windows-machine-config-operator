@@ -6,8 +6,6 @@ replace github.com/docker/docker => github.com/moby/moby v0.7.3-0.20190826074503
 
 replace (
 	github.com/coreos/prometheus-operator => github.com/coreos/prometheus-operator v0.38.1-0.20200424145508-7e176fda06cc
-	github.com/go-logr/logr => github.com/go-logr/logr v0.2.1-0.20200730175230-ee2de8da5be6 // Compatibility issues - https://github.com/go-logr/logr/issues/19, bumping to latest operator-sdk might remove this
-	github.com/go-logr/zapr => github.com/go-logr/zapr v0.2.0 // Same the logr compatibility issue
 	github.com/mattn/go-sqlite3 => github.com/mattn/go-sqlite3 v1.10.0
 	github.com/openshift/api => github.com/openshift/api v0.0.0-20201214114959-164a2fb63b5f // OpenShift 4.7
 	github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20201214125552-e615e336eb49 // OpenShift 4.7
@@ -38,12 +36,12 @@ replace (
 )
 
 require (
-	github.com/aws/aws-sdk-go v1.25.48
-	github.com/go-logr/logr v0.2.0
+	github.com/aws/aws-sdk-go v1.27.0
+	github.com/go-logr/logr v0.3.0
 	github.com/openshift/api v0.0.0-20201214114959-164a2fb63b5f
 	github.com/openshift/client-go v0.0.0-20201214125552-e615e336eb49
 	github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7
-	github.com/operator-framework/operator-sdk v0.19.4
+	github.com/operator-framework/operator-lib v0.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.45.0
@@ -51,10 +49,11 @@ require (
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/crypto v0.0.0-20201002170205-7f63de1d35b0
 	golang.org/x/mod v0.3.0
-	k8s.io/api v0.20.0
-	k8s.io/apimachinery v0.20.0
+	golang.org/x/tools v0.0.0-20201014231627-1610a49f37af // indirect
+	k8s.io/api v0.20.1
+	k8s.io/apimachinery v0.20.1
 	k8s.io/client-go v12.0.0+incompatible
 	sigs.k8s.io/cluster-api-provider-aws v0.0.0-00010101000000-000000000000
 	sigs.k8s.io/cluster-api-provider-azure v0.0.0-00010101000000-000000000000
-	sigs.k8s.io/controller-runtime v0.6.0
+	sigs.k8s.io/controller-runtime v0.8.0
 )
