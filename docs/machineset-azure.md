@@ -18,6 +18,8 @@ oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
       --sku 2019-Datacenter-with-Containers \
       --query "[?contains(version, '17763.1457.2009030514')]"
 ```
+This is to work around Windows containers behind a Kubernetes load balancer
+becoming unreachable [issue](https://github.com/microsoft/Windows-Containers/issues/78).
 
 Please note that on Azure, Windows Machine names cannot be more than 15 characters long.
 The MachineSet name can therefore not be more than 9 characters long, due to the way Machine names are generated from it.

@@ -1,5 +1,9 @@
 # vSphere pre-requisites
 
+The vSphere cluster must be configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
+with a custom VXLAN port to work around the pod-to-pod connectivity between
+hosts [issue](https://docs.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems#pod-to-pod-connectivity-between-hosts-is-broken-on-my-kubernetes-cluster-running-on-vsphere).
+
 In order to use the Windows MachineConfig Operator to successfully create
 a Windows node, you will first need to create a Windows "golden image"
 VM. These steps are an overview of the required configuration of the
@@ -7,8 +11,9 @@ golden image.
 
 ## vSphere Windows VM golden image creation
 * Create the VM from an updated version of Windows Server 1909 VM image
-which includes patch
-[KB4565351](https://support.microsoft.com/en-us/help/4565351/windows-10-update-kb4565351)
+  that includes the patch [KB4565351](https://support.microsoft.com/en-us/help/4565351/windows-10-update-kb4565351).
+  This is required to get the OS feature that allows setting the VXLAN UDP port.
+  Please note that this patch is not available for `Windows Server 2019`.
 * Configure SSH on the VM:
   * You can install SSH on the Windows VM by using the example
   [powershell script](powershell.ps1), or by following the
@@ -60,7 +65,7 @@ the case of Linux nodes, coreDNS is running
 on every node which helps in resolving the internal API server URL. The
 external API endpoint should have been
 created as part of the
-[cluster install](https://docs.openshift.com/container-platform/4.5/installing/installing_vsphere/installing-vsphere-installer-provisioned.html).
+[cluster install](https://docs.openshift.com/container-platform/4.7/installing/installing_vsphere/installing-vsphere-installer-provisioned.html).
 
 An example to automate the VM golden image creation can be found
 [here](vsphere_ci/README.md)

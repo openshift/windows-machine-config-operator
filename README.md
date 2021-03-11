@@ -58,8 +58,12 @@ The following template variables need to be replaced as follows with values from
 * *\<vCenter Datastore Name\>*: datastore name
 * *\<vCenter Server FQDN/IP\>*: IP address or FQDN of the vCenter server
 
-Please note that on vSphere, Windows Machine names cannot be more than 15 characters long. The MachineSet name therefore
-cannot be more than 9 characters long, due to the way Machine names are generated from it.
+*IMPORTANT*:
+- The template used in the MachineSet must be a Windows Server 1909
+  image as described in [vSphere prerequisites](docs/vsphere-prerequisites.md).
+- On vSphere, Windows Machine names cannot be more than 15 characters long. The
+  MachineSet name, therefore, cannot be more than 9 characters long, due to the
+  way Machine names are generated from it.
 ```yaml
 apiVersion: machine.openshift.io/v1beta1
 kind: MachineSet
