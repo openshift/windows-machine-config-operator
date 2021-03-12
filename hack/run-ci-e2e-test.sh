@@ -13,7 +13,7 @@ WMCO_PATH_OPTION=""
 export CGO_ENABLED=0
 
 get_WMCO_logs() {
-  oc logs -l name=windows-machine-config-operator -n openshift-windows-machine-config-operator --tail=-1
+  oc logs -l name=windows-machine-config-operator -n openshift-windows-machine-config-operator --tail=-1 >> "$ARTIFACT_DIR"/wmco.log
 }
 
 # This function runs operator-sdk test with certain go test arguments
@@ -115,18 +115,22 @@ done
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
 
 # Test that the operator is running when the private key secret is not present
+printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
 go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the creation tests of the Windows VMs
+printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
 go test ./test/e2e/... -run=TestWMCO/create -v -timeout=120m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 # Get logs for the creation tests
-printf "\n####### WMCO logs for creation tests #######\n"
+printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
 get_WMCO_logs
 
 # Run the upgrade tests and skip deletion of the Windows VMs
+printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
 go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the reconfiguration test
+printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
 go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
@@ -134,13 +138,13 @@ go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args --node-co
 if ! $SKIP_NODE_DELETION; then
   go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args --private-key-path=$KUBE_SSH_KEY_PATH
   # Get logs on success before cleanup
-  printf "\n####### WMCO logs for upgrade and deletion tests #######\n"
+  printf "\n####### WMCO logs for upgrade and deletion tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
   get_WMCO_logs
   # Cleanup the operator resources
   cleanup_WMCO $OSDK
 else
   # Get logs on success
-  printf "\n####### WMCO logs for upgrade tests #######\n"
+  printf "\n####### WMCO logs for upgrade tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
   get_WMCO_logs
 fi
 
