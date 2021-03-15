@@ -49,6 +49,34 @@ spec:
           hostPrefix: 23
 status: {}
 ```
+The above configuration is recommended for AWS and Azure clusters.
+
+For vSphere clusters, you must add the `hybridOverlayVXLANPort` option to work around the pod-to-pod connectivity
+between hosts [issue](https://docs.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems#pod-to-pod-connectivity-between-hosts-is-broken-on-my-kubernetes-cluster-running-on-vsphere):
+```yml
+apiVersion: operator.openshift.io/v1
+kind: Network
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec:
+  clusterNetwork:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  externalIP:
+    policy: {}
+  serviceNetwork:
+    - 172.30.0.0/16
+  defaultNetwork:
+    type: OVNKubernetes
+    ovnKubernetesConfig:
+      hybridOverlayConfig:
+        hybridClusterNetwork:
+          - cidr: 10.132.0.0/14
+            hostPrefix: 23
+        hybridOverlayVXLANPort: 9898
+status: {}
+```
 
 **Note:** The `hybridClusterNetwork` CIDR cannot overlap with the `clusterNetwork` CIDR.
 

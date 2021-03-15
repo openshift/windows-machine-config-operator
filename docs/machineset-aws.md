@@ -1,7 +1,10 @@
 # Creating an AWS Windows MachineSet
 
-_\<windows_container_ami\>_ should be replaced with the AMI ID of a Windows image with a container run-time installed. 
- You must use Windows Server 2019 with a version 10.0.17763.1457 or earlier.
+_\<windows_container_ami\>_ should be replaced with the AMI ID of a Windows
+image with the Docker container run-time installed. You must use Windows Server
+2019 with a version 10.0.17763.1457 or earlier to work around Windows containers
+behind a Kubernetes load balancer becoming unreachable
+[issue](https://github.com/microsoft/Windows-Containers/issues/78).
                                                                            
 _\<infrastructureID\>_ should be replaced with the output of:
 ```shell script
