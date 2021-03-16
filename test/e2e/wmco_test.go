@@ -6,9 +6,6 @@ import (
 	"testing"
 	"time"
 
-	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
-	framework "github.com/operator-framework/operator-sdk/pkg/test"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -25,14 +22,6 @@ var (
 
 // TestWMCO sets up the testing suite for WMCO.
 func TestWMCO(t *testing.T) {
-	if err := setupWMCOResources(); err != nil {
-		t.Fatalf("%v", err)
-	}
-
-	// We've to update the global context struct here as the operator-sdk's framework has coupled flag
-	// parsing along with test suite execution.
-	// Reference:
-	// https://github.com/operator-framework/operator-sdk/blob/b448429687fd7cb2343d022814ed70c9d264612b/pkg/test/main_entry.go#L51
 	gc.numberOfNodes = int32(numberOfNodes)
 	require.NotEmpty(t, privateKeyPath, "private-key-path is not set")
 	gc.privateKeyPath = privateKeyPath
@@ -51,21 +40,11 @@ func TestWMCO(t *testing.T) {
 	t.Run("destroy", deletionTestSuite)
 }
 
-// setupWMCO setups the resources needed to run WMCO tests
-func setupWMCOResources() error {
-	// Register the Machine API to create machine objects from framework's client
-	err := framework.AddToFrameworkScheme(mapi.AddToScheme, &mapi.MachineSetList{})
-	if err != nil {
-		return errors.Wrap(err, "failed adding machine api scheme")
-	}
-	return nil
-}
-
 // testOperatorDeployed tests that the operator pod is running
 func testOperatorDeployed(t *testing.T) {
-	testCtx, err := NewTestContext(t)
+	testCtx, err := NewTestContext()
 	require.NoError(t, err)
-	deployment, err := testCtx.kubeclient.AppsV1().Deployments(testCtx.namespace).Get(context.TODO(),
+	deployment, err := testCtx.client.K8s.AppsV1().Deployments(testCtx.namespace).Get(context.TODO(),
 		"windows-machine-config-operator", meta.GetOptions{})
 	require.NoError(t, err, "could not get WMCO deployment")
 	require.NotZerof(t, deployment.Status.AvailableReplicas, "WMCO deployment has no available replicas: %v", deployment)
