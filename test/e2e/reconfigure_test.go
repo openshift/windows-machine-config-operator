@@ -20,7 +20,7 @@ import (
 // was almost completely configured, an error occurred, and the Machine is requeued. This is a scenario that should be
 // expected to be ran into often enough, for reasons such as network instability. For that reason this test is warranted.
 func reconfigurationTest(t *testing.T) {
-	testCtx, err := NewTestContext(t)
+	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
 	// Test is platform agnostic so is not needed to be run for every supported platform.
@@ -28,7 +28,7 @@ func reconfigurationTest(t *testing.T) {
 		t.Skipf("Skipping for %s", testCtx.CloudProvider.GetType())
 	}
 
-	nodes, err := testCtx.kubeclient.CoreV1().Nodes().List(context.TODO(),
+	nodes, err := testCtx.client.K8s.CoreV1().Nodes().List(context.TODO(),
 		metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
 	require.NoError(t, err)
 
@@ -36,7 +36,7 @@ func reconfigurationTest(t *testing.T) {
 	// Forward slash within a path is escaped as '~1'
 	escapedVersionAnnotation := strings.Replace(nc.VersionAnnotation, "/", "~1", -1)
 	patchData := fmt.Sprintf("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/%s\"}]", escapedVersionAnnotation)
-	_, err = testCtx.kubeclient.CoreV1().Nodes().Patch(context.TODO(), nodes.Items[0].Name, types.JSONPatchType, []byte(patchData), metav1.PatchOptions{})
+	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), nodes.Items[0].Name, types.JSONPatchType, []byte(patchData), metav1.PatchOptions{})
 	require.NoError(t, err)
 
 	// The Windows node should eventually be returned to the state we expect it to be in
