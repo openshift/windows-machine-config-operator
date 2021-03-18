@@ -120,10 +120,14 @@ go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secre
 
 # Run the creation tests of the Windows VMs
 printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/create -v -timeout=120m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 # Get logs for the creation tests
 printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
 get_WMCO_logs
+
+# Run the network tests
+printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
+go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the upgrade tests and skip deletion of the Windows VMs
 printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
