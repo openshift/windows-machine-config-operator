@@ -1,4 +1,4 @@
-package windowsmachine
+package controllers
 
 import (
 	"fmt"
