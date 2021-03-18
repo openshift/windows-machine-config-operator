@@ -17,7 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	"github.com/openshift/windows-machine-config-operator/controllers/windowsmachine"
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
@@ -111,7 +111,7 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string) er
 	machineCreationTimeLimit := time.Minute * 5
 	return wait.Poll(retryInterval, machineCreationTimeLimit, func() (done bool, err error) {
 		machines, err := tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), metav1.ListOptions{
-			LabelSelector: windowsmachine.MachineOSLabel + "=Windows"})
+			LabelSelector: controllers.MachineOSLabel + "=Windows"})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				log.Printf("waiting for %d Windows Machines", machineCount)

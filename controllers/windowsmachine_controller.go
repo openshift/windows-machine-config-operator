@@ -1,4 +1,4 @@
-package windowsmachine
+package controllers
 
 import (
 	"context"
@@ -39,8 +39,8 @@ import (
 )
 
 const (
-	// ControllerName is the name of the WindowsMachine controller
-	ControllerName = "windowsmachine-controller"
+	// WindowsMachineControllerName is the name of the WindowsMachine controller
+	WindowsMachineControllerName = "windowsmachine-controller"
 	// maxUnhealthyCount is the maximum number of nodes that are not ready to serve at a given time.
 	// TODO: https://issues.redhat.com/browse/WINC-524
 	maxUnhealthyCount = 1
@@ -48,18 +48,18 @@ const (
 	MachineOSLabel = "machine.openshift.io/os-id"
 )
 
-// Add creates a new WindowsMachine Controller and adds it to the Manager. The Manager will set fields on the Controller
+// AddWindowsMachineController creates a new WindowsMachine Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and start it when the Manager is Started.
-func Add(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) error {
-	reconciler, err := newReconciler(mgr, clusterConfig, watchNamespace)
+func AddWindowsMachineController(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) error {
+	reconciler, err := newWindowsMachineReconciler(mgr, clusterConfig, watchNamespace)
 	if err != nil {
-		return errors.Wrapf(err, "could not create %s reconciler", ControllerName)
+		return errors.Wrapf(err, "could not create %s reconciler", WindowsMachineControllerName)
 	}
 	return add(mgr, reconciler)
 }
 
-// newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) (reconcile.Reconciler, error) {
+// newWindowsMachineReconciler returns a new reconcile.Reconciler
+func newWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) (reconcile.Reconciler, error) {
 	// The default client serves read requests from the cache which
 	// could be stale and result in a get call to return an older version
 	// of the object. Hence we are using a non-default-client referenced
@@ -91,13 +91,13 @@ func newReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNames
 	}
 
 	return &ReconcileWindowsMachine{client: client,
-			log:                  logf.Log.WithName(ControllerName),
+			log:                  logf.Log.WithName(WindowsMachineControllerName),
 			scheme:               mgr.GetScheme(),
 			k8sclientset:         clientset,
 			clusterServiceCIDR:   serviceCIDR,
 			vxlanPort:            clusterConfig.Network().VXLANPort(),
 			platform:             clusterConfig.Platform(),
-			recorder:             mgr.GetEventRecorderFor(ControllerName),
+			recorder:             mgr.GetEventRecorderFor(WindowsMachineControllerName),
 			watchNamespace:       watchNamespace,
 			prometheusNodeConfig: pc,
 		},
@@ -107,9 +107,9 @@ func newReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNames
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
-	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r})
+	c, err := controller.New(WindowsMachineControllerName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
-		return errors.Wrapf(err, "could not create %s", ControllerName)
+		return errors.Wrapf(err, "could not create %s", WindowsMachineControllerName)
 	}
 	// Cast the Reconciler as ReconcileWindowsMachine in order to properly log Machines that were filtered out by
 	// the predicate. This is temporary and will no longer be needed once the bump to Operator SDK 1.X occurs.
@@ -176,7 +176,7 @@ type nodeToMachineMapper struct {
 
 // newNodeToMachineMapper returns a pointer to a new nodeToMachineMapper
 func newNodeToMachineMapper(client client.Client) *nodeToMachineMapper {
-	return &nodeToMachineMapper{client: client, log: logf.Log.WithName(ControllerName)}
+	return &nodeToMachineMapper{client: client, log: logf.Log.WithName(WindowsMachineControllerName)}
 }
 
 // Map maps Windows nodes to machines
