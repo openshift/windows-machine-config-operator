@@ -51,7 +51,7 @@ COPY vendor vendor
 COPY .gitignore .gitignore
 COPY Makefile Makefile
 COPY build build
-COPY cmd cmd
+COPY main.go .
 COPY controllers controllers
 COPY apis apis
 COPY hack hack
