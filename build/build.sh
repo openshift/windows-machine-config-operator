@@ -15,7 +15,6 @@ if [[ -z "$OUTPUT_DIR" ]]; then
 fi
 
 PACKAGE="github.com/openshift/windows-machine-config-operator"
-MAIN_PACKAGE="${PACKAGE}/cmd/manager"
 BIN_NAME="windows-machine-config-operator"
 BIN_DIR="${OUTPUT_DIR}/bin"
 
@@ -28,4 +27,4 @@ mkdir -p "${BIN_DIR}"
 goflags=${GOFLAGS:-}
 
 
-CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build ${GOFLAGS} -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${MAIN_PACKAGE}
+CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build ${GOFLAGS} -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${PACKAGE}
