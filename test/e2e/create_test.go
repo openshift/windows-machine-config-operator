@@ -57,7 +57,7 @@ func testWindowsNodeCreation(t *testing.T) {
 		ms, err := testCtx.createWindowsMachineSet(1, false)
 		require.NoError(t, err, "failed to create Windows MachineSet")
 		defer testCtx.deleteMachineSet(ms)
-		err = testCtx.waitForWindowsNodes(1, true, false, false)
+		err = testCtx.waitForWindowsNodes(1, true, true, false)
 		assert.Error(t, err, "Windows node creation failed")
 	})
 
@@ -213,6 +213,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 			for _, annotation := range annotations {
 				_, found := node.Annotations[annotation]
 				if !found {
+					log.Printf("node %s does not have annotation: %s", node.GetName(), annotation)
 					return false, nil
 				}
 			}
@@ -223,12 +224,14 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 					return false, nil
 				}
 				if node.Annotations[nodeconfig.VersionAnnotation] != operatorVersion {
+					log.Printf("node %s has mismatched version annotation %s. expected: %s", node.GetName(),
+						node.Annotations[nodeconfig.VersionAnnotation], operatorVersion)
 					return false, nil
 				}
 			}
 			if node.Annotations[nodeconfig.PubKeyHashAnnotation] != pubKeyAnnotation {
-				log.Printf("node %s has unexpected pubkey annotation value: %s", node.GetName(),
-					node.Annotations[nodeconfig.PubKeyHashAnnotation])
+				log.Printf("node %s has mismatched pubkey annotation value %s expected: %s", node.GetName(),
+					node.Annotations[nodeconfig.PubKeyHashAnnotation], pubKeyAnnotation)
 				return false, nil
 			}
 		}
