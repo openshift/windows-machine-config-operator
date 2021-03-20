@@ -3,21 +3,20 @@ package metrics
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
-	"github.com/operator-framework/operator-sdk/pkg/metrics"
 	"github.com/pkg/errors"
 	monclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	k8sclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
@@ -26,8 +25,6 @@ var (
 	log = logf.Log.WithName("metrics")
 	// metricsEnabled specifies if metrics are enabled in the current cluster
 	metricsEnabled = true
-	// windowsMetricsResource is the name of an object created for Windows metrics
-	windowsMetricsResource = ""
 )
 
 const (
@@ -37,6 +34,9 @@ const (
 	Host = "0.0.0.0"
 	// Port is the port number on which windows-exporter is exposed.
 	Port int32 = 9182
+	// WindowsMetricsResource is the name for objects created for Prometheus monitoring
+	// by current operator version. Its name is defined through the bundle manifests
+	WindowsMetricsResource = "windows-exporter"
 )
 
 // PrometheusNodeConfig holds the information required to configure Prometheus, so that it can scrape metrics from the
@@ -46,6 +46,18 @@ type PrometheusNodeConfig struct {
 	k8sclientset *kubernetes.Clientset
 	// namespace is the namespace in which metrics endpoints object is created
 	namespace string
+}
+
+// Config holds the information required to interact with metrics objects
+type Config struct {
+	// a handle that allows us to interact with the Kubernetes API.
+	*kubernetes.Clientset
+	// a handle that allows us to interact with the Monitoring API.
+	*monclient.MonitoringV1Client
+	// namespace is the namespace in which metrics objects are created
+	namespace string
+	// recorder to generate events
+	recorder record.EventRecorder
 }
 
 // patchEndpoint contains information regarding patching metrics Endpoint
@@ -71,74 +83,21 @@ func NewPrometheusNodeConfig(clientset *kubernetes.Clientset) (*PrometheusNodeCo
 	}, err
 }
 
-// Add will create the Services and Service Monitors that allows the operator to export the metrics by using
-// the Prometheus operator
-func Add(ctx context.Context, cfg *rest.Config, namespace string) error {
-	// Add to the below struct any other metrics ports you want to expose.
-	servicePorts := []v1.ServicePort{
-		{Port: Port, Name: PortName, Protocol: v1.ProtocolTCP, TargetPort: intstr.IntOrString{Type: intstr.Int, IntVal: Port}},
+// NewConfig creates a new instance for Config  to be used by the caller.
+func NewConfig(mgr manager.Manager, cfg *rest.Config, namespace string) (*Config, error) {
+	if cfg == nil {
+		return nil, errors.New("config should not be nil")
 	}
-
-	// Create Service object to expose the metrics port(s).
-	service, err := metrics.CreateMetricsService(ctx, cfg, servicePorts)
-	if err != nil {
-		return errors.Wrap(err, "could not create metrics Service")
-	}
-
-	// the name for the metrics resources is set during creation of metrics service and is equivalent to the service name
-	windowsMetricsResource = service.GetName()
-
-	// Create a monitoring client to interact with the ServiceMonitor object
-	mclient, err := monclient.NewForConfig(cfg)
-	if err != nil {
-		return errors.Wrap(err, "could not create monitoring client")
-	}
-
-	// In the case of an operator restart, a previous SM object will be deleted and a new one will
-	// be created. We are deleting to ensure that the SM always exists with the correct spec. Otherwise,
-	// metrics may exhibit unexpected behavior if created by a previous version of WMCO.
-	err = mclient.ServiceMonitors(namespace).Delete(context.TODO(), windowsMetricsResource, metav1.DeleteOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		return errors.Wrap(err, "could not delete existing ServiceMonitor object")
-	}
-
-	// CreateServiceMonitors will automatically create the prometheus-operator ServiceMonitor resources
-	// necessary to configure Prometheus to scrape metrics from this operator.
-	services := []*v1.Service{service}
-	_, err = metrics.CreateServiceMonitors(cfg, namespace, services)
-	if err != nil {
-		log.Error(err, "could not create ServiceMonitor object")
-		// If this operator is deployed to a cluster without the prometheus-operator running, it will return
-		// ErrServiceMonitorNotPresent, which can be used to safely skip ServiceMonitor creation.
-		if err == metrics.ErrServiceMonitorNotPresent {
-			metricsEnabled = false
-			return errors.Wrap(err, "install prometheus-operator in your cluster to create ServiceMonitor objects")
-
-		}
-	}
-
-	// The ServiceMonitor created by the operator-sdk metrics package doesn't have fields required to display
-	// node graphs for Windows. Update the Service monitor with the required fields.
-	err = updateServiceMonitors(cfg, namespace)
-	if err != nil {
-		return errors.Wrap(err, "error updating service monitor")
-	}
-
 	oclient, err := k8sclient.NewForConfig(cfg)
 	if err != nil {
-		return errors.Wrap(err, "could not create config clientset")
+		return nil, errors.Wrap(err, "error creating config client")
 	}
-	// When a selector is present in a headless service i.e. spec.ClusterIP=None, Kubernetes manages the
-	// list of endpoints reverting all the changes made by the operator. Remove selector from Metrics Service to avoid
-	// reverting changes in the Endpoints object.
-	patchData := fmt.Sprintf(`{"spec":{"selector": null }}`)
-	service, err = oclient.CoreV1().Services(namespace).Patch(ctx, service.Name, types.MergePatchType,
-		[]byte(patchData), metav1.PatchOptions{})
+	mclient, err := monclient.NewForConfig(cfg)
 	if err != nil {
-		return errors.Wrap(err, "could not remove selector from metrics service")
+		return nil, errors.Wrap(err, "error creating monitoring client")
 	}
-
-	return nil
+	return &Config{oclient, mclient, namespace,
+		mgr.GetEventRecorderFor("metrics")}, nil
 }
 
 // syncMetricsEndpoint updates the endpoint object with the new list of IP addresses from the Windows nodes and the
@@ -171,7 +130,7 @@ func (pc *PrometheusNodeConfig) syncMetricsEndpoint(nodeEndpointAdressess []v1.E
 	}
 
 	_, err = pc.k8sclientset.CoreV1().Endpoints(pc.namespace).
-		Patch(context.TODO(), windowsMetricsResource, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
+		Patch(context.TODO(), WindowsMetricsResource, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
 	return errors.Wrap(err, "unable to sync metrics endpoints")
 }
 
@@ -191,9 +150,9 @@ func (pc *PrometheusNodeConfig) Configure() error {
 
 	// get Metrics Endpoints object
 	endpoints, err := pc.k8sclientset.CoreV1().Endpoints(pc.namespace).Get(context.TODO(),
-		windowsMetricsResource, metav1.GetOptions{})
+		WindowsMetricsResource, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "could not get metrics endpoints %v", windowsMetricsResource)
+		return errors.Wrapf(err, "could not get metrics endpoints %v", WindowsMetricsResource)
 	}
 
 	if !isEndpointsValid(nodes, endpoints) {
@@ -204,7 +163,7 @@ func (pc *PrometheusNodeConfig) Configure() error {
 			return errors.Wrap(err, "error updating endpoints object with list of endpoint addresses")
 		}
 	}
-	log.Info("Prometheus configured", "endpoints", windowsMetricsResource, "port", Port, "name", PortName)
+	log.Info("Prometheus configured", "endpoints", WindowsMetricsResource, "port", Port, "name", PortName)
 	return nil
 }
 
@@ -256,25 +215,111 @@ func isEndpointsValid(nodes *v1.NodeList, endpoints *v1.Endpoints) bool {
 	return true
 }
 
-// updateServiceMonitors patches the metrics Service Monitor to include required fields to display node graphs on the
-// OpenShift console. Console graph queries require metrics endpoint target name to be node name, however
-// windows_exporter returns node IP. We replace the target name by adding `replace` action field to the ServiceMonitor
-// object that replaces node IP to node name as the metrics endpoint target.
-func updateServiceMonitors(cfg *rest.Config, namespace string) error {
-
-	patchData := fmt.Sprintf("[{\"op\": \"replace\", \"path\": \"/spec/endpoints/0\", "+
-		"\"value\":{\"path\": \"/%s\",\"port\": \"%s\",\"relabelings\": [{\"action\": \"replace\", \"regex\": \"(.*)\", "+
-		"\"replacement\": \"$1\", \"sourceLabels\": [\"__meta_kubernetes_endpoint_address_target_name\"],"+
-		"\"targetLabel\": \"instance\"}]}}]", PortName, PortName)
-
-	mclient, err := monclient.NewForConfig(cfg)
+// Configure takes care of all the required configuration steps
+// for Prometheus monitoring like validating monitoring label
+// and creating metrics Endpoints object.
+func (c *Config) Configure(ctx context.Context) error {
+	// validate if cluster monitoring is enabled in the operator namespace
+	enabled, err := c.validate(ctx)
 	if err != nil {
-		return errors.Wrap(err, "error creating monitoring client")
+		return errors.Wrap(err, "error validating cluster monitoring label")
 	}
-	_, err = mclient.ServiceMonitors(namespace).Patch(context.TODO(), windowsMetricsResource, types.JSONPatchType, []byte(patchData),
-		metav1.PatchOptions{})
+	// Create Metrics Endpoint object only if monitoring is enabled
+	if !enabled {
+		return nil
+	}
+	// In the case of an operator restart, a previous Endpoint object will be deleted and a new one will
+	// be created to ensure we have a correct spec.
+	err = c.CoreV1().Endpoints(c.namespace).Delete(ctx, WindowsMetricsResource, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return errors.Wrap(err, "error deleting existing metrics Endpoint")
+	}
+	if err := c.createEndpoint(); err != nil {
+		return errors.Wrap(err, "error creating metrics Endpoint")
+	}
+	return nil
+}
+
+// validate will verify if cluster monitoring is enabled in the operator namespace.
+// If the label is not present, it will log and send warning events to the user.
+func (c *Config) validate(ctx context.Context) (bool, error) {
+	// validate if metrics label is added to namespace
+	wmcoNamespace, err := c.CoreV1().Namespaces().Get(ctx, c.namespace, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrap(err, "unable to patch service monitor")
+		return false, errors.Wrap(err, "error getting operator namespace")
+	}
+	if wmcoNamespace.Labels["openshift.io/cluster-monitoring"] != "true" {
+		metricsEnabled = false
+		c.recorder.Eventf(wmcoNamespace, v1.EventTypeWarning, "labelValidationFailed",
+			"Cluster monitoring openshift.io/cluster-monitoring=true label is not enabled in %s namespace", c.namespace)
+		return false, nil
+	}
+	return true, nil
+}
+
+// RemoveStaleResources deletes stale resources that could be left behind during the
+// upgrade process due to the renaming of resources between current and previous operator version
+func (c *Config) RemoveStaleResources(ctx context.Context) {
+	wmcoNamespace, err := c.CoreV1().Namespaces().Get(ctx, c.namespace, metav1.GetOptions{})
+	if err != nil {
+		log.Error(err, "error getting operator namespace")
+	}
+
+	operatorName, err := k8sutil.GetOperatorName()
+	if err != nil {
+		log.Error(err, "error getting operator name")
+	}
+
+	// staleResourceName is the metrics object name created for Prometheus monitoring by previous operator versions
+	staleResourceName := operatorName + "-metrics"
+
+	// remove stale service objects
+	err = c.CoreV1().Services(c.namespace).Delete(ctx, staleResourceName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		c.recorder.Event(wmcoNamespace, v1.EventTypeWarning, "serviceDeletionFailed",
+			"Stale service deletion failure")
+		log.Error(err, "error deleting stale service object")
+	}
+
+	// remove stale endpoint objects
+	err = c.CoreV1().Endpoints(c.namespace).Delete(ctx, staleResourceName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		c.recorder.Event(wmcoNamespace, v1.EventTypeWarning, "endpointDeletionFailed",
+			"Stale endpoint deletion failure")
+		log.Error(err, "error deleting stale endpoint object")
+	}
+
+	// remove stale serviceMonitor objects
+	err = c.ServiceMonitors(c.namespace).Delete(ctx, staleResourceName, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		c.recorder.Event(wmcoNamespace, v1.EventTypeWarning, "serviceMonitorDeletionFailed",
+			"Stale serviceMonitor deletion failure")
+		log.Error(err, "error deleting stale serviceMonitor object")
+	}
+}
+
+// createEndpoint creates an endpoint object in the operator namespace.
+// WMCO is no longer creating a service with a selector therefore no Endpoint
+// object is created and WMCO needs to create the Endpoint object.
+// We cannot create endpoints as a part of manifests deployment as
+// Endpoints resources are not currently OLM-supported for bundle creation.
+func (c *Config) createEndpoint() error {
+	// create new Endpoint
+	newEndpoint := &v1.Endpoints{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "Endpoints",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      WindowsMetricsResource,
+			Namespace: c.namespace,
+			Labels:    map[string]string{"name": WindowsMetricsResource},
+		},
+		Subsets: nil,
+	}
+	_, err := c.CoreV1().Endpoints(c.namespace).Create(context.TODO(),
+		newEndpoint, metav1.CreateOptions{})
+	if err != nil {
+		return errors.Wrap(err, "error creating metrics Endpoint")
 	}
 	return nil
 }

@@ -73,18 +73,18 @@ func testPrometheus(t *testing.T) {
 
 	// check that service exists
 	_, err = testCtx.client.K8s.CoreV1().Services("openshift-windows-machine-config-operator").Get(context.TODO(),
-		"windows-machine-config-operator-metrics", metav1.GetOptions{})
+		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// check that SM existS
 	_, err = testCtx.client.Monitoring.ServiceMonitors(testCtx.namespace).Get(context.TODO(),
-		"windows-machine-config-operator-metrics", metav1.GetOptions{})
+		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err, "error getting service monitor")
 
 	// check that endpoints exists
 	windowsEndpoints, err := testCtx.client.K8s.CoreV1().Endpoints(
 		"openshift-windows-machine-config-operator").Get(context.TODO(),
-		"windows-machine-config-operator-metrics", metav1.GetOptions{})
+		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	if gc.numberOfNodes == 0 {
