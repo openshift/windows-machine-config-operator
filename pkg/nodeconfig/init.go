@@ -17,14 +17,14 @@ type cache struct {
 	workerIgnitionEndPoint string
 }
 
-var log = logf.Log.WithName("nodeconfig")
-
 // cache has the information related to nodeConfig that should not be changed.
 var nodeConfigCache = cache{}
 
 // init populates the cache that we need for nodeConfig
 func init() {
 	var kubeAPIServerEndpoint string
+	log := logf.Log.WithName("nodeconfig").WithName("init")
+
 	kubeAPIServerEndpoint, err := discoverKubeAPIServerEndpoint()
 	if err != nil {
 		log.Error(err, "unable to find kube api server endpoint")
