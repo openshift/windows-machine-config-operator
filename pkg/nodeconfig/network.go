@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
@@ -47,11 +48,12 @@ type value struct {
 type network struct {
 	// hostSubnet holds the node host subnet value
 	hostSubnet string
+	log        logr.Logger
 }
 
 // newNetwork returns a pointer to the network struct
-func newNetwork() *network {
-	return &network{}
+func newNetwork(logger logr.Logger) *network {
+	return &network{log: logger}
 }
 
 // setHostSubnet sets the value for hostSubnet field in the network struct
@@ -67,7 +69,7 @@ func (nw *network) setHostSubnet(hostSubnet string) error {
 func (nw *network) cleanupTempConfig(configFile string) error {
 	err := os.RemoveAll(configFile)
 	if err != nil {
-		log.Error(err, "couldn't delete temp CNI config file", "configFile", configFile)
+		nw.log.Error(err, "couldn't delete temp CNI config file", "configFile", configFile)
 	}
 	return nil
 }

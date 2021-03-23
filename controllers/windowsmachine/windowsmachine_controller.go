@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	oconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/pkg/errors"
@@ -46,8 +47,6 @@ const (
 	// MachineOSLabel is the label used to identify the Windows Machines.
 	MachineOSLabel = "machine.openshift.io/os-id"
 )
-
-var log = logf.Log.WithName(ControllerName)
 
 // Add creates a new WindowsMachine Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and start it when the Manager is Started.
@@ -92,6 +91,7 @@ func newReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNames
 	}
 
 	return &ReconcileWindowsMachine{client: client,
+			log:                  logf.Log.WithName(ControllerName),
 			scheme:               mgr.GetScheme(),
 			k8sclientset:         clientset,
 			clusterServiceCIDR:   serviceCIDR,
@@ -111,15 +111,21 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	if err != nil {
 		return errors.Wrapf(err, "could not create %s", ControllerName)
 	}
+	// Cast the Reconciler as ReconcileWindowsMachine in order to properly log Machines that were filtered out by
+	// the predicate. This is temporary and will no longer be needed once the bump to Operator SDK 1.X occurs.
+	windowsMachineReconciler, ok := r.(*ReconcileWindowsMachine)
+	if !ok {
+		return fmt.Errorf("reconciler was not a Windows Machine reconciler")
+	}
 	// Watch for the Machine objects with label defined by MachineOSLabel
 	machinePredicate := predicate.Funcs{
 		// We need the create event to account for Machines that are in provisioned state but were created
 		// before WMCO started running
 		CreateFunc: func(e event.CreateEvent) bool {
-			return isValidMachine(e.Object) && isWindowsMachine(e.Meta.GetLabels())
+			return windowsMachineReconciler.isValidMachine(e.Object) && isWindowsMachine(e.Meta.GetLabels())
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return isValidMachine(e.ObjectNew) && isWindowsMachine(e.MetaNew.GetLabels())
+			return windowsMachineReconciler.isValidMachine(e.ObjectNew) && isWindowsMachine(e.MetaNew.GetLabels())
 		},
 		// ignore delete event for all Machines as WMCO does not react to node getting deleted
 		DeleteFunc: func(e event.DeleteEvent) bool {
@@ -165,11 +171,12 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 // nodeToMachineMapper fulfills the mapper interface and allows for the mapping from a node to the associated Machine
 type nodeToMachineMapper struct {
 	client client.Client
+	log    logr.Logger
 }
 
 // newNodeToMachineMapper returns a pointer to a new nodeToMachineMapper
 func newNodeToMachineMapper(client client.Client) *nodeToMachineMapper {
-	return &nodeToMachineMapper{client: client}
+	return &nodeToMachineMapper{client: client, log: logf.Log.WithName(ControllerName)}
 }
 
 // Map maps Windows nodes to machines
@@ -189,7 +196,7 @@ func (m *nodeToMachineMapper) Map(object handler.MapObject) []reconcile.Request 
 	err := m.client.List(context.TODO(), machines,
 		client.MatchingLabels(map[string]string{MachineOSLabel: "Windows"}))
 	if err != nil {
-		log.Error(err, "could not get a list of machines")
+		m.log.Error(err, "could not get a list of machines")
 	}
 	for _, machine := range machines.Items {
 		ok := machine.Status.Phase != nil &&
@@ -222,33 +229,33 @@ func isWindowsMachine(labels map[string]string) bool {
 	return false
 }
 
-func isValidMachine(obj runtime.Object) bool {
+func (r *ReconcileWindowsMachine) isValidMachine(obj runtime.Object) bool {
 	machine := &mapi.Machine{}
 
 	// If this function is called on an object that equals nil, return false
 	if obj == nil {
-		log.Error(errors.New("expected machine object to not equal nil"), "object", obj)
+		r.log.Error(errors.New("expected machine object to not equal nil"), "object", obj)
 		return false
 	}
 
 	// If for some reason this function is called on an object which is not a Machine, return false
 	if kind := obj.GetObjectKind().GroupVersionKind(); kind.Kind != machine.Kind {
-		log.Error(errors.New("object is not of kind machine"), "kind", kind.Kind)
+		r.log.Error(errors.New("object is not of kind machine"), "kind", kind.Kind)
 		return false
 	}
 
 	var ok bool
 	machine, ok = obj.(*mapi.Machine)
 	if !ok {
-		log.Error(errors.New("unable to typecast object to machine"), "object", obj)
+		r.log.Error(errors.New("unable to typecast object to machine"), "object", obj)
 		return false
 	}
 	if machine.Status.Phase == nil {
-		log.V(1).Info("machine object has no phase associated with it", "name", machine.Name)
+		r.log.V(1).Info("machine object has no phase associated with it", "name", machine.Name)
 		return false
 	}
 	if len(machine.Status.Addresses) == 0 {
-		log.V(1).Info("machine object has no address associated with it", "name", machine.Name)
+		r.log.V(1).Info("machine object has no address associated with it", "name", machine.Name)
 		return false
 	}
 
@@ -263,6 +270,7 @@ type ReconcileWindowsMachine struct {
 	// client is the client initialized using mgr.Client() above, is a split client
 	// that reads objects from the cache and writes to the apiserver
 	client client.Client
+	log    logr.Logger
 	// scheme is the scheme used to resolve runtime.Objects to resources
 	scheme *runtime.Scheme
 	// k8sclientset holds the kube client that we can re-use for all kube objects other than custom resources.
@@ -291,7 +299,8 @@ type ReconcileWindowsMachine struct {
 // Note: The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	log.V(1).Info("reconciling", "namespace", request.Namespace, "name", request.Name)
+	log := r.log.WithValues("windowsmachine", request.NamespacedName)
+	log.V(1).Info("reconciling")
 	// Get the private key that will be used to configure the instance
 	// Doing this before fetching the machine allows us to warn the user better about the missing private key
 	privateKey, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
@@ -349,10 +358,9 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 			// to configure the machine is out of date, the machine should be deleted
 			if node.Annotations[nodeconfig.VersionAnnotation] != version.Get() ||
 				node.Annotations[nodeconfig.PubKeyHashAnnotation] != nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
-				log.Info("deleting machine", "name", machine.GetName())
+				log.Info("deleting machine")
 				if !r.isAllowedDeletion(machine) {
-					log.Info("machine deletion restricted", "name", machine.GetName(),
-						"maxUnhealthyCount", maxUnhealthyCount)
+					log.Info("machine deletion restricted", "maxUnhealthyCount", maxUnhealthyCount)
 					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted",
 						"Machine %v deletion restricted as the maximum unhealthy machines can`t exceed %v count",
 						machine.Name, maxUnhealthyCount)
@@ -360,8 +368,7 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 				}
 				return reconcile.Result{}, r.deleteMachine(machine)
 			}
-			log.Info("machine has current version", "name", machine.GetName(),
-				"version", node.Annotations[nodeconfig.VersionAnnotation])
+			log.Info("machine has current version", "version", node.Annotations[nodeconfig.VersionAnnotation])
 			// version annotation exists with a valid value, node is fully configured.
 			// configure Prometheus when we have already configured Windows Nodes. This is required to update Endpoints object if
 			// it gets reverted when the operator pod restarts.
@@ -415,7 +422,7 @@ func (r *ReconcileWindowsMachine) Reconcile(request reconcile.Request) (reconcil
 		return reconcile.Result{}, errors.Errorf("unable to get instance ID from provider ID for machine %s", machine.Name)
 	}
 
-	log.Info("processing", "namespace", request.Namespace, "name", request.Name)
+	log.Info("processing")
 	// Make the Machine a Windows Worker node
 	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name, r.platform); err != nil {
 		var authErr *windows.AuthErr
@@ -452,7 +459,7 @@ func (r *ReconcileWindowsMachine) deleteMachine(machine *mapi.Machine) error {
 			"Machine %v deletion failed: %v", machine.Name, err)
 		return err
 	}
-	log.Info("machine has been remediated by deletion", "name", machine.GetName())
+	r.log.Info("machine has been remediated by deletion", "name", machine.GetName())
 	r.recorder.Eventf(machine, core.EventTypeNormal, "MachineDeleted",
 		"Machine %v has been remediated by deleting the Machine object", machine.Name)
 	return nil
@@ -470,7 +477,7 @@ func (r *ReconcileWindowsMachine) addWorkerNode(ipAddress, instanceID, machineNa
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
 	}
 
-	log.Info("Windows VM has been configured as a worker node", "ID", nc.ID())
+	r.log.Info("Windows VM has been configured as a worker node", "ID", nc.ID())
 	return nil
 }
 
@@ -535,7 +542,7 @@ func (r *ReconcileWindowsMachine) isAllowedDeletion(machine *mapi.Machine) bool 
 	}
 
 	unhealthyMachineCount := totalWindowsMachineCount - int32(totalHealthy)
-	log.Info("unhealthy machine count for machineset", "name", machinesetName, "total", totalWindowsMachineCount,
+	r.log.Info("unhealthy machine count for machineset", "name", machinesetName, "total", totalWindowsMachineCount,
 		"unhealthy", unhealthyMachineCount)
 
 	return unhealthyMachineCount < maxUnhealthyCount

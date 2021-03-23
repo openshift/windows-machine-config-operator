@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,8 +35,6 @@ const (
 	userDataNamespace = "openshift-machine-api"
 )
 
-var log = logf.Log.WithName(ControllerName)
-
 // Add creates a new Secret Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
 func Add(mgr manager.Manager, _ cluster.Config, watchNamespace string) error {
@@ -58,7 +57,8 @@ func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 		return nil, err
 	}
 
-	reconciler := &ReconcileSecret{client: client, scheme: mgr.GetScheme()}
+	log := logf.Log.WithName(ControllerName)
+	reconciler := &ReconcileSecret{client: client, scheme: mgr.GetScheme(), log: log}
 	if err = reconciler.removeInvalidAnnotationsFromLinuxNodes(); err != nil {
 		log.Error(err, "unable to clean up annotations on Linux nodes")
 	}
@@ -77,6 +77,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler, watchNamespace string) err
 	// Check that the private key exists, if it doesn't, log a warning
 	_, err = secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: watchNamespace, Name: secrets.PrivateKeySecret}, mgr.GetClient())
 	if err != nil {
+		log := logf.Log.WithName(ControllerName)
 		log.Error(err, "Unable to retrieve private key, please ensure it is created")
 	}
 
@@ -133,6 +134,7 @@ type ReconcileSecret struct {
 	// that reads objects from the cache and writes to the apiserver
 	client client.Client
 	scheme *runtime.Scheme
+	log    logr.Logger
 }
 
 // Reconcile reads that state of the cluster for a Secret object and makes changes based on the state read
@@ -140,7 +142,7 @@ type ReconcileSecret struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	log = log.WithValues("namespace", request.Namespace, "name", request.Name)
+	log := r.log.WithValues("secret", request.NamespacedName)
 
 	privateKey, err := secrets.GetPrivateKey(request.NamespacedName, r.client)
 	if err != nil {
