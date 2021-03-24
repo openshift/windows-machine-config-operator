@@ -15,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -23,9 +24,12 @@ import (
 
 // testNetwork runs all the cluster and node network tests
 func testNetwork(t *testing.T) {
+	// Populate the global test context
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
-	require.NoError(t, testCtx.createNamespace(testCtx.workloadNamespace), "error creating test namespace")
+	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, false)
+	assert.NoError(t, err, "timed out waiting for Windows node")
+
 	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
 }
@@ -282,14 +286,24 @@ func getAffinityForNode(node *v1.Node) (*v1.Affinity, error) {
 	}, nil
 }
 
-// createNamespace creates a namespace with the provided name
-func (tc *testContext) createNamespace(name string) error {
+// ensureNamespace checks if a namespace with the provided name exists and creates one if it does not
+func (tc *testContext) ensureNamespace(name string) error {
+	// Check if the namespace exists
+	_, err := tc.client.K8s.CoreV1().Namespaces().Get(context.TODO(), name, metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	if err == nil {
+		return nil
+	}
+
+	// The namespace does not exists, so lets create it
 	ns := &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
 	}
-	_, err := tc.client.K8s.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{})
+	_, err = tc.client.K8s.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{})
 	return err
 }
 

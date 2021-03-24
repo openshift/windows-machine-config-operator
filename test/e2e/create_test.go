@@ -23,17 +23,12 @@ import (
 )
 
 func creationTestSuite(t *testing.T) {
-	// The order of tests here are important. testValidateSecrets is what populates the windowsVMs slice in the gc.
-	// testNetwork needs that to check if the HNS networks have been installed. Ideally we would like to run testNetwork
-	// before testValidateSecrets and testConfigMapValidation but we cannot as the source of truth for the credentials
-	// are the secrets but they are created only after the VMs have been fully configured.
-	// Any node object related tests should be run only after testNodeCreation as that initializes the node objects in
-	// the global context.
+	// The order of tests here are important. Any node object related tests should be run only after
+	// testWindowsNodeCreation as that initializes the node objects in the global context.
 	if !t.Run("Creation", func(t *testing.T) { testWindowsNodeCreation(t) }) {
 		// No point in running the other tests if creation failed
 		return
 	}
-	t.Run("Network validation", testNetwork)
 	t.Run("Node Metadata", func(t *testing.T) { testNodeMetadata(t) })
 	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
 	t.Run("UserData validation", func(t *testing.T) { testUserData(t) })

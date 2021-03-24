@@ -31,10 +31,15 @@ func TestWMCO(t *testing.T) {
 		wmcoPath = "/usr/local/bin/windows-machine-config-operator"
 	}
 
+	testCtx, err := NewTestContext()
+	require.NoError(t, err)
+	require.NoError(t, testCtx.ensureNamespace(testCtx.workloadNamespace), "error creating test namespace")
+
 	// test that the operator can deploy without the secret already created, we can later use a secret created by the
 	// individual test suites after the operator is running
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
 	t.Run("create", creationTestSuite)
+	t.Run("network", testNetwork)
 	t.Run("upgrade", upgradeTestSuite)
 	t.Run("reconfigure", reconfigurationTest)
 	t.Run("destroy", deletionTestSuite)
