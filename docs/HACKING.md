@@ -43,6 +43,7 @@ hack/olm.sh cleanup -c "<OPERATOR_IMAGE>"
 We need to set up all the environment variables required in [Development workflow](#development-workflow) as well as: 
 ```shell script
 export OPERATOR_IMAGE=<registry url for remote WMCO image>
+export OPENSHIFT_CI=false
 ```
 Once the above variables are set, run the following script:
 ```shell script
@@ -55,13 +56,15 @@ Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
 - `-b` gives an alternative path to the WMCO binary. This option overridden in OpenShift CI.
        When building the operator locally, the WMCO binary is created as part of the operator image build process and
        can be found at `build/_output/bin/windows-machine-config-operator`, this is the default value of this option.
+- `-t` specify the test to run. All tests are run if the option is not used. The allowed options are:
+  - `all` all the tests are run
+  - `basic` creation, network and deletion tests are run
+  - `upgrade` creation, upgrade, reconfiguration and deletion tests are run
 
-       
 Example command to spin up 2 Windows nodes and retain them after test run:
 ```shell script
 hack/run-ci-e2e-test.sh -s -n 2      
 ```
-
 Please note that you do not need to run `hack/olm.sh run` before `hack/run-ci-e2e-test.sh`.
 
 ## Bundling the Windows Machine Config Operator

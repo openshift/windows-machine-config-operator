@@ -35,7 +35,8 @@ OSDK_WMCO_test() {
   fi
 }
 
-while getopts ":n:k:b:s" opt; do
+TEST="all"
+while getopts ":n:b:st:" opt; do
   case ${opt} in
     n ) # process option for the node count
       NODE_COUNT=$OPTARG
@@ -46,8 +47,15 @@ while getopts ":n:k:b:s" opt; do
     b ) # path to the WMCO binary, used for version validation
       WMCO_PATH_OPTION="-wmco-path=$OPTARG"
       ;;
+    t ) # test to run. Defaults to all. Other options are basic and upgrade.
+      TEST=$OPTARG
+      if [[ "$TEST" != "all" && "$TEST" != "basic" && "$TEST" != "upgrade" ]]; then
+        echo "Invalid -t option $TEST. Valid options are all, basic or upgrade"
+        exit 1
+      fi
+      ;;
     \? )
-      echo "Usage: $0 [-n] [-k] [-s] [-b]"
+      echo "Usage: $0 [-n] [-s] [-b] [-t]"
       exit 0
       ;;
   esac
@@ -59,7 +67,9 @@ if [ -z "$KUBE_SSH_KEY_PATH" ]; then
     return 1
 fi
 
-OSDK=$(get_operator_sdk)
+if ! [[ "$OPENSHIFT_CI" == "true" &&  "$TEST" = "upgrade" ]]; then
+  OSDK=$(get_operator_sdk)
+fi
 
 # Set default values for the flags. Without this operator-sdk flags are getting
 # polluted, i.e. if a flag is not passed or passed as empty value
@@ -88,28 +98,30 @@ OPERATOR_IMAGE=${OPERATOR_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//stabl
 
 # generate the WMCO binary if we are not running the test through CI. This binary is used to validate WMCO version
 # while running the validation test. For CI, we use different `wmcoPath` based on how we generate the container image.
-if [ -z "$OPENSHIFT_CI" ]; then
+if [[ "$OPENSHIFT_CI" != "true" ]]; then
   make build
 fi
 
 # Setup and run the operator
 # Spinning up a cluster is a long operation and operator deployment through this method has been prone to transient
 # errors. Retrying WMCO deployment allows us to save time in CI.
-retries=0
-while ! run_WMCO $OSDK
-do
-    if [[ $retries -eq 5 ]]; then
-         echo "Max retries reached, exiting"
-         # Try to get the WMCO logs if possible
-         get_WMCO_logs
-         cleanup_WMCO $OSDK
-         exit 1
-    fi
-    cleanup_WMCO $OSDK
-    echo "Failed to deploy operator, retrying"
-    sleep 5
-    retries+=1
-done
+if ! [[ "$OPENSHIFT_CI" = "true" &&  "$TEST" = "upgrade" ]]; then
+  retries=0
+  while ! run_WMCO $OSDK
+  do
+      if [[ $retries -eq 5 ]]; then
+           echo "Max retries reached, exiting"
+           # Try to get the WMCO logs if possible
+           get_WMCO_logs
+           cleanup_WMCO $OSDK
+           exit 1
+      fi
+      cleanup_WMCO $OSDK
+      echo "Failed to deploy operator, retrying"
+      sleep 5
+      retries+=1
+  done
+fi
 
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
@@ -125,27 +137,37 @@ go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args --node-count=$
 printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
 get_WMCO_logs
 
-# Run the network tests
-printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
+  # Run the network tests
+  printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+fi
 
-# Run the upgrade tests and skip deletion of the Windows VMs
-printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
+  # Run the upgrade tests and skip deletion of the Windows VMs
+  printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
-# Run the reconfiguration test
-printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  # Run the reconfiguration test
+  printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+fi
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
 if ! $SKIP_NODE_DELETION; then
   go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args --private-key-path=$KUBE_SSH_KEY_PATH
   # Get logs on success before cleanup
-  printf "\n####### WMCO logs for upgrade and deletion tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  PRINT_UPGRADE=""
+  if [[ "$TEST" = "upgrade" ]]; then
+    PRINT_UPGRADE="upgrade and"
+  fi
+  printf "\n####### WMCO logs for %s deletion tests #######\n" "$PRINT_UPGRADE" >> "$ARTIFACT_DIR"/wmco.log
   get_WMCO_logs
   # Cleanup the operator resources
-  cleanup_WMCO $OSDK
+  if ! [[ "$OPENSHIFT_CI" = "true" &&  "$TEST" = "upgrade" ]]; then
+    cleanup_WMCO $OSDK
+  fi
 else
   # Get logs on success
   printf "\n####### WMCO logs for upgrade tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
