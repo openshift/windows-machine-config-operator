@@ -12,8 +12,8 @@
 	branch = release-4.8
 [submodule "kubernetes"]
 	path = kubernetes
-	url = https://github.com/openshift/kubernetes
-	branch = release-4.8
+	url = https://github.com/soltysh/kubernetes
+	branch = rebase-1.21.0-rc.0
 [submodule "promu"]
 	path = promu
 	url = git://github.com/openshift/prometheus-promu
