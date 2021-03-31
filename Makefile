@@ -27,6 +27,10 @@ unit:
 run-ci-e2e-test:
 	hack/run-ci-e2e-test.sh
 
+.PHONY: run-ci-e2e-upgrade-test
+run-ci-e2e-upgrade-test:
+	hack/run-ci-e2e-test.sh -t upgrade
+
 .PHONY: clean
 clean:
 	rm -rf ${OUTPUT_DIR}
