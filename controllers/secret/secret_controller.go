@@ -59,6 +59,10 @@ func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 	}
 
 	reconciler := &ReconcileSecret{client: client, scheme: mgr.GetScheme()}
+	if err = reconciler.removeInvalidAnnotationsFromLinuxNodes(); err != nil {
+		log.Error(err, "unable to clean up annotations on Linux nodes")
+	}
+
 	return reconciler, nil
 }
 
@@ -180,7 +184,7 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 			return reconcile.Result{}, errors.Wrap(err, "error creating signer from private key")
 		}
 		nodes := &core.NodeList{}
-		err = r.client.List(context.TODO(), nodes, client.HasLabels{nodeconfig.WindowsOSLabel})
+		err = r.client.List(context.TODO(), nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
 		if err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
 		}
@@ -211,6 +215,28 @@ func (r *ReconcileSecret) Reconcile(request reconcile.Request) (reconcile.Result
 		// Secret updated successfully
 		return reconcile.Result{}, nil
 	}
+}
+
+// removeInvalidAnnotationsFromLinuxNodes corrects annotations applied by previous versions of WMCO.
+func (r *ReconcileSecret) removeInvalidAnnotationsFromLinuxNodes() error {
+	nodes := &core.NodeList{}
+	err := r.client.List(context.TODO(), nodes, client.MatchingLabels{core.LabelOSStable: "linux"})
+	if err != nil {
+		return errors.Wrapf(err, "error getting node list")
+	}
+	// The public key hash was accidentally added to Linux nodes in WMCO 2.0 and must be removed.
+	// The `/` in the annotation key needs to be escaped in order to not be considered a "directory" in the path.
+	escapedPubKeyAnnotation := strings.Replace(nodeconfig.PubKeyHashAnnotation, "/", "~1", -1)
+	patchData := fmt.Sprintf(`[{"op":"remove","path":"/metadata/annotations/%s"}]`, escapedPubKeyAnnotation)
+	for _, node := range nodes.Items {
+		if _, present := node.Annotations[nodeconfig.PubKeyHashAnnotation]; present == true {
+			err = r.client.Patch(context.TODO(), &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(patchData)))
+			if err != nil {
+				return errors.Wrapf(err, "error removing public key annotation from node %s", node.GetName())
+			}
+		}
+	}
+	return nil
 }
 
 // userDataMapper is a simple implementation of the Mapper interface allowing for the mapping from the userData secret
