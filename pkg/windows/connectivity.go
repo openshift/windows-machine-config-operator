@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -52,14 +53,16 @@ type sshConnectivity struct {
 	signer ssh.Signer
 	// sshClient is the client used to access the Windows VM via ssh
 	sshClient *ssh.Client
+	log       logr.Logger
 }
 
 // newSshConnectivity returns an instance of sshConnectivity
-func newSshConnectivity(username, ipAddress string, signer ssh.Signer) (connectivity, error) {
+func newSshConnectivity(username, ipAddress string, signer ssh.Signer, logger logr.Logger) (connectivity, error) {
 	c := &sshConnectivity{
 		username:  username,
 		ipAddress: ipAddress,
 		signer:    signer,
+		log:       logger,
 	}
 	if err := c.init(); err != nil {
 		return nil, errors.Wrap(err, "error instantiating SSH client")
@@ -88,7 +91,7 @@ func (c *sshConnectivity) init() error {
 		if err == nil {
 			return true, nil
 		}
-		log.V(1).Info("SSH dial", "IP Address", c.ipAddress, "error", err)
+		c.log.V(1).Info("SSH dial", "IP Address", c.ipAddress, "error", err)
 		if strings.Contains(err.Error(), "unable to authenticate") {
 			// Authentication failure is a special case that must be handled differently
 			return false, newAuthErr(err)
@@ -116,7 +119,7 @@ func (c *sshConnectivity) run(cmd string) (string, error) {
 		// io.EOF is returned if you attempt to close a session that is already closed which typically happens given
 		// that Run(), which is called by CombinedOutput(), internally closes the session.
 		if err := session.Close(); err != nil && !errors.Is(err, io.EOF) {
-			log.Error(err, "error closing SSH session")
+			c.log.Error(err, "error closing SSH session")
 		}
 	}()
 
@@ -139,7 +142,7 @@ func (c *sshConnectivity) transfer(filePath, remoteDir string) error {
 	}
 	defer func() {
 		if err := ftp.Close(); err != nil {
-			log.Error(err, "error closing FTP connection")
+			c.log.Error(err, "error closing FTP connection")
 		}
 	}()
 
@@ -149,7 +152,7 @@ func (c *sshConnectivity) transfer(filePath, remoteDir string) error {
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
-			log.Error(err, "error closing local file", "file", filePath)
+			c.log.Error(err, "error closing local file", "file", filePath)
 		}
 	}()
 
@@ -170,7 +173,7 @@ func (c *sshConnectivity) transfer(filePath, remoteDir string) error {
 
 	// Forcefully close the file so that we can execute it later in the case of binaries
 	if err := dstFile.Close(); err != nil {
-		log.Error(err, "error closing remote file", "file", remoteFile)
+		c.log.Error(err, "error closing remote file", "file", remoteFile)
 	}
 	return nil
 }
