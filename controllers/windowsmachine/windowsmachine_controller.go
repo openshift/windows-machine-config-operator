@@ -238,12 +238,6 @@ func (r *ReconcileWindowsMachine) isValidMachine(obj runtime.Object) bool {
 		return false
 	}
 
-	// If for some reason this function is called on an object which is not a Machine, return false
-	if kind := obj.GetObjectKind().GroupVersionKind(); kind.Kind != machine.Kind {
-		r.log.Error(errors.New("object is not of kind machine"), "kind", kind.Kind)
-		return false
-	}
-
 	var ok bool
 	machine, ok = obj.(*mapi.Machine)
 	if !ok {
