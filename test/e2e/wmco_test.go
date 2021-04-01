@@ -35,6 +35,10 @@ func TestWMCO(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, testCtx.ensureNamespace(testCtx.workloadNamespace), "error creating test namespace")
 
+	// When the upgrade test is run from CI, the namespace that gets created does not have the required monitoring
+	// label, so we apply that here.
+	require.NoError(t, testCtx.applyMonitoringLabelToOperatorNamespace(), "error applying monitoring label")
+
 	// test that the operator can deploy without the secret already created, we can later use a secret created by the
 	// individual test suites after the operator is running
 	t.Run("operator deployed without private key secret", testOperatorDeployed)

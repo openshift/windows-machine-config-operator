@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -255,4 +256,12 @@ func (tc *testContext) getPrometheusToken() (string, error) {
 		return "", fmt.Errorf("could not get bearer token for secret %v", secretName)
 	}
 	return string(token), nil
+}
+
+// applyMonitoringLabelToOperatorNamespace adds the "openshift.io/cluster-monitoring:"true"" label to the
+// openshift-windows-machine-config-operator namespace
+func (tc *testContext) applyMonitoringLabelToOperatorNamespace() error {
+	_, err := tc.client.K8s.CoreV1().Namespaces().Patch(context.TODO(), tc.namespace, types.MergePatchType,
+		[]byte(`{"metadata":{"labels":{"openshift.io/cluster-monitoring":"true"}}}`), metav1.PatchOptions{})
+	return err
 }
