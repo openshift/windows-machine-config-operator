@@ -258,10 +258,32 @@ func (tc *testContext) getPrometheusToken() (string, error) {
 	return string(token), nil
 }
 
-// applyMonitoringLabelToOperatorNamespace adds the "openshift.io/cluster-monitoring:"true"" label to the
-// openshift-windows-machine-config-operator namespace
-func (tc *testContext) applyMonitoringLabelToOperatorNamespace() error {
-	_, err := tc.client.K8s.CoreV1().Namespaces().Patch(context.TODO(), tc.namespace, types.MergePatchType,
-		[]byte(`{"metadata":{"labels":{"openshift.io/cluster-monitoring":"true"}}}`), metav1.PatchOptions{})
-	return err
+// ensureMonitoringIsEnabled adds the "openshift.io/cluster-monitoring:"true"" label to the
+// openshift-windows-machine-config-operator namespace if it is not present. If the label is applied, it restarts the
+// WMCO deployment so that WMCO is aware that monitoring is enabled.
+func (tc *testContext) ensureMonitoringIsEnabled() error {
+	namespace, err := tc.client.K8s.CoreV1().Namespaces().Get(context.TODO(), tc.namespace, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	monitoringLabel := "openshift.io/cluster-monitoring"
+	value, ok := namespace.GetLabels()[monitoringLabel]
+	if !ok || value != "true" {
+		if _, err = tc.client.K8s.CoreV1().Namespaces().Patch(context.TODO(), tc.namespace, types.MergePatchType,
+			[]byte(fmt.Sprintf(`{"metadata":{"labels":{"%s":"%s"}}}`, monitoringLabel, "true")),
+			metav1.PatchOptions{}); err != nil {
+			return err
+		}
+		// Scale down the WMCO deployment to 0
+		if err = tc.scaleWMCODeployment(0); err != nil {
+			return err
+		}
+		// Scale up the WMCO deployment to 1, so that WMCO is aware that monitoring is enabled
+		if err = tc.scaleWMCODeployment(1); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
