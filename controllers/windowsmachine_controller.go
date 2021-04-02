@@ -37,6 +37,12 @@ import (
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
+//+kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch;delete
+//+kubebuilder:rbac:groups=machine.openshift.io,resources=machinesets,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=*
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;
+//+kubebuilder:rbac:groups="",resources=events,verbs=*
+
 const (
 	// maxUnhealthyCount is the maximum number of nodes that are not ready to serve at a given time.
 	// TODO: https://issues.redhat.com/browse/WINC-524

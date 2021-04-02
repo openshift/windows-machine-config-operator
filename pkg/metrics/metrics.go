@@ -22,6 +22,13 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
 
+//+kubebuilder:rbac:groups="",resources=services;services/finalizers,verbs=create;get;delete
+//+kubebuilder:rbac:groups="",resources=endpoints,verbs=create;get;delete;update;patch
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=list
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;delete
+//+kubebuilder:rbac:groups="",resources=events,verbs=*
+
 var (
 	log = ctrl.Log.WithName("metrics")
 	// metricsEnabled specifies if metrics are enabled in the current cluster
