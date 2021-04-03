@@ -234,20 +234,14 @@ func (r *ReconcileWindowsMachine) isValidMachine(obj runtime.Object) bool {
 
 	// If this function is called on an object that equals nil, return false
 	if obj == nil {
-		r.log.Error(errors.New("expected machine object to not equal nil"), "object", obj)
-		return false
-	}
-
-	// If for some reason this function is called on an object which is not a Machine, return false
-	if kind := obj.GetObjectKind().GroupVersionKind(); kind.Kind != machine.Kind {
-		r.log.Error(errors.New("object is not of kind machine"), "kind", kind.Kind)
+		r.log.Error(errors.New("expected machine object to not equal nil"), "invalid Machine", "object", obj)
 		return false
 	}
 
 	var ok bool
 	machine, ok = obj.(*mapi.Machine)
 	if !ok {
-		r.log.Error(errors.New("unable to typecast object to machine"), "object", obj)
+		r.log.Error(errors.New("unable to typecast object to machine"), "invalid Machine", "object", obj)
 		return false
 	}
 	if machine.Status.Phase == nil {
