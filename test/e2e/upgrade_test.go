@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
@@ -36,11 +35,6 @@ const (
 func upgradeTestSuite(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
-
-	// Test is platform agnostic so is not needed to be run for every supported platform.
-	if testCtx.CloudProvider.GetType() != config.AWSPlatformType {
-		t.Skipf("Skipping for %s", testCtx.CloudProvider.GetType())
-	}
 
 	// test if Windows workloads are running by creating a Job that curls the workloads continuously.
 	testerJob, err := testCtx.deployWindowsWorkloadAndTester()
