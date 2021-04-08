@@ -2,6 +2,7 @@ package windows
 
 import (
 	"fmt"
+	"github.com/go-logr/logr"
 	"path/filepath"
 	"strings"
 	"time"
@@ -73,8 +74,6 @@ const (
 	// referenced: https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
 	serviceNotFound = "status 1060"
 )
-
-var log = logf.Log.WithName("windows")
 
 // filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
 var filesToTransfer map[*payload.FileInfo]string
@@ -164,6 +163,7 @@ type windows struct {
 	// TODO: Remove this once we figure out how to do this via guestInfo in vSphere
 	// 		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
 	hostName string
+	log      logr.Logger
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
@@ -181,11 +181,9 @@ func New(ipAddress, instanceID, machineName, workerIgnitionEndpoint, vxlanPort s
 		adminUser = "Administrator"
 	}
 
-	// Update the logger name with the VM's cloud ID
-	log = logf.Log.WithName(fmt.Sprintf("VM %s", instanceID))
-
+	log := logf.Log.WithName(fmt.Sprintf("VM %s", instanceID))
 	log.V(1).Info("initializing SSH connection", "user", adminUser)
-	conn, err := newSshConnectivity(adminUser, ipAddress, signer)
+	conn, err := newSshConnectivity(adminUser, ipAddress, signer, log)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instanceID)
 	}
@@ -197,6 +195,7 @@ func New(ipAddress, instanceID, machineName, workerIgnitionEndpoint, vxlanPort s
 			vxlanPort:              vxlanPort,
 			platform:               platform,
 			hostName:               machineName,
+			log:                    log,
 		},
 		nil
 }
@@ -221,12 +220,12 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 		}
 		if file.SHA256 == remoteFile.SHA256 {
 			// The file already exists with the expected content, do nothing
-			log.V(1).Info("file already exists on VM with expected content", "file", file.Path)
+			vm.log.V(1).Info("file already exists on VM with expected content", "file", file.Path)
 			return nil
 		}
 	}
 
-	log.V(1).Info("copy", "local file", file.Path, "remote dir", remoteDir)
+	vm.log.V(1).Info("copy", "local file", file.Path, "remote dir", remoteDir)
 	if err := vm.interact.transfer(file.Path, remoteDir); err != nil {
 		return errors.Wrapf(err, "unable to transfer %s to remote dir %s", file.Path, remoteDir)
 	}
@@ -250,11 +249,11 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 	if err != nil {
 		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services.
 		if !(strings.HasPrefix(cmd, serviceQueryCmd) && strings.HasSuffix(err.Error(), serviceNotFound)) {
-			log.Error(err, "error running", "cmd", cmd, "out", out)
+			vm.log.Error(err, "error running", "cmd", cmd, "out", out)
 		}
 		return out, errors.Wrapf(err, "error running %s", cmd)
 	}
-	log.V(1).Info("run", "cmd", cmd, "out", out)
+	vm.log.V(1).Info("run", "cmd", cmd, "out", out)
 	return out, nil
 }
 
@@ -280,7 +279,7 @@ func (vm *windows) ensureRequiredServicesStopped() error {
 }
 
 func (vm *windows) Configure() error {
-	log.Info("configuring")
+	vm.log.Info("configuring")
 	if err := vm.ensureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop required services")
 	}
@@ -326,7 +325,7 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 	hybridOverlayServiceArgs := "--node " + nodeName + customVxlanPortArg + " --k8s-kubeconfig c:\\k\\kubeconfig " +
 		"--windows-service " + "--logfile " + hybridOverlayLogDir + "hybrid-overlay.log\" depend= " + kubeletServiceName
 
-	log.Info("configure", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
+	vm.log.Info("configure", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
 
 	hybridOverlayService, err := newService(hybridOverlayPath, hybridOverlayServiceName, hybridOverlayServiceArgs)
 	if err != nil {
@@ -357,7 +356,7 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 		return errors.Wrap(err, "error waiting for OVN HNS networks to be created")
 	}
 
-	log.Info("configured", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
+	vm.log.Info("configured", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
 	return nil
 }
 
@@ -381,7 +380,7 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 		return errors.Wrap(err, "CNI configuration failed")
 	}
 
-	log.Info("configured kubelet for CNI", "cmd", configureCNICmd, "output", out)
+	vm.log.Info("configured kubelet for CNI", "cmd", configureCNICmd, "output", out)
 	return nil
 }
 
@@ -405,7 +404,7 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 	if err := vm.ensureServiceIsRunning(kubeProxyService); err != nil {
 		return errors.Wrapf(err, "error ensuring %s Windows service has started running", kubeProxyServiceName)
 	}
-	log.Info("configured", "service", kubeProxyServiceName, "args", kubeProxyServiceArgs)
+	vm.log.Info("configured", "service", kubeProxyServiceName, "args", kubeProxyServiceArgs)
 	return nil
 }
 
@@ -439,7 +438,7 @@ func (vm *windows) changeHostName() error {
 	changeHostNameCommand := "Rename-Computer -NewName " + vm.hostName + " -Force -Restart"
 	out, err := vm.Run(changeHostNameCommand, true)
 	if err != nil {
-		log.Info("changing host name failed", "command", changeHostNameCommand, "output", out)
+		vm.log.Info("changing host name failed", "command", changeHostNameCommand, "output", out)
 		return errors.Wrap(err, "changing host name failed")
 	}
 	//Reinitialize the SSH connection given changing the host name requires a VM restart
@@ -470,7 +469,7 @@ func (vm *windows) createDirectories() error {
 
 // transferFiles copies various files required for configuring the Windows node, to the VM.
 func (vm *windows) transferFiles() error {
-	log.Info("transferring files")
+	vm.log.Info("transferring files")
 	filesToTransfer, err := getFilesToTransfer()
 	if err != nil {
 		return errors.Wrapf(err, "error getting list of files to transfer")
@@ -493,7 +492,7 @@ func (vm *windows) runBootstrapper() error {
 		"worker.ign --kubelet-path " + k8sDir + "kubelet.exe"
 
 	out, err := vm.Run(wmcbInitializeCmd, true)
-	log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
+	vm.log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
 	if err != nil {
 		return errors.Wrap(err, "error running bootstrapper")
 	}
@@ -589,7 +588,7 @@ func (vm *windows) stopService(svc *service) error {
 	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		serviceRunning, err := vm.isRunning(svc.name)
 		if err != nil {
-			log.V(1).Error(err, "unable to check if Windows service is running", "service", svc.name)
+			vm.log.V(1).Error(err, "unable to check if Windows service is running", "service", svc.name)
 			return false, nil
 		}
 		return !serviceRunning, nil
@@ -660,7 +659,7 @@ func (vm *windows) waitForHNSNetworks() error {
 	}
 
 	// OVN overlay HNS networks were not found
-	log.Info("Get-HnsNetwork", "output", out)
+	vm.log.Info("Get-HnsNetwork", "output", out)
 	return errors.Wrap(err, "timeout waiting for OVN overlay HNS networks")
 }
 

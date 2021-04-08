@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/go-logr/logr"
 	oconfig "github.com/openshift/api/config/v1"
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/pkg/errors"
@@ -55,6 +56,7 @@ type nodeConfig struct {
 	publicKeyHash string
 	// clusterServiceCIDR holds the service CIDR for cluster
 	clusterServiceCIDR string
+	log                logr.Logger
 }
 
 // discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
@@ -83,10 +85,6 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machineName, clusterServiceCIDR,
 	vxlanPort string, signer ssh.Signer, platform oconfig.PlatformType) (*nodeConfig, error) {
-	// Update the logger name with the VM's cloud ID. Ideally this should be the Machine name but is not available at
-	// this point.
-	log = logf.Log.WithName(fmt.Sprintf("nodeconfig %s", instanceID))
-
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -107,6 +105,9 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machi
 			"creating new node config")
 	}
 
+	// Update the logger name with the VM's cloud ID. Ideally this should be the Machine name but is not available at
+	// this point.
+	log := logf.Log.WithName(fmt.Sprintf("nodeconfig %s", instanceID))
 	win, err := windows.New(ipAddress, instanceID, machineName, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
 		signer, platform)
 
@@ -114,8 +115,9 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machi
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
-	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(),
-		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey())}, nil
+	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
+		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
+		log: log}, nil
 }
 
 // getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
@@ -221,11 +223,11 @@ func (nc *nodeConfig) setNode() error {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			meta.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
-			log.V(1).Error(err, "node listing failed")
+			nc.log.V(1).Error(err, "node listing failed")
 			return false, nil
 		}
 		if len(nodes.Items) == 0 {
-			log.V(1).Error(err, "expected non-empty node list")
+			nc.log.V(1).Error(err, "expected non-empty node list")
 			return false, nil
 		}
 		// get the node with given instance id
@@ -248,7 +250,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, meta.GetOptions{})
 		if err != nil {
-			log.V(1).Error(err, "unable to get associated node object")
+			nc.log.V(1).Error(err, "unable to get associated node object")
 			return false, nil
 		}
 		_, found := node.Annotations[annotation]
@@ -283,7 +285,7 @@ func (nc *nodeConfig) configureCNI() error {
 		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
 	}
 	if err = nc.network.cleanupTempConfig(configFile); err != nil {
-		log.Error(err, " error deleting temp CNI config", "file",
+		nc.log.Error(err, " error deleting temp CNI config", "file",
 			configFile)
 	}
 	return nil

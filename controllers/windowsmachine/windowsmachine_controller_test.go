@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func strToPtr(str string) *string {
@@ -15,6 +16,7 @@ func strToPtr(str string) *string {
 }
 
 func TestIsValidMachine(t *testing.T) {
+	r := ReconcileWindowsMachine{log: logf.Log}
 	invalidMachine1 := core.Node{}
 	invalidMachine2 := mapi.Machine{}
 	invalidMachine2.Name = "invalid_1"
@@ -68,7 +70,7 @@ func TestIsValidMachine(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("case %d", i+1), func(t *testing.T) {
-			isValidMachine := isValidMachine(test.machineObj)
+			isValidMachine := r.isValidMachine(test.machineObj)
 			require.Equal(t, test.isValidMachine, isValidMachine)
 		})
 	}
