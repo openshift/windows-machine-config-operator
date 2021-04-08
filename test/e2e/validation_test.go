@@ -36,7 +36,8 @@ func testNodeMetadata(t *testing.T) {
 			t.Run("Kubelet Version", func(t *testing.T) {
 				isValidVersion := strings.HasPrefix(node.Status.NodeInfo.KubeletVersion, clusterKubeletVersion)
 				assert.True(t, isValidVersion,
-					"expected kubelet version was not present on %s", node.GetName())
+					"expected kubelet version %s was not present on %s. Found %s", clusterKubeletVersion,
+					node.GetName(), node.Status.NodeInfo.KubeletVersion)
 			})
 			// The worker label is not actually added by WMCO however we would like to validate if the Machine Api is
 			// properly adding the worker label, if it was specified in the MachineSet. The MachineSet created in the
