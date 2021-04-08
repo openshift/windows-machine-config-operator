@@ -394,7 +394,7 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
 		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
 		"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + sVIP +
-		" --enable-dsr=false\" depend= " + hybridOverlayServiceName
+		" --enable-dsr=false --feature-gates=IPv6DualStack=false\" depend= " + hybridOverlayServiceName
 
 	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs)
 	if err != nil {
