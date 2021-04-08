@@ -46,7 +46,7 @@ Once the SSH bastion has been setup, you can use either method to access the Win
 * You can now RDP into the Windows node at *localhost:2020* using an RDP client
 
 ## How to collect Kubernetes node logs
-Kubernetes node log files are in *C:\k\logs*. To view all the directories under *C:\k\logs*, execute:
+Kubernetes node log files are in *C:\var\logs*. To view all the directories under *C:\var\logs*, execute:
 ```shell script
 $ oc adm node-logs -l kubernetes.io/os=windows --path=/
 ip-10-0-138-252.us-east-2.compute.internal containers/
