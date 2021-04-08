@@ -25,7 +25,7 @@ unit:
 # Operator-sdk is smart enough to detect vendor directory
 .PHONY: run-ci-e2e-test
 run-ci-e2e-test:
-	hack/run-ci-e2e-test.sh
+	hack/run-ci-e2e-test.sh -t basic
 
 .PHONY: run-ci-e2e-upgrade-test
 run-ci-e2e-upgrade-test:
