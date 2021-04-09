@@ -134,7 +134,7 @@ cleanup_WMCO() {
 # the files here are selected based on the files that we are transferring while building the
 # operator binary in `build/Dockerfile`
 get_version() {
-  OPERATOR_VERSION=2.0.0
+  OPERATOR_VERSION=2.0.1
   GIT_COMMIT=$(git rev-parse --short HEAD)
   VERSION="${OPERATOR_VERSION}+${GIT_COMMIT}"
 
