@@ -20,7 +20,7 @@ const (
 	ovnKubernetesNetwork = "OVNKubernetes"
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
 	// 1.20.x are supported for baseK8sVersion 1.20)
-	baseK8sVersion = "v1.20"
+	baseK8sVersion = "v1.21"
 )
 
 // Network interface contains methods to interact with cluster network objects
