@@ -1,4 +1,4 @@
-package secret
+package controllers
 
 import (
 	"context"
@@ -30,23 +30,23 @@ import (
 )
 
 const (
-	ControllerName    = "secret_controller"
-	userDataSecret    = "windows-user-data"
-	userDataNamespace = "openshift-machine-api"
+	SecretControllerName = "secret_controller"
+	userDataSecret       = "windows-user-data"
+	userDataNamespace    = "openshift-machine-api"
 )
 
-// Add creates a new Secret Controller and adds it to the Manager. The Manager will set fields on the Controller
+// AddSecretController creates a new Secret Controller and adds it to the Manager. The Manager will set fields on the Controller
 // and Start it when the Manager is Started.
-func Add(mgr manager.Manager, _ cluster.Config, watchNamespace string) error {
-	reconciler, err := newReconciler(mgr)
+func AddSecretController(mgr manager.Manager, _ cluster.Config, watchNamespace string) error {
+	reconciler, err := newSecretReconciler(mgr)
 	if err != nil {
-		return errors.Wrapf(err, "could not create %s reconciler", ControllerName)
+		return errors.Wrapf(err, "could not create %s reconciler", SecretControllerName)
 	}
-	return add(mgr, reconciler, watchNamespace)
+	return addSecretController(mgr, reconciler, watchNamespace)
 }
 
-// newReconciler returns a new reconcile.Reconciler
-func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
+// newSecretReconciler returns a new reconcile.Reconciler
+func newSecretReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 	cfg, err := config.GetConfig()
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 		return nil, err
 	}
 
-	log := logf.Log.WithName(ControllerName)
+	log := logf.Log.WithName(SecretControllerName)
 	reconciler := &ReconcileSecret{client: client, scheme: mgr.GetScheme(), log: log}
 	if err = reconciler.removeInvalidAnnotationsFromLinuxNodes(); err != nil {
 		log.Error(err, "unable to clean up annotations on Linux nodes")
@@ -66,18 +66,18 @@ func newReconciler(mgr manager.Manager) (reconcile.Reconciler, error) {
 	return reconciler, nil
 }
 
-// add adds a new Controller to mgr with r as the reconcile.Reconciler
-func add(mgr manager.Manager, r reconcile.Reconciler, watchNamespace string) error {
+// addSecretController adds a new Controller to mgr with r as the reconcile.Reconciler
+func addSecretController(mgr manager.Manager, r reconcile.Reconciler, watchNamespace string) error {
 	// Create a new controller
-	c, err := controller.New(ControllerName, mgr, controller.Options{Reconciler: r})
+	c, err := controller.New(SecretControllerName, mgr, controller.Options{Reconciler: r})
 	if err != nil {
-		return errors.Wrapf(err, "could not create the controller: %v", ControllerName)
+		return errors.Wrapf(err, "could not create the controller: %v", SecretControllerName)
 	}
 
 	// Check that the private key exists, if it doesn't, log a warning
 	_, err = secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: watchNamespace, Name: secrets.PrivateKeySecret}, mgr.GetClient())
 	if err != nil {
-		log := logf.Log.WithName(ControllerName)
+		log := logf.Log.WithName(SecretControllerName)
 		log.Error(err, "Unable to retrieve private key, please ensure it is created")
 	}
 

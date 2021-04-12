@@ -147,7 +147,7 @@ func main() {
 	}
 
 	// Setup all Controllers
-	if err := controller.AddToManager(mgr, clusterConfig, namespace); err != nil {
+	if err := controllers.AddToManager(mgr, clusterConfig, namespace); err != nil {
 		log.Error(err, "failed to add all Controllers to the Manager")
 		os.Exit(1)
 	}
