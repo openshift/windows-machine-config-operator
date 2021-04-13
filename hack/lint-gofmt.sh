@@ -24,6 +24,7 @@ find_files() {
         -o -wholename '*/vendor/*' \
         -o -wholename './containernetworking-plugins' \
         -o -wholename './kubelet' \
+        -o -wholename './kube-proxy' \
         -o -wholename './ovn-kubernetes' \
         -o -wholename './promu' \
         -o -wholename './windows-machine-config-bootstrapper' \
