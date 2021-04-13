@@ -23,21 +23,23 @@ LABEL com.redhat.openshift.versions="=v4.7"
 # registry endpoints.
 LABEL com.redhat.delivery.backport=false
 
-# The rest of these labels are copies of the same content in annotations.yaml and are needed by OLM
-# Note the package name and channels which are very important!
-LABEL operators.operatorframework.io.bundle.mediatype.v1=registry+v1 \
-    operators.operatorframework.io.bundle.manifests.v1=manifests/ \
-    operators.operatorframework.io.bundle.metadata.v1=metadata/ \
-    operators.operatorframework.io.bundle.package.v1=windows-machine-config-operator \
-    operators.operatorframework.io.bundle.channels.v1=preview,stable \
-    operators.operatorframework.io.bundle.channel.default.v1=stable
-
 # This label gets replaced by render_templates, so it is safer to keep it on its own
 LABEL version="v0.0.0"
 
 # This label maps to the brew build target
 LABEL com.redhat.component="windows-machine-config-operator-bundle-container"
 
-# COPY manifests and metadata directories
-COPY deploy/olm-catalog/windows-machine-config-operator/manifests /manifests/
-COPY deploy/olm-catalog/windows-machine-config-operator/metadata /metadata/
+# Core bundle labels.
+LABEL operators.operatorframework.io.bundle.mediatype.v1=registry+v1
+LABEL operators.operatorframework.io.bundle.manifests.v1=manifests/
+LABEL operators.operatorframework.io.bundle.metadata.v1=metadata/
+LABEL operators.operatorframework.io.bundle.package.v1=windows-machine-config-operator
+LABEL operators.operatorframework.io.bundle.channels.v1=preview,stable
+LABEL operators.operatorframework.io.bundle.channel.default.v1=stable
+LABEL operators.operatorframework.io.metrics.mediatype.v1=metrics+v1
+LABEL operators.operatorframework.io.metrics.builder=operator-sdk-v2.0.0+git
+LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
+
+# Copy files to locations specified by labels.
+COPY bundle/manifests /manifests/
+COPY bundle/metadata /metadata/
