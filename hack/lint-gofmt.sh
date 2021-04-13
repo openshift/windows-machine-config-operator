@@ -23,7 +23,7 @@ find_files() {
         -o -wholename './.git' \
         -o -wholename '*/vendor/*' \
         -o -wholename './containernetworking-plugins' \
-        -o -wholename './kubernetes' \
+        -o -wholename './kubelet' \
         -o -wholename './ovn-kubernetes' \
         -o -wholename './promu' \
         -o -wholename './windows-machine-config-bootstrapper' \
