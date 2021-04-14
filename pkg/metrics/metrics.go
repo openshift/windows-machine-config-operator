@@ -3,8 +3,9 @@ package metrics
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 
-	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/pkg/errors"
 	monclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	"k8s.io/api/core/v1"
@@ -15,14 +16,14 @@ import (
 	k8sclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
 
 var (
-	log = logf.Log.WithName("metrics")
+	log = ctrl.Log.WithName("metrics")
 	// metricsEnabled specifies if metrics are enabled in the current cluster
 	metricsEnabled = true
 )
@@ -71,16 +72,12 @@ type patchEndpoint struct {
 }
 
 // NewPrometheuopsNodeConfig creates a new instance for prometheusNodeConfig  to be used by the caller.
-func NewPrometheusNodeConfig(clientset *kubernetes.Clientset) (*PrometheusNodeConfig, error) {
-	windowsMetricsEndpointsNamespace, err := k8sutil.GetOperatorNamespace()
-	if err != nil {
-		return nil, err
-	}
+func NewPrometheusNodeConfig(clientset *kubernetes.Clientset, watchNamespace string) (*PrometheusNodeConfig, error) {
 
 	return &PrometheusNodeConfig{
 		k8sclientset: clientset,
-		namespace:    windowsMetricsEndpointsNamespace,
-	}, err
+		namespace:    watchNamespace,
+	}, nil
 }
 
 // NewConfig creates a new instance for Config  to be used by the caller.
@@ -96,8 +93,11 @@ func NewConfig(mgr manager.Manager, cfg *rest.Config, namespace string) (*Config
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating monitoring client")
 	}
-	return &Config{oclient, mclient, namespace,
-		mgr.GetEventRecorderFor("metrics")}, nil
+	return &Config{Clientset: oclient,
+		MonitoringV1Client: mclient,
+		namespace:          namespace,
+		recorder:           mgr.GetEventRecorderFor("metrics"),
+	}, nil
 }
 
 // syncMetricsEndpoint updates the endpoint object with the new list of IP addresses from the Windows nodes and the
@@ -265,7 +265,7 @@ func (c *Config) RemoveStaleResources(ctx context.Context) {
 		log.Error(err, "error getting operator namespace")
 	}
 
-	operatorName, err := k8sutil.GetOperatorName()
+	operatorName, err := getOperatorName()
 	if err != nil {
 		log.Error(err, "error getting operator name")
 	}
@@ -322,4 +322,15 @@ func (c *Config) createEndpoint() error {
 		return errors.Wrap(err, "error creating metrics Endpoint")
 	}
 	return nil
+}
+
+// getOperatorName returns the name of the operator
+func getOperatorName() (string, error) {
+	var operatorNameEnvVar = "OPERATOR_NAME"
+
+	name, found := os.LookupEnv(operatorNameEnvVar)
+	if !found {
+		return "", fmt.Errorf("%s must be set", operatorNameEnvVar)
+	}
+	return name, nil
 }

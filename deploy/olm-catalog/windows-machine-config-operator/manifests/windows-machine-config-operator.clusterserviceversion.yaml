@@ -229,8 +229,7 @@ spec:
             spec:
               containers:
               - args:
-                - --zap-level=debug
-                - --zap-encoder=console
+                - --debugLogging
                 command:
                 - windows-machine-config-operator
                 env:
