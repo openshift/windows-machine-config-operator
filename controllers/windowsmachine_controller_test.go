@@ -23,15 +23,6 @@ func TestIsValidMachine(t *testing.T) {
 	invalidMachine3 := mapi.Machine{}
 	invalidMachine3.Name = "invalid_2"
 	invalidMachine3.Status.Phase = strToPtr("running")
-	validMachine1 := mapi.Machine{}
-	validMachine1.Name = "valid_1"
-	validMachine1.Status.Phase = strToPtr("running")
-	validMachine1.Status.Addresses = []core.NodeAddress{
-		{
-			Type:    "Hostname",
-			Address: "valid1.acme.com",
-		},
-	}
 	validMachine2 := mapi.Machine{}
 	validMachine2.Name = "valid_1"
 	validMachine2.Status.Phase = strToPtr("something")
@@ -57,10 +48,6 @@ func TestIsValidMachine(t *testing.T) {
 		{
 			machineObj:     &invalidMachine3,
 			isValidMachine: false,
-		},
-		{
-			machineObj:     &validMachine1,
-			isValidMachine: true,
 		},
 		{
 			machineObj:     &validMachine2,
