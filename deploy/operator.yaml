@@ -21,8 +21,7 @@ spec:
           command:
           - windows-machine-config-operator
           args:
-          - "--zap-level=debug"
-          - "--zap-encoder=console"
+          - "--debugLogging"
           imagePullPolicy: IfNotPresent
           env:
             - name: WATCH_NAMESPACE
