@@ -10,13 +10,17 @@
 	path = containernetworking-plugins
 	url = https://github.com/openshift/containernetworking-plugins
 	branch = release-4.8
-[submodule "kubernetes"]
-	path = kubernetes
-	url = https://github.com/openshift/kubernetes
-	branch = release-4.8
 [submodule "promu"]
 	path = promu
 	url = git://github.com/openshift/prometheus-promu
 [submodule "windows_exporter"]
 	path = windows_exporter
 	url = git://github.com/openshift/prometheus-community-windows_exporter
+[submodule "kubelet"]
+	path = kubelet
+	url = https://github.com/openshift/kubernetes
+	branch = release-4.8
+[submodule "kube-proxy"]
+	path = kube-proxy
+	url = https://github.com/openshift/kubernetes
+	branch = sdn-4.8-kubernetes-1.21.0-rc.0

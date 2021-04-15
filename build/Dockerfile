@@ -26,11 +26,16 @@ WORKDIR /build/windows-machine-config-operator/windows_exporter/
 COPY windows_exporter/ .
 RUN GOOS=windows ./promu build -v
 
-# Build Kubernetes node binaries
-WORKDIR /build/windows-machine-config-operator/kubernetes/
-COPY kubernetes/ .
+# Build kubelet
+WORKDIR /build/windows-machine-config-operator/kubelet/
+COPY kubelet/ .
 ENV KUBE_BUILD_PLATFORMS windows/amd64
 RUN make WHAT=cmd/kubelet
+
+# Build kube-proxy
+WORKDIR /build/windows-machine-config-operator/kube-proxy/
+COPY kube-proxy/ .
+ENV KUBE_BUILD_PLATFORMS windows/amd64
 RUN make WHAT=cmd/kube-proxy
 
 # Build CNI plugins
@@ -90,8 +95,8 @@ COPY --from=build /build/windows-machine-config-operator/windows_exporter/window
 
 # Copy kubelet.exe and kube-proxy.exe
 WORKDIR /payload/kube-node/
-COPY --from=build /build/windows-machine-config-operator/kubernetes/_output/local/bin/windows/amd64/kubelet.exe .
-COPY --from=build /build/windows-machine-config-operator/kubernetes/_output/local/bin/windows/amd64/kube-proxy.exe .
+COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kubelet.exe .
+COPY --from=build /build/windows-machine-config-operator/kube-proxy/_output/local/bin/windows/amd64/kube-proxy.exe .
 
 # Copy CNI plugin binaries and CNI config template cni-conf-template.json
 WORKDIR /payload/cni/
