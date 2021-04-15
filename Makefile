@@ -162,6 +162,7 @@ bundle: manifests kustomize
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle --overwrite=false -q --version $(WMCO_VERSION) $(BUNDLE_METADATA_OPTS)
 	operator-sdk bundle validate ./bundle
+	sed -i 's/windows-machine-config-operator\.v.\.0\.0/windows-machine-config-operator.v$(WMCO_VERSION)/g' ./bundle/windows-machine-config-operator.package.yaml
 
 .PHONY: bundle-build ## Build the bundle image.
 bundle-build:
