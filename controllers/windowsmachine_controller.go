@@ -303,7 +303,11 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 			if node.Annotations[nodeconfig.VersionAnnotation] != version.Get() ||
 				node.Annotations[nodeconfig.PubKeyHashAnnotation] != nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
 				log.Info("deleting machine")
-				if !r.isAllowedDeletion(machine) {
+				deletionAllowed, err := r.isAllowedDeletion(machine)
+				if err != nil {
+					return ctrl.Result{}, errors.Wrapf(err, "unable to determine if Machine can be deleted")
+				}
+				if !deletionAllowed {
 					log.Info("machine deletion restricted", "maxUnhealthyCount", maxUnhealthyCount)
 					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted",
 						"Machine %v deletion restricted as the maximum unhealthy machines can`t exceed %v count",
@@ -448,9 +452,9 @@ func (r *WindowsMachineReconciler) validateUserData(privateKey []byte) error {
 
 // isAllowedDeletion determines if the number of machines after deletion of the given machine doesn`t fall below the
 // minHealthyCount
-func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) bool {
+func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) (bool, error) {
 	if len(machine.OwnerReferences) == 0 {
-		return false
+		return false, errors.New("Machine has no owner reference")
 	}
 	machinesetName := machine.OwnerReferences[0].Name
 
@@ -458,7 +462,7 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) bool
 	err := r.client.List(context.TODO(), machines,
 		client.MatchingLabels(map[string]string{MachineOSLabel: "Windows"}))
 	if err != nil {
-		return false
+		return false, errors.Wrap(err, "cannot list Machines")
 	}
 
 	// get Windows MachineSet
@@ -466,13 +470,13 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) bool
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: machinesetName,
 		Namespace: "openshift-machine-api"}, windowsMachineSet)
 	if err != nil {
-		return false
+		return false, errors.Wrap(err, "cannot get MachineSet")
 	}
 
 	// Allow deletion if there is only one machine in the Windows MachineSet
 	totalWindowsMachineCount := *windowsMachineSet.Spec.Replicas
 	if maxUnhealthyCount == totalWindowsMachineCount {
-		return true
+		return true, nil
 	}
 
 	totalHealthy := 0
@@ -489,7 +493,7 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) bool
 	r.log.Info("unhealthy machine count for machineset", "name", machinesetName, "total", totalWindowsMachineCount,
 		"unhealthy", unhealthyMachineCount)
 
-	return unhealthyMachineCount < maxUnhealthyCount
+	return unhealthyMachineCount < maxUnhealthyCount, nil
 }
 
 // isWindowsMachineHealthy determines if the given Machine object is healthy. A Windows machine is considered
