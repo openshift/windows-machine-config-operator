@@ -60,7 +60,6 @@ WORKDIR /build/windows-machine-config-operator
 COPY build build
 COPY main.go .
 COPY controllers controllers
-COPY apis apis
 COPY deploy deploy
 COPY hack hack
 COPY pkg pkg
