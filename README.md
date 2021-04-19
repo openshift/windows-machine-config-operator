@@ -11,10 +11,9 @@ More design details can be explored in the [WMCO enhancement](https://github.com
 
 ## Pre-requisites
 - OKD/OCP 4.6 cluster running on Azure, AWS or vSphere configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
-- [Install](https://v0-19-x.sdk.operatorframework.io/docs/install-operator-sdk/) operator-sdk
-  v0.19.4
-- The operator is written using operator-sdk [v0.19.4](https://github.com/operator-framework/operator-sdk/releases/tag/v0.19.4)
-  and has the same [pre-requisites](https://v0-19-x.sdk.operatorframework.io/docs/install-operator-sdk/#prerequisites) as it
+- [Install](https://sdk.operatorframework.io/docs/installation/) operator-sdk v1.6.1
+- The operator is written using operator-sdk [v1.6.1](https://github.com/operator-framework/operator-sdk/releases/tag/v1.6.1)
+  and has the same [pre-requisites](https://sdk.operatorframework.io/docs/installation/#prerequisites) as it
   does.
 - [vSphere prerequisites](docs/vsphere-prerequisites.md)
 

@@ -13,22 +13,29 @@ The operator image needs to be pushed to a remote repository:
 podman push quay.io/<insert username>/wmco:$VERSION_TAG
 ```
 ## Development workflow
-To run the operator on a cluster (for testing purpose only) or to run the e2e tests for WMCO against an OpenShift 
-cluster set up, we need to setup the following environment variables.
+With the Operator image built and pushed to a remote repository, the operator can be deployed either directly,
+or through OLM.
+
+For each deployment method a kubeconfig for an OpenShift or OKD cluster must be exported
 ```shell script
 export KUBECONFIG=<path to kubeconfig>
-
-# SSH key to be used for creation of cloud-private-key secret 
-export KUBE_SSH_KEY_PATH=<path to RSA type ssh key>
-
-# on AWS only:
-export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
 ```
 
-To run the operator on a cluster, use: 
+### Deploying the operator directly
+```shell script
+make deploy IMG=<quay.io/<insert username>/wmco:$VERSION_TAG>
+```
+The above command will directly deploy all the resources required for the operator to run, as well as the WMCO pod.
+To remove the installed resources:
+```shell script
+make undeploy
+```
+
+### Deploying the operator through OLM
 ```shell script
 hack/olm.sh run -c "<OPERATOR_IMAGE>" -k "<PRIVATE_KEY.PEM>"
 ```
+Where `"<PRIVATE_KEY.PEM>"` is the private key which will be used to configure Windows nodes.
 This command builds the operator image, pushes it to remote repository and uses OLM to launch the operator. Executing
 the [Build](#build) step is not required.
 
@@ -40,10 +47,14 @@ hack/olm.sh cleanup -c "<OPERATOR_IMAGE>"
 ```
 
 ### Running e2e tests on a cluster
-We need to set up all the environment variables required in [Development workflow](#development-workflow) as well as: 
+The following enviroment variables must be set:
 ```shell script
+# SSH key to be used for creation of cloud-private-key secret
+export KUBE_SSH_KEY_PATH=<path to RSA type ssh key>
 export OPERATOR_IMAGE=<registry url for remote WMCO image>
 export OPENSHIFT_CI=false
+# on AWS only:
+export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
 ```
 Once the above variables are set, run the following script:
 ```shell script
@@ -70,43 +81,35 @@ Please note that you do not need to run `hack/olm.sh run` before `hack/run-ci-e2
 ## Bundling the Windows Machine Config Operator
 This directory contains resources related to installing the WMCO onto a cluster using OLM.
 
-### Pre-requisites
-[opm](https://github.com/operator-framework/operator-registry/) has been installed on the localhost.
-All previous [pre-requisites](#pre-requisites) must be satisfied as well.
+### Generating new bundle manifests
+This step should be done in the case that changes have been made to any of the RBAC requirements, or if any changes
+were made to the files in config/.
 
-### Generating a new bundle
-This step should be done in the case that changes have been made to any of the yaml files in `deploy/`.
+If the operator version needs to be changed, the `WMCO_VERSION` variable at the top of the repo's Makefile should
+be set to the new version.
 
-If changes need to be made to the bundle spec, a new bundle can be generated with:
+If the bundle channel needs to be changed, the `CHANNELS` and/or `DEFAULT_CHANNELS` variable within the the Makefile
+should be changed to the desired values.
+
+New bundle manifests can then be generated with:
 ```shell script
-operator-sdk generate csv --csv-version $NEW_VERSION --operator-name windows-machine-config-operator
+make bundle
 ```
 
-You should replace `$NEW_VERSION` with the new semver.
+Within the bundle manifests the `:latest` tag must be manually removed in order for the e2e tests to work.
 
-Example: For CSV version 0.0.1, the command should be:
+If you plan on building a bundle image using these bundle manifests, the image should be set to reflect where
+the WMCO was pushed to in the [build step](#build)
 ```shell script
-operator-sdk generate csv --csv-version 0.0.1 --operator-name windows-machine-config-operator
-``` 
-This will update the manifests in directory: `deploy/olm-catalog/windows-machine-config-operator/manifests`
-This directory will be used while [creating the bundle image](#creating-a-bundle-image)
-
-After generating bundle, you need to update metadata as well. 
-```shell script
-operator-sdk bundle create --generate-only --channels alpha --default-channel alpha
+make bundle IMG=quay.io/<insert username>/wmco:$VERSION_TAG
 ```
 
 ### Creating a bundle image
 You can skip this step if you want to run the operator for [developer testing purposes only](#development-workflow)
 
-A bundle image can be created by editing the CSV in `deploy/olm-catalog/windows-machine-config-operator/manifests/`
-and replacing `REPLACE_IMAGE` with the location of the WMCO operator image you wish to deploy.
-See [the build instructions](#build) for more information on building the image.
-
-You can then run the following command in the root of this git repository:
+Once the manifests have been generated properly, you can run the following command in the root of this git repository:
 ```shell script
-operator-sdk bundle create $BUNDLE_REPOSITORY:$BUNDLE_TAG -d deploy/olm-catalog/windows-machine-config-operator/manifests \
---channels alpha --default-channel alpha --image-builder podman
+make bundle-build BUNDLE_IMG=<BUNDLE_REPOSITORY:$BUNDLE_TAG>
 ```
 The variables in the command should be changed to match the container image repository you wish to store the bundle in.
 You can also change the channels based on the release status of the operator.
@@ -123,6 +126,11 @@ operator-sdk bundle validate $BUNDLE_REPOSITORY:$BUNDLE_TAG --image-builder podm
 ```
 
 ### Creating a new operator index
+
+#### Pre-requisites
+[opm](https://github.com/operator-framework/operator-registry/) has been installed on the build system.
+All previous [pre-requisites](#pre-requisites) must be satisfied as well.
+
 You can skip this step if you want to run the operator for [developer testing purposes only](#development-workflow)
 
 An operator index is a collection of bundles. Creating one is required if you wish to deploy your operator on your own
