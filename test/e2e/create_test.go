@@ -109,6 +109,10 @@ func (tc *testContext) deleteMachineSet(ms *mapi.MachineSet) error {
 // waitForWindowsMachines waits for a certain amount of Windows Machines to reach a certain phase
 func (tc *testContext) waitForWindowsMachines(machineCount int, phase string) error {
 	machineCreationTimeLimit := time.Minute * 5
+	// Increasing the time limit due to https://bugzilla.redhat.com/show_bug.cgi?id=1936556
+	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
+		machineCreationTimeLimit = time.Minute * 20
+	}
 	return wait.Poll(retryInterval, machineCreationTimeLimit, func() (done bool, err error) {
 		machines, err := tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), metav1.ListOptions{
 			LabelSelector: controllers.MachineOSLabel + "=Windows"})
