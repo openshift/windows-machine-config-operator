@@ -89,7 +89,7 @@ endif
 
 .PHONY: build
 build: generate fmt vet
-	build/build.sh ${OUTPUT_DIR} ${GO_MOD_FLAGS}
+	build/build.sh ${OUTPUT_DIR} ${WMCO_VERSION} ${GO_MOD_FLAGS}
 
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go

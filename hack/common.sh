@@ -129,22 +129,6 @@ cleanup_WMCO() {
   oc delete -f deploy/namespace.yaml
 }
 
-# returns the operator version in `Version+GitHash` format
-# we are just checking the status of files that affect the building of the operator binary
-# the files here are selected based on the files that we are transferring while building the
-# operator binary in `build/Dockerfile`
-get_version() {
-  OPERATOR_VERSION=2.0.0
-  GIT_COMMIT=$(git rev-parse --short HEAD)
-  VERSION="${OPERATOR_VERSION}+${GIT_COMMIT}"
-
-  if [ -n "$(git status version tools.go go.mod go.sum vendor Makefile build cmd hack pkg --porcelain)" ]; then
-    VERSION="${VERSION}-dirty"
-  fi
-
-  echo $VERSION
-}
-
 # Given two parameters, replaces the value in first parameter with the second in the csv.
 # Parameters:
 # 1: parameter to determine value to be replaced in the csv
