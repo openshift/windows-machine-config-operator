@@ -174,6 +174,12 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		escapedPubKeyAnnotation := strings.Replace(nodeconfig.PubKeyHashAnnotation, "/", "~1", -1)
 		patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`, escapedPubKeyAnnotation)
 		for _, node := range nodes.Items {
+			// Only clear the annotation for Nodes associated with Machines, as the clearing of the annotation is used
+			// solely to kick off the deletion and recreation of Machines.
+			if _, present := node.Annotations[BYOHAnnotation]; present {
+				continue
+			}
+
 			existingPubKeyAnno := node.Annotations[nodeconfig.PubKeyHashAnnotation]
 			if existingPubKeyAnno == expectedPubKeyAnno {
 				continue

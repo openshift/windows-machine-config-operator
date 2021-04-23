@@ -39,9 +39,9 @@ func testWindowsExporter(t *testing.T) {
 	require.NoError(t, err)
 
 	// Need at least one Windows node to run these tests, throwing error if this condition is not met
-	require.Greater(t, len(gc.nodes), 0, "test requires at least one Windows node to run")
+	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
 
-	for _, winNode := range gc.nodes {
+	for _, winNode := range gc.allNodes() {
 		t.Run(winNode.Name, func(t *testing.T) {
 			// Get the node internal IP so we can curl it
 			winNodeInternalIP := ""
@@ -89,12 +89,15 @@ func testPrometheus(t *testing.T) {
 		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err)
 
-	if gc.numberOfNodes == 0 {
+	if len(gc.allNodes()) == 0 {
 		// check if all entries in subset are deleted when there are no Windows Nodes
-		require.Equal(t, 0, len(windowsEndpoints.Subsets))
+		// TODO: BYOH metrics cleanup isn't done yet so only check that Nodes from Machines are properly removed
+		//       total endpoints - machine endpoints = byoh endpoints
+		//       Change back to expecting 0 as part of https://issues.redhat.com/browse/WINC-582
+		require.Equal(t, int(gc.numberOfBYOHNodes), len(windowsEndpoints.Subsets))
 	} else {
 		// Total length of list for subsets is always equal to the list of Windows Nodes.
-		require.Equal(t, gc.numberOfNodes, int32(len(windowsEndpoints.Subsets[0].Addresses)))
+		require.Equal(t, len(gc.allNodes()), len(windowsEndpoints.Subsets[0].Addresses))
 
 		// check Nodes in the targetRef of Endpoints are same as the Windows Nodes bootstrapped using WMCO
 		err = checkTargetNodes(windowsEndpoints)
@@ -110,7 +113,7 @@ func testPrometheus(t *testing.T) {
 
 // checkTargetNodes checks if nodes in the targetRef of Endpoints are same as the Windows Nodes bootstrapped using WMCO
 func checkTargetNodes(windowsEndpoints *core.Endpoints) error {
-	for _, node := range gc.nodes {
+	for _, node := range gc.allNodes() {
 		foundNode := false
 		for _, endpointAddress := range windowsEndpoints.Subsets[0].Addresses {
 			if node.Name == endpointAddress.TargetRef.Name {
@@ -205,7 +208,7 @@ func testWindowsPrometheusRules(t *testing.T) {
 				queryResult := promQuery.Data.Result
 
 				// test query result against every Windows node
-				for _, node := range gc.nodes {
+				for _, node := range gc.allNodes() {
 					t.Run(node.Name, func(t *testing.T) {
 						for _, metric := range queryResult {
 							if metric.Metric.Instance == node.Name {
@@ -295,9 +298,9 @@ func testNodeResourceUsage(t *testing.T) {
 	require.NoError(t, err)
 
 	// Need at least one Windows node to run these tests, throwing error if this condition is not met
-	require.Greater(t, len(gc.nodes), 0, "test requires at least one Windows node to run")
+	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
 
-	for _, winNode := range gc.nodes {
+	for _, winNode := range gc.allNodes() {
 		t.Run(winNode.Name, func(t *testing.T) {
 			// check available CPU, memory, and emphemeral local storage
 			nodeCPU := winNode.Status.Allocatable.Cpu().AsApproximateFloat64()

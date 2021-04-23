@@ -6,19 +6,15 @@ import (
 	"net"
 	"strings"
 
-	"github.com/go-logr/logr"
 	oconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -54,23 +51,7 @@ const (
 
 // WindowsMachineReconciler is used to create a controller which manages Windows Machine objects
 type WindowsMachineReconciler struct {
-	client client.Client
-	log    logr.Logger
-	scheme *runtime.Scheme
-	// k8sclientset holds the kube client that we can re-use for all kube objects other than custom resources.
-	k8sclientset *kubernetes.Clientset
-	// clusterServiceCIDR holds the cluster network service CIDR
-	clusterServiceCIDR string
-	// signer is a signer created from the user's private key
-	signer ssh.Signer
-	// vxlanPort is the custom VXLAN port
-	vxlanPort string
-	// recorder to generate events
-	recorder record.EventRecorder
-	// watchNamespace is the namespace the operator is watching as defined by the operator CSV
-	watchNamespace string
-	// prometheusConfig stores information required to configure Prometheus
-	prometheusNodeConfig *metrics.PrometheusNodeConfig
+	instanceReconciler
 	// platform indicates the cloud on which OpenShift cluster is running
 	// TODO: Remove this once we figure out how to be provider agnostic. This is specific to proper usage of userData
 	// 		 in vSphere
@@ -98,16 +79,17 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 	}
 
 	return &WindowsMachineReconciler{
-		client:               mgr.GetClient(),
-		log:                  ctrl.Log.WithName("controller").WithName("windowsmachine"),
-		scheme:               mgr.GetScheme(),
-		k8sclientset:         clientset,
-		clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
-		vxlanPort:            clusterConfig.Network().VXLANPort(),
-		recorder:             mgr.GetEventRecorderFor("windowsmachine"),
-		watchNamespace:       watchNamespace,
-		prometheusNodeConfig: pc,
-		platform:             clusterConfig.Platform(),
+		instanceReconciler: instanceReconciler{
+			client:               mgr.GetClient(),
+			log:                  ctrl.Log.WithName("controller").WithName("windowsmachine"),
+			k8sclientset:         clientset,
+			clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
+			vxlanPort:            clusterConfig.Network().VXLANPort(),
+			recorder:             mgr.GetEventRecorderFor("windowsmachine"),
+			watchNamespace:       watchNamespace,
+			prometheusNodeConfig: pc,
+		},
+		platform: clusterConfig.Platform(),
 	}, nil
 }
 
@@ -419,14 +401,8 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		username = "Administrator"
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, hostname, r.clusterServiceCIDR,
-		r.vxlanPort, username, r.signer)
-	if err != nil {
-		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
-	}
-	if err := nc.Configure(); err != nil {
-		// TODO: Unwrap to extract correct error
-		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
+	if err := r.configureInstance(instances.NewInstanceInfo(ipAddress, username, hostname), nil); err != nil {
+		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
 
 	r.log.Info("Windows VM has been configured as a worker node", "ID", instanceID)

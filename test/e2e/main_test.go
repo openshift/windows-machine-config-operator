@@ -15,8 +15,10 @@ import (
 )
 
 var (
-	// numberOfNodes represent the number of nodes to be dealt with in the test suite.
-	numberOfNodes int
+	// numberOfMachineNodes are the number of nodes which should be configured by the Machine Controller
+	numberOfMachineNodes int
+	// numberOfBYOHNodes are the number of nodes which should be configured by the ConfigMap Controller
+	numberOfBYOHNodes int
 	// privateKeyPath is the path of the private key file used to configure the Windows node
 	privateKeyPath string
 	// wmcoPath is the path to the WMCO binary that was used within the operator image
@@ -31,12 +33,21 @@ var (
 // 2.) You're responsible for checking if the field is stale or not. Any field
 //     in this struct is not guaranteed to be latest from the apiserver.
 type globalContext struct {
-	// numberOfNodes to be used for the test suite.
-	numberOfNodes int32
-	// nodes are the Windows nodes created by the operator
-	nodes []core.Node
+	// numberOfMachineNodes are the number of nodes which should be configured by the Machine Controller
+	numberOfMachineNodes int32
+	// numberOfBYOHNodes are the number of nodes which should be configured by the ConfigMap Controller
+	numberOfBYOHNodes int32
+	// machineNodes are the Windows nodes configured by the Machine controller
+	machineNodes []core.Node
+	// byohNodes are the Windows nodes configured by the ConfigMap controller
+	byohNodes []core.Node
 	// privateKeyPath is the path of the private key file used to configure the Windows node
 	privateKeyPath string
+}
+
+// allNodes returns the combined contents of gc.machineNodes and gc.byohNodes
+func (gc *globalContext) allNodes() []core.Node {
+	return append(gc.machineNodes, gc.byohNodes...)
 }
 
 // testContext holds the information related to the individual test suite. This data structure
@@ -83,7 +94,12 @@ func NewTestContext() (*testContext, error) {
 }
 
 func TestMain(m *testing.M) {
-	flag.IntVar(&numberOfNodes, "node-count", 2, "number of nodes to be created for testing")
+	flag.IntVar(&numberOfBYOHNodes, "byoh-node-count", 1,
+		"number of nodes to be created for testing the ConfigMap controller. "+
+			"Setting this to 0 will result in some tests being skipped")
+	flag.IntVar(&numberOfMachineNodes, "machine-node-count", 1,
+		"number of nodes to be created for testing the Machine controller."+
+			"Setting this to 0 will result in some tests being skipped")
 	flag.StringVar(&wmcoPath, "wmco-path", "./build/_output/bin/windows-machine-config-operator",
 		"Path to the WMCO binary, used for version validation")
 	flag.StringVar(&privateKeyPath, "private-key-path", "",

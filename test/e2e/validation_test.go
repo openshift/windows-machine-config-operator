@@ -31,7 +31,7 @@ func testNodeMetadata(t *testing.T) {
 	require.NoError(t, err, "error getting the expected public key")
 	pubKeyAnnotation := nc.CreatePubKeyHashAnnotation(pubKey)
 
-	for _, node := range gc.nodes {
+	for _, node := range gc.allNodes() {
 		t.Run(node.GetName()+" Validation Tests", func(t *testing.T) {
 			t.Run("Kubelet Version", func(t *testing.T) {
 				isValidVersion := strings.HasPrefix(node.Status.NodeInfo.KubeletVersion, clusterKubeletVersion)
@@ -82,8 +82,8 @@ func getInstanceID(providerID string) string {
 
 // getInstanceIDsOfNodes returns the instanceIDs of all the Windows nodes created
 func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
-	instanceIDs := make([]string, 0, len(gc.nodes))
-	for _, node := range gc.nodes {
+	instanceIDs := make([]string, 0, len(gc.allNodes()))
+	for _, node := range gc.allNodes() {
 		if len(node.Spec.ProviderID) > 0 {
 			instanceID := getInstanceID(node.Spec.ProviderID)
 			instanceIDs = append(instanceIDs, instanceID)
@@ -131,7 +131,7 @@ func testNodeTaint(t *testing.T) {
 		Effect: core.TaintEffectNoSchedule,
 	}
 
-	for _, node := range gc.nodes {
+	for _, node := range gc.allNodes() {
 		hasTaint := func() bool {
 			for _, taint := range node.Spec.Taints {
 				if taint.Key == windowsTaint.Key && taint.Value == windowsTaint.Value && taint.Effect == windowsTaint.Effect {

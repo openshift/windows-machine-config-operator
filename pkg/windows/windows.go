@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
@@ -157,24 +158,24 @@ type windows struct {
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(ipAddress, hostName, workerIgnitionEndpoint, vxlanPort, username string, signer ssh.Signer) (Windows, error) {
+func New(workerIgnitionEndpoint, vxlanPort string, instance *instances.InstanceInfo, signer ssh.Signer) (Windows, error) {
 	if workerIgnitionEndpoint == "" {
 		return nil, errors.New("cannot use empty ignition endpoint")
 	}
 
-	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", ipAddress))
-	log.V(1).Info("initializing SSH connection", "user", username)
-	conn, err := newSshConnectivity(username, ipAddress, signer, log)
+	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", instance.Address))
+	log.V(1).Info("initializing SSH connection", "user", instance.Username)
+	conn, err := newSshConnectivity(instance.Username, instance.Address, signer, log)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", ipAddress)
+		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instance.Address)
 	}
 
 	return &windows{
-			ipAddress:              ipAddress,
+			ipAddress:              instance.Address,
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			vxlanPort:              vxlanPort,
-			hostName:               hostName,
+			hostName:               instance.NewHostname,
 			log:                    log,
 		},
 		nil

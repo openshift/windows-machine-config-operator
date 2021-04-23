@@ -28,8 +28,10 @@ func testNetwork(t *testing.T) {
 	// Populate the global test context
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
-	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, false)
-	assert.NoError(t, err, "timed out waiting for Windows node")
+	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
+	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
 	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
@@ -83,11 +85,11 @@ func testEastWestNetworking(t *testing.T) {
 			useClusterIPSVC: true,
 		},
 	}
-	require.Greater(t, len(gc.nodes), 0, "test requires at least one Windows node to run")
-	firstNodeAffinity, err := getAffinityForNode(&gc.nodes[0])
+	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
+	firstNodeAffinity, err := getAffinityForNode(&gc.allNodes()[0])
 	require.NoError(t, err, "could not get affinity for node")
 
-	for _, node := range gc.nodes {
+	for _, node := range gc.allNodes() {
 		t.Run(node.Name, func(t *testing.T) {
 			affinity, err := getAffinityForNode(&node)
 			require.NoError(t, err, "could not get affinity for node")
@@ -154,7 +156,7 @@ func testNorthSouthNetworking(t *testing.T) {
 	require.NoError(t, err)
 
 	// Require at least one node to test
-	require.NotEmpty(t, gc.nodes)
+	require.NotEmpty(t, gc.allNodes())
 
 	// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
 	// So trying multiple times

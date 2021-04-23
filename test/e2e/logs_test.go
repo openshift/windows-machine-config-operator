@@ -25,7 +25,7 @@ func testNodeLogs(t *testing.T) {
 	}
 
 	nodeArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes")
-	for _, node := range gc.nodes {
+	for _, node := range gc.allNodes() {
 		nodeDir := filepath.Join(nodeArtifacts, node.Name)
 		for _, file := range logFiles {
 			// A subtest is useful here to attempt to get all the logs and not bail on the first error

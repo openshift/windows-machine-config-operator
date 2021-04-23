@@ -16,7 +16,7 @@ func strToPtr(str string) *string {
 }
 
 func TestIsValidMachine(t *testing.T) {
-	r := WindowsMachineReconciler{log: logf.Log}
+	r := WindowsMachineReconciler{instanceReconciler: instanceReconciler{log: logf.Log}}
 	invalidMachine1 := core.Node{}
 	invalidMachine2 := mapi.Machine{}
 	invalidMachine2.Name = "invalid_1"

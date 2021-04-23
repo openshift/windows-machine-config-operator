@@ -6,7 +6,8 @@ set -o pipefail
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
 
-NODE_COUNT=""
+MACHINE_NODE_COUNT_OPTION=""
+BYOH_NODE_COUNT_OPTION=""
 SKIP_NODE_DELETION=""
 WMCO_PATH_OPTION=""
 
@@ -36,10 +37,13 @@ OSDK_WMCO_test() {
 }
 
 TEST="all"
-while getopts ":n:b:st:" opt; do
+while getopts ":m:c:b:st:" opt; do
   case ${opt} in
-    n ) # process option for the node count
-      NODE_COUNT=$OPTARG
+    m ) # number of instances to create and configure using the Machine controller
+      MACHINE_NODE_COUNT_OPTION="--machine-node-count=$OPTARG"
+      ;;
+    c ) # number of instances to create and configure using the ConfigMap controller
+      BYOH_NODE_COUNT_OPTION="--byoh-node-count=$OPTARG"
       ;;
     s ) # process option for skipping deleting Windows VMs created by test suite
       SKIP_NODE_DELETION="true"
@@ -71,12 +75,6 @@ if ! [[ "$OPENSHIFT_CI" == "true" &&  "$TEST" = "upgrade" ]]; then
   OSDK=$(get_operator_sdk)
 fi
 
-# Set default values for the flags. Without this operator-sdk flags are getting
-# polluted, i.e. if a flag is not passed or passed as empty value
-# the value is literally taken as "" instead of empty-string so default values we
-# specified in main_test.go has literally no effect. Not sure, if this is because of
-# the way operator-sdk testing is done using `go test []string{}
-NODE_COUNT=${NODE_COUNT:-2}
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"false"}
 
 # If ARTIFACT_DIR is not set, create a temp directory for artifacts
@@ -128,11 +126,11 @@ fi
 
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the creation tests of the Windows VMs
 printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 # Get logs for the creation tests
 printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
 get_WMCO_logs
@@ -140,17 +138,17 @@ get_WMCO_logs
 if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
   # Run the network tests
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 fi
 
 if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   # Run the upgrade tests and skip deletion of the Windows VMs
   printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
   # Run the reconfiguration test
   printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 fi
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
