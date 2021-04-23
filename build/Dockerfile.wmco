@@ -1,0 +1,46 @@
+FROM docker.io/openshift/origin-release:golang-1.16 as build
+LABEL stage=build
+
+WORKDIR /build/windows-machine-config-operator/
+
+# Copy files and directories needed to build the WMCO binary
+# `make build` uses `get_version()` in `hack/common.sh` to determine the version of binary created.
+# Any new file added here should be reflected in `hack/common.sh` if it dirties the git working tree.
+COPY version version
+COPY tools.go tools.go
+COPY go.mod go.mod
+COPY go.sum go.sum
+COPY vendor vendor
+COPY .gitignore .gitignore
+COPY Makefile Makefile
+COPY build build
+COPY main.go .
+COPY controllers controllers
+COPY hack hack
+COPY pkg pkg
+COPY .git .git
+RUN make build
+
+FROM wmco-base:latest
+LABEL stage=operator
+
+# Copy required powershell scripts
+WORKDIR /payload/powershell/
+COPY pkg/internal/wget-ignore-cert.ps1 .
+COPY pkg/internal/hns.psm1 .
+
+WORKDIR /
+
+ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
+    USER_UID=1001 \
+    USER_NAME=windows-machine-config-operator
+
+# install operator binary
+COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-machine-config-operator ${OPERATOR}
+
+COPY build/bin /usr/local/bin
+RUN  /usr/local/bin/user_setup
+
+ENTRYPOINT ["/usr/local/bin/entrypoint"]
+
+USER ${USER_UID}

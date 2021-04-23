@@ -3,15 +3,22 @@
 # Hacking on the WMCO
 
 ## Build
-To build the operator image, execute:
+To build and push the operator image, execute:
 ```shell script
-podman build . -t quay.io/<insert username>/wmco:$VERSION_TAG -f build/Dockerfile
+export OPERATOR_IMAGE=quay.io/<insert username>/wmco:$VERSION_TAG
+hack/olm.sh build
 ```
 
-The operator image needs to be pushed to a remote repository:
+Building the full WMCO image is a time consuming process given we are building all the submodules. If you are just
+changing WMCO and not the submodules, you can separately build the submodules as a base image and then just build the
+WMCO  image from this base image:
 ```shell script
-podman push quay.io/<insert username>/wmco:$VERSION_TAG
+make base-img
+make wmco-img IMG=$OPERATOR_IMAGE
 ```
+`make base-img` will not push the base image as a push is not needed. `make wmco-img` will make and push the
+`$OPERATOR_IMAGE`
+
 ## Development workflow
 With the Operator image built and pushed to a remote repository, the operator can be deployed either directly,
 or through OLM.
@@ -23,7 +30,7 @@ export KUBECONFIG=<path to kubeconfig>
 
 ### Deploying the operator directly
 ```shell script
-make deploy IMG=<quay.io/<insert username>/wmco:$VERSION_TAG>
+make deploy IMG=$OPERATOR_IMAGE
 ```
 The above command will directly deploy all the resources required for the operator to run, as well as the WMCO pod.
 To remove the installed resources:
@@ -33,7 +40,7 @@ make undeploy
 
 ### Deploying the operator through OLM
 ```shell script
-hack/olm.sh run -c "<OPERATOR_IMAGE>" -k "<PRIVATE_KEY.PEM>"
+hack/olm.sh run -k "<PRIVATE_KEY.PEM>"
 ```
 Where `"<PRIVATE_KEY.PEM>"` is the private key which will be used to configure Windows nodes.
 This command builds the operator image, pushes it to remote repository and uses OLM to launch the operator. Executing
@@ -43,7 +50,7 @@ In order to build the operator ignoring the existing build image cache, run the 
 
 To clean-up the installation, use:
 ```shell script
-hack/olm.sh cleanup -c "<OPERATOR_IMAGE>"
+hack/olm.sh cleanup
 ```
 
 ### Running e2e tests on a cluster
@@ -51,7 +58,7 @@ The following enviroment variables must be set:
 ```shell script
 # SSH key to be used for creation of cloud-private-key secret
 export KUBE_SSH_KEY_PATH=<path to RSA type ssh key>
-export OPERATOR_IMAGE=<registry url for remote WMCO image>
+export OPERATOR_IMAGE=quay.io/<insert username>/wmco:$VERSION_TAG
 export OPENSHIFT_CI=false
 # on AWS only:
 export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
@@ -101,7 +108,7 @@ Within the bundle manifests the `:latest` tag must be manually removed in order 
 If you plan on building a bundle image using these bundle manifests, the image should be set to reflect where
 the WMCO was pushed to in the [build step](#build)
 ```shell script
-make bundle IMG=quay.io/<insert username>/wmco:$VERSION_TAG
+make bundle IMG=$OPERATOR_IMAGE
 ```
 
 ### Creating a bundle image
