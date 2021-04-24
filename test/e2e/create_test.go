@@ -107,14 +107,27 @@ func (tc *testContext) deleteMachineSet(ms *mapi.MachineSet) error {
 }
 
 // waitForWindowsMachines waits for a certain amount of Windows Machines to reach a certain phase
+// if machineCount = 0, it implies we are only waiting for Machines to be deleted and the phase is
+// ignored in this case.
 func (tc *testContext) waitForWindowsMachines(machineCount int, phase string) error {
-	machineCreationTimeLimit := time.Minute * 5
+	if machineCount == 0 && phase != "" {
+		return errors.New("expected phase to be to be an empty string if machineCount is 0")
+	}
+
+	var machines *mapi.MachineList
+	machineStateTimeLimit := time.Minute * 5
+	startTime := time.Now()
 	// Increasing the time limit due to https://bugzilla.redhat.com/show_bug.cgi?id=1936556
 	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
-		machineCreationTimeLimit = time.Minute * 20
+		// When deleting Machines, set the time limit to 10 minutes
+		if machineCount == 0 {
+			machineStateTimeLimit = time.Minute * 10
+		} else {
+			machineStateTimeLimit = time.Minute * 20
+		}
 	}
-	return wait.Poll(retryInterval, machineCreationTimeLimit, func() (done bool, err error) {
-		machines, err := tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), metav1.ListOptions{
+	err := wait.Poll(retryInterval, machineStateTimeLimit, func() (done bool, err error) {
+		machines, err = tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), metav1.ListOptions{
 			LabelSelector: controllers.MachineOSLabel + "=Windows"})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
@@ -128,6 +141,10 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string) er
 			log.Printf("waiting for %d/%d Windows Machines", machineCount-len(machines.Items), machineCount)
 			return false, nil
 		}
+		// A phase of "" skips the phase check
+		if phase == "" {
+			return true, nil
+		}
 		for _, machine := range machines.Items {
 			if machine.Status.Phase == nil || *machine.Status.Phase != phase {
 				return false, nil
@@ -135,6 +152,14 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string) er
 		}
 		return true, nil
 	})
+	if phase == "" {
+		phase = "deleted"
+	}
+
+	// Log the time elapsed while waiting for creation of the Machines
+	endTime := time.Now()
+	log.Printf("%v time is required for %d Machines to reach phase %s", endTime.Sub(startTime), len(machines.Items), phase)
+	return err
 }
 
 // waitForWindowsNode waits until there exists nodeCount Windows nodes with the correct set of annotations.
