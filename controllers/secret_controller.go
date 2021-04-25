@@ -29,6 +29,9 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
 
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=*
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=create;get;list;watch;update
+
 const (
 	userDataSecret    = "windows-user-data"
 	userDataNamespace = "openshift-machine-api"

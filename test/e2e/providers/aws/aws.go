@@ -366,8 +366,8 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 		},
 		// query placement
 		Placement: awsprovider.Placement{
-			a.region,
-			*subnet.AvailabilityZone,
+			Region:           a.region,
+			AvailabilityZone: *subnet.AvailabilityZone,
 		},
 		UserDataSecret: &core.LocalObjectReference{Name: "windows-user-data"},
 	}

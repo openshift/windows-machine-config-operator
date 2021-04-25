@@ -1,0 +1,17 @@
+resources:
+- manager.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# This allows for the manager pod to be configured, by changing values of arguments at runtime
+# WMCO does not have any use for this at the moment, so commenting it out for now.
+#configMapGenerator:
+#- files:
+#  - controller_manager_config.yaml
+#  name: manager-config
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+images:
+- name: controller
+  newName: REPLACE_IMAGE

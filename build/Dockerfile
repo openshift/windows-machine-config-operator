@@ -46,8 +46,7 @@ RUN ./build_windows.sh
 
 WORKDIR /build/windows-machine-config-operator/
 # Copy files and directories needed to build the WMCO binary
-# `make build` uses `get_version()` in `hack/common.sh` to determine the version of binary created.
-# Any new file added here should be reflected in `hack/common.sh` if it dirties the git working tree.
+# Any new file added here should be reflected in `build/build.sh` if it dirties the git working tree.
 COPY version version
 COPY tools.go tools.go
 COPY go.mod go.mod

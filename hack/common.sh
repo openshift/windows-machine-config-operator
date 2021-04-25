@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Location of the manifests file
-MANIFEST_LOC=deploy/olm-catalog/windows-machine-config-operator
+MANIFEST_LOC=bundle/
+WMCO_DEPLOY_NAMESPACE=openshift-windows-machine-config-operator
 
 error-exit() {
     echo "Error: $*" >&2
@@ -18,8 +19,15 @@ get_operator_sdk() {
 
   DOWNLOAD_DIR=/tmp/operator-sdk
   # TODO: Make this download the same version we have in go dependencies in gomod
-  wget --no-verbose -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v0.19.4/operator-sdk-v0.19.4-x86_64-linux-gnu && chmod +x /tmp/operator-sdk || return
+  wget --no-verbose -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v1.6.1/operator-sdk_linux_amd64 -o operator-sdk && chmod +x /tmp/operator-sdk || return
   echo $DOWNLOAD_DIR
+}
+
+get_packagemanifests_version() {
+  # Find the line that has a semver pattern in it, such as v2.0.0
+  local VERSION=$(grep -o v.\.\.\.. $MANIFEST_LOC/windows-machine-config-operator.package.yaml)
+  # return the version without the 'v' at the beginning.
+  echo ${VERSION:1}
 }
 
 # This function runs operator-sdk run --olm/cleanup depending on the given parameters
@@ -40,11 +48,19 @@ OSDK_WMCO_management() {
   local COMMAND=$1
   local OSDK_PATH=$2
 
-  $OSDK_PATH $COMMAND packagemanifests \
-    --olm-namespace openshift-operator-lifecycle-manager \
-    --operator-namespace openshift-windows-machine-config-operator \
-    --operator-version 0.0.0 \
-    --timeout 5m
+  if [[ "$COMMAND" = "run" ]]; then
+    local version=$(get_packagemanifests_version)
+    $OSDK_PATH run packagemanifests bundle \
+      --namespace $WMCO_DEPLOY_NAMESPACE \
+      --install-mode=OwnNamespace \
+      --version $version \
+      --timeout 5m
+  fi
+  if [[ "$COMMAND" = "cleanup" ]]; then
+    $OSDK_PATH cleanup windows-machine-config-operator \
+      --namespace $WMCO_DEPLOY_NAMESPACE \
+      --timeout 5m
+  fi
 }
 
 build_WMCO() {
@@ -90,8 +106,12 @@ run_WMCO() {
       error-exit "operator bundle validation failed"
   fi
 
-  if ! oc apply -f deploy/namespace.yaml; then
-      return 1
+
+  # create the deploy namespace if it does not exist
+  if ! oc get ns $WMCO_DEPLOY_NAMESPACE; then
+      if ! oc create ns openshift-windows-machine-config-operator; then
+          return 1
+      fi
   fi
 
   if [ -n "$PRIVATE_KEY" ]; then
@@ -125,24 +145,8 @@ cleanup_WMCO() {
   fi
   transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
 
-  # Remove the operator from openshift-windows-machine-config-operator namespace
-  oc delete -f deploy/namespace.yaml
-}
-
-# returns the operator version in `Version+GitHash` format
-# we are just checking the status of files that affect the building of the operator binary
-# the files here are selected based on the files that we are transferring while building the
-# operator binary in `build/Dockerfile`
-get_version() {
-  OPERATOR_VERSION=2.0.0
-  GIT_COMMIT=$(git rev-parse --short HEAD)
-  VERSION="${OPERATOR_VERSION}+${GIT_COMMIT}"
-
-  if [ -n "$(git status version tools.go go.mod go.sum vendor Makefile build cmd hack pkg --porcelain)" ]; then
-    VERSION="${VERSION}-dirty"
-  fi
-
-  echo $VERSION
+  # Remove the openshift-windows-machine-config-operator namespace
+  oc delete ns $WMCO_DEPLOY_NAMESPACE
 }
 
 # Given two parameters, replaces the value in first parameter with the second in the csv.

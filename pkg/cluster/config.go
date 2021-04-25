@@ -16,6 +16,9 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+//+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get
+//+kubebuilder:rbac:groups=config.openshift.io;operator.openshift.io,resources=networks,verbs=get
+
 const (
 	ovnKubernetesNetwork = "OVNKubernetes"
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
