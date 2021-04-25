@@ -54,6 +54,8 @@ func testWindowsNodeDeletion(t *testing.T) {
 	for _, machineSet := range e2eMachineSets {
 		assert.NoError(t, testCtx.deleteMachineSet(machineSet), "error deleting MachineSet")
 	}
+	// Phase is ignored during deletion, in this case we are just waiting for Machines to be deleted.
+	require.NoError(t, testCtx.waitForWindowsMachines(int(gc.numberOfNodes), ""), "Windows machine deletion failed")
 
 	// Test if prometheus configuration is updated to have no node entries in the endpoints object
 	testPrometheus(t)
