@@ -15,8 +15,8 @@ import (
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
@@ -44,8 +44,8 @@ const (
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
 // related to kubeclient and the windowsVM.
 type nodeConfig struct {
-	// k8sclientset holds the information related to kubernetes clientset
-	k8sclientset *kubernetes.Clientset
+	// client can be used to interact with the cluster
+	client client.Client
 	// Windows holds the information related to the windows VM
 	windows.Windows
 	// Node holds the information related to node object
@@ -83,7 +83,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machineName, clusterServiceCIDR,
+func NewNodeConfig(client client.Client, ipAddress, instanceID, machineName, clusterServiceCIDR,
 	vxlanPort string, signer ssh.Signer, platform oconfig.PlatformType) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
@@ -115,7 +115,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machi
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
-	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
+	return &nodeConfig{client: client, Windows: win, network: newNetwork(log),
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
 		log: log}, nil
 }
@@ -162,12 +162,10 @@ func (nc *nodeConfig) Configure() error {
 	}
 	nc.addVersionAnnotation()
 	nc.addPubKeyHashAnnotation()
-	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
+	err := nc.client.Update(context.TODO(), nc.node)
 	if err != nil {
 		return errors.Wrap(err, "error updating node labels and annotations")
 	}
-	nc.node = node
-
 	return nil
 }
 
@@ -220,8 +218,9 @@ func (nc *nodeConfig) addPubKeyHashAnnotation() {
 // setNode identifies the node from the instanceID provided and sets the node object in the nodeconfig.
 func (nc *nodeConfig) setNode() error {
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
-		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
-			meta.ListOptions{LabelSelector: WindowsOSLabel})
+		var nodes core.NodeList
+		err := nc.client.List(context.TODO(), &nodes,
+			client.MatchingLabels{core.LabelOSStable: "windows"})
 		if err != nil {
 			nc.log.V(1).Error(err, "node listing failed")
 			return false, nil
@@ -248,7 +247,8 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	nodeName := nc.node.GetName()
 	var found bool
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
-		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, meta.GetOptions{})
+		var node core.Node
+		err := nc.client.Get(context.TODO(), client.ObjectKey{Name: nodeName}, &node)
 		if err != nil {
 			nc.log.V(1).Error(err, "unable to get associated node object")
 			return false, nil
@@ -256,7 +256,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 		_, found := node.Annotations[annotation]
 		if found {
 			//update node to avoid staleness
-			nc.node = node
+			nc.node = &node
 			return true, nil
 		}
 		return false, nil
