@@ -30,24 +30,14 @@ Now create a `<cluster_directory>/manifests/cluster-network-03-config.yml` file 
 apiVersion: operator.openshift.io/v1
 kind: Network
 metadata:
-  creationTimestamp: null
   name: cluster
 spec:
-  clusterNetwork:
-  - cidr: 10.128.0.0/14
-    hostPrefix: 23
-  externalIP:
-    policy: {}
-  serviceNetwork:
-  - 172.30.0.0/16
   defaultNetwork:
-    type: OVNKubernetes
     ovnKubernetesConfig:
       hybridOverlayConfig:
         hybridClusterNetwork:
         - cidr: 10.132.0.0/14
           hostPrefix: 23
-status: {}
 ```
 The above configuration is recommended for AWS and Azure clusters.
 
@@ -57,25 +47,15 @@ between hosts [issue](https://docs.microsoft.com/en-us/virtualization/windowscon
 apiVersion: operator.openshift.io/v1
 kind: Network
 metadata:
-  creationTimestamp: null
   name: cluster
 spec:
-  clusterNetwork:
-    - cidr: 10.128.0.0/14
-      hostPrefix: 23
-  externalIP:
-    policy: {}
-  serviceNetwork:
-    - 172.30.0.0/16
   defaultNetwork:
-    type: OVNKubernetes
     ovnKubernetesConfig:
       hybridOverlayConfig:
         hybridClusterNetwork:
           - cidr: 10.132.0.0/14
             hostPrefix: 23
         hybridOverlayVXLANPort: 9898
-status: {}
 ```
 
 **Note:** The `hybridClusterNetwork` CIDR cannot overlap with the `clusterNetwork` CIDR.
