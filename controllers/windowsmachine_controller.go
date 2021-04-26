@@ -13,7 +13,6 @@ import (
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
-	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
@@ -57,8 +56,6 @@ type WindowsMachineReconciler struct {
 	client client.Client
 	log    logr.Logger
 	scheme *runtime.Scheme
-	// k8sclientset holds the kube client that we can re-use for all kube objects other than custom resources.
-	k8sclientset *kubernetes.Clientset
 	// clusterServiceCIDR holds the cluster network service CIDR
 	clusterServiceCIDR string
 	// signer is a signer created from the user's private key
@@ -106,7 +103,6 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 		client:               mgr.GetClient(),
 		log:                  ctrl.Log.WithName("controller").WithName("windowsmachine"),
 		scheme:               mgr.GetScheme(),
-		k8sclientset:         clientset,
 		clusterServiceCIDR:   serviceCIDR,
 		vxlanPort:            clusterConfig.Network().VXLANPort(),
 		recorder:             mgr.GetEventRecorderFor("windowsmachine"),
@@ -507,7 +503,8 @@ func (r *WindowsMachineReconciler) isWindowsMachineHealthy(machine *mapi.Machine
 	}
 
 	// Get node associated with the machine
-	node, err := r.k8sclientset.CoreV1().Nodes().Get(context.TODO(), machine.Status.NodeRef.Name, meta.GetOptions{})
+	var node core.Node
+	err := r.client.Get(context.TODO(), client.ObjectKey{Name: machine.Status.NodeRef.Name}, &node)
 	if err != nil {
 		return false
 	}
