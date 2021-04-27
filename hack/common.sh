@@ -2,7 +2,9 @@
 
 # Location of the manifests file
 MANIFEST_LOC=bundle/
-WMCO_DEPLOY_NAMESPACE=openshift-windows-machine-config-operator
+
+# define namespace
+declare -r WMCO_DEPLOY_NAMESPACE=openshift-windows-machine-config-operator
 
 error-exit() {
     echo "Error: $*" >&2
@@ -109,25 +111,25 @@ run_WMCO() {
 
   # create the deploy namespace if it does not exist
   if ! oc get ns $WMCO_DEPLOY_NAMESPACE; then
-      if ! oc create ns openshift-windows-machine-config-operator; then
+      if ! oc create ns $WMCO_DEPLOY_NAMESPACE; then
           return 1
       fi
   fi
 
   if [ -n "$PRIVATE_KEY" ]; then
-      if ! oc get secret cloud-private-key -n openshift-windows-machine-config-operator; then
+      if ! oc get secret cloud-private-key -n $WMCO_DEPLOY_NAMESPACE; then
           echo "Creating private-key secret"
-          if ! oc create secret generic cloud-private-key --from-file=private-key.pem="$PRIVATE_KEY" -n openshift-windows-machine-config-operator; then
+          if ! oc create secret generic cloud-private-key --from-file=private-key.pem="$PRIVATE_KEY" -n $WMCO_DEPLOY_NAMESPACE; then
               return 1
           fi
       fi
   fi
 
-  # Run the operator in the openshift-windows-machine-config-operator namespace
+  # Run the operator in the given namespace
   OSDK_WMCO_management run $OSDK
 
   # Additional guard that ensures that operator was deployed given the SDK flakes in error reporting
-  if ! oc rollout status deployment windows-machine-config-operator -n openshift-windows-machine-config-operator --timeout=5s; then
+  if ! oc rollout status deployment windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE --timeout=5s; then
     return 1
   fi
 }
@@ -145,7 +147,7 @@ cleanup_WMCO() {
   fi
   transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
 
-  # Remove the openshift-windows-machine-config-operator namespace
+  # Remove the declared namespace
   oc delete ns $WMCO_DEPLOY_NAMESPACE
 }
 
