@@ -91,11 +91,6 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 		return nil, errors.Wrap(err, "error creating kubernetes clientset")
 	}
 
-	serviceCIDR, err := clusterConfig.Network().GetServiceCIDR()
-	if err != nil {
-		return nil, errors.Wrap(err, "error getting service CIDR")
-	}
-
 	// Initialize prometheus configuration
 	pc, err := metrics.NewPrometheusNodeConfig(clientset, watchNamespace)
 	if err != nil {
@@ -107,7 +102,7 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 		log:                  ctrl.Log.WithName("controller").WithName("windowsmachine"),
 		scheme:               mgr.GetScheme(),
 		k8sclientset:         clientset,
-		clusterServiceCIDR:   serviceCIDR,
+		clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
 		vxlanPort:            clusterConfig.Network().VXLANPort(),
 		recorder:             mgr.GetEventRecorderFor("windowsmachine"),
 		watchNamespace:       watchNamespace,

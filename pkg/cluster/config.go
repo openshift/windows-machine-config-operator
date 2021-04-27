@@ -29,7 +29,7 @@ const (
 // Network interface contains methods to interact with cluster network objects
 type Network interface {
 	Validate() error
-	GetServiceCIDR() (string, error)
+	GetServiceCIDR() string
 	VXLANPort() string
 }
 
@@ -214,8 +214,8 @@ func NewClusterNetworkCfg(serviceCIDR, vxlanPort string) (*clusterNetworkCfg, er
 }
 
 // GetServiceCIDR returns the serviceCIDR string
-func (ovn *ovnKubernetes) GetServiceCIDR() (string, error) {
-	return ovn.clusterNetworkConfig.serviceCIDR, nil
+func (ovn *ovnKubernetes) GetServiceCIDR() string {
+	return ovn.clusterNetworkConfig.serviceCIDR
 }
 
 // GetVXLANPort gets the VXLAN port to be used for VXLAN tunnel establishment
