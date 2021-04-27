@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -215,22 +216,24 @@ func (r *WindowsMachineReconciler) isValidMachine(obj client.Object) bool {
 
 	// If this function is called on an object that equals nil, return false
 	if obj == nil {
-		r.log.Error(errors.New("expected machine object to not equal nil"), "invalid Machine", "object", obj)
+		r.log.Error(errors.New("Machine object cannot be nil"), "invalid Machine", "object", obj)
 		return false
 	}
 
 	var ok bool
 	machine, ok = obj.(*mapi.Machine)
 	if !ok {
-		r.log.Error(errors.New("unable to typecast object to machine"), "invalid Machine", "object", obj)
+		r.log.Error(errors.New("unable to typecast object to Machine"), "invalid Machine", "object", obj)
 		return false
 	}
 	if machine.Status.Phase == nil {
-		r.log.V(1).Info("machine object has no phase associated with it", "name", machine.Name)
+		r.log.V(1).Info("Machine has no phase associated with it", "name", machine.Name)
 		return false
 	}
-	if len(machine.Status.Addresses) == 0 {
-		r.log.V(1).Info("machine object has no address associated with it", "name", machine.Name)
+
+	_, err := getInternalIPAddress(machine.Status.Addresses)
+	if err != nil {
+		r.log.V(1).Info("invalid Machine", "name", machine.Name, "error", err)
 		return false
 	}
 
@@ -342,19 +345,9 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	// Get the IP address associated with the Windows machine, if not error out to requeue again
-	if len(machine.Status.Addresses) == 0 {
-		return ctrl.Result{}, errors.Errorf("machine %s doesn't have any ip addresses defined",
-			machine.Name)
-	}
-	ipAddress := ""
-	for _, address := range machine.Status.Addresses {
-		if address.Type == core.NodeInternalIP {
-			ipAddress = address.Address
-		}
-	}
-	if len(ipAddress) == 0 {
-		return ctrl.Result{}, errors.Errorf("no internal ip address associated with machine %s",
-			machine.Name)
+	ipAddress, err := getInternalIPAddress(machine.Status.Addresses)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "invalid machine %s", machine.Name)
 	}
 
 	// Get the instance ID associated with the Windows machine.
@@ -518,4 +511,19 @@ func (r *WindowsMachineReconciler) isWindowsMachineHealthy(machine *mapi.Machine
 	}
 
 	return true
+}
+
+// getInternalIPAddress returns the internal IP address of the Machine
+func getInternalIPAddress(addresses []core.NodeAddress) (string, error) {
+	// Get the IP address associated with the Windows machine, if not error out to requeue again
+	if len(addresses) == 0 {
+		return "", errors.New("no IP addresses defined")
+	}
+	for _, address := range addresses {
+		// Only return the IPv4 address
+		if address.Type == core.NodeInternalIP && net.ParseIP(address.Address).To4() != nil {
+			return address.Address, nil
+		}
+	}
+	return "", errors.New("no internal IP address associated")
 }
