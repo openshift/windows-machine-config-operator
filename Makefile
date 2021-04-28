@@ -67,7 +67,7 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=windows-machine-config-operator webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations. Must be run when adding or changing a CRD.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 fmt: ## Run go fmt against code.
@@ -88,7 +88,7 @@ GO_MOD_FLAGS ?= -mod=vendor
 endif
 
 .PHONY: build
-build: generate fmt vet
+build: fmt vet
 	build/build.sh ${OUTPUT_DIR} ${WMCO_VERSION} ${GO_MOD_FLAGS}
 
 run: manifests generate fmt vet ## Run a controller from your host.
