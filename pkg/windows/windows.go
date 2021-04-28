@@ -2,10 +2,11 @@ package windows
 
 import (
 	"fmt"
-	"github.com/go-logr/logr"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/go-logr/logr"
 
 	oconfig "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
@@ -135,6 +136,8 @@ type Windows interface {
 	ConfigureWindowsExporter() error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy(string, string) error
+	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
+	EnsureRequiredServicesStopped() error
 }
 
 // windows implements the Windows interface
@@ -264,8 +267,7 @@ func (vm *windows) Reinitialize() error {
 	return nil
 }
 
-// ensureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
-func (vm *windows) ensureRequiredServicesStopped() error {
+func (vm *windows) EnsureRequiredServicesStopped() error {
 	// This slice order matters due to service dependencies
 	requiredSVCs := []string{windowsExporterServiceName, kubeProxyServiceName, hybridOverlayServiceName,
 		kubeletServiceName}
@@ -280,7 +282,7 @@ func (vm *windows) ensureRequiredServicesStopped() error {
 
 func (vm *windows) Configure() error {
 	vm.log.Info("configuring")
-	if err := vm.ensureRequiredServicesStopped(); err != nil {
+	if err := vm.EnsureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop required services")
 	}
 	// Set the hostName of the Windows VM in case of vSphere
