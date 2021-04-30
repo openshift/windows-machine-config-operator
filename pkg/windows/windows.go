@@ -63,7 +63,7 @@ const (
 	// windowsExporterServiceArgs specifies metrics for the windows_exporter service to collect
 	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
 	windowsExporterServiceArgs = "--collectors.enabled " +
-		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory\""
+		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info\""
 	// remotePowerShellCmdPrefix holds the PowerShell prefix that needs to be prefixed  for every remote PowerShell
 	// command executed on the remote Windows VM
 	remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass "
