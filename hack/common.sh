@@ -114,6 +114,11 @@ run_WMCO() {
       fi
   fi
 
+  # Add the "openshift.io/cluster-monitoring:"true"" label to the operator namespace to enable monitoring
+  if ! oc label ns $WMCO_DEPLOY_NAMESPACE openshift.io/cluster-monitoring=true --overwrite; then
+      return 1
+  fi
+
   if [ -n "$PRIVATE_KEY" ]; then
       if ! oc get secret cloud-private-key -n openshift-windows-machine-config-operator; then
           echo "Creating private-key secret"
