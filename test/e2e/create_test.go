@@ -233,6 +233,10 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, waitForAnnotations, 
 				log.Printf("expected node Status to have condition type Ready for node %v", node.Name)
 				return false, nil
 			}
+			if node.Spec.Unschedulable {
+				log.Printf("expected node %s to be schedulable", node.Name)
+				return false, nil
+			}
 
 			for _, annotation := range annotations {
 				_, found := node.Annotations[annotation]
