@@ -371,7 +371,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 
 	log.Info("processing")
 	// Make the Machine a Windows Worker node
-	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name, r.platform); err != nil {
+	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name); err != nil {
 		var authErr *windows.AuthErr
 		if errors.As(err, &authErr) {
 			// SSH authentication errors with the Machine are non recoverable, stemming from a mismatch with the
@@ -413,9 +413,27 @@ func (r *WindowsMachineReconciler) deleteMachine(machine *mapi.Machine) error {
 }
 
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
-func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineName string, platform oconfig.PlatformType) error {
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, instanceID, machineName, r.clusterServiceCIDR,
-		r.vxlanPort, r.signer, platform)
+func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineName string) error {
+	// The name of the Machine must be the same as the hostname of the associated VM. This is currently not true in the
+	// case of vSphere VMs provisioned by MAPI. In case of Linux, ignition was handling it. As we don't have an
+	// equivalent of ignition in Windows, WMCO must correct this by changing the VM's hostname.
+	// TODO: Remove this once we figure out how to do this via guestInfo in vSphere
+	// 		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
+	hostname := ""
+	if r.platform == oconfig.VSpherePlatformType {
+		hostname = machineName
+	}
+	// TODO: This should be changed so that the "core" user is used on all platforms for SSH connections.
+	// https://issues.redhat.com/browse/WINC-430
+	var username string
+	if r.platform == oconfig.AzurePlatformType {
+		username = "capi"
+	} else {
+		username = "Administrator"
+	}
+
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, hostname, r.clusterServiceCIDR,
+		r.vxlanPort, username, r.signer)
 	if err != nil {
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
 	}
@@ -424,7 +442,7 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
 	}
 
-	r.log.Info("Windows VM has been configured as a worker node", "ID", nc.ID())
+	r.log.Info("Windows VM has been configured as a worker node", "ID", instanceID)
 	return nil
 }
 

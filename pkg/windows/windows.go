@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-
-	oconfig "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -109,10 +107,10 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 	return filesToTransfer, nil
 }
 
-// Windows contains all the  methods needed to configure a Windows VM to become a worker node
+// Windows contains all the methods needed to configure a Windows VM to become a worker node
 type Windows interface {
-	// ID returns the cloud provider ID of the VM
-	ID() string
+	// IP Returns the IP used to configure the Windows VM
+	IP() string
 	// EnsureFile ensures the given file exists within the specified directory on the Windows VM. The file will be copied
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
@@ -144,8 +142,6 @@ type Windows interface {
 type windows struct {
 	// ipAddress is the IP address associated with the Windows VM created
 	ipAddress string
-	// id is the VM's cloud provider ID
-	id string
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
 	// the OpenShift worker ignition file.
 	workerIgnitionEndpoint string
@@ -155,49 +151,30 @@ type windows struct {
 	interact connectivity
 	// vxlanPort is the custom VXLAN port
 	vxlanPort string
-	// platform indicates the cloud on which OpenShift cluster is running
-	// TODO: Remove this once we figure out how to be provider agnostic. This is specific to proper usage of userData
-	// 		 in vSphere
-	//		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
-	platform oconfig.PlatformType
-	// hostName is the name of the Windows VM that we need to configure in vSphere clusters. This is currently not set
-	// in case of vSphere VMs. In case of Linux, ignition was handling it. As we don't have an equivalent of ignition
-	// in Windows, we are setting this in WMCO currently
-	// TODO: Remove this once we figure out how to do this via guestInfo in vSphere
-	// 		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
+	// if hostName is set, the hostname of the VM will be set to its value when the VM is being configured.
 	hostName string
 	log      logr.Logger
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(ipAddress, instanceID, machineName, workerIgnitionEndpoint, vxlanPort string, signer ssh.Signer,
-	platform oconfig.PlatformType) (Windows, error) {
+func New(ipAddress, hostName, workerIgnitionEndpoint, vxlanPort, username string, signer ssh.Signer) (Windows, error) {
 	if workerIgnitionEndpoint == "" {
 		return nil, errors.New("cannot use empty ignition endpoint")
 	}
-	// TODO: This should be changed so that the "core" user is used on all platforms for SSH connections.
-	// https://issues.redhat.com/browse/WINC-430
-	var adminUser string
-	if platform == oconfig.AzurePlatformType {
-		adminUser = "capi"
-	} else {
-		adminUser = "Administrator"
-	}
 
-	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", instanceID))
-	log.V(1).Info("initializing SSH connection", "user", adminUser)
-	conn, err := newSshConnectivity(adminUser, ipAddress, signer, log)
+	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", ipAddress))
+	log.V(1).Info("initializing SSH connection", "user", username)
+	conn, err := newSshConnectivity(username, ipAddress, signer, log)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instanceID)
+		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", ipAddress)
 	}
 
 	return &windows{
-			id:                     instanceID,
+			ipAddress:              ipAddress,
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			vxlanPort:              vxlanPort,
-			platform:               platform,
-			hostName:               machineName,
+			hostName:               hostName,
 			log:                    log,
 		},
 		nil
@@ -205,8 +182,8 @@ func New(ipAddress, instanceID, machineName, workerIgnitionEndpoint, vxlanPort s
 
 // Interface methods
 
-func (vm *windows) ID() string {
-	return vm.id
+func (vm *windows) IP() string {
+	return vm.ipAddress
 }
 
 func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
@@ -238,7 +215,7 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 func (vm *windows) FileExists(path string) (bool, error) {
 	out, err := vm.Run("Test-Path "+path, true)
 	if err != nil {
-		return false, errors.Wrapf(err, "error checking if file %s exists on Windows VM %s", path, vm.ID())
+		return false, errors.Wrapf(err, "error checking if file %s exists", path)
 	}
 	return strings.TrimSpace(out) == "True", nil
 }
@@ -285,8 +262,8 @@ func (vm *windows) Configure() error {
 	if err := vm.EnsureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop required services")
 	}
-	// Set the hostName of the Windows VM in case of vSphere
-	if vm.platform == oconfig.VSpherePlatformType {
+	// Set the hostName of the Windows VM if needed
+	if vm.hostName != "" {
 		if err := vm.ensureHostName(); err != nil {
 			return err
 		}
@@ -298,7 +275,7 @@ func (vm *windows) Configure() error {
 		return errors.Wrap(err, "error transferring files to Windows VM")
 	}
 	if err := vm.ConfigureWindowsExporter(); err != nil {
-		return errors.Wrapf(err, "error configuring Windows exporter on the Windows VM %s", vm.ID())
+		return errors.Wrapf(err, "error configuring Windows exporter")
 	}
 
 	return vm.runBootstrapper()
@@ -412,7 +389,7 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 
 // Interface helper methods
 
-// ensureHostName ensures hostname of the Windows VM matches the machine name
+// ensureHostName ensures hostname of the Windows VM matches the expected name
 func (vm *windows) ensureHostName() error {
 	hostNameChangedNeeded, err := vm.isHostNameChangeNeeded()
 	if err != nil {
@@ -430,12 +407,12 @@ func (vm *windows) ensureHostName() error {
 func (vm *windows) isHostNameChangeNeeded() (bool, error) {
 	out, err := vm.Run("hostname", true)
 	if err != nil {
-		return false, errors.Wrapf(err, "error getting the host name for %s with stdout %s", vm.ID(), out)
+		return false, errors.Wrapf(err, "error getting the host name, with stdout %s", out)
 	}
 	return !strings.Contains(out, vm.hostName), nil
 }
 
-// changeHostName changes the hostName of the Windows VM to match with the machine name
+// changeHostName changes the hostName of the Windows VM to match the expected value
 func (vm *windows) changeHostName() error {
 	changeHostNameCommand := "Rename-Computer -NewName " + vm.hostName + " -Force -Restart"
 	out, err := vm.Run(changeHostNameCommand, true)

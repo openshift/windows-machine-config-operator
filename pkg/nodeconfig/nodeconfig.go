@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	oconfig "github.com/openshift/api/config/v1"
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
@@ -85,8 +84,9 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
-func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machineName, clusterServiceCIDR,
-	vxlanPort string, signer ssh.Signer, platform oconfig.PlatformType) (*nodeConfig, error) {
+// hostName having a value will result in the VM's hostname being changed to the given value.
+func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, hostname, clusterServiceCIDR,
+	vxlanPort, username string, signer ssh.Signer) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -107,12 +107,9 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, instanceID, machi
 			"creating new node config")
 	}
 
-	// Update the logger name with the VM's cloud ID. Ideally this should be the Machine name but is not available at
-	// this point.
-	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", instanceID))
-	win, err := windows.New(ipAddress, instanceID, machineName, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
-		signer, platform)
-
+	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", ipAddress))
+	win, err := windows.New(ipAddress, hostname, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
+		username, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
@@ -162,7 +159,7 @@ func (nc *nodeConfig) Configure() error {
 	err := func() error {
 		// populate node object in nodeConfig in the case of a new Windows instance
 		if err := nc.setNode(false); err != nil {
-			return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
+			return errors.Wrap(err, "error getting node object")
 		}
 
 		// Make a best effort to cordon the node until it is fully configured
@@ -178,7 +175,7 @@ func (nc *nodeConfig) Configure() error {
 		// was successfully configured by this version of WMCO
 		// populate node object in nodeConfig once more
 		if err := nc.setNode(false); err != nil {
-			return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
+			return errors.Wrap(err, "error getting node object")
 		}
 		nc.addVersionAnnotation()
 		nc.addPubKeyHashAnnotation()
@@ -251,8 +248,9 @@ func (nc *nodeConfig) addPubKeyHashAnnotation() {
 	nc.node.Annotations[PubKeyHashAnnotation] = nc.publicKeyHash
 }
 
-// setNode identifies the node from the instanceID provided and sets the node object in the nodeconfig. If quickCheck is
-// set, the function does a quicker check for the node which is useful in the node reconfiguration case.
+// setNode finds the Node associated with the VM that has been configured, and sets the node field of the
+// nodeConfig object. If quickCheck is set, the function does a quicker check for the node which is useful in the node
+// reconfiguration case.
 func (nc *nodeConfig) setNode(quickCheck bool) error {
 	retryInterval := retry.Interval
 	retryTimeout := retry.Timeout
@@ -270,16 +268,18 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 		if len(nodes.Items) == 0 {
 			return false, nil
 		}
-		// get the node with given instance id
+		// get the node with IP address used to configure it
 		for _, node := range nodes.Items {
-			if nc.ID() == getInstanceIDfromProviderID(node.Spec.ProviderID) {
-				nc.node = &node
-				return true, nil
+			for _, nodeAddress := range node.Status.Addresses {
+				if nc.IP() == nodeAddress.Address {
+					nc.node = &node
+					return true, nil
+				}
 			}
 		}
 		return false, nil
 	})
-	return errors.Wrapf(err, "unable to find node for instanceID %s", nc.ID())
+	return errors.Wrapf(err, "unable to find node with IP %s", nc.IP())
 }
 
 // waitForNodeAnnotation checks if the node object has the given annotation and waits for retry.Interval seconds and
@@ -329,13 +329,6 @@ func (nc *nodeConfig) configureCNI() error {
 			configFile)
 	}
 	return nil
-}
-
-// getInstanceIDfromProviderID gets the instanceID of VM for a given cloud provider ID
-// Ex: aws:///us-east-1e/i-078285fdadccb2eaa. We always want the last entry which is the instanceID
-func getInstanceIDfromProviderID(providerID string) string {
-	providerTokens := strings.Split(providerID, "/")
-	return providerTokens[len(providerTokens)-1]
 }
 
 // CreatePubKeyHashAnnotation returns a formatted string which can be used for a public key annotation on a node.
