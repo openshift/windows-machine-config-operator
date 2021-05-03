@@ -52,6 +52,7 @@ require (
 	k8s.io/api v0.21.0-rc.0
 	k8s.io/apimachinery v0.21.0-rc.0
 	k8s.io/client-go v0.21.0-rc.0
+	k8s.io/kubectl v0.21.0-rc.0
 	sigs.k8s.io/cluster-api-provider-aws v0.0.0-00010101000000-000000000000
 	sigs.k8s.io/cluster-api-provider-azure v0.0.0-00010101000000-000000000000
 	sigs.k8s.io/controller-runtime v0.9.0-alpha.1

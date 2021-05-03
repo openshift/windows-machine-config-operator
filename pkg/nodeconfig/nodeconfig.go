@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	oconfig "github.com/openshift/api/config/v1"
@@ -16,6 +17,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/kubectl/pkg/drain"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
@@ -142,33 +144,65 @@ func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
 
 // Configure configures the Windows VM to make it a Windows worker node
 func (nc *nodeConfig) Configure() error {
+	drainHelper := &drain.Helper{Ctx: context.TODO(), Client: nc.k8sclientset}
+	// If we find a node  it implies that we are reconfiguring and we should cordon the node
+	if err := nc.setNode(true); err == nil {
+		// Make a best effort to cordon the node until it is fully configured
+		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
+			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
+		}
+	}
+
+	// Perform the basic kubelet configuration using WMCB
 	if err := nc.Windows.Configure(); err != nil {
 		return errors.Wrap(err, "configuring the Windows VM failed")
 	}
-	// populate node object in nodeConfig
-	if err := nc.setNode(); err != nil {
-		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
-	}
-	// Now that basic kubelet configuration is complete, configure networking in the node
-	if err := nc.configureNetwork(); err != nil {
-		return errors.Wrap(err, "configuring node network failed")
-	}
 
-	// Now that the node has been fully configured, add the version annotation to signify that the node
-	// was successfully configured by this version of WMCO
-	// populate node object in nodeConfig once more
-	if err := nc.setNode(); err != nil {
-		return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
-	}
-	nc.addVersionAnnotation()
-	nc.addPubKeyHashAnnotation()
-	node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
+	// Perform rest of the configuration with the kubelet running
+	err := func() error {
+		// populate node object in nodeConfig in the case of a new Windows instance
+		if err := nc.setNode(false); err != nil {
+			return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
+		}
+
+		// Make a best effort to cordon the node until it is fully configured
+		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
+			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
+		}
+		// Now that basic kubelet configuration is complete, configure networking in the node
+		if err := nc.configureNetwork(); err != nil {
+			return errors.Wrap(err, "configuring node network failed")
+		}
+
+		// Now that the node has been fully configured, add the version annotation to signify that the node
+		// was successfully configured by this version of WMCO
+		// populate node object in nodeConfig once more
+		if err := nc.setNode(false); err != nil {
+			return errors.Wrapf(err, "error getting node object for VM %s", nc.ID())
+		}
+		nc.addVersionAnnotation()
+		nc.addPubKeyHashAnnotation()
+		node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
+		if err != nil {
+			return errors.Wrap(err, "error updating node labels and annotations")
+		}
+		nc.node = node
+
+		// Uncordon the node now that it is fully configured
+		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, false); err != nil {
+			return errors.Wrapf(err, "error uncordoning the node %s", nc.node.GetName())
+		}
+		return nil
+	}()
+
+	// Stop the kubelet so that the node is marked NotReady in case of an error in configuration. We are stopping all
+	// the required services as they are interdependent and is safer to do so given the node is going to be NotReady.
 	if err != nil {
-		return errors.Wrap(err, "error updating node labels and annotations")
+		if err := nc.Windows.EnsureRequiredServicesStopped(); err != nil {
+			nc.log.Info("Unable to mark node as NotReady", "error", err)
+		}
 	}
-	nc.node = node
-
-	return nil
+	return err
 }
 
 // configureNetwork configures k8s networking in the node
@@ -217,9 +251,16 @@ func (nc *nodeConfig) addPubKeyHashAnnotation() {
 	nc.node.Annotations[PubKeyHashAnnotation] = nc.publicKeyHash
 }
 
-// setNode identifies the node from the instanceID provided and sets the node object in the nodeconfig.
-func (nc *nodeConfig) setNode() error {
-	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+// setNode identifies the node from the instanceID provided and sets the node object in the nodeconfig. If quickCheck is
+// set, the function does a quicker check for the node which is useful in the node reconfiguration case.
+func (nc *nodeConfig) setNode(quickCheck bool) error {
+	retryInterval := retry.Interval
+	retryTimeout := retry.Timeout
+	if quickCheck {
+		retryInterval = 10 * time.Second
+		retryTimeout = 30 * time.Second
+	}
+	err := wait.Poll(retryInterval, retryTimeout, func() (bool, error) {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			meta.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
@@ -227,7 +268,6 @@ func (nc *nodeConfig) setNode() error {
 			return false, nil
 		}
 		if len(nodes.Items) == 0 {
-			nc.log.V(1).Error(err, "expected non-empty node list")
 			return false, nil
 		}
 		// get the node with given instance id
