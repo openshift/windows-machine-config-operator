@@ -177,7 +177,6 @@ lint:
 unit:
 	hack/unit.sh ${GO_MOD_FLAGS}
 
-# Operator-sdk is smart enough to detect vendor directory
 .PHONY: run-ci-e2e-test
 run-ci-e2e-test:
 	hack/run-ci-e2e-test.sh -t basic
@@ -189,3 +188,12 @@ run-ci-e2e-upgrade-test:
 .PHONY: clean
 clean:
 	rm -rf ${OUTPUT_DIR}
+
+.PHONY: base-img
+base-img:
+	podman build . -t wmco-base -f build/Dockerfile.base
+
+.PHONY: wmco-img
+wmco-img:
+	podman build . -t $(IMG) -f build/Dockerfile.wmco
+	podman push $(IMG)

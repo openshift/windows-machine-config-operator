@@ -7,7 +7,6 @@
 # OPTIONS
 #    $1      Action                   run/cleanup the operator installation
 #    -i      Ignore image cache       builds the operator image without using local image build cache
-#    -c=     Operator Image           container url and tag for the operator image
 #    -k=     Private key file         path to the private key file
 
 
@@ -26,12 +25,15 @@ if [[ ! "$ACTION" =~ ^build|run|cleanup$ ]]; then
 fi
 shift # shift position of the positional parameters for getopts
 
+if [ -z "$OPERATOR_IMAGE" ]; then
+    error-exit "OPERATOR_IMAGE is not set"
+fi
+
 # Options
 PRIVATE_KEY=""
 while getopts ":ic:k:" opt; do
     case "$opt" in
 	i) noCache="--no-cache";;
-	c) OPERATOR_IMAGE="$OPTARG";;
 	k) PRIVATE_KEY="$OPTARG";;
 	?) error-exit "Unknown option"
     esac
@@ -51,8 +53,6 @@ case "$ACTION" in
 
     ;;
     run)
-  build_WMCO $OSDK
-
   # Setup and run the operator
   run_WMCO $OSDK $PRIVATE_KEY
 
