@@ -99,7 +99,8 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 	}
 
 	matchLabels := map[string]string{
-		mapi.MachineClusterIDLabel: clusterID,
+		mapi.MachineClusterIDLabel:  clusterID,
+		clusterinfo.MachineE2ELabel: "true",
 	}
 
 	// On vSphere the Machine name for Windows VMs cannot be more than 15 characters long
@@ -127,7 +128,8 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 			Name:      machineSetName,
 			Namespace: clusterinfo.MachineAPINamespace,
 			Labels: map[string]string{
-				mapi.MachineClusterIDLabel: clusterID,
+				mapi.MachineClusterIDLabel:  clusterID,
+				clusterinfo.MachineE2ELabel: "true",
 			},
 		},
 		Spec: mapi.MachineSetSpec{
