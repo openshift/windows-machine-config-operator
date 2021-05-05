@@ -326,7 +326,8 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 	}
 	machineSetName := clusterinfo.WindowsMachineSetName(withWindowsLabel)
 	matchLabels := map[string]string{
-		"machine.openshift.io/cluster-api-cluster": clusterName,
+		mapi.MachineClusterIDLabel:  clusterName,
+		clusterinfo.MachineE2ELabel: "true",
 	}
 
 	if withWindowsLabel {
@@ -335,8 +336,8 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 	matchLabels[clusterinfo.MachineSetLabel] = machineSetName + *subnet.AvailabilityZone
 
 	machineLabels := map[string]string{
-		"machine.openshift.io/cluster-api-machine-role": "worker",
-		"machine.openshift.io/cluster-api-machine-type": "worker",
+		clusterinfo.MachineRoleLabel: "worker",
+		clusterinfo.MachineTypeLabel: "worker",
 	}
 	// append matchlabels to machinelabels
 	for k, v := range matchLabels {
@@ -381,7 +382,8 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 			Name:      machineSetName,
 			Namespace: "openshift-machine-api",
 			Labels: map[string]string{
-				mapi.MachineClusterIDLabel: clusterName,
+				mapi.MachineClusterIDLabel:  clusterName,
+				clusterinfo.MachineE2ELabel: "true",
 			},
 		},
 		Spec: mapi.MachineSetSpec{
