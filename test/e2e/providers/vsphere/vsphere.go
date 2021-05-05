@@ -106,12 +106,9 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 	// The machine-api-operator derives the name from the MachineSet name,
 	// adding '"-" + rand.String(5)'.
 	// This leaves a max. 9 characters for the MachineSet name
-	machineSetName := "e2e-wmco"
+	machineSetName := clusterinfo.WindowsMachineSetName(withWindowsLabel)
 	if withWindowsLabel {
 		matchLabels[clusterinfo.MachineOSIDLabel] = "Windows"
-		// Designate machineSets that set a windows label on the machine with
-		// "e2e-wmcow", as opposed to "e2e-wmco" for MachineSets that do not set it.
-		machineSetName = machineSetName + "w"
 	}
 	matchLabels[clusterinfo.MachineSetLabel] = machineSetName
 
