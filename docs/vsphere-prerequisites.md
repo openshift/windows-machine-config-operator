@@ -1,6 +1,6 @@
 # vSphere pre-requisites
 
-The vSphere cluster must be configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
+The vSphere cluster must be configured with [hybrid OVN Kubernetes networking](setup-hybrid-OVNKubernetes-cluster.md)
 with a custom VXLAN port to work around the pod-to-pod connectivity between
 hosts [issue](https://docs.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems#pod-to-pod-connectivity-between-hosts-is-broken-on-my-kubernetes-cluster-running-on-vsphere).
 
