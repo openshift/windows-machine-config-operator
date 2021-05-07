@@ -36,3 +36,6 @@ spec:
         - expr: |
             windows_cs_physical_memory_bytes
           record: node_memory_MemTotal_bytes
+        - expr: |
+            windows_cpu_info
+          record: node_cpu_info
