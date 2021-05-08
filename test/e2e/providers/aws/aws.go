@@ -19,7 +19,6 @@ import (
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/rand"
 	awsprovider "sigs.k8s.io/cluster-api-provider-aws/pkg/apis/awsprovider/v1beta1"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
@@ -325,20 +324,20 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 	if err != nil {
 		return nil, fmt.Errorf("unable to get subnet: %v", err)
 	}
-	machineSetName := "e2e-windows-machineset-"
+	machineSetName := clusterinfo.WindowsMachineSetName(withWindowsLabel)
 	matchLabels := map[string]string{
-		"machine.openshift.io/cluster-api-cluster": clusterName,
+		mapi.MachineClusterIDLabel:  clusterName,
+		clusterinfo.MachineE2ELabel: "true",
 	}
 
 	if withWindowsLabel {
-		matchLabels[windowsLabel] = "Windows"
-		machineSetName = machineSetName + "with-windows-label-"
+		matchLabels[clusterinfo.MachineOSIDLabel] = "Windows"
 	}
-	matchLabels["machine.openshift.io/cluster-api-machineset"] = machineSetName + *subnet.AvailabilityZone
+	matchLabels[clusterinfo.MachineSetLabel] = machineSetName + *subnet.AvailabilityZone
 
 	machineLabels := map[string]string{
-		"machine.openshift.io/cluster-api-machine-role": "worker",
-		"machine.openshift.io/cluster-api-machine-type": "worker",
+		clusterinfo.MachineRoleLabel: "worker",
+		clusterinfo.MachineTypeLabel: "worker",
 	}
 	// append matchlabels to machinelabels
 	for k, v := range matchLabels {
@@ -380,10 +379,11 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 	// Set up the test machineSet
 	machineSet := &mapi.MachineSet{
 		ObjectMeta: meta.ObjectMeta{
-			Name:      machineSetName + rand.String(4),
+			Name:      machineSetName,
 			Namespace: "openshift-machine-api",
 			Labels: map[string]string{
-				mapi.MachineClusterIDLabel: clusterName,
+				mapi.MachineClusterIDLabel:  clusterName,
+				clusterinfo.MachineE2ELabel: "true",
 			},
 		},
 		Spec: mapi.MachineSetSpec{
