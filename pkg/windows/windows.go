@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
@@ -152,12 +153,14 @@ type windows struct {
 	// vxlanPort is the custom VXLAN port
 	vxlanPort string
 	// if hostName is set, the hostname of the VM will be set to its value when the VM is being configured.
-	hostName string
-	log      logr.Logger
+	hostName    string
+	networkType string
+
+	log logr.Logger
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(ipAddress, hostName, workerIgnitionEndpoint, vxlanPort, username string, signer ssh.Signer) (Windows, error) {
+func New(ipAddress, hostName, workerIgnitionEndpoint, vxlanPort, networkType, username string, signer ssh.Signer) (Windows, error) {
 	if workerIgnitionEndpoint == "" {
 		return nil, errors.New("cannot use empty ignition endpoint")
 	}
@@ -175,6 +178,7 @@ func New(ipAddress, hostName, workerIgnitionEndpoint, vxlanPort, username string
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			vxlanPort:              vxlanPort,
 			hostName:               hostName,
+			networkType:            networkType,
 			log:                    log,
 		},
 		nil
@@ -340,13 +344,29 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 }
 
 func (vm *windows) ConfigureCNI(configFile string) error {
-	// copy the CNI config file to the Windows VM
-	file, err := payload.NewFileInfo(configFile)
-	if err != nil {
-		return errors.Wrap(err, "unable to get info for the CNI config file")
-	}
-	if err := vm.EnsureFile(file, cniConfDir); err != nil {
-		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniConfDir)
+	if vm.networkType == cluster.OvnKubernetesNetwork {
+		// copy the CNI config file to the Windows VM
+		file, err := payload.NewFileInfo(configFile)
+		if err != nil {
+			return errors.Wrap(err, "unable to get info for the CNI config file")
+		}
+		if err := vm.EnsureFile(file, cniConfDir); err != nil {
+			return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniConfDir)
+		}
+	} else {
+		// For unsupported networking, use the first CNI config found in
+		// c:\k\cni\config
+		getCNIConfigCmd := "\"Get-ChildItem -Path " + cniConfDir + " -Name | Select-Object -First 1\""
+		out, err := vm.Run(getCNIConfigCmd, true)
+		if err != nil {
+			return errors.Wrap(err, "unable to get CNI config file for unsupported networking")
+		}
+		if len(out) == 0 {
+			return errors.Wrap(err, "no CNI config file found for unsupported networking")
+		}
+
+		configFile = out
+		vm.log.Info("found CNI config file: " + configFile)
 	}
 
 	cniConfigDest := cniConfDir + filepath.Base(configFile)
@@ -364,16 +384,24 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 }
 
 func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
-	sVIP, err := vm.getSourceVIP()
-	if err != nil {
-		return errors.Wrap(err, "error getting source VIP")
-	}
+	var kubeProxyServiceArgs string
+	if vm.networkType == cluster.OvnKubernetesNetwork {
+		sVIP, err := vm.getSourceVIP()
+		if err != nil {
+			return errors.Wrap(err, "error getting source VIP")
+		}
 
-	kubeProxyServiceArgs := "--windows-service --v=4 --proxy-mode=kernelspace --feature-gates=WinOverlay=true " +
-		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
-		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
-		"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + sVIP +
-		" --enable-dsr=false --feature-gates=IPv6DualStack=false\" depend= " + hybridOverlayServiceName
+		kubeProxyServiceArgs = "--windows-service --v=4 --proxy-mode=kernelspace --feature-gates=WinOverlay=true " +
+			"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
+			"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
+			"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + sVIP +
+			" --enable-dsr=false --feature-gates=IPv6DualStack=false\" depend= " + hybridOverlayServiceName
+	} else {
+		kubeProxyServiceArgs = "--windows-service --v=4 --proxy-mode=kernelspace --feature-gates=WinOverlay=true " +
+			"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
+			" --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
+			" --enable-dsr=false --feature-gates=IPv6DualStack=false"
+	}
 
 	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs)
 	if err != nil {

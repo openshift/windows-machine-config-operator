@@ -86,7 +86,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
 func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, hostname, clusterServiceCIDR,
-	vxlanPort, username string, signer ssh.Signer) (*nodeConfig, error) {
+	vxlanPort, networkType, username string, signer ssh.Signer) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -109,10 +109,14 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, hostname, cluster
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", ipAddress))
 	win, err := windows.New(ipAddress, hostname, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
-		username, signer)
+		networkType, username, signer)
+
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
+
+	network := newNetwork(log)
+	network.networkType = networkType
 
 	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
@@ -205,26 +209,29 @@ func (nc *nodeConfig) Configure() error {
 // configureNetwork configures k8s networking in the node
 // we are assuming that the WindowsVM and node objects are valid
 func (nc *nodeConfig) configureNetwork() error {
-	// Wait until the node object has the hybrid overlay subnet annotation. Otherwise the hybrid-overlay will fail to
-	// start
-	if err := nc.waitForNodeAnnotation(HybridOverlaySubnet); err != nil {
-		return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlaySubnet,
-			nc.node.GetName())
-	}
+	// OVN kubernetes specific
+	if nc.network.networkType == cluster.OvnKubernetesNetwork {
+		// Wait until the node object has the hybrid overlay subnet annotation. Otherwise the hybrid-overlay will fail to
+		// start
+		if err := nc.waitForNodeAnnotation(HybridOverlaySubnet); err != nil {
+			return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlaySubnet,
+				nc.node.GetName())
+		}
 
-	// NOTE: Investigate if we need to introduce a interface wrt to the VM's networking configuration. This will
-	// become more clear with the outcome of https://issues.redhat.com/browse/WINC-343
+		// NOTE: Investigate if we need to introduce a interface wrt to the VM's networking configuration. This will
+		// become more clear with the outcome of https://issues.redhat.com/browse/WINC-343
 
-	// Configure the hybrid overlay in the Windows VM
-	if err := nc.Windows.ConfigureHybridOverlay(nc.node.GetName()); err != nil {
-		return errors.Wrapf(err, "error configuring hybrid overlay for %s", nc.node.GetName())
-	}
+		// Configure the hybrid overlay in the Windows VM
+		if err := nc.Windows.ConfigureHybridOverlay(nc.node.GetName()); err != nil {
+			return errors.Wrapf(err, "error configuring hybrid overlay for %s", nc.node.GetName())
+		}
 
-	// Wait until the node object has the hybrid overlay MAC annotation. This is required for the CNI configuration to
-	// start.
-	if err := nc.waitForNodeAnnotation(HybridOverlayMac); err != nil {
-		return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlayMac,
-			nc.node.GetName())
+		// Wait until the node object has the hybrid overlay MAC annotation. This is required for the CNI configuration to
+		// start.
+		if err := nc.waitForNodeAnnotation(HybridOverlayMac); err != nil {
+			return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlayMac,
+				nc.node.GetName())
+		}
 	}
 
 	// Configure CNI in the Windows VM
@@ -311,15 +318,22 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 // configureCNI populates the CNI config template and sends the config file location
 // for completing CNI configuration in the windows VM
 func (nc *nodeConfig) configureCNI() error {
-	// set the hostSubnet value in the network struct
-	if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
-		return errors.Wrapf(err, "error populating host subnet in node network")
+	var configFile string
+	var err error
+
+	// OVN kubernetes specific
+	if nc.network.networkType == cluster.OvnKubernetesNetwork {
+		// set the hostSubnet value in the network struct
+		if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
+			return errors.Wrapf(err, "error populating host subnet in node network")
+		}
+		// populate the CNI config file with the host subnet and the service network CIDR
+		configFile, err = nc.network.populateCniConfig(nc.clusterServiceCIDR, payload.CNIConfigTemplatePath)
+		if err != nil {
+			return errors.Wrapf(err, "error populating CNI config file %s", configFile)
+		}
 	}
-	// populate the CNI config file with the host subnet and the service network CIDR
-	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, payload.CNIConfigTemplatePath)
-	if err != nil {
-		return errors.Wrapf(err, "error populating CNI config file %s", configFile)
-	}
+
 	// configure CNI in the Windows VM
 	if err = nc.Windows.ConfigureCNI(configFile); err != nil {
 		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())

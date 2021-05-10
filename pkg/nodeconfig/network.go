@@ -46,6 +46,9 @@ type value struct {
 
 // network struct contains the node network information
 type network struct {
+	// networkType is the type of network
+	networkType string
+
 	// hostSubnet holds the node host subnet value
 	hostSubnet string
 	log        logr.Logger
