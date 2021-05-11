@@ -53,7 +53,6 @@ type networkType struct {
 
 type thirdPartyNetworking struct {
 	clusterNetworkConfig *clusterNetworkCfg
-	cniDir               string
 }
 
 // config encapsulates cluster configuration
@@ -254,7 +253,6 @@ func (ovn *ovnKubernetes) Validate() error {
 func newThirdPartyNetwork(clusterNetworkConfig *clusterNetworkCfg) Network {
 	return &thirdPartyNetworking{
 		clusterNetworkConfig,
-		"c:\\k\\cni",
 	}
 }
 
