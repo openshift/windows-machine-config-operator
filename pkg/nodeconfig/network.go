@@ -55,8 +55,11 @@ type network struct {
 }
 
 // newNetwork returns a pointer to the network struct
-func newNetwork(logger logr.Logger) *network {
-	return &network{log: logger}
+func newNetwork(logger logr.Logger, networkType string) *network {
+	return &network{
+		networkType: networkType,
+		log:         logger,
+	}
 }
 
 // setHostSubnet sets the value for hostSubnet field in the network struct

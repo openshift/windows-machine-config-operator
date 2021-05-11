@@ -115,10 +115,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, hostname, cluster
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
-	network := newNetwork(log)
-	network.networkType = networkType
-
-	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
+	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log, networkType),
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
 		log: log}, nil
 }
