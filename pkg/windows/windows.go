@@ -344,7 +344,7 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 }
 
 func (vm *windows) ConfigureCNI(configFile string) error {
-	if vm.networkType == cluster.OvnKubernetesNetwork {
+	if vm.networkType == cluster.OVNKubernetesNetwork {
 		// copy the CNI config file to the Windows VM
 		file, err := payload.NewFileInfo(configFile)
 		if err != nil {
@@ -385,7 +385,7 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 
 func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 	var kubeProxyServiceArgs string
-	if vm.networkType == cluster.OvnKubernetesNetwork {
+	if vm.networkType == cluster.OVNKubernetesNetwork {
 		sVIP, err := vm.getSourceVIP()
 		if err != nil {
 			return errors.Wrap(err, "error getting source VIP")

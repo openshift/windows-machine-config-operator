@@ -210,7 +210,7 @@ func (nc *nodeConfig) Configure() error {
 // we are assuming that the WindowsVM and node objects are valid
 func (nc *nodeConfig) configureNetwork() error {
 	// OVN kubernetes specific
-	if nc.network.networkType == cluster.OvnKubernetesNetwork {
+	if nc.network.networkType == cluster.OVNKubernetesNetwork {
 		// Wait until the node object has the hybrid overlay subnet annotation. Otherwise the hybrid-overlay will fail to
 		// start
 		if err := nc.waitForNodeAnnotation(HybridOverlaySubnet); err != nil {
@@ -322,7 +322,7 @@ func (nc *nodeConfig) configureCNI() error {
 	var err error
 
 	// OVN kubernetes specific
-	if nc.network.networkType == cluster.OvnKubernetesNetwork {
+	if nc.network.networkType == cluster.OVNKubernetesNetwork {
 		// set the hostSubnet value in the network struct
 		if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
 			return errors.Wrapf(err, "error populating host subnet in node network")

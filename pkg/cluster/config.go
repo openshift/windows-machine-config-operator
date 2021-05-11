@@ -20,7 +20,7 @@ import (
 //+kubebuilder:rbac:groups=config.openshift.io;operator.openshift.io,resources=networks,verbs=get
 
 const (
-	OvnKubernetesNetwork = "OVNKubernetes"
+	OVNKubernetesNetwork = "OVNKubernetes"
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
 	// 1.20.x are supported for baseK8sVersion 1.20)
 	baseK8sVersion = "v1.21"
@@ -194,7 +194,7 @@ func networkConfigurationFactory(oclient configclient.Interface, operatorClient 
 		return nil, errors.Wrapf(err, "error getting cluster network config")
 	}
 	switch network {
-	case OvnKubernetesNetwork:
+	case OVNKubernetesNetwork:
 		return &ovnKubernetes{
 			networkType{
 				name:           network,
