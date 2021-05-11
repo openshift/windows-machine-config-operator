@@ -194,19 +194,9 @@ func networkConfigurationFactory(oclient configclient.Interface, operatorClient 
 	}
 	switch network {
 	case OVNKubernetesNetwork:
-		return &ovnKubernetes{
-			networkType{
-				name:           network,
-				operatorClient: operatorClient,
-			},
-			clusterNetworkCfg,
-		}, nil
+		return newOVNKubernetesNetwork(network, operatorClient, clusterNetworkCfg), nil
 	default:
-		return &thirdPartyNetworking{
-			clusterNetworkCfg,
-			"c:\\k\\cni",
-		}, nil
-
+		return newThirdPartyNetwork(clusterNetworkCfg), nil
 	}
 }
 
@@ -220,6 +210,16 @@ func NewClusterNetworkCfg(serviceCIDR, vxlanPort string) (*clusterNetworkCfg, er
 		serviceCIDR: serviceCIDR,
 		vxlanPort:   vxlanPort,
 	}, nil
+}
+
+func newOVNKubernetesNetwork(network string, operatorClient operatorv1.OperatorV1Interface, clusterNetworkConfig *clusterNetworkCfg) Network {
+	return &ovnKubernetes{
+		networkType{
+			name:           network,
+			operatorClient: operatorClient,
+		},
+		clusterNetworkConfig,
+	}
 }
 
 // GetServiceCIDR returns the serviceCIDR string
@@ -250,6 +250,14 @@ func (ovn *ovnKubernetes) Validate() error {
 	}
 	return nil
 }
+
+func newThirdPartyNetwork(clusterNetworkConfig *clusterNetworkCfg) Network {
+	return &thirdPartyNetworking{
+		clusterNetworkConfig,
+		"c:\\k\\cni",
+	}
+}
+
 func (tp *thirdPartyNetworking) Validate() error {
 	return nil
 }
