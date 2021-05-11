@@ -52,7 +52,6 @@ type networkType struct {
 }
 
 type thirdPartyNetworking struct {
-	networkType
 	clusterNetworkConfig *clusterNetworkCfg
 	cniDir               string
 }
@@ -204,11 +203,6 @@ func networkConfigurationFactory(oclient configclient.Interface, operatorClient 
 		}, nil
 	default:
 		return &thirdPartyNetworking{
-			networkType{
-				// This will be some non-OpenShift network type
-				name:           network,
-				operatorClient: operatorClient,
-			},
 			clusterNetworkCfg,
 			"c:\\k\\cni",
 		}, nil
