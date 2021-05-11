@@ -76,12 +76,11 @@ get_aws_ms() {
   local provider=$4
 
   # get the AMI id for the Windows VM
-  ami_date="2021.01.13"
-  ami_id=$(aws ec2 describe-images --filters Name=name,Values=Windows_Server-2019-English-Full-ContainersLatest-${ami_date} --region ${region} --query 'Images[*].[ImageId]' --output text)
+  ami_id=$(aws ec2 describe-images --region ${region} --filters "Name=name,Values=Windows_Server-2019*English*Full*Containers*" "Name=is-public,Values=true" --query "reverse(sort_by(Images, &CreationDate))[*].{name: Name, id: ImageId}" --output json | jq -r '.[0].id')
   if [ -z "$ami_id" ]; then
-        error-exit "unable to find AMI ID for $ami_date"
+        error-exit "unable to find AMI ID for Windows Server 2019 1809"
   fi
-  
+
   cat <<EOF
 $(get_spec $infraID $az $provider)
       providerSpec:
