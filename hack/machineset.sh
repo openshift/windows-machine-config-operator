@@ -125,7 +125,7 @@ EOF
 get_azure_ms() {
 
   if [ "$#" -lt 4 ]; then
-    error-exit incorrect parameter count for get_spec $#
+    error-exit incorrect parameter count for get_azure_ms $#
   fi
 
   local infraID=$1
