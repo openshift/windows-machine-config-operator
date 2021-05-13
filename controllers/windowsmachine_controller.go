@@ -249,21 +249,13 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 	log := r.log.WithValues("windowsmachine", request.NamespacedName)
 	log.V(1).Info("reconciling")
 
-	// Get the private key that will be used to configure the instance
+	// Create a new signer from the private key the instances will be configured with
 	// Doing this before fetching the machine allows us to warn the user better about the missing private key
-	privateKey, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
-		Name: secrets.PrivateKeySecret}, r.client)
+	var err error
+	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret},
+		r.client)
 	if err != nil {
-		if k8sapierrors.IsNotFound(err) {
-			// Private key was removed, requeue
-			return ctrl.Result{}, errors.Wrapf(err, "%s does not exist, please create it", secrets.PrivateKeySecret)
-		}
-		return ctrl.Result{}, errors.Wrapf(err, "unable to get secret %s", request.NamespacedName)
-	}
-	// Update the signer with the current privateKey
-	r.signer, err = signer.Create(privateKey)
-	if err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "error creating signer")
+		return ctrl.Result{}, errors.Wrapf(err, "unable to get signer from secret %s", request.NamespacedName)
 	}
 
 	// Fetch the Machine instance
@@ -341,7 +333,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	// validate userData secret
-	if err := r.validateUserData(privateKey); err != nil {
+	if err := r.validateUserData(); err != nil {
 		return ctrl.Result{}, errors.Wrapf(err, "error validating userData secret")
 	}
 
@@ -441,18 +433,22 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 	return nil
 }
 
-// validateUserData validates userData secret. It returns error if the secret doesn`t
-// contain expected public key bytes.
-func (r *WindowsMachineReconciler) validateUserData(privateKey []byte) error {
-	userDataSecret := &core.Secret{}
-	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data", Namespace: "openshift-machine-api"}, userDataSecret)
+// validateUserData validates the userData secret. It returns error if the secret doesn`t contain the expected public
+// key bytes.
+func (r *WindowsMachineReconciler) validateUserData() error {
+	if r.signer == nil {
+		return errors.New("signer must not be nil")
+	}
 
+	userDataSecret := &core.Secret{}
+	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: secrets.UserDataSecret,
+		Namespace: secrets.UserDataNamespace}, userDataSecret)
 	if err != nil {
-		return errors.Errorf("could not find Windows userData secret in required namespace: %v", err)
+		return errors.Wrap(err, "could not find Windows userData secret in required namespace")
 	}
 
 	secretData := string(userDataSecret.Data["userData"][:])
-	desiredUserDataSecret, err := secrets.GenerateUserData(privateKey)
+	desiredUserDataSecret, err := secrets.GenerateUserData(r.signer.PublicKey())
 	if err != nil {
 		return err
 	}

@@ -55,6 +55,7 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		r.log.Error(err, "Unable to retrieve private key, please ensure it is created")
 	}
+
 	privateKeyPredicate := builder.WithPredicates(predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return isPrivateKeySecret(e.Object, r.watchNamespace)
@@ -126,10 +127,11 @@ type SecretReconciler struct {
 func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) (reconcile.Result, error) {
 	log := r.log.WithValues("secret", request.NamespacedName)
 
-	privateKey, err := secrets.GetPrivateKey(request.NamespacedName, r.client)
+	keySigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		if k8sapierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
+			// Private key secret was not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
 			return reconcile.Result{}, nil
@@ -137,7 +139,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return reconcile.Result{}, errors.Wrapf(err, "unable to get secret %s", request.NamespacedName)
 	}
 	// Generate expected userData based on the existing private key
-	validUserData, err := secrets.GenerateUserData(privateKey)
+	validUserData, err := secrets.GenerateUserData(keySigner.PublicKey())
 	if err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "error generating %s secret", userDataSecret)
 	}
@@ -163,16 +165,12 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 	} else {
 		// userdata secret data does not match what is expected
 		// Mark nodes configured with the previous private key for deletion
-		signer, err := signer.Create(privateKey)
-		if err != nil {
-			return reconcile.Result{}, errors.Wrap(err, "error creating signer from private key")
-		}
 		nodes := &core.NodeList{}
 		err = r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
 		if err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
 		}
-		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(signer.PublicKey())
+		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
 		escapedPubKeyAnnotation := strings.Replace(nodeconfig.PubKeyHashAnnotation, "/", "~1", -1)
 		patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`, escapedPubKeyAnnotation)
 		for _, node := range nodes.Items {
