@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	certificates "k8s.io/api/certificates/v1"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -288,6 +289,15 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 	// not take the number of nodes into account. If we are testing node creation without applying Windows label, we
 	// should throw error within 5 mins.
 	err = wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*creationTime, func() (done bool, err error) {
+		// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
+		//       ConfigMap controller does not have the ability to approve CSRs yet. This needs to be removed when that
+		//       functionality is added in https://issues.redhat.com/browse/WINC-581
+		if tc.CloudProvider.GetType() == config.VSpherePlatformType {
+			if err := tc.approveAllCSRs(); err != nil {
+				log.Printf("error approving CSRs: %s", err)
+				return false, nil
+			}
+		}
 		nodes, err := tc.listFullyConfiguredWindowsNodes(isBYOH)
 		if err != nil {
 			log.Printf("failed to get list of configured Windows nodes: %s", err)
@@ -340,6 +350,19 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 				return false, nil
 			}
 
+			// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
+			//       ConfigMap controller does not have the ability to approve CSRs yet. This can be removed if not
+			//       needed when that functionality is added in https://issues.redhat.com/browse/WINC-581
+			// verify the node CSR associated with the node is not waiting for approval.
+			csr, err := tc.findNodeCSR(node.GetName())
+			if err != nil {
+				log.Printf("error finding node CSR: %s", err)
+				return false, nil
+			}
+			if tc.isPending(csr) {
+				log.Printf("node csr is waiting for approval")
+				return false, nil
+			}
 		}
 		// Now verify that we have found all the nodes being waited for
 		if len(nodes) != int(nodeCount) {
@@ -375,7 +398,7 @@ func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, 
 	var windowsNodes []v1.Node
 	for _, node := range nodes.Items {
 		// filter out nodes that haven't been fully configured
-		if _, present := node.Labels[nodeconfig.VersionAnnotation]; !present {
+		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; !present {
 			continue
 		}
 		if (isBYOH && node.Annotations[controllers.BYOHAnnotation] == "true") ||
@@ -384,4 +407,92 @@ func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, 
 		}
 	}
 	return windowsNodes, nil
+}
+
+// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
+//       ConfigMap controller does not have the ability to approve CSRs yet. This can be removed if not needed when that
+//       functionality is added in https://issues.redhat.com/browse/WINC-581
+// findNodeCSR returns the current CSR for the given node
+func (tc *testContext) findNodeCSR(nodeName string) (*certificates.CertificateSigningRequest, error) {
+	expectedCSRName := "system:node:" + nodeName
+	csrs, err := tc.client.K8s.CertificatesV1().CertificateSigningRequests().List(context.TODO(),
+		metav1.ListOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get CSR list")
+	}
+	for _, csr := range csrs.Items {
+		if csr.Spec.Username == expectedCSRName {
+			return &csr, nil
+		}
+	}
+	return nil, errors.Errorf("could not find CSR named %s", expectedCSRName)
+}
+
+// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
+//       ConfigMap controller does not have the ability to approve CSRs yet. This needs to be removed when that
+//       functionality is added in https://issues.redhat.com/browse/WINC-581
+// approveAllCSRs approves all CSRs that are waiting for an approval
+func (tc *testContext) approveAllCSRs() error {
+	csrs, err := tc.listPendingCSRs()
+	if err != nil {
+		return errors.Wrap(err, "error listing CSRs")
+	}
+	for _, csr := range csrs {
+		if err = tc.approve(csr); err != nil {
+			return errors.Wrapf(err, "error approving csr %s", csr.GetName())
+		}
+	}
+	return nil
+}
+
+// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
+//       ConfigMap controller does not have the ability to approve CSRs yet. This can be removed if not needed when that
+//       functionality is added in https://issues.redhat.com/browse/WINC-581
+// isPending returns true if the CSR is neither approved, nor denied
+func (tc *testContext) isPending(csr *certificates.CertificateSigningRequest) bool {
+	for _, c := range csr.Status.Conditions {
+		if c.Type == certificates.CertificateApproved || c.Type == certificates.CertificateDenied {
+			return false
+		}
+	}
+	return true
+}
+
+// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
+//       ConfigMap controller does not have the ability to approve CSRs yet. This needs to be removed when that
+//       functionality is added in https://issues.redhat.com/browse/WINC-581
+// listPendingCSRs returns a list of CSRs which have neither been approved nor denied
+func (tc *testContext) listPendingCSRs() ([]*certificates.CertificateSigningRequest, error) {
+	var foundCSRs []*certificates.CertificateSigningRequest
+	csrs, err := tc.client.K8s.CertificatesV1().CertificateSigningRequests().List(context.TODO(),
+		metav1.ListOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get CSR list")
+	}
+	for i, csr := range csrs.Items {
+		if tc.isPending(&csr) {
+			foundCSRs = append(foundCSRs, &csrs.Items[i])
+		}
+	}
+	return foundCSRs, nil
+}
+
+// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
+//       ConfigMap controller does not have the ability to approve CSRs yet. This needs to be removed when that
+//       functionality is added in https://issues.redhat.com/browse/WINC-581
+// approve approves the given CSR if it has not already been approved
+// Based on https://github.com/kubernetes/kubectl/blob/master/pkg/cmd/certificates/certificates.go#L237
+func (tc *testContext) approve(csr *certificates.CertificateSigningRequest) error {
+	// Add the approval status condition
+	csr.Status.Conditions = append(csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
+		Type:           certificates.CertificateApproved,
+		Reason:         "WMCOe2eTestRunnerApprove",
+		Message:        "This CSR was approved by WMCO runner",
+		LastUpdateTime: metav1.Now(),
+		Status:         v1.ConditionTrue,
+	})
+
+	_, err := tc.client.K8s.CertificatesV1().CertificateSigningRequests().UpdateApproval(context.TODO(), csr.GetName(),
+		csr, metav1.UpdateOptions{})
+	return err
 }
