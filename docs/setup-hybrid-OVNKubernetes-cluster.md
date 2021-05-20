@@ -23,7 +23,6 @@ Now generate the manifests for the previously created *install-config*:
 ```sh
 $ openshift-install create manifests --dir=<cluster_directory>
 ```
-
 This creates a `manifests` and `openshift` folder in your `<cluster_directory>`.
 Now create a `<cluster_directory>/manifests/cluster-network-03-config.yml` file with the following contents:
 ```yml
@@ -41,6 +40,7 @@ spec:
 ```
 The above configuration is recommended for AWS and Azure clusters.
 
+### vSphere
 For vSphere clusters, you must add the `hybridOverlayVXLANPort` option to work around the pod-to-pod connectivity
 between hosts [issue](https://docs.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems#pod-to-pod-connectivity-between-hosts-is-broken-on-my-kubernetes-cluster-running-on-vsphere):
 ```yml
@@ -57,8 +57,10 @@ spec:
             hostPrefix: 23
         hybridOverlayVXLANPort: 9898
 ```
-
-**Note:** The `hybridClusterNetwork` CIDR cannot overlap with the `clusterNetwork` CIDR.
+#### Attention
+- The `hybridClusterNetwork` CIDR cannot overlap with the `clusterNetwork` CIDR
+- You cannot use Windows Server 2019 LTSC (1809) as it does not have the kernel feature required for using custom VXLAN 
+  ports
 
 ## Create cluster
 

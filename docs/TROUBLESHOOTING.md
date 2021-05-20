@@ -5,12 +5,16 @@ Please check if you are using an OKD/OCP 4.6 cluster running on Azure or AWS, co
 [hybrid OVN Kubernetes networking](setup-hybrid-OVNKubernetes-cluster.md).
 
 ## Windows Machine does not become a worker node
-There could various reasons as to why a Windows Machine does not become a worker node. Please collect the WMCO logs
+There could be various reasons as to why a Windows Machine does not become a worker node. Please collect the WMCO logs
 by executing:
 ```shell script
 oc logs -f $(oc get pods -o jsonpath={.items[0].metadata.name} -n openshift-windows-machine-config-operator) -n openshift-windows-machine-config-operator
 ```
 File a GitHub issue and attach the logs to the issue along with the *MachineSet* used.
+
+## Windows Server 2019 LTSC (1809) nodes never become Ready
+Ensure that you have not configured the cluster with a
+[custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vSphere) as that is not a supported feature in 1809.
 
 ## Accessing a Windows node
 Windows nodes cannot be accessed using `oc debug node` as that requires running a privileged pod on the node which is
