@@ -30,6 +30,7 @@ func testMetrics(t *testing.T) {
 	t.Run("Windows Exporter configuration validation", testWindowsExporter)
 	t.Run("Prometheus configuration validation", testPrometheus)
 	t.Run("Windows Prometheus rules validation", testWindowsPrometheusRules)
+	t.Run("Windows Node resource usage info validation", testNodeResourceUsage)
 }
 
 // testWindowsExporter deploys Linux pod and tests that it can communicate with Windows node's metrics port
@@ -286,4 +287,29 @@ func (tc *testContext) ensureMonitoringIsEnabled() error {
 	}
 
 	return nil
+}
+
+// testNodeResourceUsage ensures information on available resources is retrievable from Windows nodes
+func testNodeResourceUsage(t *testing.T) {
+	_, err := NewTestContext()
+	require.NoError(t, err)
+
+	// Need at least one Windows node to run these tests, throwing error if this condition is not met
+	require.Greater(t, len(gc.nodes), 0, "test requires at least one Windows node to run")
+
+	for _, winNode := range gc.nodes {
+		t.Run(winNode.Name, func(t *testing.T) {
+			// check available CPU, memory, and emphemeral local storage
+			nodeCPU := winNode.Status.Allocatable.Cpu().AsApproximateFloat64()
+			assert.Truef(t, nodeCPU > float64(0), "expected strictly positive CPU value but got %f", nodeCPU)
+
+			nodeMemory, isValidAmount := winNode.Status.Allocatable.Memory().AsInt64()
+			assert.Truef(t, isValidAmount, "expected numeric quantity (bytes) for node %s memory", winNode.Name)
+			assert.Truef(t, nodeMemory > 0, "expected strictly positive memory value but got %d", nodeMemory)
+
+			nodeStorage, isValidAmount := winNode.Status.Allocatable.StorageEphemeral().AsInt64()
+			assert.Truef(t, isValidAmount, "expected numeric quantity for node %s filesystem storage", winNode.Name)
+			assert.Truef(t, nodeStorage > 0, "expected strictly positive storage value but got %d", nodeStorage)
+		})
+	}
 }
