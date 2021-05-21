@@ -143,6 +143,15 @@ WMCO is not responsible for Windows operating system updates. The cluster admini
 creating the VMs and hence, the cluster administrator is responsible for providing an updated image. The cluster 
 administrator can provide an updated image by changing the image in the MachineSet spec.
 
+## Enabled features
+
+### Autoscaling Windows nodes
+Cluster autoscaling is supported for Windows instances. 
+
+- Define and deploy a [ClusterAutoscaler](https://docs.openshift.com/container-platform/latest/machine_management/applying-autoscaling.html#configuring-clusterautoscaler).
+- Create a Windows node through a MachineSet (see spec in [Usage section](https://github.com/openshift/windows-machine-config-operator#usage)).
+- Define and deploy a [MachineAutoscaler](https://docs.openshift.com/container-platform/latest/machine_management/applying-autoscaling.html#configuring-machineautoscaler), referencing a Windows MachineSet.
+
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
