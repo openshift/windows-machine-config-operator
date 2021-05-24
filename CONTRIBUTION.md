@@ -65,7 +65,10 @@ Follow-up to Id5e7cbb1.
 
 The first line is the subject and should be no longer than 50 characters, the second line is always blank, and other
 lines should be wrapped at 80 characters. This allows the message to be easier to read on GitHub as well as in various
-git tools. If it is a bug ticket, the bug number should be mentioned at the start of the subject.
+git tools.
+
+If it is a bug fix commit, the bug number should be mentioned in the commit message as `fixes BZ#123` in a separate
+line.
 
 ### PR workflow
 
