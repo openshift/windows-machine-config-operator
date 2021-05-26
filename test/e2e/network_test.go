@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -203,7 +204,7 @@ func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) erro
 	}
 	resp, err := retryGET("http://" + locator)
 	if err != nil {
-		return fmt.Errorf("could not GET from load balancer: %v", loadBalancer)
+		return fmt.Errorf("could not GET from load balancer: %v", err)
 	}
 	resp.Body.Close()
 	return nil
@@ -213,8 +214,10 @@ func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) erro
 func retryGET(url string) (*http.Response, error) {
 	var resp *http.Response
 	var err error
+	log.Printf("GET %s", url)
 	for i := 0; i < retryCount*3; i++ {
 		resp, err = http.Get(url)
+		log.Printf("%d: %v %v", i, resp, err)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			return resp, nil
 		}
@@ -373,10 +376,15 @@ func (tc *testContext) getWindowsServerContainerImage() string {
 	return windowsServerImage
 }
 
-// createWindowsServerDeployment creates a deployment with a Windows Server 2019 container
+// createWindowsServerDeployment creates a deployment with a Windows Server 2019 container. If affinity is nil then the
+// number of replicas will be set to 3 to allow for network testing across nodes.
 func (tc *testContext) createWindowsServerDeployment(name string, command []string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	deploymentsClient := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace)
 	replicaCount := int32(1)
+	// affinity being nil is a hint that the caller does not care which nodes the pods are deployed to
+	if affinity == nil {
+		replicaCount = int32(3)
+	}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	containerUserName := "ContainerAdministrator"
 	deployment := &appsv1.Deployment{
