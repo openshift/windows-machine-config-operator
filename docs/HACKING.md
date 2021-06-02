@@ -2,6 +2,28 @@
 
 # Hacking on the WMCO
 
+## User Workflows
+
+### I want to install an officially released version of WMCO on my OpenShift/OKD cluster
+* Instructions to install the community operator can be found in the [README](/README.md).
+  Customers with a Red Hat subscription should instead look at the [OpenShift docs.](https://docs.openshift.com/container-platform/latest/windows_containers/enabling-windows-container-workloads.html)
+
+### I want to try the unreleased WMCO
+* [Build the operator](#build)
+* [Deploy the operator directly](#deploying-the-operator-directly)
+
+### I want to try the unreleased WMCO, and deploy it using OLM
+* [Build the operator](#build)
+* [Deploy the operator through OLM](#deploying-the-operator-through-olm)
+
+### I want to try the unreleased WMCO, and deploy it mimicking the official deployment method
+* [Build the operator](#build)
+* [Generate bundle manifests](#generating-new-bundle-manifests)
+* [Build the bundle image](#creating-a-bundle-image)
+* [Build an operator index](#creating-a-new-operator-index)
+* [Create a CatalogSource using the index](https://docs.openshift.com/container-platform/latest/operators/admin/olm-managing-custom-catalogs.html#olm-creating-catalog-from-index_olm-managing-custom-catalogs)
+* [Follow the normal procedure to deploy an operator](https://docs.openshift.com/container-platform/latest/operators/admin/olm-adding-operators-to-cluster.html)
+
 ## Build
 To build and push the operator image, execute:
 ```shell script
