@@ -8,14 +8,14 @@ metadata:
     certified: "false"
     createdAt: REPLACE_DATE
     description: An operator that enables Windows container workloads on OCP
-    olm.skipRange: '>=1.0.0 <2.0.0'
+    olm.skipRange: '>=2.0.0 <3.0.0'
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     operators.operatorframework.io/builder: operator-sdk-v2.0.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat
-  name: windows-machine-config-operator.v2.0.0
+  name: windows-machine-config-operator.v3.0.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -340,4 +340,4 @@ spec:
   minKubeVersion: 1.21.0
   provider:
     name: Red Hat
-  version: 2.0.0
+  version: 3.0.0
