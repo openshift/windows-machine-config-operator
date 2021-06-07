@@ -13,7 +13,7 @@ WMCO_PATH_OPTION=""
 export CGO_ENABLED=0
 
 get_WMCO_logs() {
-  oc logs -l name=windows-machine-config-operator -n openshift-windows-machine-config-operator --tail=-1 >> "$ARTIFACT_DIR"/wmco.log
+  oc logs -l name=windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE --tail=-1 >> "$ARTIFACT_DIR"/wmco.log
 }
 
 # This function runs operator-sdk test with certain go test arguments
@@ -29,7 +29,7 @@ OSDK_WMCO_test() {
   local OSDK_PATH=$1
   local TEST_FLAGS=$2
 
-  if ! $OSDK_PATH test local ./test/e2e --no-setup --debug --operator-namespace=openshift-windows-machine-config-operator --go-test-flags "$TEST_FLAGS"; then
+  if ! $OSDK_PATH test local ./test/e2e --no-setup --debug --operator-namespace=$WMCO_DEPLOY_NAMESPACE --go-test-flags "$TEST_FLAGS"; then
     get_WMCO_logs
     return 1
   fi
