@@ -15,8 +15,8 @@ golden image.
   This is required to get the OS feature that allows setting the VXLAN UDP port.
   Please note that this patch is not available for `Windows Server 2019`.
 * Configure SSH on the VM:
-  * You can install SSH on the Windows VM by using the example
-  [powershell script](powershell.ps1), or by following the
+  * You can install OpenSSH Server on the Windows VM by using the provided
+  [powershell script](vsphere_ci/scripts/install-openssh.ps1), or by following the
   [Microsoft documentation](https://docs.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
   * The file, `C:\Users\Administrator\.ssh\authorized_keys` must
   contain the public key corresponding to the private key in the
