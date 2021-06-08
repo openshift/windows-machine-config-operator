@@ -54,7 +54,7 @@ func newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSphereMachinePro
 		NumCoresPerSocket: int32(1),
 		// The template is hardcoded with an image which has been properly sysprepped.
 		// TODO: Find a way to automatically update this with latest image
-		Template: "1909-template-with-docker-ssh",
+		Template: "2004-template-with-docker-ssh",
 		Workspace: &vsphere.Workspace{
 			Datacenter:   "SDDC-Datacenter",
 			Datastore:    "WorkloadDatastore",
