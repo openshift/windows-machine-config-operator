@@ -25,7 +25,7 @@ has the following files:
 
 - autounattend.xml
 - install-vm-tools.cmd
-- powershell.ps1
+- install-openssh.ps1
 - authorized_keys
 - install-docker.ps1
 
@@ -37,9 +37,8 @@ The `scripts/autounattend.xml` file must be edited to change the value of `Windo
 
 The provided [autounattend.xml](scripts/autounattend.xml)
 - Installs VMWare tools
-- Runs powershell.ps1 script which configures SSH. This is different from [powershell script](../powershell.ps1) we have 
-earlier as it copies the file from floppy disk instead of copying from C drive
-- Runs install-docker.ps1 which installs docker
+- Runs `install-openssh.ps1` script which installs and configures OpenSSH Server
+- Runs `install-docker.ps1` script which installs Docker
 
 This autounattend script is different from the [autounattend script](../unattend.xml) as this script does Windows OS
 installation as well.
@@ -68,7 +67,7 @@ Packer needs a build file which specifies the how the VM template should be buil
          "floppy_files":[
             "scripts/autounattend.xml",
             "scripts/install-vm-tools.cmd",
-            "scripts/powershell.ps1",
+            "scripts/install-openssh.ps1",
             "scripts/authorized_keys",
             "scripts/install-docker.ps1"
          ],
