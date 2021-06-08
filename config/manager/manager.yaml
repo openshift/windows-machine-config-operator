@@ -24,6 +24,7 @@ spec:
         control-plane: controller-manager
     spec:
       hostNetwork: true
+      priorityClassName: system-cluster-critical
       serviceAccountName: windows-machine-config-operator
       containers:
       - command:
