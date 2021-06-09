@@ -15,6 +15,7 @@
             "scripts/autounattend.xml",
             "scripts/install-vm-tools.cmd",
             "scripts/install-openssh.ps1",
+            "scripts/install-firewall-rules.ps1",
             "scripts/authorized_keys",
             "scripts/win-updates.ps1",
             "scripts/install-docker.ps1"
