@@ -20,7 +20,7 @@ import (
 //+kubebuilder:rbac:groups=config.openshift.io;operator.openshift.io,resources=networks,verbs=get
 
 const (
-	ovnKubernetesNetwork = "OVNKubernetes"
+	OVNKubernetesNetwork = "OVNKubernetes"
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
 	// 1.20.x are supported for baseK8sVersion 1.20)
 	baseK8sVersion = "v1.21"
@@ -49,6 +49,10 @@ type networkType struct {
 	name string
 	// operatorClient is the OpenShift operator client, we will use to interact with OpenShift operator objects
 	operatorClient operatorv1.OperatorV1Interface
+}
+
+type thirdPartyNetworking struct {
+	clusterNetworkConfig *clusterNetworkCfg
 }
 
 // config encapsulates cluster configuration
@@ -188,16 +192,10 @@ func networkConfigurationFactory(oclient configclient.Interface, operatorClient 
 		return nil, errors.Wrapf(err, "error getting cluster network config")
 	}
 	switch network {
-	case ovnKubernetesNetwork:
-		return &ovnKubernetes{
-			networkType{
-				name:           network,
-				operatorClient: operatorClient,
-			},
-			clusterNetworkCfg,
-		}, nil
+	case OVNKubernetesNetwork:
+		return newOVNKubernetesNetwork(network, operatorClient, clusterNetworkCfg), nil
 	default:
-		return nil, errors.Errorf("%s : network type not supported", network)
+		return newThirdPartyNetwork(clusterNetworkCfg), nil
 	}
 }
 
@@ -211,6 +209,16 @@ func NewClusterNetworkCfg(serviceCIDR, vxlanPort string) (*clusterNetworkCfg, er
 		serviceCIDR: serviceCIDR,
 		vxlanPort:   vxlanPort,
 	}, nil
+}
+
+func newOVNKubernetesNetwork(network string, operatorClient operatorv1.OperatorV1Interface, clusterNetworkConfig *clusterNetworkCfg) Network {
+	return &ovnKubernetes{
+		networkType{
+			name:           network,
+			operatorClient: operatorClient,
+		},
+		clusterNetworkConfig,
+	}
 }
 
 // GetServiceCIDR returns the serviceCIDR string
@@ -240,6 +248,25 @@ func (ovn *ovnKubernetes) Validate() error {
 		return errors.New("invalid OVN hybrid networking configuration")
 	}
 	return nil
+}
+
+func newThirdPartyNetwork(clusterNetworkConfig *clusterNetworkCfg) Network {
+	return &thirdPartyNetworking{
+		clusterNetworkConfig,
+	}
+}
+
+func (tp *thirdPartyNetworking) Validate() error {
+	return nil
+}
+
+func (tp *thirdPartyNetworking) GetServiceCIDR() string {
+	return tp.clusterNetworkConfig.serviceCIDR
+}
+
+func (tp *thirdPartyNetworking) VXLANPort() string {
+	// vxlanPort will be empty
+	return tp.clusterNetworkConfig.vxlanPort
 }
 
 // getNetworkType returns network type of the cluster

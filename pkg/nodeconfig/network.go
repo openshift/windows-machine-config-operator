@@ -46,14 +46,20 @@ type value struct {
 
 // network struct contains the node network information
 type network struct {
+	// networkType is the type of network
+	networkType string
+
 	// hostSubnet holds the node host subnet value
 	hostSubnet string
 	log        logr.Logger
 }
 
 // newNetwork returns a pointer to the network struct
-func newNetwork(logger logr.Logger) *network {
-	return &network{log: logger}
+func newNetwork(logger logr.Logger, networkType string) *network {
+	return &network{
+		networkType: networkType,
+		log:         logger,
+	}
 }
 
 // setHostSubnet sets the value for hostSubnet field in the network struct

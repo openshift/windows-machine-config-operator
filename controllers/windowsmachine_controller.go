@@ -76,6 +76,9 @@ type WindowsMachineReconciler struct {
 	// 		 in vSphere
 	//		 https://bugzilla.redhat.com/show_bug.cgi?id=1876987
 	platform oconfig.PlatformType
+
+	// networkType is the detected network type
+	networkType string
 }
 
 // NewWindowsMachineReconciler returns a pointer to a WindowsMachineReconciler
@@ -428,7 +431,7 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, hostname, r.clusterServiceCIDR,
-		r.vxlanPort, username, r.signer)
+		r.vxlanPort, r.networkType, username, r.signer)
 	if err != nil {
 		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
 	}
