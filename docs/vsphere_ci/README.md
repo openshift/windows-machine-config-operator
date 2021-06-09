@@ -26,6 +26,7 @@ has the following files:
 - autounattend.xml
 - install-vm-tools.cmd
 - install-openssh.ps1
+- install-firewall-rules.ps1 
 - authorized_keys
 - install-docker.ps1
 
@@ -38,6 +39,7 @@ The `scripts/autounattend.xml` file must be edited to change the value of `Windo
 The provided [autounattend.xml](scripts/autounattend.xml)
 - Installs VMWare tools
 - Runs `install-openssh.ps1` script which installs and configures OpenSSH Server
+- Runs `install-firewall-rules.ps1` script which configures the firewall rules
 - Runs `install-docker.ps1` script which installs Docker
 
 This autounattend script is different from the [autounattend script](../unattend.xml) as this script does Windows OS
@@ -68,6 +70,7 @@ Packer needs a build file which specifies the how the VM template should be buil
             "scripts/autounattend.xml",
             "scripts/install-vm-tools.cmd",
             "scripts/install-openssh.ps1",
+            "scripts/install-firewall-rules.ps1",
             "scripts/authorized_keys",
             "scripts/install-docker.ps1"
          ],
