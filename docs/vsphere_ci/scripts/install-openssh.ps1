@@ -18,8 +18,6 @@ if (-not(Test-Path -Path $keyfile -PathType Leaf)) {
 
 # install OpenSSH server (See: https://docs.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse)
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-# create firewall rule for container logs
-New-NetFirewallRule -DisplayName "ContainerLogsPort" -LocalPort "10250" -Direction Inbound -Action Allow -Protocol TCP -EdgeTraversalPolicy Allow
 # set service startup type
 Set-Service -Name ssh-agent -StartupType 'Automatic'
 Set-Service -Name sshd -StartupType 'Automatic'
