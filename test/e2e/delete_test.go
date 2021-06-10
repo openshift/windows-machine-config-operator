@@ -35,25 +35,36 @@ func testWindowsNodeDeletion(t *testing.T) {
 	}
 
 	require.NotNil(t, windowsMachineSetWithLabel, "could not find MachineSet with Windows label")
-	// Set the expected number of Windows nodes to 0
-	gc.numberOfNodes = 0
 
 	// Scale the Windows MachineSet to 0
-	windowsMachineSetWithLabel.Spec.Replicas = &gc.numberOfNodes
+	expectedNodeCount := int32(0)
+	windowsMachineSetWithLabel.Spec.Replicas = &expectedNodeCount
 	_, err = testCtx.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Update(context.TODO(),
 		windowsMachineSetWithLabel, meta.UpdateOptions{})
 	require.NoError(t, err, "error updating Windows MachineSet")
 
 	// we are waiting 10 minutes for all windows machines to get deleted.
-	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, true, false)
+	err = testCtx.waitForWindowsNodes(expectedNodeCount, true, false, false)
 	require.NoError(t, err, "Windows node deletion failed")
+
+	t.Run("BYOH node removal", func(t *testing.T) {
+		assert.NoError(t, testCtx.deleteWindowsInstanceConfigMap(),
+			"error removing windows-instances ConfigMap")
+		// TODO: Remove this skip when node removal is implemented as part of https://issues.redhat.com/browse/WINC-582
+		t.Skip("not implemented yet")
+		err = testCtx.waitForWindowsNodes(expectedNodeCount, true, false, true)
+		require.NoError(t, err, "Windows node deletion failed")
+	})
 
 	// Cleanup all the MachineSets created by us.
 	for _, machineSet := range e2eMachineSets.Items {
 		assert.NoError(t, testCtx.deleteMachineSet(&machineSet), "error deleting MachineSet")
 	}
 	// Phase is ignored during deletion, in this case we are just waiting for Machines to be deleted.
-	require.NoError(t, testCtx.waitForWindowsMachines(int(gc.numberOfNodes), ""), "Windows machine deletion failed")
+	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", true)
+	require.NoError(t, err, "Machine controller Windows machine deletion failed")
+	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", false)
+	require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
 
 	// Test if prometheus configuration is updated to have no node entries in the endpoints object
 	t.Run("Prometheus configuration", testPrometheus)

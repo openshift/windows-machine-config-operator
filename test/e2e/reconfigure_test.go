@@ -22,18 +22,18 @@ func reconfigurationTest(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
-	nodes, err := testCtx.client.K8s.CoreV1().Nodes().List(context.TODO(),
-		metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+	nodes, err := testCtx.listFullyConfiguredWindowsNodes(false)
 	require.NoError(t, err)
 
 	// Remove the version annotation of one of the nodes
 	// Forward slash within a path is escaped as '~1'
 	escapedVersionAnnotation := strings.Replace(nc.VersionAnnotation, "/", "~1", -1)
 	patchData := fmt.Sprintf("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/%s\"}]", escapedVersionAnnotation)
-	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), nodes.Items[0].Name, types.JSONPatchType, []byte(patchData), metav1.PatchOptions{})
+	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), nodes[0].Name, types.JSONPatchType,
+		[]byte(patchData), metav1.PatchOptions{})
 	require.NoError(t, err)
 
 	// The Windows node should eventually be returned to the state we expect it to be in
-	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, true)
+	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
 	assert.NoError(t, err, "error waiting for Windows nodes to be reconfigured")
 }

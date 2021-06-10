@@ -45,6 +45,12 @@ func upgradeTestSuite(t *testing.T) {
 	err = testCtx.configureUpgradeTest()
 	require.NoError(t, err, "error configuring upgrade")
 
+	// get current Windows node state
+	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
+	require.NoError(t, err, "wrong number of Machine controller nodes found")
+	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	require.NoError(t, err, "wrong number of ConfigMap controller nodes found")
+
 	t.Run("Operator version upgrade", testUpgradeVersion)
 	t.Run("Version annotation tampering", testTamperAnnotation)
 }
@@ -56,8 +62,6 @@ func testUpgradeVersion(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
-	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, true)
-	require.NoError(t, err, "windows node upgrade failed")
 	// Test the node metadata and if the version annotation corresponds to the current operator version
 	testNodeMetadata(t)
 	// Test if prometheus is reconfigured with ip addresses of newly configured nodes
@@ -78,22 +82,21 @@ func testTamperAnnotation(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
-	// tamper node annotation
-	nodes, err := testCtx.client.K8s.CoreV1().Nodes().List(context.TODO(),
-		metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
-	require.NoError(t, err)
-
-	for _, node := range nodes.Items {
+	// tamper node annotation on nodes configured by the Machine controller
+	for _, node := range gc.machineNodes {
 		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
-		_, err := testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
+		_, err := testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
+			[]byte(patchData), metav1.PatchOptions{})
 		require.NoError(t, err)
 		if err == nil {
 			break
 		}
 	}
 
-	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, true)
+	// Wait for Machine to be recreated with the proper version annotation
+	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
 	require.NoError(t, err, "windows node upgrade failed")
+
 	// Test the node metadata and if the version annotation corresponds to the current operator version
 	testNodeMetadata(t)
 	// Test if prometheus is reconfigured with ip address of newly configured node
@@ -112,15 +115,12 @@ func (tc *testContext) configureUpgradeTest() error {
 	}
 
 	// Override the Windows Node Version Annotation
-	nodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+	nodes, err := tc.listFullyConfiguredWindowsNodes(false)
 	if err != nil {
-		return err
-	}
-	if len(nodes.Items) != int(gc.numberOfNodes) {
-		return errors.Wrapf(nil, "unexpected number of nodes %v", gc.numberOfNodes)
+		return errors.Wrap(err, "error getting list of fully configured nodes")
 	}
 
-	for _, node := range nodes.Items {
+	for _, node := range nodes {
 		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
 		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
 		if err != nil {

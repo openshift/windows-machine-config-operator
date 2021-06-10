@@ -22,7 +22,8 @@ var (
 
 // TestWMCO sets up the testing suite for WMCO.
 func TestWMCO(t *testing.T) {
-	gc.numberOfNodes = int32(numberOfNodes)
+	gc.numberOfMachineNodes = int32(numberOfMachineNodes)
+	gc.numberOfBYOHNodes = int32(numberOfBYOHNodes)
 	require.NotEmpty(t, privateKeyPath, "private-key-path is not set")
 	gc.privateKeyPath = privateKeyPath
 	// When the OPENSHIFT_CI env var is set to true, the test is running within CI

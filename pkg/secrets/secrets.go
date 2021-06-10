@@ -9,15 +9,13 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
 
 const (
-	// userDataSecret is the name of the userData secret that WMCO creates
-	userDataSecret = "windows-user-data"
-	// userDataNamespace is the namespace of the userData secret that WMCO creates
-	userDataNamespace = "openshift-machine-api"
+	// UserDataSecret is the name of the userData secret that WMCO creates
+	UserDataSecret = "windows-user-data"
+	// UserDataNamespace is the namespace of the userData secret that WMCO creates
+	UserDataNamespace = "openshift-machine-api"
 	// PrivateKeySecret is the name of the private key secret provided by the user
 	PrivateKeySecret = "cloud-private-key"
 	// PrivateKeySecretKey is the key within the private key secret which holds the private key
@@ -26,7 +24,6 @@ const (
 
 // GetPrivateKey fetches the specified secret and extracts the private key data
 func GetPrivateKey(secret kubeTypes.NamespacedName, c client.Client) ([]byte, error) {
-	// Fetch the private key secret
 	privateKeySecret := &core.Secret{}
 	if err := c.Get(context.TODO(), secret, privateKeySecret); err != nil {
 		// Error reading the object - requeue the request.
@@ -40,13 +37,8 @@ func GetPrivateKey(secret kubeTypes.NamespacedName, c client.Client) ([]byte, er
 }
 
 // GenerateUserData generates the desired value of userdata secret.
-func GenerateUserData(privateKey []byte) (*core.Secret, error) {
-	keySigner, err := signer.Create(privateKey)
-	if err != nil {
-		return nil, err
-	}
-
-	pubKeyBytes := ssh.MarshalAuthorizedKey(keySigner.PublicKey())
+func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
+	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
 	if pubKeyBytes == nil {
 		return nil, errors.Errorf("failed to retrieve public key using signer")
 	}
@@ -55,8 +47,8 @@ func GenerateUserData(privateKey []byte) (*core.Secret, error) {
 	// for enabling publicKey auth and the service is restarted for the changes to take effect.
 	userDataSecret := &core.Secret{
 		ObjectMeta: meta.ObjectMeta{
-			Name:      userDataSecret,
-			Namespace: userDataNamespace,
+			Name:      UserDataSecret,
+			Namespace: UserDataNamespace,
 		},
 		Data: map[string][]byte{
 			"userData": []byte(`<powershell>

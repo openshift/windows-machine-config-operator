@@ -21,6 +21,7 @@ import (
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -58,6 +59,8 @@ type nodeConfig struct {
 	// clusterServiceCIDR holds the service CIDR for cluster
 	clusterServiceCIDR string
 	log                logr.Logger
+	// additionalAnnotations are extra annotations that should be applied to configured nodes
+	additionalAnnotations map[string]string
 }
 
 // discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
@@ -85,8 +88,8 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
-func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, hostname, clusterServiceCIDR,
-	vxlanPort, username string, signer ssh.Signer) (*nodeConfig, error) {
+func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
+	instance *instances.InstanceInfo, signer ssh.Signer, additionalAnnotations map[string]string) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -107,16 +110,16 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, hostname, cluster
 			"creating new node config")
 	}
 
-	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", ipAddress))
-	win, err := windows.New(ipAddress, hostname, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
-		username, signer)
+	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", instance.Address))
+	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
+		instance, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
 	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
-		log: log}, nil
+		log: log, additionalAnnotations: additionalAnnotations}, nil
 }
 
 // getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
@@ -179,6 +182,7 @@ func (nc *nodeConfig) Configure() error {
 		}
 		nc.addVersionAnnotation()
 		nc.addPubKeyHashAnnotation()
+		nc.addAdditionalAnnotations()
 		node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
 		if err != nil {
 			return errors.Wrap(err, "error updating node labels and annotations")
@@ -246,6 +250,17 @@ func (nc *nodeConfig) addVersionAnnotation() {
 // addPubKeyHashAnnotation adds the public key annotation to nc.node
 func (nc *nodeConfig) addPubKeyHashAnnotation() {
 	nc.node.Annotations[PubKeyHashAnnotation] = nc.publicKeyHash
+}
+
+// addAdditionalAnnotations merges nc.additionalAnnotations into the annotations on nc.node. If the annotation
+// already existed, its value will be overwritten.
+func (nc *nodeConfig) addAdditionalAnnotations() {
+	if nc.additionalAnnotations == nil {
+		return
+	}
+	for key, value := range nc.additionalAnnotations {
+		nc.node.Annotations[key] = value
+	}
 }
 
 // setNode finds the Node associated with the VM that has been configured, and sets the node field of the
