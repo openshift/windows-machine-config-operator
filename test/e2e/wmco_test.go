@@ -34,7 +34,10 @@ func TestWMCO(t *testing.T) {
 
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
+
+	// Create the namespace test resources can be deployed in, as well as required resources within said namespace.
 	require.NoError(t, testCtx.ensureNamespace(testCtx.workloadNamespace), "error creating test namespace")
+	require.NoError(t, testCtx.sshSetup(), "unable to setup SSH requirements")
 
 	// When the upgrade test is run from CI, the namespace that gets created does not have the required monitoring
 	// label, so we ensure that it gets applied and the WMCO deployment is restarted.
