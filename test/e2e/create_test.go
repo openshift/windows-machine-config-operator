@@ -32,6 +32,7 @@ func creationTestSuite(t *testing.T) {
 		return
 	}
 	t.Run("Node Metadata", testNodeMetadata)
+	t.Run("Services running", testExpectedServicesRunning)
 	t.Run("NodeTaint validation", testNodeTaint)
 	t.Run("UserData validation", testUserData)
 	t.Run("UserData idempotent check", testUserDataTamper)
@@ -82,13 +83,6 @@ func (tc *testContext) getAddress(addresses []v1.NodeAddress) (string, error) {
 // createWindowsInstanceConfigMap creates a ConfigMap for the ConfigMap controller to act on, comprised of the Machines
 // in the given MachineList
 func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList) error {
-	var username string
-	if tc.CloudProvider.GetType() == config.AzurePlatformType {
-		username = "capi"
-	} else {
-		username = "Administrator"
-	}
-
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: controllers.InstanceConfigMap,
@@ -100,7 +94,7 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 		if err != nil {
 			return errors.Wrap(err, "unable to get usable address")
 		}
-		cm.Data[addr] = "username=" + username
+		cm.Data[addr] = "username=" + tc.vmUsername()
 	}
 	_, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Create(context.TODO(), cm, metav1.CreateOptions{})
 	if err != nil {
