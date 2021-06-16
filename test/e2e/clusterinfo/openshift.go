@@ -6,6 +6,7 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	configClient "github.com/openshift/client-go/config/clientset/versioned"
+	imageClient "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	operatorClient "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 	mapiClient "github.com/openshift/machine-api-operator/pkg/generated/clientset/versioned/typed/machine/v1beta1"
@@ -23,6 +24,7 @@ type OpenShift struct {
 	Monitoring monitoringClient.MonitoringV1Interface
 	Route      routeClient.RouteV1Interface
 	K8s        k8sclient.Interface
+	Images     imageClient.ImageV1Interface
 }
 
 // GetOpenShift creates client for the current OpenShift cluster. If KUBECONFIG env var is set, it is used to
@@ -61,6 +63,10 @@ func GetOpenShift() (*OpenShift, error) {
 	if err != nil {
 		return nil, err
 	}
+	ic, err := imageClient.NewForConfig(rc)
+	if err != nil {
+		return nil, err
+	}
 
 	return &OpenShift{
 		Config:     cc,
@@ -69,6 +75,7 @@ func GetOpenShift() (*OpenShift, error) {
 		Monitoring: monc,
 		Route:      routec,
 		K8s:        kc,
+		Images:     ic,
 	}, nil
 }
 
