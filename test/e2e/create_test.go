@@ -27,15 +27,15 @@ import (
 func creationTestSuite(t *testing.T) {
 	// The order of tests here are important. Any node object related tests should be run only after
 	// testWindowsNodeCreation as that initializes the node objects in the global context.
-	if !t.Run("Creation", func(t *testing.T) { testWindowsNodeCreation(t) }) {
+	if !t.Run("Creation", testWindowsNodeCreation) {
 		// No point in running the other tests if creation failed
 		return
 	}
-	t.Run("Node Metadata", func(t *testing.T) { testNodeMetadata(t) })
-	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
-	t.Run("UserData validation", func(t *testing.T) { testUserData(t) })
-	t.Run("UserData idempotent check", func(t *testing.T) { testUserDataTamper(t) })
-	t.Run("Node Logs", func(t *testing.T) { testNodeLogs(t) })
+	t.Run("Node Metadata", testNodeMetadata)
+	t.Run("NodeTaint validation", testNodeTaint)
+	t.Run("UserData validation", testUserData)
+	t.Run("UserData idempotent check", testUserDataTamper)
+	t.Run("Node Logs", testNodeLogs)
 	t.Run("Metrics validation", testMetrics)
 }
 
