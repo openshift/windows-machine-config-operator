@@ -46,13 +46,14 @@ func upgradeTestSuite(t *testing.T) {
 	require.NoError(t, err, "error configuring upgrade")
 
 	// get current Windows node state
+	// TODO: waitForWindowsNodes currently loads nodes into global context, so we need this (even though BYOH
+	// 		 nodes are not being upgraded/tested here). Remove as part of https://issues.redhat.com/browse/WINC-620
 	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
 	require.NoError(t, err, "wrong number of Machine controller nodes found")
 	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
 	require.NoError(t, err, "wrong number of ConfigMap controller nodes found")
 
 	t.Run("Operator version upgrade", testUpgradeVersion)
-	t.Run("Version annotation tampering", testTamperAnnotation)
 }
 
 // testUpgradeVersion tests the upgrade scenario of the operator. The node version annotation is changed when
@@ -68,39 +69,13 @@ func testUpgradeVersion(t *testing.T) {
 	testPrometheus(t)
 
 	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
-	pods, err := testCtx.client.K8s.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(), metav1.ListOptions{FieldSelector: "status.phase=Failed",
-		LabelSelector: "job-name=" + windowsWorkloadTesterJob + "-job"})
+	pods, err := testCtx.client.K8s.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(),
+		metav1.ListOptions{FieldSelector: "status.phase=Failed",
+			LabelSelector: "job-name=" + windowsWorkloadTesterJob + "-job"})
 
 	require.NoError(t, err)
-	require.Equal(t, 0, len(pods.Items), "unable to access Windows workloads for significant amount of time during upgrade")
+	require.Equal(t, 0, len(pods.Items), "Windows workloads inaccessible for significant amount of time during upgrade")
 
-}
-
-// testTamperAnnotation tests if the operator deletes machines and recreates them, if the node annotation is changed to an invalid value
-// with the expected annotation when the operator is in running state
-func testTamperAnnotation(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-
-	// tamper node annotation on nodes configured by the Machine controller
-	for _, node := range gc.machineNodes {
-		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
-		_, err := testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
-			[]byte(patchData), metav1.PatchOptions{})
-		require.NoError(t, err)
-		if err == nil {
-			break
-		}
-	}
-
-	// Wait for Machine to be recreated with the proper version annotation
-	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
-	require.NoError(t, err, "windows node upgrade failed")
-
-	// Test the node metadata and if the version annotation corresponds to the current operator version
-	testNodeMetadata(t)
-	// Test if prometheus is reconfigured with ip address of newly configured node
-	testPrometheus(t)
 }
 
 // configureUpgradeTest carries out steps required before running tests for upgrade scenario.
@@ -114,15 +89,16 @@ func (tc *testContext) configureUpgradeTest() error {
 		return err
 	}
 
-	// Override the Windows Node Version Annotation
-	nodes, err := tc.listFullyConfiguredWindowsNodes(false)
+	// tamper version annotation on nodes configured by the Machine controller
+	machineNodes, err := tc.listFullyConfiguredWindowsNodes(false)
 	if err != nil {
 		return errors.Wrap(err, "error getting list of fully configured nodes")
 	}
 
-	for _, node := range nodes {
+	for _, node := range machineNodes {
 		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
-		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
+		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
+			[]byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			return err
 		}
