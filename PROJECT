@@ -11,4 +11,8 @@ resources:
   domain: windowsmachineconfig.openshift.io
   kind: ConfigMap
   version: v1
+- controller: true
+  domain: windowsmachineconfig.openshift.io
+  kind: CertificateSigningRequests
+  version: v1
 version: "3"
