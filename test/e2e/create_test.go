@@ -112,10 +112,10 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	// mismatched Machine created with the mismatched key was deleted and replaced.
 	// Depending on timing and configuration flakes this will either cause all Machines, or all Machines after
 	// the first configured Machines to hit this scenario. This is a platform agonistic test so we run it only on
-	// AWS.
+	// Azure.
 	_, err = tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", true)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
-	if tc.CloudProvider.GetType() == config.AWSPlatformType {
+	if tc.CloudProvider.GetType() == config.AzurePlatformType {
 		// Replace the known private key with a randomly generated one.
 		err = tc.createPrivateKeySecret(false)
 		require.NoError(t, err, "error replacing private key secret")
@@ -126,7 +126,7 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	t.Run("Change private key", func(t *testing.T) {
 		// This test cannot be run on vSphere because this random key is not part of the vSphere template image.
 		// Moreover this test is platform agnostic so is not needed to be run for every supported platform.
-		if tc.CloudProvider.GetType() != config.AWSPlatformType {
+		if tc.CloudProvider.GetType() != config.AzurePlatformType {
 			t.Skipf("Skipping for %s", tc.CloudProvider.GetType())
 		}
 		// Replace private key and check that new Machines are created using the new private key
