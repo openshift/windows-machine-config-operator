@@ -17,8 +17,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 // testNodeMetadata tests if all nodes have a worker label and kubelet version and are annotated with the version of
@@ -315,17 +317,16 @@ func (tc *testContext) getWinServices(addr string) (map[string]string, error) {
 
 // testExpectedServicesRunning tests that for each node all the expected services are running
 func testExpectedServicesRunning(t *testing.T) {
-	expectedServices := []string{"kubelet", "kube-proxy", "hybrid-overlay-node", "windows_exporter"}
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 
 	for _, node := range gc.allNodes() {
 		t.Run(node.GetName(), func(t *testing.T) {
-			addr, err := tc.getAddress(node.Status.Addresses)
+			addr, err := controllers.GetAddress(node.Status.Addresses)
 			require.NoError(t, err, "unable to get node address")
 			svcs, err := tc.getWinServices(addr)
 			require.NoError(t, err, "error getting service map")
-			for _, svcName := range expectedServices {
+			for _, svcName := range windows.RequiredServices {
 				t.Run(svcName, func(t *testing.T) {
 					require.Contains(t, svcs, svcName, "service not found")
 					assert.Equal(t, "Running", svcs[svcName])
