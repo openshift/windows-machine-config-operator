@@ -69,7 +69,7 @@ func TestParseHosts(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, test.expectedOut, out)
+			assert.ElementsMatch(t, test.expectedOut, out)
 		})
 	}
 }
