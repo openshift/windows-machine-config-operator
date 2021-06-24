@@ -91,10 +91,7 @@ func testPrometheus(t *testing.T) {
 
 	if len(gc.allNodes()) == 0 {
 		// check if all entries in subset are deleted when there are no Windows Nodes
-		// TODO: BYOH metrics cleanup isn't done yet so only check that Nodes from Machines are properly removed
-		//       total endpoints - machine endpoints = byoh endpoints
-		//       Change back to expecting 0 as part of https://issues.redhat.com/browse/WINC-582
-		require.Equal(t, int(gc.numberOfBYOHNodes), len(windowsEndpoints.Subsets))
+		require.Equal(t, 0, len(windowsEndpoints.Subsets))
 	} else {
 		// Total length of list for subsets is always equal to the list of Windows Nodes.
 		require.Equal(t, len(gc.allNodes()), len(windowsEndpoints.Subsets[0].Addresses))

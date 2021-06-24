@@ -46,6 +46,8 @@ import (
 const (
 	// BYOHAnnotation is an an anotation that should be applied to all Windows nodes not associated with a Machine.
 	BYOHAnnotation = "windowsmachineconfig.openshift.io/byoh"
+	// UsernameAnnotation is a node annotation that contains the username used to log into the Windows instance
+	UsernameAnnotation = "windowsmachineconfig.openshift.io/username"
 	// InstanceConfigMap is the name of the ConfigMap where VMs to be configured should be described.
 	// TODO: Possibly make this a singleton that WMCO creates https://issues.redhat.com/browse/WINC-612
 	InstanceConfigMap = "windows-instances"
@@ -181,8 +183,11 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *cor
 			return errors.Wrapf(err, "error configuring host with address %s", host.Address)
 		}
 	}
-	// TODO: Remove BYOH nodes that are not associated with the parsed host list
-	//       https://issues.redhat.com/browse/WINC-582
+
+	// Ensure that only instances currently specified by the ConfigMap are joined to the cluster as nodes
+	if err = r.deconfigureInstances(hosts, nodes); err != nil {
+		return errors.Wrap(err, "error removing undesired nodes from cluster")
+	}
 
 	// Once all the proper Nodes are in the cluster, configure the prometheus endpoints.
 	if err := r.prometheusNodeConfig.Configure(); err != nil {
@@ -200,10 +205,31 @@ func (r *ConfigMapReconciler) ensureNodeIsConfigured(instance *instances.Instanc
 		return nil
 	}
 
-	if err := r.configureInstance(instance, map[string]string{BYOHAnnotation: "true"}); err != nil {
+	if err := r.configureInstance(instance, map[string]string{BYOHAnnotation: "true",
+		UsernameAnnotation: instance.Username}); err != nil {
 		return errors.Wrap(err, "error configuring node")
 	}
 
+	return nil
+}
+
+// deconfigureInstances removes all BYOH nodes that are not specified in the given instances slice, and
+// deconfigures the instances associated with them.
+func (r *ConfigMapReconciler) deconfigureInstances(instances []*instances.InstanceInfo, nodes *core.NodeList) error {
+	for _, node := range nodes.Items {
+		// Only looking at BYOH nodes
+		if _, present := node.Annotations[BYOHAnnotation]; !present {
+			continue
+		}
+		// Check for instances associated with this node
+		if hasEntry := hasAssociatedInstance(&node, instances); hasEntry {
+			continue
+		}
+		// no instance found in the provided list, remove the node from the cluster
+		if err := r.deconfigureInstance(&node); err != nil {
+			return errors.Wrapf(err, "unable to deconfigure instance with node %s", node.GetName())
+		}
+	}
 	return nil
 }
 
@@ -218,6 +244,18 @@ func findNode(address string, nodes *core.NodeList) (*core.Node, bool) {
 		}
 	}
 	return nil, false
+}
+
+// hasAssociatedInstance returns true if the given node is associated with an instance in the given slice
+func hasAssociatedInstance(node *core.Node, instances []*instances.InstanceInfo) bool {
+	for _, instance := range instances {
+		for _, nodeAddress := range node.Status.Addresses {
+			if instance.Address == nodeAddress.Address {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SetupWithManager sets up the controller with the Manager.

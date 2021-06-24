@@ -346,6 +346,35 @@ func (nc *nodeConfig) configureCNI() error {
 	return nil
 }
 
+// Deconfigure removes the node from the cluster, reverting changes made by the Configure function
+func (nc *nodeConfig) Deconfigure() error {
+	// Set nc.node to the existing node
+	if err := nc.setNode(true); err != nil {
+		return err
+	}
+
+	// Cordon and drain the Node before we interact with the instance
+	drainHelper := &drain.Helper{Ctx: context.TODO(), Client: nc.k8sclientset}
+	if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
+		return errors.Wrapf(err, "unable to cordon node %s", nc.node.GetName())
+	}
+	if err := drain.RunNodeDrain(drainHelper, nc.node.GetName()); err != nil {
+		return errors.Wrapf(err, "unable to drain node %s", nc.node.GetName())
+	}
+
+	// Revert the changes we've made to the instance by removing services and deleting all installed files
+	if err := nc.Windows.Deconfigure(); err != nil {
+		return errors.Wrap(err, "error deconfiguring instance")
+	}
+
+	// Delete the Node object
+	err := nc.k8sclientset.CoreV1().Nodes().Delete(context.TODO(), nc.node.GetName(), meta.DeleteOptions{})
+	if err != nil {
+		return errors.Wrapf(err, "error deleting node %s", nc.node.GetName())
+	}
+	return nil
+}
+
 // CreatePubKeyHashAnnotation returns a formatted string which can be used for a public key annotation on a node.
 // The annotation is the sha256 of the public key
 func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
