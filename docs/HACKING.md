@@ -82,7 +82,7 @@ hack/olm.sh cleanup
 ```
 
 ### Running e2e tests on a cluster
-The following enviroment variables must be set:
+The following environment variables must be set:
 ```shell script
 # SSH key to be used for creation of cloud-private-key secret
 export KUBE_SSH_KEY_PATH=<path to RSA type ssh key>
@@ -125,7 +125,7 @@ were made to the files in config/.
 If the operator version needs to be changed, the `WMCO_VERSION` variable at the top of the repo's Makefile should
 be set to the new version.
 
-If the bundle channel needs to be changed, the `CHANNELS` and/or `DEFAULT_CHANNELS` variable within the the Makefile
+If the bundle channel needs to be changed, the `CHANNELS` and/or `DEFAULT_CHANNELS` variable within the Makefile
 should be changed to the desired values.
 
 New bundle manifests can then be generated with:
