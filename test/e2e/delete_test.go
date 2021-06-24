@@ -2,19 +2,86 @@ package e2e
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
+	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
 func deletionTestSuite(t *testing.T) {
 	t.Run("Deletion", func(t *testing.T) { testWindowsNodeDeletion(t) })
+}
+
+// clearWindowsInstanceConfigMap removes all entries in the windows-instances ConfigMap
+func (tc *testContext) clearWindowsInstanceConfigMap() error {
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), controllers.InstanceConfigMap,
+		meta.GetOptions{})
+	if err != nil {
+		return errors.Wrap(err, "error retrieving windows-instances ConfigMap")
+	}
+	cm.Data = map[string]string{}
+	_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Update(context.TODO(), cm, meta.UpdateOptions{})
+	if err != nil {
+		return errors.Wrap(err, "error clearing windows-instances ConfigMap data")
+	}
+	return nil
+}
+
+// testBYOHRemoval tests that nodes are properly removed and deconfigured after removing ConfigMap entries
+func (tc *testContext) testBYOHRemoval(t *testing.T) {
+	// Get list of BYOH nodes before the node objects are deleted
+	byohNodes, err := tc.listFullyConfiguredWindowsNodes(true)
+	require.NoError(t, err, "error getting BYOH node list")
+
+	// Remove all entries from the windows-instances ConfigMap, causing all node objects to be deleted
+	require.NoError(t, tc.clearWindowsInstanceConfigMap(),
+		"error removing windows-instances ConfigMap entries")
+	err = tc.waitForWindowsNodes(0, true, false, true)
+	require.NoError(t, err, "Removing ConfigMap entries did not cause Windows node deletion")
+
+	// For each node that was deleted, check that all the expected services have been removed
+	for _, node := range byohNodes {
+		t.Run(node.GetName(), func(t *testing.T) {
+			addr, err := controllers.GetAddress(node.Status.Addresses)
+			require.NoError(t, err, "unable to get node address")
+			svcs, err := tc.getWinServices(addr)
+			require.NoError(t, err, "error getting service map")
+			for _, svcName := range windows.RequiredServices {
+				t.Run(svcName, func(t *testing.T) {
+					require.NotContains(t, svcs, svcName, "service present")
+				})
+			}
+			dirsCleanedUp, err := tc.checkDirsDoNotExist(addr)
+			require.NoError(t, err, "error determining if created directories exist")
+			assert.True(t, dirsCleanedUp, "directories not removed")
+		})
+	}
+}
+
+// checkDirsDoNotExist returns true if the required directories do not exist on the Windows instance with the given
+// address
+func (tc *testContext) checkDirsDoNotExist(address string) (bool, error) {
+	command := "powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command \""
+	for _, dir := range windows.RequiredDirectories {
+		command += fmt.Sprintf("if ((Test-Path %s) -eq $true) { Write-Output %s exists}", dir, dir)
+	}
+	command += "exit 0\""
+	out, err := tc.runSSHJob("check-win-dirs", command, address)
+	if err != nil {
+		return false, errors.Wrapf(err, "error confirming directories do not exist %s", out)
+	}
+	return !strings.Contains(out, "exists"), nil
 }
 
 // testWindowsNodeDeletion tests the Windows node deletion from the cluster.
@@ -47,14 +114,7 @@ func testWindowsNodeDeletion(t *testing.T) {
 	err = testCtx.waitForWindowsNodes(expectedNodeCount, true, false, false)
 	require.NoError(t, err, "Windows node deletion failed")
 
-	t.Run("BYOH node removal", func(t *testing.T) {
-		assert.NoError(t, testCtx.deleteWindowsInstanceConfigMap(),
-			"error removing windows-instances ConfigMap")
-		// TODO: Remove this skip when node removal is implemented as part of https://issues.redhat.com/browse/WINC-582
-		t.Skip("not implemented yet")
-		err = testCtx.waitForWindowsNodes(expectedNodeCount, true, false, true)
-		require.NoError(t, err, "Windows node deletion failed")
-	})
+	t.Run("BYOH node removal", testCtx.testBYOHRemoval)
 
 	// Cleanup all the MachineSets created by us.
 	for _, machineSet := range e2eMachineSets.Items {
@@ -63,11 +123,19 @@ func testWindowsNodeDeletion(t *testing.T) {
 	// Phase is ignored during deletion, in this case we are just waiting for Machines to be deleted.
 	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", true)
 	require.NoError(t, err, "Machine controller Windows machine deletion failed")
-	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", false)
-	require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
+
+	// TODO: Currently on vSphere it is impossible to delete a Machine after its node has been deleted.
+	//       This special casing should be removed as part of https://issues.redhat.com/browse/WINC-635
+	if testCtx.GetType() != config.VSpherePlatformType {
+		_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", false)
+		require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
+	}
 
 	// Test if prometheus configuration is updated to have no node entries in the endpoints object
 	t.Run("Prometheus configuration", testPrometheus)
+
+	// Cleanup windows-instances ConfigMap
+	testCtx.deleteWindowsInstanceConfigMap()
 
 	// Cleanup secrets created by us.
 	err = testCtx.client.K8s.CoreV1().Secrets("openshift-machine-api").Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})

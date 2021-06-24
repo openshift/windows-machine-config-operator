@@ -75,8 +75,27 @@ const (
 	serviceNotFound = "status 1060"
 )
 
-// filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
-var filesToTransfer map[*payload.FileInfo]string
+var (
+	// filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
+	filesToTransfer map[*payload.FileInfo]string
+	// RequiredServices is a list of Windows services installed by WMCO
+	// The order of this slice matters due to service dependencies. If a service depends on another service, the
+	// dependent service should be placed before the service it depends on.
+	RequiredServices = []string{
+		windowsExporterServiceName,
+		kubeProxyServiceName,
+		hybridOverlayServiceName,
+		kubeletServiceName}
+	// RequiredDirectories is a list of directories to be created by WMCO
+	RequiredDirectories = []string{
+		k8sDir,
+		remoteDir,
+		cniDir,
+		cniConfDir,
+		logDir,
+		kubeProxyLogDir,
+		hybridOverlayLogDir}
+)
 
 // getFilesToTransfer returns the properly populated filesToTransfer map
 func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
@@ -137,6 +156,8 @@ type Windows interface {
 	ConfigureKubeProxy(string, string) error
 	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
 	EnsureRequiredServicesStopped() error
+	// Deconfigure removes all files and services created as part of the configuration process
+	Deconfigure() error
 }
 
 // windows implements the Windows interface
@@ -246,14 +267,46 @@ func (vm *windows) Reinitialize() error {
 }
 
 func (vm *windows) EnsureRequiredServicesStopped() error {
-	// This slice order matters due to service dependencies
-	requiredSVCs := []string{windowsExporterServiceName, kubeProxyServiceName, hybridOverlayServiceName,
-		kubeletServiceName}
-	for _, svcName := range requiredSVCs {
+	for _, svcName := range RequiredServices {
 		svc := &service{name: svcName}
 		if err := vm.ensureServiceNotRunning(svc); err != nil {
 			return errors.Wrap(err, "could not stop service %d")
 		}
+	}
+	return nil
+}
+
+// ensureServicesAreRemoved ensures that all services installed by WMCO are removed from the instance
+func (vm *windows) ensureServicesAreRemoved() error {
+	for _, svcName := range RequiredServices {
+		svc := &service{name: svcName}
+
+		// If the service is not installed, do nothing
+		exists, err := vm.serviceExists(svc.name)
+		if err != nil {
+			return errors.Wrapf(err, "unable to check if %s service exists", svc.name)
+		}
+		if !exists {
+			continue
+		}
+
+		// Make sure the service is stopped before we attempt to delete it
+		if err := vm.ensureServiceNotRunning(svc); err != nil {
+			return errors.Wrapf(err, "could not stop service %s", svc.name)
+		}
+		if err := vm.deleteService(svc); err != nil {
+			return errors.Wrapf(err, "could not delete service %s", svcName)
+		}
+	}
+	return nil
+}
+
+func (vm *windows) Deconfigure() error {
+	if err := vm.ensureServicesAreRemoved(); err != nil {
+		return errors.Wrap(err, "unable to remove Windows services")
+	}
+	if err := vm.removeDirectories(); err != nil {
+		return errors.Wrap(err, "unable to remove created directories")
 	}
 	return nil
 }
@@ -430,18 +483,19 @@ func (vm *windows) changeHostName() error {
 
 // createDirectories creates directories required for configuring the Windows node on the VM
 func (vm *windows) createDirectories() error {
-	directoriesToCreate := []string{
-		k8sDir,
-		remoteDir,
-		cniDir,
-		cniConfDir,
-		logDir,
-		kubeProxyLogDir,
-		hybridOverlayLogDir,
-	}
-	for _, dir := range directoriesToCreate {
+	for _, dir := range RequiredDirectories {
 		if _, err := vm.Run(mkdirCmd(dir), false); err != nil {
 			return errors.Wrapf(err, "unable to create remote directory %s", dir)
+		}
+	}
+	return nil
+}
+
+// removeDirectories removes all directories created as part of the configuration process
+func (vm *windows) removeDirectories() error {
+	for _, dir := range RequiredDirectories {
+		if _, err := vm.Run(rmDirCmd(dir), false); err != nil {
+			return errors.Wrapf(err, "unable to remove directory %s", dir)
 		}
 	}
 	return nil
@@ -580,6 +634,34 @@ func (vm *windows) stopService(svc *service) error {
 	return nil
 }
 
+// deleteService deletes the specified Windows service
+func (vm *windows) deleteService(svc *service) error {
+	if svc == nil {
+		return errors.New("service object cannot be nil")
+	}
+
+	// Success here means that the stop has initiated, not necessarily completed
+	out, err := vm.Run("sc.exe delete "+svc.name, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to delete %s service with output: %s", svc.name, out)
+	}
+
+	// Wait until the service is fully deleted
+	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		exists, err := vm.serviceExists(svc.name)
+		if err != nil {
+			vm.log.V(1).Error(err, "unable to check if Windows service exists", "service", svc.name)
+			return false, nil
+		}
+		return !exists, nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "error waiting for the %s service to be deleted", svc.name)
+	}
+
+	return nil
+}
+
 // serviceExists checks if the given service exists on Windows VM
 func (vm *windows) serviceExists(serviceName string) (bool, error) {
 	_, err := vm.Run(serviceQueryCmd+serviceName, false)
@@ -702,4 +784,9 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 // mkdirCmd returns the Windows command to create a directory if it does not exists
 func mkdirCmd(dirName string) string {
 	return "if not exist " + dirName + " mkdir " + dirName
+}
+
+// rmDirCmd returns the Windows command to recursively remove a directory if it exists
+func rmDirCmd(dirName string) string {
+	return "if exist " + dirName + " rmdir " + dirName + " /s /q"
 }
