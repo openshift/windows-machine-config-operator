@@ -8,7 +8,7 @@ Please check if you are using an OKD/OCP 4.6 cluster running on Azure or AWS, co
 There could be various reasons as to why a Windows Machine does not become a worker node. Please collect the WMCO logs
 by executing:
 ```shell script
-oc logs -f $(oc get pods -o jsonpath={.items[0].metadata.name} -n openshift-windows-machine-config-operator) -n openshift-windows-machine-config-operator
+oc logs -f deployment/windows-machine-config-operator -n openshift-windows-machine-config-operator
 ```
 File a GitHub issue and attach the logs to the issue along with the *MachineSet* used.
 
