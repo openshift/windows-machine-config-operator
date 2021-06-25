@@ -1,13 +1,18 @@
 package e2e
 
 import (
+	"context"
 	"flag"
 	"os"
 	"testing"
 	"time"
 
+	config "github.com/openshift/api/config/v1"
+	imageClient "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
+	"github.com/openshift/library-go/pkg/image/imageutil"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
@@ -71,6 +76,9 @@ type testContext struct {
 	hasCustomVXLAN bool
 	// workloadNamespace is the namespace to deploy our test pods on
 	workloadNamespace string
+	// toolsImage is the image specified by the  openshift/tools ImageStream, and is the same image used by `oc debug`.
+	// This image is available on all OpenShift Clusters, and has SSH pre-installed.
+	toolsImage string
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -87,10 +95,38 @@ func NewTestContext() (*testContext, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "cloud provider creation failed")
 	}
+	toolsImage, err := getOpenShiftToolsImage(oc.Images)
+	if err != nil {
+		return nil, errors.Wrap(err, "error getting debug image")
+	}
+
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
 		namespace: "openshift-windows-machine-config-operator", CloudProvider: cloudProvider,
-		hasCustomVXLAN: hasCustomVXLANPort, workloadNamespace: "wmco-test"}, nil
+		hasCustomVXLAN: hasCustomVXLANPort, workloadNamespace: "wmco-test", toolsImage: toolsImage}, nil
+}
+
+// vmUsername returns the name of the user which can be used to log into each Windows instance
+func (tc *testContext) vmUsername() string {
+	// username will be Administrator on all cloud providers, except Azure where it is "capi"
+	if tc.CloudProvider.GetType() == config.AzurePlatformType {
+		return "capi"
+	} else {
+		return "Administrator"
+	}
+}
+
+// getOpenShiftToolsImage returns a pullable image from the openshift/tools imagestream
+func getOpenShiftToolsImage(imageClient imageClient.ImageV1Interface) (string, error) {
+	imageStream, err := imageClient.ImageStreams("openshift").Get(context.TODO(), "tools", meta.GetOptions{})
+	if err != nil {
+		return "", errors.Wrap(err, "unable to get openshift/tools imagestream")
+	}
+	image, _, _, _, err := imageutil.ResolveRecentPullSpecForTag(imageStream, "latest", false)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to get latest debug image from imagestream")
+	}
+	return image, nil
 }
 
 func TestMain(m *testing.M) {
