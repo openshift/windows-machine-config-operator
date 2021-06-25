@@ -3,8 +3,11 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +108,7 @@ func testEastWestNetworking(t *testing.T) {
 			}
 			require.NoError(t, err, "could not create Windows Server deployment")
 			defer testCtx.deleteDeployment(winServerDeployment.Name)
+			testCtx.collectDeploymentLogs(winServerDeployment)
 
 			// Get the pod so we can use its IP
 			winServerIP, err := testCtx.getPodIP(*winServerDeployment.Spec.Selector)
@@ -150,6 +154,54 @@ func testEastWestNetworking(t *testing.T) {
 	}
 }
 
+// collectDeploymentLogs collects logs of a deployment to the Artifacts directory
+func (tc *testContext) collectDeploymentLogs(deployment *appsv1.Deployment) {
+	// map of labels expected to be on each pod in the deployment
+	matchLabels := deployment.Spec.Selector.MatchLabels
+	if len(matchLabels) == 0 {
+		log.Printf("deployment pod label map is empty")
+		return
+	}
+	var keyValPairs []string
+	for key, value := range matchLabels {
+		keyValPairs = append(keyValPairs, key+"="+value)
+	}
+	labelSelector := strings.Join(keyValPairs, ",")
+	tc.writePodLogs(labelSelector)
+}
+
+// getLogs uses a label selector and returns the logs associated with each pod
+func (tc *testContext) getLogs(podLabelSelector string) (string, error) {
+	if podLabelSelector == "" {
+		return "", errors.Errorf("pod label selector is empty")
+	}
+	pods, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: podLabelSelector})
+	if err != nil {
+		return "", errors.Wrap(err, "error getting pod list")
+	}
+	if len(pods.Items) == 0 {
+		return "", fmt.Errorf("expected at least 1 pod and found 0")
+	}
+	var logs string
+	for _, pod := range pods.Items {
+		logStream, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).GetLogs(pod.Name,
+			&v1.PodLogOptions{}).Stream(context.TODO())
+		if err != nil {
+			return "", errors.Wrap(err, "error getting pod logs")
+		}
+		podLogs, err := ioutil.ReadAll(logStream)
+		if err != nil {
+			logStream.Close()
+			return "", errors.Wrap(err, "error reading pod logs")
+		}
+		// appending the pod logs onto the existing logs
+		logs += fmt.Sprintf("%s: %s\n", pod.Name, podLogs)
+		logStream.Close()
+	}
+	return logs, nil
+}
+
 // testNorthSouthNetworking deploys a Windows Server pod, and tests that we can network with it from outside the cluster
 func testNorthSouthNetworking(t *testing.T) {
 	testCtx, err := NewTestContext()
@@ -169,6 +221,7 @@ func testNorthSouthNetworking(t *testing.T) {
 	}
 	require.NoError(t, err, "could not create Windows Server deployment")
 	defer testCtx.deleteDeployment(winServerDeployment.GetName())
+	testCtx.collectDeploymentLogs(winServerDeployment)
 
 	// Ignore the LoadBalancer test for vSphere as it has to be created manually
 	// https://docs.openshift.com/container-platform/4.5/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html#nw-using-load-balancer-getting-traffic_configuring-ingress-cluster-traffic-load-balancer
@@ -568,22 +621,48 @@ func (tc *testContext) deleteJob(name string) error {
 func (tc *testContext) waitUntilJobSucceeds(name string) error {
 	var job *batchv1.Job
 	var err error
+	var labelSelector string
 	for i := 0; i < retryCount; i++ {
 		job, err = tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
+		labelSelector = "job-name=" + job.Name
 		if job.Status.Succeeded > 0 {
+			tc.writePodLogs(labelSelector)
 			return nil
 		}
 		if job.Status.Failed > 0 {
+			tc.writePodLogs(labelSelector)
 			events, _ := tc.getPodEvents(name)
 			return errors.Errorf("job %v failed: %v", job, events)
 		}
 		time.Sleep(retryInterval)
 	}
+	tc.writePodLogs(labelSelector)
 	events, _ := tc.getPodEvents(name)
 	return errors.Errorf("job %v timed out: %v", job, events)
+}
+
+// writePodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts dir
+func (tc *testContext) writePodLogs(labelSelector string) {
+	logs, err := tc.getLogs(labelSelector)
+	if err != nil {
+		log.Printf("Unable to get logs associated with pod: %s", labelSelector)
+		return
+	}
+	podLogFile := fmt.Sprintf("%s.log", labelSelector)
+	podArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "pods")
+	podDir := filepath.Join(podArtifacts, labelSelector)
+	err = os.MkdirAll(podDir, os.ModePerm)
+	if err != nil {
+		log.Printf("Error creating pod log collection directory in directory: %s", podDir)
+	}
+	outputFile := filepath.Join(podDir, filepath.Base(podLogFile))
+	logsErr := ioutil.WriteFile(outputFile, []byte(logs), os.ModePerm)
+	if logsErr != nil {
+		log.Printf("Unable to write pod logs with label %s to file %s", labelSelector, outputFile)
+	}
 }
 
 // getPowerShellExe returns the PowerShell executable name. This depends on the container image used which is figured
