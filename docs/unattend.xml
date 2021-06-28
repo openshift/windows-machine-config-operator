@@ -2,7 +2,7 @@
 <!--A sample unattend.xml which helps in setting admin password and running scripts on first boot-->
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
    <settings pass="specialize">
-      <component xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http:// www.w3.org/2001/XMLSchema-instance" name="Microsoft-Windows-International-Core" processorArchitecture="am d64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <component xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
          <InputLocale>0409:00000409</InputLocale>
          <SystemLocale>en-US</SystemLocale>
          <UILanguage>en-US</UILanguage>
@@ -17,7 +17,6 @@
       </component>
       <component xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
          <ComputerName>windows-host</ComputerName>
-         <ProductKey>My_Product_key</ProductKey>
       </component>
    </settings>
    <settings pass="oobeSystem">
@@ -62,4 +61,3 @@
       </component>
    </settings>
 </unattend>
-
