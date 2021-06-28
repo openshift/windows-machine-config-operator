@@ -419,13 +419,14 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 // getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
 func (tc *testContext) getWindowsServerContainerImage() string {
 	var windowsServerImage string
-	// If we're using a custom VXLANPort we need to use 1909. On Azure we are testing 20H2. For other providers we use
-	// 1809
 	if tc.hasCustomVXLAN {
-		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1909"
+		// If we're using a custom VXLANPort we need to use 2004
+		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-2004"
 	} else if tc.CloudProvider.GetType() == config.AzurePlatformType {
+		// On Azure we are testing 20H2
 		windowsServerImage = "mcr.microsoft.com/windows/servercore:2009"
 	} else {
+		// For other providers we use 1809
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1809"
 	}
 	return windowsServerImage
