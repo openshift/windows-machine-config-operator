@@ -310,7 +310,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 		}
 		_, found := node.Annotations[annotation]
 		if found {
-			//update node to avoid staleness
+			// update node to avoid staleness
 			nc.node = node
 			return true, nil
 		}
@@ -328,7 +328,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 func (nc *nodeConfig) configureCNI() error {
 	// set the hostSubnet value in the network struct
 	if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
-		return errors.Wrapf(err, "error populating host subnet in node network")
+		return errors.Wrap(err, "error populating host subnet in node network")
 	}
 	// populate the CNI config file with the host subnet and the service network CIDR
 	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, payload.CNIConfigTemplatePath)
