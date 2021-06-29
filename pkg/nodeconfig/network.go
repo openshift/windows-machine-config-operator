@@ -106,11 +106,11 @@ func (nw *network) populateCniConfig(serviceCIDR string, templatePath string) (s
 	// Create a temp file to hold the cniCfg
 	tmpCniDir, err := ioutil.TempDir("", "cni")
 	if err != nil {
-		return "", errors.Wrapf(err, "error creating Local temp CNI directory")
+		return "", errors.Wrap(err, "error creating Local temp CNI directory")
 	}
 	cniConfigPath, err := os.Create(filepath.Join(tmpCniDir, "cni.conf"))
 	if err != nil {
-		return "", errors.Wrapf(err, "error creating local cni.conf file")
+		return "", errors.Wrap(err, "error creating local cni.conf file")
 	}
 	defer cniConfigPath.Close()
 

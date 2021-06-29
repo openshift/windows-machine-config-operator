@@ -335,7 +335,7 @@ func (vm *windows) Configure() error {
 	return vm.runBootstrapper()
 }
 
-// Start Windows metrics exporter service, only if the file is present on the VM
+// ConfigureWindowsExporter starts Windows metrics exporter service, only if the file is present on the VM
 func (vm *windows) ConfigureWindowsExporter() error {
 	windowsExporterService, err := newService(windowsExporterPath, windowsExporterServiceName, windowsExporterServiceArgs)
 	if err != nil {
@@ -474,7 +474,7 @@ func (vm *windows) changeHostName() error {
 		vm.log.Info("changing host name failed", "command", changeHostNameCommand, "output", out)
 		return errors.Wrap(err, "changing host name failed")
 	}
-	//Reinitialize the SSH connection given changing the host name requires a VM restart
+	// Reinitialize the SSH connection given changing the host name requires a VM restart
 	if err := vm.Reinitialize(); err != nil {
 		return errors.Wrap(err, "error reinitializing VM after changing hostname")
 	}

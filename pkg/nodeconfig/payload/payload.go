@@ -31,18 +31,18 @@ const (
 	// FlannelCNIPluginPath is the path of the flannel CNI plugin binary. The container image should already have this
 	// binary mounted
 	FlannelCNIPluginPath = payloadDirectory + cniDirectory + "flannel.exe"
-	// HostLocalCNIPluginPath is the path of the host-local CNI plugin binary. The container image should already have
+	// HostLocalCNIPlugin is the path of the host-local CNI plugin binary. The container image should already have
 	// this binary mounted
 	HostLocalCNIPlugin = payloadDirectory + cniDirectory + "host-local.exe"
-	// WinBridgeCNIPluginPath is the path of the win-bridge CNI plugin binary. The container image should already have
+	// WinBridgeCNIPlugin is the path of the win-bridge CNI plugin binary. The container image should already have
 	// this binary mounted
 	WinBridgeCNIPlugin = payloadDirectory + cniDirectory + "win-bridge.exe"
-	// WinOverlayCNIPluginPath is the path of the win-overlay CNI Plugin binary. The container image should already have
+	// WinOverlayCNIPlugin is the path of the win-overlay CNI Plugin binary. The container image should already have
 	// this binary mounted
 	WinOverlayCNIPlugin = payloadDirectory + cniDirectory + "win-overlay.exe"
 	// CNIConfigTemplatePath is the path for CNI config template
 	CNIConfigTemplatePath = payloadDirectory + cniDirectory + "cni-conf-template.json"
-	// hybridOverlayName is the name of the hybrid overlay executable
+	// HybridOverlayName is the name of the hybrid overlay executable
 	HybridOverlayName = "hybrid-overlay-node.exe"
 	// HybridOverlayPath contains the path of the hybrid overlay binary. The container image should already have this
 	// binary mounted
@@ -64,7 +64,7 @@ type FileInfo struct {
 func NewFileInfo(path string) (*FileInfo, error) {
 	contents, err := ioutil.ReadFile(path)
 	if err != nil {
-		return nil, errors.Wrapf(err, "could not get contents of file")
+		return nil, errors.Wrap(err, "could not get contents of file")
 	}
 	return &FileInfo{
 		Path:   path,
