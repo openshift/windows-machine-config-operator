@@ -65,21 +65,6 @@ func (tc *testContext) deleteWindowsInstanceConfigMap() error {
 	return nil
 }
 
-// getAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
-// or dns address.
-func (tc *testContext) getAddress(addresses []v1.NodeAddress) (string, error) {
-	for _, addr := range addresses {
-		if addr.Type == v1.NodeInternalIP || addr.Type == v1.NodeInternalDNS {
-			// filter out ipv6
-			if net.ParseIP(addr.Address) != nil && net.ParseIP(addr.Address).To4() == nil {
-				continue
-			}
-			return addr.Address, nil
-		}
-	}
-	return "", errors.New("no usable address")
-}
-
 // createWindowsInstanceConfigMap creates a ConfigMap for the ConfigMap controller to act on, comprised of the Machines
 // in the given MachineList
 func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList) error {
@@ -90,7 +75,7 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 		Data: make(map[string]string),
 	}
 	for _, machine := range machines.Items {
-		addr, err := tc.getAddress(machine.Status.Addresses)
+		addr, err := controllers.GetAddress(machine.Status.Addresses)
 		if err != nil {
 			return errors.Wrap(err, "unable to get usable address")
 		}
