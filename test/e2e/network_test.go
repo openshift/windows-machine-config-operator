@@ -53,8 +53,8 @@ var (
 type operatingSystem string
 
 const (
-	linux   operatingSystem = "linux"
-	windows operatingSystem = "windows"
+	linux     operatingSystem = "linux"
+	windowsOS operatingSystem = "windows"
 )
 
 // testEastWestNetworking deploys Windows and Linux pods, and tests that the pods can communicate
@@ -74,7 +74,7 @@ func testEastWestNetworking(t *testing.T) {
 		},
 		{
 			name:            "windows and windows",
-			curlerOS:        windows,
+			curlerOS:        windowsOS,
 			useClusterIPSVC: false,
 		},
 		{
@@ -84,7 +84,7 @@ func testEastWestNetworking(t *testing.T) {
 		},
 		{
 			name:            "windows and windows through a clusterIP svc",
-			curlerOS:        windows,
+			curlerOS:        windowsOS,
 			useClusterIPSVC: true,
 		},
 	}
@@ -134,7 +134,7 @@ func testEastWestNetworking(t *testing.T) {
 						curlerCommand := []string{"bash", "-c", "curl " + endpointIP}
 						curlerJob, err = testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), curlerCommand)
 						require.NoError(t, err, "could not create Linux job")
-					} else if tt.curlerOS == windows {
+					} else if tt.curlerOS == windowsOS {
 						// Always deploy the Windows curler pod on the first node. Because we test scaling multiple
 						// Windows nodes, this allows us to test that Windows pods can communicate with other Windows
 						// pods located on both the same node, and other nodes.
