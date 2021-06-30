@@ -191,11 +191,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.CertificateSigningRequestsReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("CertificateSigningRequests"),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	certificateSigningRequestsReconciler, err := controllers.NewCertificateSigningRequestsReconciler(mgr, clusterConfig,
+		watchNamespace)
+	if err != nil {
+		setupLog.Error(err, "unable to create CSR reconciler")
+		os.Exit(1)
+	}
+	if err = certificateSigningRequestsReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "CertificateSigningRequests")
 		os.Exit(1)
 	}

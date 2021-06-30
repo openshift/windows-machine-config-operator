@@ -1,17 +1,43 @@
 package wiparser
 
 import (
+	"context"
 	"net"
 	"strings"
 
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
+	kubeTypes "k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 )
 
 // InstanceConfigMap is the name of the ConfigMap where VMs to be configured should be described.
 const InstanceConfigMap = "windows-instances"
+
+// GetInstances returns a list of Windows instances by parsing the Windows instance configMap.
+func GetInstances(c client.Client, namespace string) ([]*instances.InstanceInfo, error) {
+	configMap := &core.ConfigMap{}
+	err := c.Get(context.TODO(), kubeTypes.NamespacedName{Namespace: namespace,
+		Name: InstanceConfigMap}, configMap)
+	if err != nil && !k8sapierrors.IsNotFound(err) {
+		return nil, errors.Wrapf(err, "could not retrieve Windows instance ConfigMap %s",
+			InstanceConfigMap)
+	}
+
+	nodes := &core.NodeList{}
+	if err := c.List(context.TODO(), nodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
+		return nil, errors.Wrap(err, "error listing nodes")
+	}
+
+	windowsInstances, err := Parse(configMap.Data, nodes)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to parse instances from ConfigMap %s", configMap.Name)
+	}
+	return windowsInstances, nil
+}
 
 // Parse returns the list of instances specified in the Windows instances data. This function should be passed a list
 // of Nodes in the cluster, as each instance returned will contain a reference to its associated Node, if it has one
