@@ -10,7 +10,6 @@ import (
 )
 
 func TestParseHosts(t *testing.T) {
-	r := ConfigMapReconciler{}
 
 	testCases := []struct {
 		name        string
@@ -63,7 +62,7 @@ func TestParseHosts(t *testing.T) {
 	}
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			out, err := r.parseHosts(test.input)
+			out, err := parseHosts(test.input)
 			if test.expectedErr {
 				assert.Error(t, err)
 				return
