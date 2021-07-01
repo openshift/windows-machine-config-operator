@@ -111,35 +111,10 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	}
 
-	nodePredicate := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			if e.Object.GetLabels()[core.LabelOSStable] != "windows" {
-				return false
-			}
-			if e.Object.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() {
-				return true
-			}
-			return false
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			if e.ObjectNew.GetLabels()[core.LabelOSStable] != "windows" {
-				return false
-			}
-			if e.ObjectNew.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() ||
-				e.ObjectNew.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] !=
-					e.ObjectOld.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] {
-				return true
-			}
-			return false
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
-		},
-	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&mapi.Machine{}, builder.WithPredicates(machinePredicate)).
 		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToMachine),
-			builder.WithPredicates(nodePredicate)).
+			builder.WithPredicates(windowsNodePredicate(false))).
 		Complete(r)
 }
 
