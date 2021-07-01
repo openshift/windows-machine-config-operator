@@ -176,7 +176,7 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *cor
 	// configuration effort for configurable hosts will not be blocked by a specific host that has issues with
 	// configuration.
 	for _, host := range hosts {
-		err := r.ensureNodeIsConfigured(host, nodes)
+		err := r.ensureInstanceIsConfigured(host, nodes)
 		if err != nil {
 			r.recorder.Eventf(instances, core.EventTypeWarning, "InstanceSetupFailure",
 				"unable to join instance with address %s to the cluster", host.Address)
@@ -196,8 +196,8 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *cor
 	return nil
 }
 
-// ensureNodeIsConfigured ensures that the given instance has an associated Node
-func (r *ConfigMapReconciler) ensureNodeIsConfigured(instance *instances.InstanceInfo, nodes *core.NodeList) error {
+// ensureInstanceIsConfigured ensures that the given instance has an associated Node
+func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.InstanceInfo, nodes *core.NodeList) error {
 	_, found := findNode(instance.Address, nodes)
 	if found {
 		// TODO: Check version for upgrade case https://issues.redhat.com/browse/WINC-580 and remove and re-add the node
