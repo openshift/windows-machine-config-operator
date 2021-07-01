@@ -110,8 +110,8 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
 type Windows interface {
-	// IP Returns the IP used to configure the Windows VM
-	IP() string
+	// Address Returns the network address used to configure the Windows instance
+	Address() string
 	// EnsureFile ensures the given file exists within the specified directory on the Windows VM. The file will be copied
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
@@ -141,8 +141,8 @@ type Windows interface {
 
 // windows implements the Windows interface
 type windows struct {
-	// ipAddress is the IP address associated with the Windows VM created
-	ipAddress string
+	// address is the network address of the Windows instance
+	address string
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
 	// the OpenShift worker ignition file.
 	workerIgnitionEndpoint string
@@ -171,7 +171,7 @@ func New(workerIgnitionEndpoint, vxlanPort string, instance *instances.InstanceI
 	}
 
 	return &windows{
-			ipAddress:              instance.Address,
+			address:                instance.Address,
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			vxlanPort:              vxlanPort,
@@ -183,8 +183,8 @@ func New(workerIgnitionEndpoint, vxlanPort string, instance *instances.InstanceI
 
 // Interface methods
 
-func (vm *windows) IP() string {
-	return vm.ipAddress
+func (vm *windows) Address() string {
+	return vm.address
 }
 
 func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {

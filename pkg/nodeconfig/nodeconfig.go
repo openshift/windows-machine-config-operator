@@ -286,7 +286,7 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 		// get the node with IP address used to configure it
 		for _, node := range nodes.Items {
 			for _, nodeAddress := range node.Status.Addresses {
-				if nc.IP() == nodeAddress.Address {
+				if nc.Address() == nodeAddress.Address {
 					nc.node = &node
 					return true, nil
 				}
@@ -294,7 +294,7 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 		}
 		return false, nil
 	})
-	return errors.Wrapf(err, "unable to find node with IP %s", nc.IP())
+	return errors.Wrapf(err, "unable to find node with address %s", nc.Address())
 }
 
 // waitForNodeAnnotation checks if the node object has the given annotation and waits for retry.Interval seconds and
