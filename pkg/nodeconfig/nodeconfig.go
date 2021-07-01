@@ -169,6 +169,18 @@ func (nc *nodeConfig) Configure() error {
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
 			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
 		}
+
+		// Ensure we are annotating the node as soon as the Node object is created, so that we can identify which
+		// controller should be watching it
+		nc.addAdditionalAnnotations()
+		nc.addPubKeyHashAnnotation()
+		node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
+		if err != nil {
+			return errors.Wrapf(err, "error updating public key hash and additional annotations on node %s",
+				nc.node.GetName())
+		}
+		nc.node = node
+
 		// Now that basic kubelet configuration is complete, configure networking in the node
 		if err := nc.configureNetwork(); err != nil {
 			return errors.Wrap(err, "configuring node network failed")
@@ -180,12 +192,13 @@ func (nc *nodeConfig) Configure() error {
 		if err := nc.setNode(false); err != nil {
 			return errors.Wrap(err, "error getting node object")
 		}
+
+		// Version annotation is the indicator that the node was fully configured by this version of WMCO, so it should
+		// be added at the end of the process.
 		nc.addVersionAnnotation()
-		nc.addPubKeyHashAnnotation()
-		nc.addAdditionalAnnotations()
-		node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
+		node, err = nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
 		if err != nil {
-			return errors.Wrap(err, "error updating node labels and annotations")
+			return errors.Wrapf(err, "error updating version annotation on node %s", nc.node.GetName())
 		}
 		nc.node = node
 
