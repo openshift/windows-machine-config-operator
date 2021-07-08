@@ -205,8 +205,14 @@ func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.Ins
 		return nil
 	}
 
-	if err := r.configureInstance(instance, map[string]string{BYOHAnnotation: "true",
-		UsernameAnnotation: instance.Username}); err != nil {
+	// Encrypt username using RSA public key
+	usernameCipherText, err := r.encrypt(instance.Username)
+	if err != nil {
+		return errors.Wrapf(err, "unable to encrypt username for instance %s", instance.Address)
+	}
+
+	if err = r.configureInstance(instance, map[string]string{BYOHAnnotation: "true",
+		UsernameAnnotation: usernameCipherText}); err != nil {
 		return errors.Wrap(err, "error configuring node")
 	}
 
