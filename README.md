@@ -30,8 +30,7 @@ We strongly recommend not using the same
 used when installing the cluster
 
 ### Configuring BYOH (Bring Your Own Host) Windows instances
-WARNING: This is not a fully developed feature. Nodes can be removed from the cluster by deleting the Node object,
-         but the changes made to the instance will not be undone. Use at your own risk.
+WARNING: This is not a fully developed feature. Use at your own risk.
 
 A ConfigMap named `windows-instances` must be created in the WMCO namespace, describing the instances that should be
 joined to a cluster. The required information to configure an instance is:
@@ -57,8 +56,29 @@ data:
     username=core
 ```
 
-Deleting `windows-instances` is viewed as a request to deconfigure all Windows instances added as Nodes and revert them
-back to the state they were in before, barring any logs and container runtime artifacts.
+#### Removing BYOH Windows instances
+BYOH instances that are attached to the cluster as a node can be removed by deleting the instance's entry in the
+ConfigMap. This process will revert instances back to the state they were in before, barring any logs and container
+runtime artifacts.
+
+In order for an instance to be cleanly removed, it must be accessible with the current private key provided
+to WMCO.
+
+For example, in order to remove the instance `10.1.42.1` from the above example, the ConfigMap would be changed to
+the following:
+
+```yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: windows-instances
+  namespace: openshift-windows-machine-config-operator
+data:
+  instance.dns.com: |-
+    username=core
+```
+
+Deleting `windows-instances` is viewed as a request to deconfigure all Windows instances added as Nodes.
 
 ### Configuring Windows instances provisioned through MachineSets
 Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
