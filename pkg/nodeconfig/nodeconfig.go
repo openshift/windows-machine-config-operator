@@ -63,27 +63,42 @@ type nodeConfig struct {
 	additionalAnnotations map[string]string
 }
 
-// discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
-func discoverKubeAPIServerEndpoint() (string, error) {
+// discoverKubeAPIServerEndpoints discovers the kubernetes api server and internal endpoints URL
+func discoverKubeAPIServerEndpoints() (string, string, error) {
 	cfg, err := crclientcfg.GetConfig()
 	if err != nil {
-		return "", errors.Wrap(err, "unable to get config to talk to kubernetes api server")
+		return "", "", errors.Wrap(err, "unable to get config to talk to kubernetes api server")
 	}
 
 	client, err := clientset.NewForConfig(cfg)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to get client from the given config")
+		return "", "", errors.Wrap(err, "unable to get client from the given config")
 	}
 
-	host, err := client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
+	infra, err := client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "unable to get cluster infrastructure resource")
+		return "", "", errors.Wrap(err, "unable to get cluster infrastructure resource")
 	}
-	// get API server internal url of format https://api-int.abc.devcluster.openshift.com:6443
-	if host.Status.APIServerInternalURL == "" {
-		return "", errors.Wrap(err, "could not get host name for the kubernetes api server")
+
+	apiServerURL := infra.Status.APIServerURL
+	// get API server URL, usually with format https://api.<cluster_name>.<base_domain>:6443
+	if apiServerURL == "" {
+		return "", "", errors.Wrap(err, "unable to get api server URL from cluster infrastructure")
 	}
-	return host.Status.APIServerInternalURL, nil
+
+	apiServerInternalURL := infra.Status.APIServerInternalURL
+	// get API server internal URL, usually with format https://api-int.<cluster_name>.<base_domain>:6443
+	if apiServerInternalURL == "" {
+		return "", "", errors.Wrap(err, "unable to get api server internal URL from cluster infrastructure")
+	}
+	// Check internal URL prefix
+	if !strings.HasPrefix(apiServerInternalURL, "https://api-int.") {
+		// TODO: May not need this, make sure this prefix is fixed for infra.Status.APIServerInternalURL
+		// 	See https://github.com/openshift/windows-machine-config-operator/pull/66#
+		return "", "", errors.Errorf("invalid API server internal URL: %s", apiServerInternalURL)
+	}
+
+	return apiServerURL, apiServerInternalURL, nil
 }
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
@@ -91,55 +106,47 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
 	instance *instances.InstanceInfo, signer ssh.Signer, additionalAnnotations map[string]string) (*nodeConfig, error) {
 	var err error
-	if nodeConfigCache.workerIgnitionEndPoint == "" {
-		var kubeAPIServerEndpoint string
+	if nodeConfigCache.apiServerHostname == "" || nodeConfigCache.apiServerInternalHostname == "" {
 		// We couldn't find it in cache. Let's compute it now.
-		kubeAPIServerEndpoint, err = discoverKubeAPIServerEndpoint()
+		err := initializeNodeConfigCache()
 		if err != nil {
-			return nil, errors.Wrap(err, "unable to find kube api server endpoint")
+			return nil, errors.Wrap(err, "unable to initialize node config cache")
 		}
-		clusterAddress, err := getClusterAddr(kubeAPIServerEndpoint)
-		if err != nil {
-			return nil, errors.Wrap(err, "error getting cluster address")
-		}
-		workerIgnitionEndpoint := "https://" + clusterAddress + ":22623/config/worker"
-		nodeConfigCache.workerIgnitionEndPoint = workerIgnitionEndpoint
 	}
 	if err = cluster.ValidateCIDR(clusterServiceCIDR); err != nil {
-		return nil, errors.Wrap(err, "error receiving valid CIDR value for "+
-			"creating new node config")
+		return nil, errors.Wrap(err, "error receiving valid CIDR value for creating new node config")
 	}
 
-	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", instance.Address))
-	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
-		instance, signer)
+	win, err := windows.New(nodeConfigCache.apiServerHostname, nodeConfigCache.apiServerInternalHostname,
+		vxlanPort, instance, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
-	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
-		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
-		log: log, additionalAnnotations: additionalAnnotations}, nil
+	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", instance.Address))
+
+	return &nodeConfig{
+		k8sclientset:          clientset,
+		Windows:               win,
+		network:               newNetwork(log),
+		clusterServiceCIDR:    clusterServiceCIDR,
+		publicKeyHash:         CreatePubKeyHashAnnotation(signer.PublicKey()),
+		log:                   log,
+		additionalAnnotations: additionalAnnotations,
+	}, nil
 }
 
-// getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
-// For example: https://api-int.abc.devcluster.openshift.com:6443 gets translated to
-// api-int.abc.devcluster.openshift.com
-// TODO: Think if this needs to be removed as this is too restrictive. Imagine apiserver behind
-// 		a loadbalancer.
-// 		Jira story: https://issues.redhat.com/browse/WINC-398
-func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
-	clusterEndPoint, err := url.Parse(kubeAPIServerEndpoint)
+// parseHostname returns a valid hostname given the full endpoint URL
+//
+// For example, given https://api.cluster.openshift.com:6443 the
+// hostname api.cluster.openshift.com is returned
+func parseHostname(endpointUrlString string) (string, error) {
+	endpointUrl, err := url.Parse(endpointUrlString)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to parse the kubernetes API server endpoint")
+		return "", errors.Wrapf(err, "unable to parse endpoint URL: %s", endpointUrlString)
 	}
-	hostName := clusterEndPoint.Hostname()
-
-	// Check if hostname is valid
-	if !strings.HasPrefix(hostName, "api-int.") {
-		return "", fmt.Errorf("invalid API server url %s: expected hostname to start with `api-int.`", hostName)
-	}
-	return hostName, nil
+	// return hostname
+	return endpointUrl.Hostname(), nil
 }
 
 // Configure configures the Windows VM to make it a Windows worker node

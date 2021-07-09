@@ -167,6 +167,10 @@ type windows struct {
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
 	// the OpenShift worker ignition file.
 	workerIgnitionEndpoint string
+	// apiServerHostname is the hostname of the infrastructure API server
+	apiServerHostname string
+	// apiServerInternalHostname is the hostname of the infrastructure internal API server
+	apiServerInternalHostname string
 	// signer is used for authenticating against the VM
 	signer ssh.Signer
 	// interact is used to connect to and interact with the VM
@@ -179,9 +183,17 @@ type windows struct {
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(workerIgnitionEndpoint, vxlanPort string, instance *instances.InstanceInfo, signer ssh.Signer) (Windows, error) {
-	if workerIgnitionEndpoint == "" {
-		return nil, errors.New("cannot use empty ignition endpoint")
+func New(apiServerHostname, apiServerInternalHostname,
+	vxlanPort string, instance *instances.InstanceInfo, signer ssh.Signer) (Windows, error) {
+	// validations
+	if apiServerHostname == "" {
+		return nil, errors.New("apiServerHostname cannot be empty")
+	}
+	if apiServerInternalHostname == "" {
+		return nil, errors.New("apiServerInternalHostname cannot be empty")
+	}
+	if instance == nil {
+		return nil, errors.New("instance cannot be nil")
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", instance.Address))
@@ -190,16 +202,29 @@ func New(workerIgnitionEndpoint, vxlanPort string, instance *instances.InstanceI
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instance.Address)
 	}
-
+	// build endpoint URL
+	workerIgnitionEndpoint := buildWorkerIgnitionEndpointUrl(apiServerInternalHostname)
+	// return windows instance
 	return &windows{
-			address:                instance.Address,
-			interact:               conn,
-			workerIgnitionEndpoint: workerIgnitionEndpoint,
-			vxlanPort:              vxlanPort,
-			hostName:               instance.NewHostname,
-			log:                    log,
+			address:                   instance.Address,
+			interact:                  conn,
+			workerIgnitionEndpoint:    workerIgnitionEndpoint,
+			apiServerHostname:         apiServerHostname,
+			apiServerInternalHostname: apiServerInternalHostname,
+			vxlanPort:                 vxlanPort,
+			hostName:                  instance.NewHostname,
+			log:                       log,
 		},
 		nil
+}
+
+// buildWorkerIgnitionEndpointUrl returns the worker ignition endpoint URL
+//
+// Usually, follows the <scheme>://<hostname>:<port>/config/worker pattern,
+// where scheme (https) and port (22623) are fixed.
+func buildWorkerIgnitionEndpointUrl(hostname string) string {
+	// build endpoint url
+	return "https://" + hostname + ":22623/config/worker"
 }
 
 // Interface methods
@@ -332,7 +357,85 @@ func (vm *windows) Configure() error {
 		return errors.Wrapf(err, "error configuring Windows exporter")
 	}
 
+	if err := vm.clearWindowsDnsClientCache(); err != nil {
+		return errors.Wrapf(err, "error flushing Windows DNS client cache")
+	}
+
+	if err := vm.configureWindowsHostsFile(); err != nil {
+		return errors.Wrapf(err, "error configuring Windows hosts file")
+	}
+
 	return vm.runBootstrapper()
+}
+
+// clearWindowsDnsClientCache flushes the DNS client cache
+func (vm *windows) clearWindowsDnsClientCache() error {
+	// flush DNS cache
+	if _, err := vm.Run("Clear-DnsClientCache", true); err != nil {
+		return err
+	}
+	// return no error
+	return nil
+}
+
+// configureWindowsHostsFile configures the local hosts file with fixed
+// address_hostname mappings within the VM
+func (vm *windows) configureWindowsHostsFile() error {
+	// HostsFilePath is  the relative path to the hosts file in Windows OS
+	const HostsFilePath = "$env:windir\\System32\\drivers\\etc\\hosts"
+	// RecordSeparator is the new line escape sequence in Windows. See https://en.wikipedia.org/wiki/Newline#Representation
+	const RecordSeparator = "\r\n"
+
+	// TODO: check if entry exists with same hostname mapping in hosts file and remove it (them)
+
+	// log information
+	vm.log.Info("Configuring hosts file with DNS alias for internal server API",
+		"apiServerInternalHostname", vm.apiServerInternalHostname)
+	// get the IPAddress of the cluster API endpoint
+	out, err := vm.Run("Resolve-DnsName "+
+		"-Name "+vm.apiServerHostname+
+		// returns both A(IPv4) and AAAA(IPv6) records
+		"-Type A_AAAA "+
+		// ignore current hosts file entries
+		"-NoHostsFile "+
+		"| % IPAddress", true)
+	// check err
+	if err != nil {
+		return err
+	}
+	// trim leading whitespaces and trailing CR LF (\r\n)
+	out = strings.TrimSpace(out)
+	// parse output
+	ipAddresses := strings.Split(out, RecordSeparator)
+	// loop ipAddress
+	for _, ipAddress := range ipAddresses {
+		// trim
+		ipAddress = strings.TrimSpace(ipAddress)
+		// check empty values
+		if ipAddress == "" {
+			// skip
+			continue
+		}
+		// build hosts entry (IPAddress Hostname #comment)
+		entry := fmt.Sprintf("%s  %s  %s",
+			ipAddress, vm.apiServerInternalHostname, "# alias for internal server API")
+		// log
+		vm.log.Info("Adding entry to hosts file", "entry", entry)
+		// append entry to hosts file
+		_, err := vm.Run("Add-Content "+
+			"-Path "+HostsFilePath+
+			// quote and surround each entry with a new line (`n)
+			"-Value \""+"`n"+entry+"`n"+"\" "+
+			"-Force", true)
+		// check error
+		if err != nil {
+			return err
+		}
+	}
+	vm.log.Info("Successfully configured hosts file for internal server API",
+		"apiServerInternalHostname", vm.apiServerInternalHostname, "ipAddresses", ipAddresses)
+	// return no error
+	return nil
 }
 
 // ConfigureWindowsExporter starts Windows metrics exporter service, only if the file is present on the VM
