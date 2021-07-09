@@ -262,19 +262,18 @@ func hasAssociatedInstance(node *core.Node, instances []*instances.InstanceInfo)
 func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	configMapPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			if e.Object.GetNamespace() == r.watchNamespace && e.Object.GetName() == InstanceConfigMap {
-				return true
-			}
-			return false
+			return r.isValidConfigMap(e.Object)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			if e.ObjectNew.GetNamespace() == r.watchNamespace && e.ObjectNew.GetName() == InstanceConfigMap {
-				return true
-			}
-			return false
+			return r.isValidConfigMap(e.ObjectNew)
 		},
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.ConfigMap{}, builder.WithPredicates(configMapPredicate)).
 		Complete(r)
+}
+
+// isValidConfigMap returns true if the ConfigMap object is the InstanceConfigMap
+func (r *ConfigMapReconciler) isValidConfigMap(o client.Object) bool {
+	return o.GetNamespace() == r.watchNamespace && o.GetName() == InstanceConfigMap
 }
