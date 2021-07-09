@@ -28,13 +28,18 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
@@ -198,11 +203,14 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *cor
 
 // ensureInstanceIsConfigured ensures that the given instance has an associated Node
 func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.InstanceInfo, nodes *core.NodeList) error {
-	_, found := findNode(instance.Address, nodes)
+	node, found := findNode(instance.Address, nodes)
 	if found {
-		// TODO: Check version for upgrade case https://issues.redhat.com/browse/WINC-580 and remove and re-add the node
-		//       if needed. Possibly also do this if the node is not in the `Ready` state.
-		return nil
+		// Version annotation being present means that the node has been fully configured
+		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; present {
+			// TODO: Check version for upgrade case https://issues.redhat.com/browse/WINC-580 and remove and re-add the node
+			//       if needed. Possibly also do this if the node is not in the `Ready` state.
+			return nil
+		}
 	}
 
 	if err := r.configureInstance(instance, map[string]string{BYOHAnnotation: "true",
@@ -258,6 +266,13 @@ func hasAssociatedInstance(node *core.Node, instances []*instances.InstanceInfo)
 	return false
 }
 
+// mapToConfigMap fulfills the MapFn type, while always returning a request to the windows-instance ConfigMap
+func (r *ConfigMapReconciler) mapToConfigMap(_ client.Object) []reconcile.Request {
+	return []reconcile.Request{{
+		NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: InstanceConfigMap},
+	}}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	configMapPredicate := predicate.Funcs{
@@ -276,5 +291,7 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.ConfigMap{}, builder.WithPredicates(configMapPredicate)).
+		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapToConfigMap),
+			builder.WithPredicates(windowsNodePredicate(true))).
 		Complete(r)
 }
