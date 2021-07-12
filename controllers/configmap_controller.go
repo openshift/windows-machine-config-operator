@@ -38,7 +38,6 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
-	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
@@ -189,7 +188,8 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	// configuration effort for configurable hosts will not be blocked by a specific host that has issues with
 	// configuration.
 	for _, instance := range instances {
-		err := r.ensureInstanceIsConfigured(instance)
+		err := r.ensureInstanceIsUpToDate(instance, map[string]string{BYOHAnnotation: "true",
+			UsernameAnnotation: instance.Username})
 		if err != nil {
 			r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure",
 				"unable to join instance with address %s to the cluster", instance.Address)
@@ -206,25 +206,6 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	if err := r.prometheusNodeConfig.Configure(); err != nil {
 		return errors.Wrap(err, "unable to configure Prometheus")
 	}
-	return nil
-}
-
-// ensureInstanceIsConfigured ensures that the given instance has an associated Node
-func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.InstanceInfo) error {
-	if instance.Node != nil {
-		// Version annotation being present means that the node has been fully configured
-		if _, present := instance.Node.Annotations[metadata.VersionAnnotation]; present {
-			// TODO: Check version for upgrade case https://issues.redhat.com/browse/WINC-580 and remove and re-add the node
-			//       if needed. Possibly also do this if the node is not in the `Ready` state.
-			return nil
-		}
-	}
-
-	if err := r.configureInstance(instance, map[string]string{BYOHAnnotation: "true",
-		UsernameAnnotation: instance.Username}); err != nil {
-		return errors.Wrap(err, "error configuring node")
-	}
-
 	return nil
 }
 
