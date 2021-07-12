@@ -18,8 +18,6 @@ package controllers
 
 import (
 	"context"
-	"net"
-	"strings"
 
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
@@ -122,50 +120,10 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
 }
 
-// parseHosts gets the lists of hosts specified in the configmap's data
-func (r *ConfigMapReconciler) parseHosts(configMapData map[string]string) ([]*instances.InstanceInfo, error) {
-	hosts := make([]*instances.InstanceInfo, 0)
-	// Get information about the hosts from each entry. The expected key/value format for each entry is:
-	// <address>: username=<username>
-	for address, data := range configMapData {
-		if err := validateAddress(address); err != nil {
-			return nil, errors.Wrapf(err, "invalid address %s", address)
-		}
-		splitData := strings.SplitN(data, "=", 2)
-		if len(splitData) == 0 || splitData[0] != "username" {
-			return hosts, errors.Errorf("data for entry %s has an incorrect format", address)
-		}
-
-		hosts = append(hosts, instances.NewInstanceInfo(address, splitData[1], ""))
-	}
-	return hosts, nil
-}
-
-// validateAddress checks that the given address is either an ipv4 address, or resolves to any ip address
-func validateAddress(address string) error {
-	// first check if address is an IP address
-	if parsedAddr := net.ParseIP(address); parsedAddr != nil {
-		if parsedAddr.To4() != nil {
-			return nil
-		}
-		// if the address parses into an IP but is not ipv4 it must be ipv6
-		return errors.Errorf("ipv6 is not supported")
-	}
-	// Do a check that the DNS provided is valid
-	addressList, err := net.LookupHost(address)
-	if err != nil {
-		return errors.Wrapf(err, "error looking up DNS")
-	}
-	if len(addressList) == 0 {
-		return errors.Errorf("DNS did not resolve to an address")
-	}
-	return nil
-}
-
 // reconcileNodes corrects the discrepancy between the "expected" hosts slice, and the "actual" nodelist
-func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *core.ConfigMap) error {
+func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, winInstances *core.ConfigMap) error {
 	// Get the list of instances that are expected to be Nodes
-	hosts, err := r.parseHosts(instances.Data)
+	hosts, err := instances.ParseHosts(winInstances.Data)
 	if err != nil {
 		return errors.Wrapf(err, "unable to parse hosts from configmap")
 	}
@@ -183,7 +141,7 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *cor
 	for _, host := range hosts {
 		err := r.ensureInstanceIsConfigured(host, nodes)
 		if err != nil {
-			r.recorder.Eventf(instances, core.EventTypeWarning, "InstanceSetupFailure",
+			r.recorder.Eventf(winInstances, core.EventTypeWarning, "InstanceSetupFailure",
 				"unable to join instance with address %s to the cluster", host.Address)
 			return errors.Wrapf(err, "error configuring host with address %s", host.Address)
 		}
