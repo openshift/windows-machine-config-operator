@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
@@ -170,27 +171,47 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		if err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
 		}
-		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
-		escapedPubKeyAnnotation := strings.Replace(nodeconfig.PubKeyHashAnnotation, "/", "~1", -1)
-		patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`, escapedPubKeyAnnotation)
 		for _, node := range nodes.Items {
-			// Only clear the annotation for Nodes associated with Machines, as the clearing of the annotation is used
-			// solely to kick off the deletion and recreation of Machines.
 			if _, present := node.Annotations[BYOHAnnotation]; present {
-				continue
-			}
+				// For BYOH nodes, patch the username annotation, encrpyting with the new public key
+				username, err := r.usernameFromNode(&node, ctx, request)
+				if err != nil {
+					return reconcile.Result{}, err
+				}
+				publicKey := keySigner.PublicKey()
 
-			existingPubKeyAnno := node.Annotations[nodeconfig.PubKeyHashAnnotation]
-			if existingPubKeyAnno == expectedPubKeyAnno {
-				continue
+				usernameCipher, err := secrets.Encrypt(username, publicKey)
+				if err != nil {
+					return reconcile.Result{}, errors.Wrapf(err, "error encrypting username for node %s",
+						node.GetName())
+				}
+				node.Annotations[UsernameAnnotation] = usernameCipher
+				err = r.client.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(usernameCipher)))
+				if err != nil {
+					return reconcile.Result{}, errors.Wrapf(err, "error updating username annotation on node %s",
+						node.GetName())
+				}
+				log.V(1).Info("updated username annotation with new key pair", "node", node.GetName())
+			} else {
+				// For Nodes associated with Machines, clear the public key annotation, as the clearing of the
+				// annotation is  used solely to kick off the deletion and recreation of Machines.
+				expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
+				escapedPubKeyAnnotation := strings.Replace(nodeconfig.PubKeyHashAnnotation, "/", "~1", -1)
+				patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`,
+					escapedPubKeyAnnotation)
+
+				existingPubKeyAnno := node.Annotations[nodeconfig.PubKeyHashAnnotation]
+				if existingPubKeyAnno == expectedPubKeyAnno {
+					continue
+				}
+				node.Annotations[nodeconfig.PubKeyHashAnnotation] = ""
+				err = r.client.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(patchData)))
+				if err != nil {
+					return reconcile.Result{}, errors.Wrapf(err, "error clearing public key annotation on node %s",
+						node.GetName())
+				}
+				log.V(1).Info("patched node object", "node", node.GetName(), "patch", patchData)
 			}
-			node.Annotations[nodeconfig.PubKeyHashAnnotation] = ""
-			err = r.client.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(patchData)))
-			if err != nil {
-				return reconcile.Result{}, errors.Wrapf(err, "error clearing public key annotation on node %s",
-					node.GetName())
-			}
-			log.V(1).Info("patched node object", "node", node.GetName(), "patch", patchData)
 		}
 
 		// Set userdata to expected value
@@ -203,6 +224,30 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		// Secret updated successfully
 		return reconcile.Result{}, nil
 	}
+}
+
+// usernameFromNode identifies the username associated with a given node by comparing addresses
+func (r *SecretReconciler) usernameFromNode(node *core.Node, ctx context.Context, req ctrl.Request) (string, error) {
+	windowsInstances := &core.ConfigMap{}
+	if err := r.client.Get(ctx, req.NamespacedName, windowsInstances); err != nil {
+		return "", err
+	}
+
+	// Get list of instances that are expected to be Nodes from ConfigMap
+	hosts, err := instances.ParseHosts(windowsInstances.Data)
+	if err != nil {
+		return "", errors.Wrapf(err, "unable to parse hosts from configmap %s", windowsInstances.Name)
+	}
+
+	for _, host := range hosts {
+		for _, nodeAddress := range node.Status.Addresses {
+			if host.Address == nodeAddress.Address {
+				return host.Username, nil
+			}
+		}
+	}
+
+	return "", errors.Errorf("unable to find Windows instance associated with node %s", node.Name)
 }
 
 // RemoveInvalidAnnotationsFromLinuxNodes makes a best effort to remove annotations applied by previous versions of WMCO.
