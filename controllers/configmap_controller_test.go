@@ -12,61 +12,131 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 )
 
-func TestParseHosts(t *testing.T) {
+func TestParseInstances(t *testing.T) {
 	r := ConfigMapReconciler{}
 
 	testCases := []struct {
 		name        string
 		input       map[string]string
+		nodeList    *core.NodeList
 		expectedOut []*instances.InstanceInfo
 		expectedErr bool
 	}{
 		{
 			name:        "invalid username",
 			input:       map[string]string{"localhost": "notusername=core"},
+			nodeList:    &core.NodeList{},
 			expectedOut: nil,
 			expectedErr: true,
 		},
 		{
 			name:        "invalid DNS address",
 			input:       map[string]string{"notlocalhost": "username=core"},
+			nodeList:    &core.NodeList{},
 			expectedOut: nil,
 			expectedErr: true,
 		},
 		{
 			name:        "invalid username and DNS",
 			input:       map[string]string{"invalid": "invalid"},
+			nodeList:    &core.NodeList{},
 			expectedOut: nil,
 			expectedErr: true,
 		},
 		{
 			name:        "valid ipv6 address",
 			input:       map[string]string{"::1": "username=core"},
+			nodeList:    &core.NodeList{},
 			expectedOut: nil,
 			expectedErr: true,
 		},
 		{
 			name:        "valid dns address",
 			input:       map[string]string{"localhost": "username=core"},
+			nodeList:    &core.NodeList{},
 			expectedOut: []*instances.InstanceInfo{{Address: "localhost", Username: "core"}},
 			expectedErr: false,
 		},
 		{
 			name:        "valid ip address",
 			input:       map[string]string{"127.0.0.1": "username=core"},
+			nodeList:    &core.NodeList{},
 			expectedOut: []*instances.InstanceInfo{{Address: "127.0.0.1", Username: "core"}},
 			expectedErr: false,
 		},
 		{
-			name:        "valid dns and ip addresses",
+			name:        "valid dns and ip addresses with no nodes",
 			input:       map[string]string{"localhost": "username=core", "127.0.0.1": "username=Admin"},
+			nodeList:    &core.NodeList{},
 			expectedOut: []*instances.InstanceInfo{{Address: "localhost", Username: "core"}, {Address: "127.0.0.1", Username: "Admin"}},
+			expectedErr: false,
+		},
+		{
+			name:  "valid dns and ip addresses with unassociated nodes",
+			input: map[string]string{"localhost": "username=core", "127.0.0.1": "username=Admin"},
+			nodeList: &core.NodeList{
+				Items: []core.Node{
+					{
+						ObjectMeta: meta.ObjectMeta{
+							Name: "wrong-node",
+						},
+						Status: core.NodeStatus{
+							Addresses: []core.NodeAddress{
+								{Address: "111.1.1.1", Type: core.NodeInternalIP},
+							},
+						},
+					},
+				},
+			},
+			expectedOut: []*instances.InstanceInfo{
+				{Address: "127.0.0.1", Username: "Admin", Node: nil},
+				{Address: "localhost", Username: "core", Node: nil},
+			},
+			expectedErr: false,
+		},
+		{
+			name:  "valid dns and ip addresses with associated nodes",
+			input: map[string]string{"localhost": "username=core", "127.0.0.1": "username=Admin"},
+			nodeList: &core.NodeList{
+				Items: []core.Node{
+					{
+						ObjectMeta: meta.ObjectMeta{
+							Name: "ip-node",
+						},
+						Status: core.NodeStatus{
+							Addresses: []core.NodeAddress{
+								{Address: "127.0.0.1", Type: core.NodeInternalIP},
+							},
+						},
+					},
+					{
+						ObjectMeta: meta.ObjectMeta{
+							Name: "dns-node",
+						},
+						Status: core.NodeStatus{
+							Addresses: []core.NodeAddress{
+								{Address: "localhost", Type: core.NodeInternalDNS},
+							},
+						},
+					},
+				},
+			},
+			expectedOut: []*instances.InstanceInfo{
+				{Address: "127.0.0.1", Username: "Admin", Node: &core.Node{ObjectMeta: meta.ObjectMeta{Name: "ip-node"},
+					Status: core.NodeStatus{Addresses: []core.NodeAddress{{Address: "127.0.0.1",
+						Type: core.NodeInternalIP}},
+					}}},
+				{Address: "localhost", Username: "core", Node: &core.Node{ObjectMeta: meta.ObjectMeta{Name: "dns-node"},
+					Status: core.NodeStatus{Addresses: []core.NodeAddress{{Address: "localhost",
+						Type: core.NodeInternalDNS}},
+					}}},
+			},
 			expectedErr: false,
 		},
 	}
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			out, err := r.parseHosts(test.input)
+			out, err := r.parseInstances(test.input, test.nodeList)
 			if test.expectedErr {
 				assert.Error(t, err)
 				return
