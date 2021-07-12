@@ -1,16 +1,22 @@
 package windows
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	config "github.com/openshift/api/config/v1"
+	clientset "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
@@ -316,6 +322,9 @@ func (vm *windows) Configure() error {
 	if err := vm.EnsureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop required services")
 	}
+	if err := vm.ensureAPIServerInternal(); err != nil {
+		return errors.Wrap(err, "error resolving APIServerInternal IP address")
+	}
 	// Set the hostName of the Windows VM if needed
 	if vm.hostName != "" {
 		if err := vm.ensureHostName(); err != nil {
@@ -333,6 +342,203 @@ func (vm *windows) Configure() error {
 	}
 
 	return vm.runBootstrapper()
+}
+
+// getClusterInfrastructureStatus returns a reference to the current InfrastructureStatus
+func getClusterInfrastructureStatus() (*config.InfrastructureStatus, error) {
+	cfg, err := crclientcfg.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+	cs, err := clientset.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	infra, err := cs.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return &infra.Status, nil
+}
+
+// clearDnsClientCache flushes the DNS client cache
+func (vm *windows) clearDnsClientCache() error {
+	vm.log.Info("clearing DNS client cache", "vm", vm.hostName)
+	// flush DNS cache
+	if _, err := vm.Run("Clear-DnsClientCache", true); err != nil {
+		return errors.Wrap(err, "error clearing DNS client cache")
+	}
+	// return no error
+	return nil
+}
+
+// parseHostname returns a valid hostname given the full endpoint URL
+//
+// For example, given https://api.cluster.openshift.com:6443 the
+// value api.cluster.openshift.com is returned
+func parseHostname(urlString string) (string, error) {
+	if urlString == "" {
+		return "", errors.New("urlString cannot be empty")
+	}
+	u, err := url.Parse(urlString)
+	if err != nil {
+		return "", errors.Wrapf(err, "unable to parse URL: %s", urlString)
+	}
+	if u.Hostname() == "" {
+		return "", errors.Errorf("cannot to parse URL: %s", urlString)
+	}
+	// return hostname
+	return u.Hostname(), nil
+}
+
+// resolveIpAddresses returns a list of strings representing the IP addresses
+// associated with the given hostname. If noHostsFile==true the entries in the
+// Windows hosts file are skipped when resolving the DNS query
+func (vm *windows) resolveIpAddresses(hostname string, noHostsFile bool) ([]string, error) {
+	// log info
+	vm.log.Info("resolving IP Address(es)",
+		"hostname", hostname,
+		"noHostsFile", noHostsFile)
+	// define param
+	var noHostsFileParam = ""
+	if noHostsFile {
+		// enable flag
+		noHostsFileParam = "-NoHostsFile"
+	}
+	// resolve the IP address(es) for hostname
+	out, err := vm.Run("\"Resolve-DnsName "+
+		"-Name "+hostname+" "+
+		// ignore hosts file entries if needed
+		noHostsFileParam+" "+
+		// returns both A(IPv4) and AAAA(IPv6) records
+		"-Type A_AAAA "+
+		"| % IPAddress\"", true)
+	var ipAddresses []string
+	// check err
+	if err != nil {
+		// check not found
+		notFoundPrefix := fmt.Sprintf("%s : %s : %s",
+			"Resolve-DnsName", hostname, "DNS name does not exist")
+		if strings.HasPrefix(out, notFoundPrefix) {
+			// hostname not found, return empty list and no error
+			return ipAddresses, nil
+		}
+		// unknown error, return
+		return nil, err
+	}
+	// trim leading whitespaces and trailing CR LF (\r\n)
+	out = strings.TrimSpace(out)
+	// parse, where the separator is the new line escape sequence
+	// in Windows. See https://en.wikipedia.org/wiki/Newline#Representation
+	tokens := strings.Split(out, "\r\n")
+	// loop, cleanup and collect
+	for _, ip := range tokens {
+		// trim
+		ip = strings.TrimSpace(ip)
+		// check empty values
+		if ip == "" {
+			// skip
+			continue
+		}
+		// collect
+		ipAddresses = append(ipAddresses, ip)
+	}
+	// return
+	return ipAddresses, nil
+}
+
+// getApiServerInternalIpForPlatformStatus returns the APIServerInternalIP given the platform type
+//
+// Currently, VSphere is the only supported platform with the explicit APIServerInternalIP field,
+// as WMCO becomes available to other platforms (BareMetal, OpenStack, Ovirt, Kubevirt) support should be enabled
+// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/infrastructure-config-openshift-io-v1.html
+func getApiServerInternalIpForPlatformStatus(platformStatus *config.PlatformStatus) (string, error) {
+	if platformStatus == nil {
+		return "", errors.New("platformStatus cannot be nil")
+	}
+	switch platformStatus.Type {
+	case config.VSpherePlatformType:
+		return platformStatus.VSphere.APIServerInternalIP, nil
+		// TODO: uncomment as platforms become supported
+		// case config.BareMetalPlatformType:
+		// 	return platformStatus.BareMetal.APIServerInternalIP, nil
+		// case config.OpenStackPlatformType:
+		// 	return platformStatus.OpenStack.APIServerInternalIP, nil
+		// case config.OvirtPlatformType:
+		// 	return platformStatus.Ovirt.APIServerInternalIP, nil
+		// case config.KubevirtPlatformType:
+		// 	return platformStatus.Kubevirt.APIServerInternalIP, nil
+	}
+	// error, not supported
+	return "", errors.Errorf("cannot find APIServerInternalIP for platform type %s",
+		platformStatus.Type)
+}
+
+// ensureAPIServerInternal ensures the resolution of the APIServerInternalIP
+//
+// Usually, the APIServerInternalIP relates to the hostname with prefix "api-int."
+func (vm *windows) ensureAPIServerInternal() error {
+	// get infra status
+	status, err := getClusterInfrastructureStatus()
+	if err != nil {
+		return err
+	}
+	// get internal URL
+	apiServerInternalURL := status.APIServerInternalURL
+	// parse hostname
+	apiServerInternalHostname, err := parseHostname(apiServerInternalURL)
+	if err != nil {
+		return err
+	}
+	// flush DNS cache
+	if err := vm.clearDnsClientCache(); err != nil {
+		return err
+	}
+	vm.log.Info("finding API server internal IP address for hostname",
+		"hostname", apiServerInternalHostname,
+		"platformType", status.PlatformStatus.Type)
+	// check existing DNS resolution for apiServerInternalHostname including
+	// existing hosts entries that may be pre-configured in the golden image
+	ipAddresses, err := vm.resolveIpAddresses(apiServerInternalHostname, false)
+	if err != nil {
+		return err
+	}
+	if len(ipAddresses) >= 1 {
+		// log
+		vm.log.Info("found API server internal with IP address",
+			"hostname", apiServerInternalHostname,
+			"ipAddresses", ipAddresses,
+			"platformType", status.PlatformStatus.Type)
+		// nothing to do, return
+		return nil
+	}
+	vm.log.Info("finding API server internal IP address in platform",
+		"hostname", apiServerInternalHostname,
+		"platformType", status.PlatformStatus.Type)
+	// get ip address from platform status
+	apiServerInternalIP, err := getApiServerInternalIpForPlatformStatus(status.PlatformStatus)
+	if err != nil {
+		return err
+	}
+	// add host entry
+	err = vm.addHostsEntry(apiServerInternalIP, apiServerInternalHostname, "API server internal")
+	if err != nil {
+		return err
+	}
+	// validate, resolve using host file entry
+	ipAddresses, err = vm.resolveIpAddresses(apiServerInternalHostname, false)
+	if len(ipAddresses) == 0 {
+		// return error
+		return errors.Errorf("Unable to configure IP address for API server internal "+
+			"with hostname %s in platform %s", apiServerInternalHostname, status.PlatformStatus.Type)
+	}
+	// log
+	vm.log.Info("configured API server internal with IP address",
+		"hostname", apiServerInternalHostname,
+		"ipAddresses", ipAddresses,
+		"platformType", status.PlatformStatus.Type)
+	// return no error
+	return nil
 }
 
 // ConfigureWindowsExporter starts Windows metrics exporter service, only if the file is present on the VM
