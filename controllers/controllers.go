@@ -50,10 +50,26 @@ func (r *instanceReconciler) configureInstance(instance *instances.InstanceInfo,
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
-	if err := nc.Configure(); err != nil {
-		return errors.Wrap(err, "failed to configure Windows instance")
+
+	// If the given instance has a Node already, check which version of WMCO configured it
+	if instance.Node != nil {
+		annotation, present := instance.Node.Annotations[nodeconfig.VersionAnnotation]
+
+		// Version annotation equal to the current version means that the node has been fully configured by this version
+		// of WMCO. No further action is required.
+		if annotation == version.Get() {
+			return nil
+		}
+		// Version annotation has an incorrect value, this was configured by an older version of WMCO and should be
+		// fully deconfigured before being configured by the current version.
+		if present && annotation != version.Get() {
+			if err := nc.Deconfigure(); err != nil {
+				return err
+			}
+		}
 	}
-	return nil
+
+	return nc.Configure()
 }
 
 // instanceFromNode returns an instance object for the given node. Requires a username that can be used to SSH into the

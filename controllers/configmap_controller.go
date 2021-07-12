@@ -39,7 +39,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
-	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
@@ -208,15 +207,6 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *cor
 
 // ensureInstanceIsConfigured ensures that the given instance has an associated Node
 func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.InstanceInfo) error {
-	if instance.Node != nil {
-		// Version annotation being present means that the node has been fully configured
-		if _, present := instance.Node.Annotations[nodeconfig.VersionAnnotation]; present {
-			// TODO: Check version for upgrade case https://issues.redhat.com/browse/WINC-580 and remove and re-add the node
-			//       if needed. Possibly also do this if the node is not in the `Ready` state.
-			return nil
-		}
-	}
-
 	if err := r.configureInstance(instance, map[string]string{BYOHAnnotation: "true",
 		UsernameAnnotation: instance.Username}); err != nil {
 		return errors.Wrap(err, "error configuring node")
