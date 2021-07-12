@@ -66,7 +66,7 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instances.Insta
 	if err != nil {
 		return nil, err
 	}
-	return instances.NewInstanceInfo(addr, node.Annotations[UsernameAnnotation], ""), nil
+	return instances.NewInstanceInfo(addr, node.Annotations[UsernameAnnotation], "", node), nil
 }
 
 // GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
