@@ -42,19 +42,34 @@ type instanceReconciler struct {
 	recorder record.EventRecorder
 }
 
-// configureInstance adds the specified instance to the cluster. if hostname is not empty, the instance's hostname will be
-// changed to the passed in value. If annotations is not nil, the node will have the specified annotations applied to
-// it.
-func (r *instanceReconciler) configureInstance(instance *instances.InstanceInfo, annotations map[string]string) error {
+// ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
+// defined by the current version of WMCO. If annotations is not nil, the node will have the specified annotations
+// applied to it.
+func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.InstanceInfo, annotationsToApply map[string]string) error {
+	if instance == nil {
+		return errors.New("instance cannot be nil")
+	}
+
+	// Instance is up to date, do nothing
+	if instance.UpToDate() {
+		return nil
+	}
+
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
-		annotations)
+		annotationsToApply)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
-	if err := nc.Configure(); err != nil {
-		return errors.Wrap(err, "failed to configure Windows instance")
+
+	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
+	// configured again.
+	if instance.UpgradeRequired() {
+		if err := nc.Deconfigure(); err != nil {
+			return err
+		}
 	}
-	return nil
+
+	return nc.Configure()
 }
 
 // instanceFromNode returns an instance object for the given node. Requires a username that can be used to SSH into the

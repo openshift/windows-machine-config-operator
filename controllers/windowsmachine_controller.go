@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"net"
 	"strings"
 
@@ -28,6 +27,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -377,7 +377,7 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		username = "Administrator"
 	}
 
-	if err := r.configureInstance(instances.NewInstanceInfo(ipAddress, username, hostname, nil), nil); err != nil {
+	if err := r.ensureInstanceIsUpToDate(instances.NewInstanceInfo(ipAddress, username, hostname, nil), nil); err != nil {
 		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
 
