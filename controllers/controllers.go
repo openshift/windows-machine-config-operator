@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"net"
 
 	"github.com/go-logr/logr"
@@ -95,7 +96,14 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
-	return nc.Deconfigure()
+
+	if err = nc.Deconfigure(); err != nil {
+		return err
+	}
+	if err = r.client.Delete(context.TODO(), instance.Node); err != nil {
+		return errors.Wrapf(err, "error deleting node %s", instance.Node.GetName())
+	}
+	return nil
 }
 
 // windowsNodePredicate returns a predicate which filters out all node objects that are not Windows nodes.

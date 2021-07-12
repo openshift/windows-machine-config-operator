@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/drain"
@@ -380,10 +381,15 @@ func (nc *nodeConfig) Deconfigure() error {
 		return errors.Wrap(err, "error deconfiguring instance")
 	}
 
-	// Delete the Node object
-	err := nc.k8sclientset.CoreV1().Nodes().Delete(context.TODO(), nc.node.GetName(), meta.DeleteOptions{})
+	// Clear the version annotation from the node object to indicate the node is not configured
+	escapedVersionAnnotation := strings.Replace(VersionAnnotation, "/", "~1", -1)
+	patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`,
+		escapedVersionAnnotation)
+	nc.node.Annotations[VersionAnnotation] = ""
+	_, err := nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
+		[]byte(patchData), meta.PatchOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "error deleting node %s", nc.node.GetName())
+		return errors.Wrapf(err, "error removing version annotation from node %s", nc.node.GetName())
 	}
 	return nil
 }
