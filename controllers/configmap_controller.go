@@ -122,10 +122,13 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
 }
 
-// parseHosts gets the lists of hosts specified in the configmap's data
-func (r *ConfigMapReconciler) parseHosts(configMapData map[string]string) ([]*instances.InstanceInfo, error) {
-	hosts := make([]*instances.InstanceInfo, 0)
-	// Get information about the hosts from each entry. The expected key/value format for each entry is:
+// parseInstances gets the list of instances specified in the ConfigMap's data. This function should be passed a list
+// of Nodes in the cluster, as each instance returned will contain a reference to its associated Node, if it has one
+// in the given NodeList. If an instance does not have an associated node from the NodeList, the node reference will
+// be nil.
+func (r *ConfigMapReconciler) parseInstances(configMapData map[string]string, nodes *core.NodeList) ([]*instances.InstanceInfo, error) {
+	instanceList := make([]*instances.InstanceInfo, 0)
+	// Get information about the instances from each entry. The expected key/value format for each entry is:
 	// <address>: username=<username>
 	for address, data := range configMapData {
 		if err := validateAddress(address); err != nil {
@@ -133,12 +136,14 @@ func (r *ConfigMapReconciler) parseHosts(configMapData map[string]string) ([]*in
 		}
 		splitData := strings.SplitN(data, "=", 2)
 		if len(splitData) == 0 || splitData[0] != "username" {
-			return hosts, errors.Errorf("data for entry %s has an incorrect format", address)
+			return instanceList, errors.Errorf("data for entry %s has an incorrect format", address)
 		}
 
-		hosts = append(hosts, instances.NewInstanceInfo(address, splitData[1], ""))
+		// Get the associated node if the described instance has one
+		node, _ := findNode(address, nodes)
+		instanceList = append(instanceList, instances.NewInstanceInfo(address, splitData[1], "", node))
 	}
-	return hosts, nil
+	return instanceList, nil
 }
 
 // validateAddress checks that the given address is either an ipv4 address, or resolves to any ip address
@@ -164,15 +169,15 @@ func validateAddress(address string) error {
 
 // reconcileNodes corrects the discrepancy between the "expected" hosts slice, and the "actual" nodelist
 func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *core.ConfigMap) error {
-	// Get the list of instances that are expected to be Nodes
-	hosts, err := r.parseHosts(instances.Data)
-	if err != nil {
-		return errors.Wrapf(err, "unable to parse hosts from configmap")
-	}
-
 	nodes := &core.NodeList{}
 	if err := r.client.List(ctx, nodes); err != nil {
 		return errors.Wrap(err, "error listing nodes")
+	}
+
+	// Get the list of instances that are expected to be Nodes
+	hosts, err := r.parseInstances(instances.Data, nodes)
+	if err != nil {
+		return errors.Wrap(err, "unable to parse hosts from ConfigMap")
 	}
 
 	// For each host, ensure that it is configured into a node. On error of any host joining, return error and requeue.
@@ -181,7 +186,7 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *cor
 	// configuration effort for configurable hosts will not be blocked by a specific host that has issues with
 	// configuration.
 	for _, host := range hosts {
-		err := r.ensureInstanceIsConfigured(host, nodes)
+		err := r.ensureInstanceIsConfigured(host)
 		if err != nil {
 			r.recorder.Eventf(instances, core.EventTypeWarning, "InstanceSetupFailure",
 				"unable to join instance with address %s to the cluster", host.Address)
@@ -202,11 +207,10 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *cor
 }
 
 // ensureInstanceIsConfigured ensures that the given instance has an associated Node
-func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.InstanceInfo, nodes *core.NodeList) error {
-	node, found := findNode(instance.Address, nodes)
-	if found {
+func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.InstanceInfo) error {
+	if instance.Node != nil {
 		// Version annotation being present means that the node has been fully configured
-		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; present {
+		if _, present := instance.Node.Annotations[nodeconfig.VersionAnnotation]; present {
 			// TODO: Check version for upgrade case https://issues.redhat.com/browse/WINC-580 and remove and re-add the node
 			//       if needed. Possibly also do this if the node is not in the `Ready` state.
 			return nil
