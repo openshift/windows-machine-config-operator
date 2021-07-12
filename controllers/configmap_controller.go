@@ -172,7 +172,7 @@ func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.Ins
 	}
 
 	// Encrypt username using RSA public key
-	usernameCipherText, err := r.encrypt(instance.Username)
+	usernameCipherText, err := secrets.Encrypt(instance.Username, r.signer.PublicKey())
 	if err != nil {
 		return errors.Wrapf(err, "unable to encrypt username for instance %s", instance.Address)
 	}

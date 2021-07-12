@@ -80,3 +80,14 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 
 	return userDataSecret, nil
 }
+
+func Encrypt(plainText string, pubKey ssh.PublicKey) (string, error) {
+	//pubKeyBytes := pubKey.Marshal() //ssh.MarshalAuthorizedKey(pubKey)
+
+	return "", nil
+}
+
+func Decrypt(cipherText string, privKey []byte) (string, error) {
+
+	return "", nil
+}

@@ -128,8 +128,14 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instances.Insta
 		return nil, err
 	}
 
-	// Decypt username annotation to plain text
-	decryptedUsername, err := r.decrypt(usernameAnnotation)
+	// Decypt username annotation to plain text using private key
+	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
+	if err != nil {
+		return nil, err
+	}
+
+	decryptedUsername, err := secrets.Decrypt(usernameAnnotation, privateKeyBytes)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to decrypt username annotation for node %s", node.Name)
 	}
