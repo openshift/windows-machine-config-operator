@@ -48,7 +48,7 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.45.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.6.1
-	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
+	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	golang.org/x/mod v0.3.1-0.20200828183125-ce943fd02449
 	k8s.io/api v0.21.1
 	k8s.io/apimachinery v0.21.1
