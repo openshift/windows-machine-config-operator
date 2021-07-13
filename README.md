@@ -57,6 +57,9 @@ data:
     username=core
 ```
 
+Deleting `windows-instances` is viewed as a request to deconfigure all Windows instances added as Nodes and revert them
+back to the state they were in before, barring any logs and container runtime artifacts.
+
 ### Configuring Windows instances provisioned through MachineSets
 Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
 Please note that the windows-user-data secret will be created by the WMCO lazily when it is configuring the first
