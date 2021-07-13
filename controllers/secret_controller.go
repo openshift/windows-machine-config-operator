@@ -173,14 +173,15 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		}
 		for _, node := range nodes.Items {
 			if _, present := node.Annotations[BYOHAnnotation]; present {
-				// For BYOH nodes, patch the username annotation, encrpyting with the new public key
+				// For BYOH nodes, patch the username annotation, encrpyting with the new private key
 				username, err := r.usernameFromNode(&node, ctx, request)
 				if err != nil {
 					return reconcile.Result{}, err
 				}
-				publicKey := keySigner.PublicKey()
+				privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+					Name: secrets.PrivateKeySecret}, r.client)
 
-				usernameCipher, err := secrets.Encrypt(username, publicKey)
+				usernameCipher, err := secrets.Encrypt(username, privateKeyBytes)
 				if err != nil {
 					return reconcile.Result{}, errors.Wrapf(err, "error encrypting username for node %s",
 						node.GetName())

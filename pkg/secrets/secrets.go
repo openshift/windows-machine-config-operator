@@ -1,9 +1,15 @@
 package secrets
 
 import (
+	"bytes"
 	"context"
 
+	"io/ioutil"
+
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/crypto/openpgp/packet"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -81,13 +87,62 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 	return userDataSecret, nil
 }
 
-func Encrypt(plainText string, pubKey ssh.PublicKey) (string, error) {
-	//pubKeyBytes := pubKey.Marshal() //ssh.MarshalAuthorizedKey(pubKey)
+// Encrypt attempts to encrpyt a plaintext message using the given key as an encoded passphrase
+func Encrypt(plainText string, key []byte) (string, error) {
+	msgBuffer := bytes.NewBuffer(nil)
 
-	return "", nil
+	// prepares PGP block to hold encrpyted data
+	encoder, _ := armor.Encode(msgBuffer, "ENCRYPTED DATA", nil)
+
+	serializeSettings := &packet.Config{
+		DefaultCipher: packet.CipherAES256,
+	}
+
+	writer, _ := openpgp.SymmetricallyEncrypt(encoder, key, nil, serializeSettings)
+	_, err := writer.Write([]byte(plainText))
+	if err != nil {
+		return "", err
+	}
+	writer.Close()
+	encoder.Close()
+
+	cipherText := msgBuffer.Bytes()
+	return string(cipherText), nil
 }
 
-func Decrypt(cipherText string, privKey []byte) (string, error) {
+// Decrypt attempts to convert encrypted contents to plaintext using the given key
+func Decrypt(cipherText string, key []byte) (string, error) {
+	msgBuffer := bytes.NewBuffer([]byte(cipherText))
 
-	return "", nil
+	// unwraps encoded message contents
+	armorBlock, err := armor.Decode(msgBuffer)
+	if err != nil {
+		return "", err
+	}
+
+	// flag needed to signal if the key has already been used and failed, else "function will be called again, forever"
+	// documentation: https://godoc.org/golang.org/x/crypto/openpgp#PromptFunction
+	attempted := false
+	promptFunction := func(keys []openpgp.Key, symmetric bool) ([]byte, error) {
+		if attempted {
+			return nil, errors.New("invalid passphrase supplied")
+		}
+		attempted = true
+		return key, nil
+	}
+
+	parseSettings := &packet.Config{
+		DefaultCipher: packet.CipherAES256,
+	}
+
+	message, err := openpgp.ReadMessage(armorBlock.Body, nil, promptFunction, parseSettings)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to decrypt message using given key")
+	}
+	plainText, err := ioutil.ReadAll(message.UnverifiedBody)
+	if err != nil {
+		return "", errors.Wrap(err, "unable to parse decrypted data into a readable value")
+	}
+
+	return string(plainText), nil
 }

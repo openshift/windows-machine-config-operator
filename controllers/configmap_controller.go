@@ -171,8 +171,10 @@ func (r *ConfigMapReconciler) ensureInstanceIsConfigured(instance *instances.Ins
 		}
 	}
 
-	// Encrypt username using RSA public key
-	usernameCipherText, err := secrets.Encrypt(instance.Username, r.signer.PublicKey())
+	// Encrypt username using private key secret
+	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
+	usernameCipherText, err := secrets.Encrypt(instance.Username, privateKeyBytes)
 	if err != nil {
 		return errors.Wrapf(err, "unable to encrypt username for instance %s", instance.Address)
 	}
