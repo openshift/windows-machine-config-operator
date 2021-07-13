@@ -47,7 +47,6 @@ const (
 	// BYOHAnnotation is an an anotation that should be applied to all Windows nodes not associated with a Machine.
 	BYOHAnnotation = "windowsmachineconfig.openshift.io/byoh"
 	// InstanceConfigMap is the name of the ConfigMap where VMs to be configured should be described.
-	// TODO: Possibly make this a singleton that WMCO creates https://issues.redhat.com/browse/WINC-612
 	InstanceConfigMap = "windows-instances"
 )
 
@@ -99,17 +98,15 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Fetch the ConfigMap. The predicate will have filtered out any ConfigMaps that we should not reconcile
 	// so it is safe to assume that all ConfigMaps being reconciled describe hosts that need to be present in the
-	// cluster.
+	// cluster. This also handles the case when the reconciliation is kicked off by the InstanceConfigMap being deleted.
+	// In the deletion case, an empty InstanceConfigMap will be reconciled now resulting in all existing BYOH nodes
+	// being deleted.
 	configMap := &core.ConfigMap{}
 	if err := r.client.Get(ctx, req.NamespacedName, configMap); err != nil {
-		if k8sapierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
-			return ctrl.Result{}, nil
+		if !k8sapierrors.IsNotFound(err) {
+			// Error reading the object - requeue the request.
+			return ctrl.Result{}, err
 		}
-		// Error reading the object - requeue the request.
-		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
@@ -234,6 +231,9 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				return true
 			}
 			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return r.isValidConfigMap(e.Object)
 		},
 	}
 	return ctrl.NewControllerManagedBy(mgr).
