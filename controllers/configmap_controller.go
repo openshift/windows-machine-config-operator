@@ -123,7 +123,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // parseHosts gets the lists of hosts specified in the configmap's data
-func (r *ConfigMapReconciler) parseHosts(configMapData map[string]string) ([]*instances.InstanceInfo, error) {
+func parseHosts(configMapData map[string]string) ([]*instances.InstanceInfo, error) {
 	hosts := make([]*instances.InstanceInfo, 0)
 	// Get information about the hosts from each entry. The expected key/value format for each entry is:
 	// <address>: username=<username>
@@ -165,7 +165,7 @@ func validateAddress(address string) error {
 // reconcileNodes corrects the discrepancy between the "expected" hosts slice, and the "actual" nodelist
 func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, instances *core.ConfigMap) error {
 	// Get the list of instances that are expected to be Nodes
-	hosts, err := r.parseHosts(instances.Data)
+	hosts, err := parseHosts(instances.Data)
 	if err != nil {
 		return errors.Wrapf(err, "unable to parse hosts from configmap")
 	}
