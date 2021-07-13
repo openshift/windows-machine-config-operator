@@ -147,7 +147,8 @@ func generatePrivateKey() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// createPrivateKeySecret ensures that a private key secret exists with the correct data
+// createPrivateKeySecret ensures that a private key secret exists with the correct data in both the operator and test
+// namespaces
 func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 	if err := tc.ensurePrivateKeyDeleted(); err != nil {
 		return errors.Wrap(err, "error ensuring any existing private key is removed")
@@ -169,24 +170,28 @@ func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 	privateKeySecret := core.Secret{
 		Data: map[string][]byte{secrets.PrivateKeySecretKey: keyData},
 		ObjectMeta: meta.ObjectMeta{
-			Name:      secrets.PrivateKeySecret,
-			Namespace: tc.namespace,
+			Name: secrets.PrivateKeySecret,
 		},
 	}
-	_, err = tc.client.K8s.CoreV1().Secrets(tc.namespace).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
-	return err
+
+	// Create the private key secret in both the operator's namespace, and the test namespace. This is needed to make it
+	// possible to SSH into the Windows nodes from pods spun up in the test namespace.
+	for _, ns := range []string{tc.namespace, tc.workloadNamespace} {
+		_, err := tc.client.K8s.CoreV1().Secrets(ns).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
+		if err != nil {
+			return errors.Wrapf(err, "could not create private key secret in namespace %s", ns)
+		}
+	}
+	return nil
 }
 
-// ensurePrivateKeyDeleted ensures that the privateKeySecret is deleted
+// ensurePrivateKeyDeleted ensures that the privateKeySecret is deleted in both the operator and test namespaces
 func (tc *testContext) ensurePrivateKeyDeleted() error {
-	secretsClient := tc.client.K8s.CoreV1().Secrets(tc.namespace)
-	if _, err := secretsClient.Get(context.TODO(), secrets.PrivateKeySecret, meta.GetOptions{}); err != nil {
-		if apierrors.IsNotFound(err) {
-			// secret doesnt exist, do nothing
-			return nil
+	for _, ns := range []string{tc.namespace, tc.workloadNamespace} {
+		err := tc.client.K8s.CoreV1().Secrets(ns).Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return errors.Wrapf(err, "could not delete private key secret in namespace %s", ns)
 		}
-		return errors.Wrap(err, "could not get private key secret")
 	}
-	// Secret exists, delete it
-	return secretsClient.Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
+	return nil
 }

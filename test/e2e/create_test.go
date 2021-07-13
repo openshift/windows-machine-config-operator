@@ -27,15 +27,16 @@ import (
 func creationTestSuite(t *testing.T) {
 	// The order of tests here are important. Any node object related tests should be run only after
 	// testWindowsNodeCreation as that initializes the node objects in the global context.
-	if !t.Run("Creation", func(t *testing.T) { testWindowsNodeCreation(t) }) {
+	if !t.Run("Creation", testWindowsNodeCreation) {
 		// No point in running the other tests if creation failed
 		return
 	}
-	t.Run("Node Metadata", func(t *testing.T) { testNodeMetadata(t) })
-	t.Run("NodeTaint validation", func(t *testing.T) { testNodeTaint(t) })
-	t.Run("UserData validation", func(t *testing.T) { testUserData(t) })
-	t.Run("UserData idempotent check", func(t *testing.T) { testUserDataTamper(t) })
-	t.Run("Node Logs", func(t *testing.T) { testNodeLogs(t) })
+	t.Run("Node Metadata", testNodeMetadata)
+	t.Run("Services running", testExpectedServicesRunning)
+	t.Run("NodeTaint validation", testNodeTaint)
+	t.Run("UserData validation", testUserData)
+	t.Run("UserData idempotent check", testUserDataTamper)
+	t.Run("Node Logs", testNodeLogs)
 	t.Run("Metrics validation", testMetrics)
 }
 
@@ -64,16 +65,24 @@ func (tc *testContext) deleteWindowsInstanceConfigMap() error {
 	return nil
 }
 
+// getAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
+// or dns address.
+func (tc *testContext) getAddress(addresses []v1.NodeAddress) (string, error) {
+	for _, addr := range addresses {
+		if addr.Type == v1.NodeInternalIP || addr.Type == v1.NodeInternalDNS {
+			// filter out ipv6
+			if net.ParseIP(addr.Address) != nil && net.ParseIP(addr.Address).To4() == nil {
+				continue
+			}
+			return addr.Address, nil
+		}
+	}
+	return "", errors.New("no usable address")
+}
+
 // createWindowsInstanceConfigMap creates a ConfigMap for the ConfigMap controller to act on, comprised of the Machines
 // in the given MachineList
 func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList) error {
-	var username string
-	if tc.CloudProvider.GetType() == config.AzurePlatformType {
-		username = "capi"
-	} else {
-		username = "Administrator"
-	}
-
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: controllers.InstanceConfigMap,
@@ -81,16 +90,11 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 		Data: make(map[string]string),
 	}
 	for _, machine := range machines.Items {
-		for _, address := range machine.Status.Addresses {
-			if address.Type == v1.NodeInternalIP || address.Type == v1.NodeInternalDNS {
-				// filter out ipv6
-				if net.ParseIP(address.Address) != nil && net.ParseIP(address.Address).To4() == nil {
-					continue
-				}
-				cm.Data[address.Address] = "username=" + username
-				break
-			}
+		addr, err := tc.getAddress(machine.Status.Addresses)
+		if err != nil {
+			return errors.Wrap(err, "unable to get usable address")
 		}
+		cm.Data[addr] = "username=" + tc.vmUsername()
 	}
 	_, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Create(context.TODO(), cm, metav1.CreateOptions{})
 	if err != nil {

@@ -4,16 +4,21 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	batch "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
+	rbac "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 )
 
 // testNodeMetadata tests if all nodes have a worker label and kubelet version and are annotated with the version of
@@ -141,5 +146,191 @@ func testNodeTaint(t *testing.T) {
 			return false
 		}()
 		assert.Equal(t, hasTaint, true, "expected Windows Taint to be present on the Node: %s", node.GetName())
+	}
+}
+
+// ensureTestRunnerSA ensures the proper ServiceAccount exists, a requirement for SSHing into a Windows node
+// noop if the ServiceAccount already exists.
+func (tc *testContext) ensureTestRunnerSA() error {
+	sa := core.ServiceAccount{ObjectMeta: meta.ObjectMeta{Name: tc.workloadNamespace}}
+	_, err := tc.client.K8s.CoreV1().ServiceAccounts(tc.workloadNamespace).Create(context.TODO(), &sa,
+		meta.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return errors.Wrap(err, "unable to create SA")
+	}
+	return nil
+}
+
+// ensureTestRunnerRole ensures the proper Role exists, a requirement for SSHing into a Windows node
+// noop if the Role already exists.
+func (tc *testContext) ensureTestRunnerRole() error {
+	role := rbac.Role{
+		TypeMeta:   meta.TypeMeta{},
+		ObjectMeta: meta.ObjectMeta{Name: tc.workloadNamespace},
+		Rules: []rbac.PolicyRule{
+			{
+				Verbs:         []string{"use"},
+				APIGroups:     []string{"security.openshift.io"},
+				Resources:     []string{"securitycontextconstraints"},
+				ResourceNames: []string{"hostnetwork"},
+			},
+		},
+	}
+	_, err := tc.client.K8s.RbacV1().Roles(tc.workloadNamespace).Create(context.TODO(), &role, meta.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return errors.Wrap(err, "unable to create role")
+	}
+	return nil
+}
+
+// ensureTestRunnerRoleBinding ensures the proper RoleBinding exists, a requirement for SSHing into a Windows node
+// noop if the RoleBinding already exists.
+func (tc *testContext) ensureTestRunnerRoleBinding() error {
+	rb := rbac.RoleBinding{
+		TypeMeta:   meta.TypeMeta{},
+		ObjectMeta: meta.ObjectMeta{Name: tc.workloadNamespace},
+		Subjects: []rbac.Subject{{
+			Kind:      "ServiceAccount",
+			APIGroup:  "",
+			Name:      tc.workloadNamespace,
+			Namespace: tc.workloadNamespace,
+		}},
+		RoleRef: rbac.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     tc.workloadNamespace,
+		},
+	}
+	_, err := tc.client.K8s.RbacV1().RoleBindings(tc.workloadNamespace).Create(context.TODO(), &rb, meta.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return errors.Wrap(err, "unable to create role")
+	}
+	return nil
+}
+
+// sshSetup creates all the Kubernetes resources required to SSH into a Windows node
+func (tc *testContext) sshSetup() error {
+	if err := tc.ensureTestRunnerSA(); err != nil {
+		return errors.Wrap(err, "error ensuring SA created")
+	}
+	if err := tc.ensureTestRunnerRole(); err != nil {
+		return errors.Wrap(err, "error ensuring Role created")
+	}
+	if err := tc.ensureTestRunnerRoleBinding(); err != nil {
+		return errors.Wrap(err, "error ensuring RoleBinding created")
+	}
+	return nil
+}
+
+// runSSHJob creates and waits for a Kubernetes job to run. The command provided will be executed on the host specified
+// by the provided IP.
+func (tc *testContext) runSSHJob(name, command, ip string) (string, error) {
+	// Create a job which runs the provided command via SSH
+	keyMountDir := "/private-key"
+	sshCommand := []string{"bash", "-c", fmt.Sprintf("ssh -o StrictHostKeyChecking=no -i %s %s@%s '%s'",
+		filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip, command)}
+	keyMode := int32(0600)
+	job := &batch.Job{
+		ObjectMeta: meta.ObjectMeta{
+			GenerateName: name + "-job-",
+		},
+		Spec: batch.JobSpec{
+			Template: core.PodTemplateSpec{
+				Spec: core.PodSpec{
+					HostNetwork:        true,
+					RestartPolicy:      core.RestartPolicyNever,
+					ServiceAccountName: tc.workloadNamespace,
+					Containers: []core.Container{
+						{
+							Name:            name,
+							Image:           tc.toolsImage,
+							ImagePullPolicy: core.PullIfNotPresent,
+							Command:         sshCommand,
+							VolumeMounts: []core.VolumeMount{{
+								Name:      "private-key",
+								MountPath: keyMountDir,
+							}},
+						},
+					},
+					Volumes: []core.Volume{{Name: "private-key", VolumeSource: core.VolumeSource{
+						Secret: &core.SecretVolumeSource{
+							SecretName:  secrets.PrivateKeySecret,
+							DefaultMode: &keyMode,
+						},
+					}}},
+				},
+			},
+		},
+	}
+
+	jobsClient := tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace)
+	job, err := jobsClient.Create(context.TODO(), job, meta.CreateOptions{})
+	if err != nil {
+		return "", errors.Wrap(err, "error creating job")
+	}
+
+	// Wait for the job to complete then gather and return the pod output
+	if err = tc.waitUntilJobSucceeds(job.GetName()); err != nil {
+		return "", errors.Wrap(err, "error waiting for job to succeed")
+	}
+	labelSelector := "job-name=" + job.Name
+	logs, err := tc.getLogs(labelSelector)
+	if err != nil {
+		return "", errors.Wrap(err, "error getting logs from job pod")
+	}
+	return logs, nil
+}
+
+// getWinServices returns a map of Windows services from the instance with the given address, the key:value format being
+// name:status
+func (tc *testContext) getWinServices(addr string) (map[string]string, error) {
+	// This command returns CR+newline separated quoted CSV entries consisting of service name and status. For example:
+	// "kubelet","Running"\r\n"VaultSvc","Stopped"
+	command := fmt.Sprintf("powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command \"Get-Service | " +
+		"Select-Object -Property Name,Status | ConvertTo-Csv -NoTypeInformation\"")
+	out, err := tc.runSSHJob("get-windows-svc-list", command, addr)
+	if err != nil {
+		return nil, errors.Wrap(err, "error running SSH job")
+	}
+
+	// Remove the header and trailing whitespace from the command output
+	outSplit := strings.SplitAfterN(out, "\"Name\",\"Status\"\r\n", 2)
+	if len(outSplit) != 2 {
+		return nil, errors.New("unexpected command output: " + out)
+	}
+	trimmedList := strings.TrimSpace(outSplit[1])
+
+	// Make a map from the services, removing the quotes around each entry
+	services := make(map[string]string)
+	lines := strings.Split(trimmedList, "\r\n")
+	for _, line := range lines {
+		fields := strings.Split(line, ",")
+		if len(fields) != 2 {
+			return nil, errors.New("expected comma separated values, found: " + line)
+		}
+		services[strings.Trim(fields[0], "\"")] = strings.Trim(fields[1], "\"")
+	}
+	return services, nil
+}
+
+// testExpectedServicesRunning tests that for each node all the expected services are running
+func testExpectedServicesRunning(t *testing.T) {
+	expectedServices := []string{"kubelet", "kube-proxy", "hybrid-overlay-node", "windows_exporter"}
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			addr, err := tc.getAddress(node.Status.Addresses)
+			require.NoError(t, err, "unable to get node address")
+			svcs, err := tc.getWinServices(addr)
+			require.NoError(t, err, "error getting service map")
+			for _, svcName := range expectedServices {
+				t.Run(svcName, func(t *testing.T) {
+					require.Contains(t, svcs, svcName, "service not found")
+					assert.Equal(t, "Running", svcs[svcName])
+				})
+			}
+		})
 	}
 }

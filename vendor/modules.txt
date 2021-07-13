@@ -62,6 +62,8 @@ github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
+# github.com/blang/semver v3.5.1+incompatible
+github.com/blang/semver
 # github.com/cespare/xxhash/v2 v2.1.1
 github.com/cespare/xxhash/v2
 # github.com/davecgh/go-spew v1.1.1
@@ -157,19 +159,24 @@ github.com/modern-go/concurrent
 github.com/modern-go/reflect2
 # github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00
 github.com/monochromegane/go-gitignore
-# github.com/openshift/api v0.0.0-20201214114959-164a2fb63b5f => github.com/openshift/api v0.0.0-20201214114959-164a2fb63b5f
+# github.com/openshift/api v0.0.0-20210521075222-e273a339932a => github.com/openshift/api v0.0.0-20201214114959-164a2fb63b5f
 ## explicit
 github.com/openshift/api/config/v1
+github.com/openshift/api/image/docker10
+github.com/openshift/api/image/dockerpre012
+github.com/openshift/api/image/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/route/v1
-# github.com/openshift/client-go v0.0.0-20201214125552-e615e336eb49 => github.com/openshift/client-go v0.0.0-20201214125552-e615e336eb49
+# github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142 => github.com/openshift/client-go v0.0.0-20201214125552-e615e336eb49
 ## explicit
 github.com/openshift/client-go/config/clientset/versioned
 github.com/openshift/client-go/config/clientset/versioned/fake
 github.com/openshift/client-go/config/clientset/versioned/scheme
 github.com/openshift/client-go/config/clientset/versioned/typed/config/v1
 github.com/openshift/client-go/config/clientset/versioned/typed/config/v1/fake
+github.com/openshift/client-go/image/clientset/versioned/scheme
+github.com/openshift/client-go/image/clientset/versioned/typed/image/v1
 github.com/openshift/client-go/operator/clientset/versioned
 github.com/openshift/client-go/operator/clientset/versioned/fake
 github.com/openshift/client-go/operator/clientset/versioned/scheme
@@ -181,6 +188,12 @@ github.com/openshift/client-go/route/clientset/versioned/scheme
 github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
 # github.com/openshift/cluster-api-provider-gcp v0.0.1-0.20200713133651-5c8a640669ac
 github.com/openshift/cluster-api-provider-gcp/pkg/apis/gcpprovider/v1beta1
+# github.com/openshift/library-go v0.0.0-20210521084623-7392ea9b02ca
+## explicit
+github.com/openshift/library-go/pkg/image/imageutil
+github.com/openshift/library-go/pkg/image/internal/digest
+github.com/openshift/library-go/pkg/image/internal/reference
+github.com/openshift/library-go/pkg/image/reference
 # github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7
 ## explicit
 github.com/openshift/machine-api-operator/pkg/apis/machine
@@ -403,7 +416,7 @@ k8s.io/api/scheduling/v1beta1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apiextensions-apiserver v0.21.0 => k8s.io/apiextensions-apiserver v0.21.1
+# k8s.io/apiextensions-apiserver v0.21.1 => k8s.io/apiextensions-apiserver v0.21.1
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1
