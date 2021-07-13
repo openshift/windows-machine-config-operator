@@ -71,7 +71,6 @@ adjust the following variables:
 - `<vsphere-cluster>` Name of the vSphere cluster
 - `<vsphere-datacenter>` Name of the vSphere datacenter
 - `<vsphere-datastore>` Name of the vSphere datastore
-- `<vsphere-network>` The vSphere environment network
 - `<vsphere-server>` The vSphere environment server URL
 - `<vsphere-user>` The vSphere username to login
 - `<vsphere-password>` The vSphere password to login
