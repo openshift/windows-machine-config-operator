@@ -1,6 +1,12 @@
 ⚠⚠⚠ THIS IS A LIVING DOCUMENT AND LIKELY TO CHANGE QUICKLY ⚠⚠⚠
 
 # Hacking on the WMCO
+## Pre-requisites
+- [Cluster and OS pre-requisites](wmco-prerequisites.md)
+- [Install](https://sdk.operatorframework.io/docs/installation/) operator-sdk v1.6.1
+- The operator is written using operator-sdk 
+[v1.6.1](https://github.com/operator-framework/operator-sdk/releases/tag/v1.6.1) and has the same 
+[pre-requisites](https://sdk.operatorframework.io/docs/installation/#prerequisites) as it does.
 
 ## Build
 To build and push the operator image, execute:

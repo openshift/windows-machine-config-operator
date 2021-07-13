@@ -10,15 +10,7 @@ can join the cluster as a worker node.
 More design details can be explored in the [WMCO enhancement](https://github.com/openshift/enhancements/blob/master/enhancements/windows-containers/windows-machine-config-operator.md).
 
 ## Pre-requisites
-- An OKD/OCP cluster of version 4.6 or newer, running on Azure, AWS or vSphere configured with
-  [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md).
-  - In order to [configure BYOH Windows instances](#configuring-byoh-windows-instances) OKD/OCP 4.8+ and WMCO
-    3.0+ must be used.
-- [Install](https://sdk.operatorframework.io/docs/installation/) operator-sdk v1.6.1
-- The operator is written using operator-sdk [v1.6.1](https://github.com/operator-framework/operator-sdk/releases/tag/v1.6.1)
-  and has the same [pre-requisites](https://sdk.operatorframework.io/docs/installation/#prerequisites) as it
-  does.
-- [vSphere prerequisites](docs/vsphere-prerequisites.md)
+- [Cluster and OS pre-requisites](docs/wmco-prerequisites.md)
 
 ## Usage
 
