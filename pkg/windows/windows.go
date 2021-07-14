@@ -180,10 +180,6 @@ type windows struct {
 
 // New returns a new Windows instance constructed from the given WindowsVM
 func New(workerIgnitionEndpoint, vxlanPort string, instance *instances.InstanceInfo, signer ssh.Signer) (Windows, error) {
-	if workerIgnitionEndpoint == "" {
-		return nil, errors.New("cannot use empty ignition endpoint")
-	}
-
 	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", instance.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instance.Username, instance.Address, signer, log)
@@ -535,6 +531,9 @@ func (vm *windows) runBootstrapper() error {
 
 // initializeTestBootstrapperFiles initializes the files required for initialize-kubelet
 func (vm *windows) initializeBootstrapperFiles() error {
+	if vm.workerIgnitionEndpoint == "" {
+		return errors.New("cannot use empty ignition endpoint")
+	}
 	// Ignition v2.3.0 maps to Ignition config spec v3.1.0.
 	ignitionAcceptHeaderSpec := "application/vnd.coreos.ignition+json`;version=3.1.0"
 	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
