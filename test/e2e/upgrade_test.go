@@ -89,13 +89,17 @@ func (tc *testContext) configureUpgradeTest() error {
 		return err
 	}
 
-	// tamper version annotation on nodes configured by the Machine controller
+	// tamper version annotation on all nodes
 	machineNodes, err := tc.listFullyConfiguredWindowsNodes(false)
 	if err != nil {
-		return errors.Wrap(err, "error getting list of fully configured nodes")
+		return errors.Wrap(err, "error getting list of fully configured Machine nodes")
+	}
+	byohNodes, err := tc.listFullyConfiguredWindowsNodes(true)
+	if err != nil {
+		return errors.Wrap(err, "error getting list of fully configured BYOH nodes")
 	}
 
-	for _, node := range machineNodes {
+	for _, node := range append(machineNodes, byohNodes...) {
 		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
 		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
 			[]byte(patchData), metav1.PatchOptions{})

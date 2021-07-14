@@ -380,10 +380,11 @@ func (nc *nodeConfig) Deconfigure() error {
 		return errors.Wrap(err, "error deconfiguring instance")
 	}
 
-	// Delete the Node object
-	err := nc.k8sclientset.CoreV1().Nodes().Delete(context.TODO(), nc.node.GetName(), meta.DeleteOptions{})
+	// Clear the version annotation from the node object to indicate the node is not configured
+	nc.node.Annotations[VersionAnnotation] = ""
+	_, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "error deleting node %s", nc.node.GetName())
+		return errors.Wrapf(err, "error removing version annotation from node %s", nc.node.GetName())
 	}
 	return nil
 }
