@@ -13,9 +13,9 @@ LABEL name="openshift4-wincw/windows-machine-config-operator-bundle" \
 # delivered via an index image
 LABEL com.redhat.delivery.operator.bundle=true
 
-# This second label tells the pipeline which versions of OpenShift the operator supports (4.7).
+# This second label tells the pipeline which versions of OpenShift the operator supports.
 # This is used to control which index images should include this operator.
-LABEL com.redhat.openshift.versions="=v4.7"
+LABEL com.redhat.openshift.versions="=v4.9"
 
 # This third label tells the pipeline that this operator should *also* be supported on OCP 4.4 and
 # earlier.  It is used to control whether or not the pipeline should attempt to automatically
