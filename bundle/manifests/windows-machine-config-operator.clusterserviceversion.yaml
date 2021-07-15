@@ -279,12 +279,12 @@ spec:
           replicas: 1
           selector:
             matchLabels:
-              control-plane: controller-manager
+              name: windows-machine-config-operator
           strategy: {}
           template:
             metadata:
               labels:
-                control-plane: controller-manager
+                name: windows-machine-config-operator
             spec:
               containers:
               - args:
