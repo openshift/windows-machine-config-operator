@@ -277,16 +277,10 @@ func (r *ConfigMapReconciler) mapToConfigMap(_ client.Object) []reconcile.Reques
 func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	configMapPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			if e.Object.GetNamespace() == r.watchNamespace && e.Object.GetName() == InstanceConfigMap {
-				return true
-			}
-			return false
+			return r.isValidConfigMap(e.Object)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			if e.ObjectNew.GetNamespace() == r.watchNamespace && e.ObjectNew.GetName() == InstanceConfigMap {
-				return true
-			}
-			return false
+			return r.isValidConfigMap(e.ObjectNew)
 		},
 	}
 	return ctrl.NewControllerManagedBy(mgr).
@@ -294,4 +288,9 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapToConfigMap),
 			builder.WithPredicates(windowsNodePredicate(true))).
 		Complete(r)
+}
+
+// isValidConfigMap returns true if the ConfigMap object is the InstanceConfigMap
+func (r *ConfigMapReconciler) isValidConfigMap(o client.Object) bool {
+	return o.GetNamespace() == r.watchNamespace && o.GetName() == InstanceConfigMap
 }
