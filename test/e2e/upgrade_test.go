@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	batchv1 "k8s.io/api/batch/v1"
@@ -14,8 +15,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-
-	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
 
 const (
@@ -96,13 +95,13 @@ func (tc *testContext) configureUpgradeTest() error {
 	}
 
 	for _, node := range machineNodes {
-		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
+		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.VersionAnnotation, "badVersion")
 		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
 			[]byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			return err
 		}
-		log.Printf("Node Annotation changed to %v", node.Annotations[nc.VersionAnnotation])
+		log.Printf("Node Annotation changed to %v", node.Annotations[metadata.VersionAnnotation])
 	}
 
 	// Scale up the WMCO deployment to 1

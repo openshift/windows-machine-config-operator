@@ -23,6 +23,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -38,8 +39,6 @@ const (
 	WindowsOSLabel = "node.openshift.io/os_id=Windows"
 	// WorkerLabel is the label that needs to be applied to the Windows node to make it worker node
 	WorkerLabel = "node-role.kubernetes.io/worker"
-	// VersionAnnotation indicates the version of WMCO that configured the node
-	VersionAnnotation = "windowsmachineconfig.openshift.io/version"
 	// PubKeyHashAnnotation corresponds to the public key present on the VM
 	PubKeyHashAnnotation = "windowsmachineconfig.openshift.io/pub-key-hash"
 )
@@ -258,7 +257,7 @@ func (nc *nodeConfig) configureNetwork() error {
 
 // addVersionAnnotation adds the version annotation to nc.node
 func (nc *nodeConfig) addVersionAnnotation() {
-	nc.node.Annotations[VersionAnnotation] = version.Get()
+	nc.node.Annotations[metadata.VersionAnnotation] = version.Get()
 }
 
 // addPubKeyHashAnnotation adds the public key annotation to nc.node
@@ -382,10 +381,10 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	// Clear the version annotation from the node object to indicate the node is not configured
-	escapedVersionAnnotation := strings.Replace(VersionAnnotation, "/", "~1", -1)
+	escapedVersionAnnotation := strings.Replace(metadata.VersionAnnotation, "/", "~1", -1)
 	patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`,
 		escapedVersionAnnotation)
-	nc.node.Annotations[VersionAnnotation] = ""
+	nc.node.Annotations[metadata.VersionAnnotation] = ""
 	_, err := nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
 		[]byte(patchData), meta.PatchOptions{})
 	if err != nil {
