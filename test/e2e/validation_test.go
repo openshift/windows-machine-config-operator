@@ -18,6 +18,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -54,9 +55,9 @@ func testNodeMetadata(t *testing.T) {
 					nc.WorkerLabel, node.GetName())
 			})
 			t.Run("Version Annotation", func(t *testing.T) {
-				require.Containsf(t, node.Annotations, nc.VersionAnnotation, "node %s missing version annotation",
+				require.Containsf(t, node.Annotations, metadata.VersionAnnotation, "node %s missing version annotation",
 					node.GetName())
-				assert.Equal(t, operatorVersion, node.Annotations[nc.VersionAnnotation],
+				assert.Equal(t, operatorVersion, node.Annotations[metadata.VersionAnnotation],
 					"WMCO version annotation mismatch")
 			})
 			t.Run("Public Key Annotation", func(t *testing.T) {
@@ -72,7 +73,7 @@ func testNodeMetadata(t *testing.T) {
 			LabelSelector: core.LabelOSStable + "=linux"})
 		require.NoError(t, err, "error listing Linux nodes")
 		for _, node := range nodes.Items {
-			assert.NotContainsf(t, node.Annotations, nc.VersionAnnotation,
+			assert.NotContainsf(t, node.Annotations, metadata.VersionAnnotation,
 				"version annotation applied to Linux node %s", node.GetName())
 			assert.NotContainsf(t, node.Annotations, nc.PubKeyHashAnnotation,
 				"public key annotation applied to Linux node %s", node.GetName())

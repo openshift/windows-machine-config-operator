@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/version"
@@ -118,7 +119,7 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 				(!byoh && e.Object.GetAnnotations()[BYOHAnnotation] == "true") {
 				return false
 			}
-			if e.Object.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() {
+			if e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get() {
 				return true
 			}
 			return false
@@ -131,7 +132,7 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 				(!byoh && e.ObjectNew.GetAnnotations()[BYOHAnnotation] == "true") {
 				return false
 			}
-			if e.ObjectNew.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() ||
+			if e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation] != version.Get() ||
 				e.ObjectNew.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] !=
 					e.ObjectOld.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] {
 				return true
