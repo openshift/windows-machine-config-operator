@@ -2,15 +2,15 @@ package e2e
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"testing"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/annotations"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 )
 
 // reconfigurationTest tests that the correct behavior occurs when a previously configured instance is configured
@@ -27,14 +27,13 @@ func reconfigurationTest(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove the version annotation of one of each type of node
-	// Forward slash within a path is escaped as '~1'
-	escapedVersionAnnotation := strings.Replace(metadata.VersionAnnotation, "/", "~1", -1)
-	patchData := fmt.Sprintf("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/%s\"}]", escapedVersionAnnotation)
+	patchData, err := annotations.GenerateRemovePatch([]string{metadata.VersionAnnotation})
+	require.NoError(t, err)
 	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), machineNodes[0].Name, types.JSONPatchType,
-		[]byte(patchData), metav1.PatchOptions{})
+		patchData, metav1.PatchOptions{})
 	require.NoError(t, err)
 	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), byohNodes[0].Name, types.JSONPatchType,
-		[]byte(patchData), metav1.PatchOptions{})
+		patchData, metav1.PatchOptions{})
 	require.NoError(t, err)
 
 	// The Windows nodes should eventually be returned to the state we expect them to be in
