@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/annotations"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
@@ -172,14 +173,14 @@ func (nc *nodeConfig) Configure() error {
 
 		// Ensure we are annotating the node as soon as the Node object is created, so that we can identify which
 		// controller should be watching it
-		nc.addAdditionalAnnotations()
-		nc.addPubKeyHashAnnotation()
-		node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
-		if err != nil {
+		annotationsToApply := map[string]string{PubKeyHashAnnotation: nc.publicKeyHash}
+		for key, value := range nc.additionalAnnotations {
+			annotationsToApply[key] = value
+		}
+		if err := nc.applyAnnotations(annotationsToApply); err != nil {
 			return errors.Wrapf(err, "error updating public key hash and additional annotations on node %s",
 				nc.node.GetName())
 		}
-		nc.node = node
 
 		// Now that basic kubelet configuration is complete, configure networking in the node
 		if err := nc.configureNetwork(); err != nil {
@@ -195,12 +196,9 @@ func (nc *nodeConfig) Configure() error {
 
 		// Version annotation is the indicator that the node was fully configured by this version of WMCO, so it should
 		// be added at the end of the process.
-		nc.addVersionAnnotation()
-		node, err = nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
-		if err != nil {
+		if err := nc.applyAnnotations(map[string]string{metadata.VersionAnnotation: version.Get()}); err != nil {
 			return errors.Wrapf(err, "error updating version annotation on node %s", nc.node.GetName())
 		}
-		nc.node = node
 
 		// Uncordon the node now that it is fully configured
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, false); err != nil {
@@ -217,6 +215,21 @@ func (nc *nodeConfig) Configure() error {
 		}
 	}
 	return err
+}
+
+// applyAnnotations applies all the given annotations and updates the Node object in NodeConfig
+func (nc *nodeConfig) applyAnnotations(annotationsToApply map[string]string) error {
+	patchData, err := annotations.GenerateAddPatch(annotationsToApply)
+	if err != nil {
+		return err
+	}
+	node, err := nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
+		patchData, meta.PatchOptions{})
+	if err != nil {
+		return errors.Wrapf(err, "unable to apply patch data %s", patchData)
+	}
+	nc.node = node
+	return nil
 }
 
 // configureNetwork configures k8s networking in the node
@@ -253,27 +266,6 @@ func (nc *nodeConfig) configureNetwork() error {
 		return errors.Wrapf(err, "error starting kube-proxy for %s", nc.node.GetName())
 	}
 	return nil
-}
-
-// addVersionAnnotation adds the version annotation to nc.node
-func (nc *nodeConfig) addVersionAnnotation() {
-	nc.node.Annotations[metadata.VersionAnnotation] = version.Get()
-}
-
-// addPubKeyHashAnnotation adds the public key annotation to nc.node
-func (nc *nodeConfig) addPubKeyHashAnnotation() {
-	nc.node.Annotations[PubKeyHashAnnotation] = nc.publicKeyHash
-}
-
-// addAdditionalAnnotations merges nc.additionalAnnotations into the annotations on nc.node. If the annotation
-// already existed, its value will be overwritten.
-func (nc *nodeConfig) addAdditionalAnnotations() {
-	if nc.additionalAnnotations == nil {
-		return
-	}
-	for key, value := range nc.additionalAnnotations {
-		nc.node.Annotations[key] = value
-	}
 }
 
 // setNode finds the Node associated with the VM that has been configured, and sets the node field of the
@@ -381,11 +373,11 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	// Clear the version annotation from the node object to indicate the node is not configured
-	escapedVersionAnnotation := strings.Replace(metadata.VersionAnnotation, "/", "~1", -1)
-	patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`,
-		escapedVersionAnnotation)
-	nc.node.Annotations[metadata.VersionAnnotation] = ""
-	_, err := nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
+	patchData, err := annotations.GenerateRemovePatch([]string{metadata.VersionAnnotation})
+	if err != nil {
+		return errors.Wrapf(err, "error creating version annotation remove request")
+	}
+	_, err = nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
 		[]byte(patchData), meta.PatchOptions{})
 	if err != nil {
 		return errors.Wrapf(err, "error removing version annotation from node %s", nc.node.GetName())
