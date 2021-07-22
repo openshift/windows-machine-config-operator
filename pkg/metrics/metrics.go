@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 )
 
 //+kubebuilder:rbac:groups="",resources=services;services/finalizers,verbs=create;get;delete
@@ -66,16 +67,6 @@ type Config struct {
 	namespace string
 	// recorder to generate events
 	recorder record.EventRecorder
-}
-
-// patchEndpoint contains information regarding patching metrics Endpoint
-type patchEndpoint struct {
-	// op defines patch operation to be performed on the Endpoints object
-	Op string `json:"op"`
-	// path defines the location of the patch
-	Path string `json:"path"`
-	// value defines the data to be patched
-	Value []v1.EndpointSubset `json:"value"`
 }
 
 // NewPrometheuopsNodeConfig creates a new instance for prometheusNodeConfig  to be used by the caller.
@@ -125,11 +116,7 @@ func (pc *PrometheusNodeConfig) syncMetricsEndpoint(nodeEndpointAdressess []v1.E
 		}}
 	}
 
-	patchData := []patchEndpoint{{
-		Op:    "replace",
-		Path:  "/subsets",
-		Value: subsets,
-	}}
+	patchData := []*patch.JSONPatch{patch.NewJSONPatch("replace", "/subsets", subsets)}
 	// convert patch data to bytes
 	patchDataBytes, err := json.Marshal(patchData)
 	if err != nil {
