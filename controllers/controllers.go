@@ -55,6 +55,9 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.Instan
 
 	// Instance is up to date, do nothing
 	if instance.UpToDate() {
+		// Instance being up to date indicates that node object is present with the version annotation
+		r.log.Info("instance is up to date", "node", instance.Node.GetName(), "version",
+			instance.Node.GetAnnotations()[metadata.VersionAnnotation])
 		return nil
 	}
 
@@ -67,6 +70,9 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.Instan
 	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
 	// configured again.
 	if instance.UpgradeRequired() {
+		// Instance requiring an upgrade indicates that node object is present with the version annotation
+		r.log.Info("instance requires upgrade", "node", instance.Node.GetName(), "version",
+			instance.Node.GetAnnotations()[metadata.VersionAnnotation], "expected version", version.Get())
 		if err := nc.Deconfigure(); err != nil {
 			return err
 		}
