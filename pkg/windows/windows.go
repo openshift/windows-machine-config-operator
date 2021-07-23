@@ -180,7 +180,7 @@ type windows struct {
 
 // New returns a new Windows instance constructed from the given WindowsVM
 func New(workerIgnitionEndpoint, vxlanPort string, instance *instances.InstanceInfo, signer ssh.Signer) (Windows, error) {
-	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", instance.Address))
+	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instance.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instance.Username, instance.Address, signer, log)
 	if err != nil {
@@ -293,11 +293,13 @@ func (vm *windows) ensureServicesAreRemoved() error {
 		if err := vm.deleteService(svc); err != nil {
 			return errors.Wrapf(err, "could not delete service %s", svcName)
 		}
+		vm.log.Info("deconfigured", "service", svc.name)
 	}
 	return nil
 }
 
 func (vm *windows) Deconfigure() error {
+	vm.log.Info("deconfiguring")
 	if err := vm.ensureServicesAreRemoved(); err != nil {
 		return errors.Wrap(err, "unable to remove Windows services")
 	}
@@ -342,6 +344,8 @@ func (vm *windows) ConfigureWindowsExporter() error {
 		return errors.Wrapf(err, "error ensuring %s Windows service has started running", windowsExporterServiceName)
 	}
 
+	vm.log.Info("configured", "service", windowsExporterServiceName, "args",
+		windowsExporterServiceArgs)
 	return nil
 }
 
@@ -489,6 +493,7 @@ func (vm *windows) createDirectories() error {
 
 // removeDirectories removes all directories created as part of the configuration process
 func (vm *windows) removeDirectories() error {
+	vm.log.Info("removing directories")
 	for _, dir := range RequiredDirectories {
 		if _, err := vm.Run(rmDirCmd(dir), false); err != nil {
 			return errors.Wrapf(err, "unable to remove directory %s", dir)
