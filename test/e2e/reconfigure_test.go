@@ -9,7 +9,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/annotations"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 )
 
@@ -27,7 +26,7 @@ func reconfigurationTest(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove the version annotation of one of each type of node
-	patchData, err := annotations.GenerateRemovePatch([]string{metadata.VersionAnnotation})
+	patchData, err := metadata.GenerateRemovePatch([]string{metadata.VersionAnnotation})
 	require.NoError(t, err)
 	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), machineNodes[0].Name, types.JSONPatchType,
 		patchData, metav1.PatchOptions{})
