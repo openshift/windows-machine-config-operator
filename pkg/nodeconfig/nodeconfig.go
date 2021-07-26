@@ -61,6 +61,8 @@ type nodeConfig struct {
 	log                logr.Logger
 	// additionalAnnotations are extra annotations that should be applied to configured nodes
 	additionalAnnotations map[string]string
+	// additionalLabels are extra labels that should be applied to configured nodes
+	additionalLabels map[string]string
 }
 
 // discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
@@ -89,7 +91,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
 func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
-	instance *instances.InstanceInfo, signer ssh.Signer, additionalAnnotations map[string]string) (*nodeConfig, error) {
+	instance *instances.InstanceInfo, signer ssh.Signer, additionalLabels, additionalAnnotations map[string]string) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -119,7 +121,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 
 	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
-		log: log, additionalAnnotations: additionalAnnotations}, nil
+		log: log, additionalLabels: additionalLabels, additionalAnnotations: additionalAnnotations}, nil
 }
 
 // getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
@@ -170,13 +172,13 @@ func (nc *nodeConfig) Configure() error {
 			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
 		}
 
-		// Ensure we are annotating the node as soon as the Node object is created, so that we can identify which
-		// controller should be watching it
+		// Ensure we are labeling and annotating the node as soon as the Node object is created, so that we can identify
+		// which controller should be watching it
 		annotationsToApply := map[string]string{PubKeyHashAnnotation: nc.publicKeyHash}
 		for key, value := range nc.additionalAnnotations {
 			annotationsToApply[key] = value
 		}
-		if err := nc.applyAnnotations(annotationsToApply); err != nil {
+		if err := nc.applyLabelsAndAnnotations(nc.additionalLabels, annotationsToApply); err != nil {
 			return errors.Wrapf(err, "error updating public key hash and additional annotations on node %s",
 				nc.node.GetName())
 		}
@@ -195,7 +197,7 @@ func (nc *nodeConfig) Configure() error {
 
 		// Version annotation is the indicator that the node was fully configured by this version of WMCO, so it should
 		// be added at the end of the process.
-		if err := nc.applyAnnotations(map[string]string{metadata.VersionAnnotation: version.Get()}); err != nil {
+		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{metadata.VersionAnnotation: version.Get()}); err != nil {
 			return errors.Wrapf(err, "error updating version annotation on node %s", nc.node.GetName())
 		}
 
@@ -216,9 +218,9 @@ func (nc *nodeConfig) Configure() error {
 	return err
 }
 
-// applyAnnotations applies all the given annotations and updates the Node object in NodeConfig
-func (nc *nodeConfig) applyAnnotations(annotationsToApply map[string]string) error {
-	patchData, err := metadata.GenerateAddPatch(nil, annotationsToApply)
+// applyLabelsAndAnnotations applies all the given labels and annotations and updates the Node object in NodeConfig
+func (nc *nodeConfig) applyLabelsAndAnnotations(labels, annotations map[string]string) error {
+	patchData, err := metadata.GenerateAddPatch(labels, annotations)
 	if err != nil {
 		return err
 	}
