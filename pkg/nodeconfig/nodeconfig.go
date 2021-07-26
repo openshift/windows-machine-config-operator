@@ -377,7 +377,7 @@ func (nc *nodeConfig) Deconfigure() error {
 		return errors.Wrapf(err, "error creating version annotation remove request")
 	}
 	_, err = nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
-		[]byte(patchData), meta.PatchOptions{})
+		patchData, meta.PatchOptions{})
 	if err != nil {
 		return errors.Wrapf(err, "error removing version annotation from node %s", nc.node.GetName())
 	}

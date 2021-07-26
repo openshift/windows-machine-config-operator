@@ -13,7 +13,7 @@ import (
 const VersionAnnotation = "windowsmachineconfig.openshift.io/version"
 
 // generateAnnotationPatch creates a patch applying the given operation onto each given annotation key and value
-func generateAnnotationPatch(op string, annotations map[string]string) ([]byte, error) {
+func generateAnnotationPatch(op string, annotations map[string]string) ([]*patch.JSONPatch, error) {
 	if len(annotations) == 0 {
 		return nil, errors.New("annotations to format cannot be empty or nil")
 	}
@@ -21,13 +21,17 @@ func generateAnnotationPatch(op string, annotations map[string]string) ([]byte, 
 	for key, value := range annotations {
 		patches = append(patches, patch.NewJSONPatch(op, formatPathValue(key), value))
 	}
-	return json.Marshal(patches)
+	return patches, nil
 }
 
 // GenerateAddPatch creates a comma-separated list of operations to add all given annotations from an object
 // An "add" patch overwrites existing value if an annotation already exists
 func GenerateAddPatch(annotations map[string]string) ([]byte, error) {
-	return generateAnnotationPatch("add", annotations)
+	patch, err := generateAnnotationPatch("add", annotations)
+	if err != nil {
+		return []byte{}, err
+	}
+	return json.Marshal(patch)
 }
 
 // GenerateRemovePatch creates a comma-separated list of operations to remove all given annotations from an object
@@ -37,7 +41,11 @@ func GenerateRemovePatch(annotations []string) ([]byte, error) {
 	for _, annotation := range annotations {
 		annotationMap[annotation] = ""
 	}
-	return generateAnnotationPatch("remove", annotationMap)
+	patch, err := generateAnnotationPatch("remove", annotationMap)
+	if err != nil {
+		return []byte{}, err
+	}
+	return json.Marshal(patch)
 }
 
 // formatPathValue formats the path value specifying which attribute a JSON Patch operation should be applied to
