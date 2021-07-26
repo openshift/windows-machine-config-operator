@@ -10,30 +10,34 @@ import (
 
 func TestGeneratePatch(t *testing.T) {
 	testCases := []struct {
-		name        string
-		operation   string
-		input       map[string]string
-		expectedOut []*patch.JSONPatch
-		expectedErr bool
+		name             string
+		operation        string
+		inputAnnotations map[string]string
+		inputLabels      map[string]string
+		expectedOut      []*patch.JSONPatch
+		expectedErr      bool
 	}{
 		{
-			name:        "Annotations nil",
-			input:       nil,
-			operation:   "add",
-			expectedOut: nil,
-			expectedErr: true,
+			name:             "Both nil",
+			inputAnnotations: nil,
+			inputLabels:      nil,
+			operation:        "add",
+			expectedOut:      nil,
+			expectedErr:      true,
 		},
 		{
-			name:        "Annotations empty",
-			input:       map[string]string{},
-			operation:   "add",
-			expectedOut: nil,
-			expectedErr: true,
+			name:             "Both empty",
+			inputAnnotations: map[string]string{},
+			inputLabels:      map[string]string{},
+			operation:        "add",
+			expectedOut:      nil,
+			expectedErr:      true,
 		},
 		{
-			name:      "Single annotation",
-			input:     map[string]string{"annotation-1": "3.0"},
-			operation: "add",
+			name:             "Single annotation",
+			inputAnnotations: map[string]string{"annotation-1": "3.0"},
+			inputLabels:      nil,
+			operation:        "add",
 			expectedOut: []*patch.JSONPatch{{
 				Op:    "add",
 				Path:  "/metadata/annotations/annotation-1",
@@ -42,10 +46,71 @@ func TestGeneratePatch(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name:      "Multiple annotations",
-			input:     map[string]string{"annotation-1": "3.0", "escaped/annotation": "17"},
-			operation: "add",
+			name:             "Multiple annotations",
+			inputAnnotations: map[string]string{"annotation-1": "3.0", "escaped/annotation": "17"},
+			inputLabels:      nil,
+			operation:        "add",
 			expectedOut: []*patch.JSONPatch{
+				{
+					Op:    "add",
+					Path:  "/metadata/annotations/annotation-1",
+					Value: "3.0",
+				},
+				{
+					Op:    "add",
+					Path:  "/metadata/annotations/escaped~1annotation",
+					Value: "17",
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name:             "Single label",
+			inputAnnotations: nil,
+			inputLabels:      map[string]string{"label-1": "3.0"},
+			operation:        "add",
+			expectedOut: []*patch.JSONPatch{{
+				Op:    "add",
+				Path:  "/metadata/labels/label-1",
+				Value: "3.0",
+			}},
+			expectedErr: false,
+		},
+		{
+			name:             "Multiple labels",
+			inputAnnotations: nil,
+			inputLabels:      map[string]string{"label-1": "3.0", "escaped/label": "test"},
+			operation:        "add",
+			expectedOut: []*patch.JSONPatch{
+				{
+					Op:    "add",
+					Path:  "/metadata/labels/label-1",
+					Value: "3.0",
+				},
+				{
+					Op:    "add",
+					Path:  "/metadata/labels/escaped~1label",
+					Value: "test",
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name:             "Multiple labels and annotations",
+			inputAnnotations: map[string]string{"annotation-1": "3.0", "escaped/annotation": "17"},
+			inputLabels:      map[string]string{"label-1": "3.0", "escaped/label": "test"},
+			operation:        "add",
+			expectedOut: []*patch.JSONPatch{
+				{
+					Op:    "add",
+					Path:  "/metadata/labels/label-1",
+					Value: "3.0",
+				},
+				{
+					Op:    "add",
+					Path:  "/metadata/labels/escaped~1label",
+					Value: "test",
+				},
 				{
 					Op:    "add",
 					Path:  "/metadata/annotations/annotation-1",
@@ -62,7 +127,7 @@ func TestGeneratePatch(t *testing.T) {
 	}
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			out, err := generateAnnotationPatch(test.operation, test.input)
+			out, err := generatePatch(test.operation, test.inputLabels, test.inputAnnotations)
 			if test.expectedErr {
 				assert.Error(t, err)
 				return

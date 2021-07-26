@@ -218,7 +218,7 @@ func (nc *nodeConfig) Configure() error {
 
 // applyAnnotations applies all the given annotations and updates the Node object in NodeConfig
 func (nc *nodeConfig) applyAnnotations(annotationsToApply map[string]string) error {
-	patchData, err := metadata.GenerateAddPatch(annotationsToApply)
+	patchData, err := metadata.GenerateAddPatch(nil, annotationsToApply)
 	if err != nil {
 		return err
 	}
@@ -372,7 +372,7 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	// Clear the version annotation from the node object to indicate the node is not configured
-	patchData, err := metadata.GenerateRemovePatch([]string{metadata.VersionAnnotation})
+	patchData, err := metadata.GenerateRemovePatch([]string{}, []string{metadata.VersionAnnotation})
 	if err != nil {
 		return errors.Wrapf(err, "error creating version annotation remove request")
 	}
