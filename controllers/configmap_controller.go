@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
@@ -185,8 +186,8 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	// configuration effort for configurable hosts will not be blocked by a specific host that has issues with
 	// configuration.
 	for _, instance := range instances {
-		err := r.ensureInstanceIsUpToDate(instance, map[string]string{BYOHAnnotation: "true",
-			UsernameAnnotation: instance.Username})
+		err := r.ensureInstanceIsUpToDate(instance, map[string]string{nodeconfig.WorkerLabel: ""},
+			map[string]string{BYOHAnnotation: "true", UsernameAnnotation: instance.Username})
 		if err != nil {
 			r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure",
 				"unable to join instance with address %s to the cluster", instance.Address)

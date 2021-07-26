@@ -43,9 +43,9 @@ type instanceReconciler struct {
 }
 
 // ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
-// defined by the current version of WMCO. If annotations is not nil, the node will have the specified annotations
-// applied to it.
-func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.InstanceInfo, annotationsToApply map[string]string) error {
+// defined by the current version of WMCO. If labelsToApply/annotationsToApply is not nil, the node will have the
+// specified annotations and/or labels applied to it.
+func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.InstanceInfo, labelsToApply, annotationsToApply map[string]string) error {
 	if instance == nil {
 		return errors.New("instance cannot be nil")
 	}
@@ -56,7 +56,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.Instan
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
-		annotationsToApply)
+		labelsToApply, annotationsToApply)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
@@ -108,7 +108,7 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
-		nil)
+		nil, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
