@@ -170,7 +170,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
 		}
 		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
-		patchData, err := metadata.GenerateAddPatch(map[string]string{nodeconfig.PubKeyHashAnnotation: ""})
+		patchData, err := metadata.GenerateAddPatch(nil, map[string]string{nodeconfig.PubKeyHashAnnotation: ""})
 		if err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "error creating public key annotation add request")
 		}
@@ -220,7 +220,7 @@ func (r *SecretReconciler) RemoveInvalidAnnotationsFromLinuxNodes(config *rest.C
 	}
 	// The public key hash was accidentally added to Linux nodes in WMCO 2.0 and must be removed.
 	// The `/` in the annotation key needs to be escaped in order to not be considered a "directory" in the path.
-	patchData, err := metadata.GenerateRemovePatch([]string{nodeconfig.PubKeyHashAnnotation})
+	patchData, err := metadata.GenerateRemovePatch([]string{}, []string{nodeconfig.PubKeyHashAnnotation})
 	if err != nil {
 		return errors.Wrapf(err, "error creating public key annotation add request")
 	}
