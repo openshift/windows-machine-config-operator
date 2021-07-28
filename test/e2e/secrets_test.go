@@ -25,18 +25,18 @@ import (
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
-// getExpectedPublicKey returns the public key associated with the private key within the cloud-private-key secret
-func (tc *testContext) getExpectedPublicKey() (ssh.PublicKey, error) {
+// getExpectedKeyPair returns the private key within the cloud-private-key secret and the associated public key
+func (tc *testContext) getExpectedKeyPair() ([]byte, ssh.PublicKey, error) {
 	privateKey, err := tc.getCloudPrivateKey()
 	if err != nil {
-		return nil, errors.Wrap(err, "error retrieving private key")
+		return nil, nil, errors.Wrap(err, "error retrieving private key")
 	}
 	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to parse private key")
+		return nil, nil, errors.Wrapf(err, "unable to parse private key")
 	}
 
-	return signer.PublicKey(), nil
+	return privateKey, signer.PublicKey(), nil
 }
 
 // getCloudPrivateKey returns the private key present within the cloud-private-key secret
@@ -68,8 +68,8 @@ func testUserData(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 
-	pubKey, err := tc.getExpectedPublicKey()
-	require.NoError(t, err, "error determining expected public key")
+	_, pubKey, err := tc.getExpectedKeyPair()
+	require.NoError(t, err, "error getting the expected public/private key pair")
 	userData, err := tc.getUserDataContents()
 	require.NoError(t, err, "could not retrieve userdata contents")
 	assert.Contains(t, userData, string(ssh.MarshalAuthorizedKey(pubKey)), "public key not found within Windows userdata")
