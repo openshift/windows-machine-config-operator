@@ -101,7 +101,7 @@ oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
 The following template variables need to be replaced as follows with values from your vSphere environment:
 * *\<Windows_VM_template\>*: template name
-* *\<VM Network Name\>*: network name
+* *\<VM Network Name\>*: network name, must match the network name where other Linux workers are in the cluster
 * *\<vCenter DataCenter Name\>*: datacenter name
 * *\<Path to VM Folder in vCenter\>*: path where your OpenShift cluster is running
 * *\<vCenter Datastore Name\>*: datastore name
