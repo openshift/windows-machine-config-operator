@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
@@ -60,7 +61,7 @@ func testWindowsNodeCreation(t *testing.T) {
 
 // deleteWindowsInstanceConfigMap deletes the windows-instances configmap if it exists
 func (tc *testContext) deleteWindowsInstanceConfigMap() error {
-	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), controllers.InstanceConfigMap,
+	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), wiparser.InstanceConfigMap,
 		metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
@@ -73,7 +74,7 @@ func (tc *testContext) deleteWindowsInstanceConfigMap() error {
 func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList) error {
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: controllers.InstanceConfigMap,
+			Name: wiparser.InstanceConfigMap,
 		},
 		Data: make(map[string]string),
 	}

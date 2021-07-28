@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
+	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
@@ -25,7 +26,7 @@ func deletionTestSuite(t *testing.T) {
 
 // clearWindowsInstanceConfigMap removes all entries in the windows-instances ConfigMap
 func (tc *testContext) clearWindowsInstanceConfigMap() error {
-	cm, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), controllers.InstanceConfigMap,
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), wiparser.InstanceConfigMap,
 		meta.GetOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error retrieving windows-instances ConfigMap")
