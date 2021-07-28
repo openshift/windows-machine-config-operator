@@ -268,9 +268,9 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 		creationTime = nodeCreationTime
 	}
 
-	pubKey, err := tc.getExpectedPublicKey()
+	_, pubKey, err := tc.getExpectedKeyPair()
 	if err != nil {
-		return errors.Wrap(err, "error getting the expected public key")
+		return errors.Wrap(err, "error getting the expected public/private key pair")
 	}
 	pubKeyAnnotation := nodeconfig.CreatePubKeyHashAnnotation(pubKey)
 
