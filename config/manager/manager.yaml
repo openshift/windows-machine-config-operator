@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   labels:
     openshift.io/cluster-monitoring: "true"
-    control-plane: controller-manager
+    name: windows-machine-config-operator
   name: system
 ---
 apiVersion: apps/v1
@@ -12,16 +12,16 @@ metadata:
   name: windows-machine-config-operator
   namespace: system
   labels:
-    control-plane: controller-manager
+    name: windows-machine-config-operator
 spec:
   selector:
     matchLabels:
-      control-plane: controller-manager
+      name: windows-machine-config-operator
   replicas: 1
   template:
     metadata:
       labels:
-        control-plane: controller-manager
+        name: windows-machine-config-operator
     spec:
       hostNetwork: true
       priorityClassName: system-cluster-critical
