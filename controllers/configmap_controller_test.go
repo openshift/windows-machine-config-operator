@@ -13,8 +13,6 @@ import (
 )
 
 func TestParseInstances(t *testing.T) {
-	r := ConfigMapReconciler{}
-
 	testCases := []struct {
 		name        string
 		input       map[string]string
@@ -136,7 +134,7 @@ func TestParseInstances(t *testing.T) {
 	}
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			out, err := r.parseInstances(test.input, test.nodeList)
+			out, err := parseInstances(test.input, test.nodeList)
 			if test.expectedErr {
 				assert.Error(t, err)
 				return
