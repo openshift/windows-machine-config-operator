@@ -124,7 +124,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // of Nodes in the cluster, as each instance returned will contain a reference to its associated Node, if it has one
 // in the given NodeList. If an instance does not have an associated node from the NodeList, the node reference will
 // be nil.
-func (r *ConfigMapReconciler) parseInstances(configMapData map[string]string, nodes *core.NodeList) ([]*instances.InstanceInfo, error) {
+func parseInstances(configMapData map[string]string, nodes *core.NodeList) ([]*instances.InstanceInfo, error) {
 	if nodes == nil {
 		return nil, errors.New("nodes cannot be nil")
 	}
@@ -135,14 +135,14 @@ func (r *ConfigMapReconciler) parseInstances(configMapData map[string]string, no
 		if err := validateAddress(address); err != nil {
 			return nil, errors.Wrapf(err, "invalid address %s", address)
 		}
-		splitData := strings.SplitN(data, "=", 2)
-		if len(splitData) == 0 || splitData[0] != "username" {
-			return instanceList, errors.Errorf("data for entry %s has an incorrect format", address)
+		username, err := extractUsername(data)
+		if err != nil {
+			return instanceList, errors.Wrapf(err, "unable to get username for %s", address)
 		}
 
 		// Get the associated node if the described instance has one
 		node, _ := findNode(address, nodes)
-		instanceList = append(instanceList, instances.NewInstanceInfo(address, splitData[1], "", node))
+		instanceList = append(instanceList, instances.NewInstanceInfo(address, username, "", node))
 	}
 	return instanceList, nil
 }
@@ -199,9 +199,9 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	}
 
 	// Get the list of instances that are expected to be Nodes
-	instances, err := r.parseInstances(windowsInstances.Data, nodes)
+	instances, err := parseInstances(windowsInstances.Data, nodes)
 	if err != nil {
-		return errors.Wrap(err, "unable to parse hosts from ConfigMap")
+		return errors.Wrap(err, "unable to parse instances from ConfigMap")
 	}
 
 	// For each instance, ensure that it is configured into a node
