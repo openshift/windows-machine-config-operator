@@ -12,6 +12,15 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 )
 
+func reconfigurationTestSuite(t *testing.T) {
+	t.Run("Reconfigure instance", reconfigurationTest)
+	// testPrivateKeyChange must be the last test run in the reconfiguration suite. This is because we do not currently
+	// wait for nodes to fully come back up after changing the private key back to the valid key. Only the deletion test
+	// suite should run after this. Any other tests may result in flakes.
+	// This limitation will be removed with https://issues.redhat.com/browse/WINC-655
+	t.Run("Change private key", testPrivateKeyChange)
+}
+
 // reconfigurationTest tests that the correct behavior occurs when a previously configured instance is configured
 // again. In practice, this exact scenario should not happen, however it simulates a similar scenario where an instance
 // was almost completely configured, an error occurred, and the instance is requeued. This is a scenario that should be
