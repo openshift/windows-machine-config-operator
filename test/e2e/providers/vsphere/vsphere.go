@@ -54,7 +54,7 @@ func newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSphereMachinePro
 		NumCoresPerSocket: int32(1),
 		// The template is hardcoded with an image which has been properly sysprepped.
 		// TODO: Find a way to automatically update this with latest image
-		Template: "windows-golden-images/vm-winsrv-2004-golden-image-with-hostname",
+		Template: "windows-golden-images/windows-server-2004-template",
 		Workspace: &vsphere.Workspace{
 			Datacenter:   "SDDC-Datacenter",
 			Datastore:    "WorkloadDatastore",
