@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -126,6 +127,31 @@ func testUserDataTamper(t *testing.T) {
 			require.NoError(t, err, "could not find a valid userData secret in the namespace : %v", secretInstance.Namespace)
 		})
 	}
+}
+
+// testPrivateKeyChange alters the private key used to SSH into instances and ensures nodes are updated properly
+func testPrivateKeyChange(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	// This test cannot be run on vSphere because this random key is not part of the vSphere template image.
+	// Moreover this test is platform agnostic so is not needed to be run for every supported platform.
+	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
+		t.Skipf("Skipping for %s", config.VSpherePlatformType)
+	}
+	err = tc.createPrivateKeySecret(false)
+	require.NoError(t, err, "error replacing known private key secret with a random key")
+
+	// Ensure Machines nodes are re-created and configured using the new private key
+	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	assert.NoError(t, err, "error waiting for Windows nodes configured with newly created private key")
+	// Ensure public key hash and encrypted username annotations are updated correctly on BYOH nodes
+	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	assert.NoError(t, err, "error waiting for Windows nodes updated with newly created private key")
+
+	// Re-create the known private key so SSH connection can be re-established
+	// TODO: Remove dependency on this secret by rotating keys as part of https://issues.redhat.com/browse/WINC-655
+	require.NoError(t, tc.createPrivateKeySecret(true), "error confirming known private key secret exists")
 }
 
 // generatePrivateKey generates a random RSA private key

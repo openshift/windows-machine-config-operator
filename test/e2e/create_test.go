@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
@@ -52,6 +53,7 @@ func testWindowsNodeCreation(t *testing.T) {
 	// BYOH creation must occur after the Machine creation, as the MachineConfiguration tests change the private key
 	// multiple times, and BYOH doesnt have the functionality of rotating keys on the VMs. This would result in BYOH
 	// failing the pub key annotation validation as it compares the current private key secret with the annotation.
+	// TODO: Remove this dependency by rotating keys as part of https://issues.redhat.com/browse/WINC-655
 	t.Run("ConfigMap controller", testCtx.testBYOHConfiguration)
 
 }
@@ -112,19 +114,6 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	}
 	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
 	assert.NoError(t, err, "Windows node creation failed")
-
-	t.Run("Change private key", func(t *testing.T) {
-		// This test cannot be run on vSphere because this random key is not part of the vSphere template image.
-		// Moreover this test is platform agnostic so is not needed to be run for every supported platform.
-		if tc.CloudProvider.GetType() != config.AzurePlatformType {
-			t.Skipf("Skipping for %s", tc.CloudProvider.GetType())
-		}
-		// Replace private key and check that new Machines are created using the new private key
-		err = tc.createPrivateKeySecret(false)
-		require.NoError(t, err, "error replacing private key secret")
-		err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
-		assert.NoError(t, err, "error waiting for Windows nodes configured with newly created private key")
-	})
 }
 
 // testBYOHConfiguration tests that the ConfigMap controller can properly configure VMs
@@ -254,6 +243,10 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, wi
 func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVersion bool, isBYOH bool) error {
 	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, metadata.VersionAnnotation,
 		nodeconfig.PubKeyHashAnnotation}
+	if isBYOH {
+		annotations = append(annotations, controllers.BYOHAnnotation, controllers.UsernameAnnotation)
+	}
+
 	var creationTime time.Duration
 	startTime := time.Now()
 	if expectError {
@@ -268,7 +261,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 		creationTime = nodeCreationTime
 	}
 
-	_, pubKey, err := tc.getExpectedKeyPair()
+	privKey, pubKey, err := tc.getExpectedKeyPair()
 	if err != nil {
 		return errors.Wrap(err, "error getting the expected public/private key pair")
 	}
@@ -338,6 +331,19 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 				log.Printf("node %s has mismatched pubkey annotation value %s expected: %s", node.GetName(),
 					node.Annotations[nodeconfig.PubKeyHashAnnotation], pubKeyAnnotation)
 				return false, nil
+			}
+			// For BYOH nodes, ensure username annotation is decipherable and correct. Skip if deconfiguring node
+			if isBYOH && !expectError {
+				username, err := crypto.DecryptFromJSONString(node.Annotations[controllers.UsernameAnnotation], privKey)
+				if err != nil {
+					log.Printf("error decrypting username annotation for node %s: %s", node.Name, err)
+					return false, nil
+				}
+				if username != tc.vmUsername() {
+					log.Printf("username %s does not match expected value %s for node %s:", username, tc.vmUsername(),
+						node.Name)
+					return false, nil
+				}
 			}
 
 			// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
