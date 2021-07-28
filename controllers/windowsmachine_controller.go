@@ -377,7 +377,8 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		username = "Administrator"
 	}
 
-	if err := r.ensureInstanceIsUpToDate(instances.NewInstanceInfo(ipAddress, username, hostname, nil), nil); err != nil {
+	err := r.ensureInstanceIsUpToDate(instances.NewInstanceInfo(ipAddress, username, hostname, nil), nil, nil)
+	if err != nil {
 		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
 
