@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
@@ -251,7 +252,7 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, wi
 // else 5 minutes for the nodes as the error would be thrown immediately, else we will wait for the duration given by
 // nodeCreationTime variable which is 20 minutes increasing the overall wait time in test suite
 func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVersion bool, isBYOH bool) error {
-	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, nodeconfig.VersionAnnotation,
+	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, metadata.VersionAnnotation,
 		nodeconfig.PubKeyHashAnnotation}
 	var creationTime time.Duration
 	startTime := time.Now()
@@ -327,9 +328,9 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 					log.Printf("error getting operator version : %v", err)
 					return false, nil
 				}
-				if node.Annotations[nodeconfig.VersionAnnotation] != operatorVersion {
+				if node.Annotations[metadata.VersionAnnotation] != operatorVersion {
 					log.Printf("node %s has mismatched version annotation %s. expected: %s", node.GetName(),
-						node.Annotations[nodeconfig.VersionAnnotation], operatorVersion)
+						node.Annotations[metadata.VersionAnnotation], operatorVersion)
 					return false, nil
 				}
 			}
@@ -387,7 +388,7 @@ func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, 
 	var windowsNodes []v1.Node
 	for _, node := range nodes.Items {
 		// filter out nodes that haven't been fully configured
-		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; !present {
+		if _, present := node.Annotations[metadata.VersionAnnotation]; !present {
 			continue
 		}
 		if (isBYOH && node.Annotations[controllers.BYOHAnnotation] == "true") ||

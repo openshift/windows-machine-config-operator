@@ -6,12 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-
-	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
 
 // reconfigurationTest tests that the correct behavior occurs when a previously configured instance is configured
@@ -29,7 +28,7 @@ func reconfigurationTest(t *testing.T) {
 
 	// Remove the version annotation of one of each type of node
 	// Forward slash within a path is escaped as '~1'
-	escapedVersionAnnotation := strings.Replace(nc.VersionAnnotation, "/", "~1", -1)
+	escapedVersionAnnotation := strings.Replace(metadata.VersionAnnotation, "/", "~1", -1)
 	patchData := fmt.Sprintf("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/%s\"}]", escapedVersionAnnotation)
 	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), machineNodes[0].Name, types.JSONPatchType,
 		[]byte(patchData), metav1.PatchOptions{})

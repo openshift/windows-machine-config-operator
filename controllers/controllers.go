@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"net"
 
 	"github.com/go-logr/logr"
@@ -14,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/version"
@@ -40,19 +42,34 @@ type instanceReconciler struct {
 	recorder record.EventRecorder
 }
 
-// configureInstance adds the specified instance to the cluster. if hostname is not empty, the instance's hostname will be
-// changed to the passed in value. If annotations is not nil, the node will have the specified annotations applied to
-// it.
-func (r *instanceReconciler) configureInstance(instance *instances.InstanceInfo, annotations map[string]string) error {
+// ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
+// defined by the current version of WMCO. If annotations is not nil, the node will have the specified annotations
+// applied to it.
+func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.InstanceInfo, annotationsToApply map[string]string) error {
+	if instance == nil {
+		return errors.New("instance cannot be nil")
+	}
+
+	// Instance is up to date, do nothing
+	if instance.UpToDate() {
+		return nil
+	}
+
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
-		annotations)
+		annotationsToApply)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
-	if err := nc.Configure(); err != nil {
-		return errors.Wrap(err, "failed to configure Windows instance")
+
+	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
+	// configured again.
+	if instance.UpgradeRequired() {
+		if err := nc.Deconfigure(); err != nil {
+			return err
+		}
 	}
-	return nil
+
+	return nc.Configure()
 }
 
 // instanceFromNode returns an instance object for the given node. Requires a username that can be used to SSH into the
@@ -65,7 +82,7 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instances.Insta
 	if err != nil {
 		return nil, err
 	}
-	return instances.NewInstanceInfo(addr, node.Annotations[UsernameAnnotation], ""), nil
+	return instances.NewInstanceInfo(addr, node.Annotations[UsernameAnnotation], "", node), nil
 }
 
 // GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
@@ -95,7 +112,14 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
-	return nc.Deconfigure()
+
+	if err = nc.Deconfigure(); err != nil {
+		return err
+	}
+	if err = r.client.Delete(context.TODO(), instance.Node); err != nil {
+		return errors.Wrapf(err, "error deleting node %s", instance.Node.GetName())
+	}
+	return nil
 }
 
 // windowsNodePredicate returns a predicate which filters out all node objects that are not Windows nodes.
@@ -110,7 +134,7 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 				(!byoh && e.Object.GetAnnotations()[BYOHAnnotation] == "true") {
 				return false
 			}
-			if e.Object.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() {
+			if e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get() {
 				return true
 			}
 			return false
@@ -123,7 +147,7 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 				(!byoh && e.ObjectNew.GetAnnotations()[BYOHAnnotation] == "true") {
 				return false
 			}
-			if e.ObjectNew.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() ||
+			if e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation] != version.Get() ||
 				e.ObjectNew.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] !=
 					e.ObjectOld.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] {
 				return true
