@@ -146,8 +146,8 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 			if e.Object.GetLabels()[core.LabelOSStable] != "windows" {
 				return false
 			}
-			if (byoh && e.Object.GetAnnotations()[BYOHAnnotation] != "true") ||
-				(!byoh && e.Object.GetAnnotations()[BYOHAnnotation] == "true") {
+			if (byoh && e.Object.GetLabels()[BYOHLabel] != "true") ||
+				(!byoh && e.Object.GetLabels()[BYOHLabel] == "true") {
 				return false
 			}
 			if e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get() {
@@ -159,8 +159,8 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 			if e.ObjectNew.GetLabels()[core.LabelOSStable] != "windows" {
 				return false
 			}
-			if (byoh && e.ObjectNew.GetAnnotations()[BYOHAnnotation] != "true") ||
-				(!byoh && e.ObjectNew.GetAnnotations()[BYOHAnnotation] == "true") {
+			if (byoh && e.ObjectNew.GetLabels()[BYOHLabel] != "true") ||
+				(!byoh && e.ObjectNew.GetLabels()[BYOHLabel] == "true") {
 				return false
 			}
 			if e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation] != version.Get() ||
