@@ -117,9 +117,9 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			return r.isValidMachine(e.ObjectNew) && isWindowsMachine(e.ObjectNew.GetLabels())
 		},
-		// ignore delete event for all Machines as WMCO does not react to node getting deleted
+		// process delete event
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			return r.isValidMachine(e.Object) && isWindowsMachine(e.Object.GetLabels())
 		},
 	}
 
@@ -265,9 +265,10 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 	if err := r.client.Get(ctx, request.NamespacedName, machine); err != nil {
 		if k8sapierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
-			return ctrl.Result{}, nil
+			// In the case the machine was deleted, ensure that the metrics subsets are configured properly, so that
+			// the current Windows nodes are properly reflected there.
+			log.V(1).Info("not found")
+			return ctrl.Result{}, r.prometheusNodeConfig.Configure()
 		}
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
