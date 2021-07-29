@@ -49,8 +49,8 @@ import (
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
 
 const (
-	// BYOHAnnotation is an an anotation that should be applied to all Windows nodes not associated with a Machine.
-	BYOHAnnotation = "windowsmachineconfig.openshift.io/byoh"
+	// BYOHLabel is a label that should be applied to all Windows nodes not associated with a Machine.
+	BYOHLabel = "windowsmachineconfig.openshift.io/byoh"
 	// UsernameAnnotation is a node annotation that contains the username used to log into the Windows instance
 	UsernameAnnotation = "windowsmachineconfig.openshift.io/username"
 )
@@ -119,8 +119,10 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 // reconcileNodes corrects the discrepancy between the "expected" instances, and the "actual" Node list
 func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstances *core.ConfigMap) error {
+	// Get the current list of Windows BYOH Nodes
 	nodes := &core.NodeList{}
-	if err := r.client.List(ctx, nodes); err != nil {
+	err := r.client.List(ctx, nodes, client.MatchingLabels{BYOHLabel: "true", core.LabelOSStable: "windows"})
+	if err != nil {
 		return errors.Wrap(err, "error listing nodes")
 	}
 
@@ -161,9 +163,8 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.
 		if err != nil {
 			return errors.Wrapf(err, "unable to encrypt username for instance %s", instance.Address)
 		}
-
-		err = r.ensureInstanceIsUpToDate(instance, map[string]string{nodeconfig.WorkerLabel: ""},
-			map[string]string{BYOHAnnotation: "true", UsernameAnnotation: encryptedUsername})
+		err = r.ensureInstanceIsUpToDate(instance, map[string]string{BYOHLabel: "true", nodeconfig.WorkerLabel: ""},
+			map[string]string{UsernameAnnotation: encryptedUsername})
 		if err != nil {
 			// It is better to return early like this, instead of trying to configure as many instances as possible in a
 			// single reconcile call, as it simplifies error collection. The order the map is read from is
@@ -176,13 +177,9 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.
 }
 
 // deconfigureInstances removes all BYOH nodes that are not specified in the given instances slice, and
-// deconfigures the instances associated with them.
+// deconfigures the instances associated with them. The nodes parameter should be a list of all Windows BYOH nodes.
 func (r *ConfigMapReconciler) deconfigureInstances(instances []*instances.InstanceInfo, nodes *core.NodeList) error {
 	for _, node := range nodes.Items {
-		// Only looking at BYOH nodes
-		if _, present := node.Annotations[BYOHAnnotation]; !present {
-			continue
-		}
 		// Check for instances associated with this node
 		if hasEntry := hasAssociatedInstance(&node, instances); hasEntry {
 			continue

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"net"
@@ -260,7 +261,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, metadata.VersionAnnotation,
 		nodeconfig.PubKeyHashAnnotation}
 	if isBYOH {
-		annotations = append(annotations, controllers.BYOHAnnotation, controllers.UsernameAnnotation)
+		annotations = append(annotations, controllers.UsernameAnnotation)
 	}
 
 	var creationTime time.Duration
@@ -379,8 +380,16 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 // BYOH nodes, else they will be nodes configured by the Machine controller.
 // A node is considered fully configured once it has the WMCO version annotation applied to it.
 func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, error) {
+	labelSelector := v1.LabelOSStable + "=windows"
+	if isBYOH {
+		// BYOH label is set to true
+		labelSelector = fmt.Sprintf("%s,%s=true", labelSelector, controllers.BYOHLabel)
+	} else {
+		// BYOH label is not set
+		labelSelector = fmt.Sprintf("%s,!%s", labelSelector, controllers.BYOHLabel)
+	}
 	nodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(),
-		metav1.ListOptions{LabelSelector: v1.LabelOSStable + "=windows"})
+		metav1.ListOptions{LabelSelector: labelSelector})
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list nodes")
 	}
@@ -390,10 +399,7 @@ func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, 
 		if _, present := node.Annotations[metadata.VersionAnnotation]; !present {
 			continue
 		}
-		if (isBYOH && node.Annotations[controllers.BYOHAnnotation] == "true") ||
-			(!isBYOH && node.Annotations[controllers.BYOHAnnotation] != "true") {
-			windowsNodes = append(windowsNodes, node)
-		}
+		windowsNodes = append(windowsNodes, node)
 	}
 	return windowsNodes, nil
 }
