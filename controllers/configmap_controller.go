@@ -168,6 +168,29 @@ func validateAddress(address string) error {
 	return nil
 }
 
+// getNodeUsername retrieves the username associated with the given node from the instance ConfigMap data
+func getNodeUsername(configMapData map[string]string, node *core.Node) (string, error) {
+	if node == nil {
+		return "", errors.New("cannot get username for nil node")
+	}
+	// Find entry in ConfigMap that is associated to node via address
+	for _, address := range node.Status.Addresses {
+		if value, found := configMapData[address.Address]; found {
+			return extractUsername(value)
+		}
+	}
+	return "", errors.Errorf("unable to find instance associated with node %s", node.GetName())
+}
+
+// extractUsername returns the username string from data in the form username=<username>
+func extractUsername(value string) (string, error) {
+	splitData := strings.SplitN(value, "=", 2)
+	if len(splitData) == 0 || splitData[0] != "username" {
+		return "", errors.New("data has an incorrect format")
+	}
+	return splitData[1], nil
+}
+
 // reconcileNodes corrects the discrepancy between the "expected" instances, and the "actual" Node list
 func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstances *core.ConfigMap) error {
 	nodes := &core.NodeList{}
