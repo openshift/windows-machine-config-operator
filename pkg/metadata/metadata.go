@@ -1,10 +1,15 @@
 package metadata
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"path"
 	"strings"
+
+	"github.com/pkg/errors"
+	core "k8s.io/api/core/v1"
+	kubeTypes "k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 )
@@ -63,4 +68,17 @@ func GenerateRemovePatch(labels, annotations []string) ([]byte, error) {
 func escape(key string) string {
 	// The `/` in the metadata key needs to be escaped in order to not be considered a "directory" in the path
 	return strings.Replace(key, "/", "~1", -1)
+}
+
+// ApplyAnnotations applies all the given annotations to the given Node resource
+func ApplyAnnotations(c client.Client, ctx context.Context, node core.Node, annotations map[string]string) error {
+	patchData, err := GenerateAddPatch(nil, annotations)
+	if err != nil {
+		return errors.Wrapf(err, "error creating annotations patch request")
+	}
+	err = c.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
+	if err != nil {
+		return errors.Wrapf(err, "unable to apply patch data %s on node %s", patchData, node.GetName())
+	}
+	return nil
 }

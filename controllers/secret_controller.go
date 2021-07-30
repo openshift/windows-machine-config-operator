@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -163,35 +164,47 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return reconcile.Result{}, nil
 	} else {
 		// userdata secret data does not match what is expected
-		// Mark nodes configured with the previous private key for deletion
 		nodes := &core.NodeList{}
 		err = r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
 		if err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
 		}
+
+		// Modify annotations on nodes configured with the previous private key, if it has changed
 		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
-		patchData, err := metadata.GenerateAddPatch(nil, map[string]string{nodeconfig.PubKeyHashAnnotation: ""})
+		privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+			Name: secrets.PrivateKeySecret}, r.client)
 		if err != nil {
-			return reconcile.Result{}, errors.Wrapf(err, "error creating public key annotation add request")
+			return reconcile.Result{}, err
 		}
 		for _, node := range nodes.Items {
-			// Only clear the annotation for Nodes associated with Machines, as the clearing of the annotation is used
-			// solely to kick off the deletion and recreation of Machines.
-			if _, present := node.Annotations[BYOHAnnotation]; present {
+			// Since the public key hash and username annotations are both dependant on the private key secret as well
+			// as applied and updated at the same time, checking one is enough to see if the private key is up to date
+			if node.Annotations[nodeconfig.PubKeyHashAnnotation] == expectedPubKeyAnno {
 				continue
+			}
+			annotationsToApply := make(map[string]string)
+			if _, present := node.Annotations[BYOHAnnotation]; present {
+				// For BYOH nodes, update the username annotation and public key hash annotation using new private key
+				expectedUsernameAnnotation, err := r.getEncryptedUsername(ctx, node, privateKeyBytes)
+				if err != nil {
+					return reconcile.Result{}, errors.Wrapf(err, "unable to retrieve expected username annotation")
+				}
+
+				annotationsToApply = map[string]string{
+					UsernameAnnotation:              expectedUsernameAnnotation,
+					nodeconfig.PubKeyHashAnnotation: expectedPubKeyAnno,
+				}
+			} else {
+				// For Nodes associated with Machines, clear the public key annotation, as the clearing of the
+				// annotation is used solely to kick off the deletion and recreation of Machines.
+				annotationsToApply = map[string]string{nodeconfig.PubKeyHashAnnotation: ""}
 			}
 
-			existingPubKeyAnno := node.Annotations[nodeconfig.PubKeyHashAnnotation]
-			if existingPubKeyAnno == expectedPubKeyAnno {
-				continue
+			if err := metadata.ApplyAnnotations(r.client, ctx, node, annotationsToApply); err != nil {
+				return reconcile.Result{}, errors.Wrapf(err, "error updating annotations on node %s", node.GetName())
 			}
-			node.Annotations[nodeconfig.PubKeyHashAnnotation] = ""
-			err = r.client.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
-			if err != nil {
-				return reconcile.Result{}, errors.Wrapf(err, "error clearing public key annotation on node %s",
-					node.GetName())
-			}
-			log.V(1).Info("patched node object", "node", node.GetName(), "patch", patchData)
+			log.V(1).Info("patched node object", "node", node.GetName(), "patch", annotationsToApply)
 		}
 
 		// Set userdata to expected value
@@ -204,6 +217,25 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		// Secret updated successfully
 		return reconcile.Result{}, nil
 	}
+}
+
+// getEncryptedUsername retrieves the username associated with a given node and ecrypts it using the given key
+func (r *SecretReconciler) getEncryptedUsername(ctx context.Context, node core.Node, key []byte) (string, error) {
+	// The instance ConfigMap is the source of truth linking BYOH nodes to their underlying instances
+	instancesConfigMap := &core.ConfigMap{}
+	if err := r.client.Get(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: InstanceConfigMap}, instancesConfigMap); err != nil {
+		return "", errors.Wrap(err, "unable to get instance configmap")
+	}
+	instanceUsername, err := getNodeUsername(instancesConfigMap.Data, &node)
+	if err != nil {
+		return "", err
+	}
+	encryptedUsername, err := crypto.EncryptToJSONString(instanceUsername, key)
+	if err != nil {
+		return "", errors.Wrapf(err, "error encrypting node %s username", node.GetName())
+	}
+	return encryptedUsername, nil
 }
 
 // RemoveInvalidAnnotationsFromLinuxNodes makes a best effort to remove annotations applied by previous versions of WMCO.
