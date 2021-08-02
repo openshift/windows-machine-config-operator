@@ -9,11 +9,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 )
 
 func reconfigurationTestSuite(t *testing.T) {
 	t.Run("Reconfigure instance", reconfigurationTest)
+	t.Run("Re-add removed instance", testReAddInstance)
 	// testPrivateKeyChange must be the last test run in the reconfiguration suite. This is because we do not currently
 	// wait for nodes to fully come back up after changing the private key back to the valid key. Only the deletion test
 	// suite should run after this. Any other tests may result in flakes.
@@ -50,4 +52,46 @@ func reconfigurationTest(t *testing.T) {
 
 	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
 	assert.NoError(t, err, "error waiting for Windows BYOH nodes to be reconfigured")
+}
+
+// testReAddInstance tests the case where a Windows BYOH instance was removed from the cluster, and then re-added.
+func testReAddInstance(t *testing.T) {
+	if gc.numberOfBYOHNodes == 0 {
+		t.Skip("BYOH testing disabled")
+	}
+
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), controllers.InstanceConfigMap,
+		metav1.GetOptions{})
+	require.NoError(t, err, "error retrieving windows-instances ConfigMap")
+	require.NotEmpty(t, cm.Data, "no instances to remove")
+
+	// Read a single entry from the data map
+	var addr, data string
+	for addr, data = range cm.Data {
+		break
+	}
+
+	// remove the entry that was found and then update the ConfigMap
+	delete(cm.Data, addr)
+	cm, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+	require.NoError(t, err, "error updating windows-instances ConfigMap data")
+
+	// wait for the node to be removed
+	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes-1, false, true, true)
+	require.NoError(t, err, "error waiting for the removal of a node")
+
+	// update the ConfigMap again, re-adding the instance
+	if cm.Data == nil {
+		cm.Data = make(map[string]string)
+	}
+	cm.Data[addr] = data
+	_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Update(context.TODO(), cm, metav1.UpdateOptions{})
+	require.NoError(t, err, "error updating windows-instances ConfigMap data")
+
+	// wait for the node to be successfully re-added
+	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	assert.NoError(t, err, "error waiting for the node to be re-added")
 }
