@@ -147,6 +147,10 @@ if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
   # Run the reconfiguration test
+  # The reconfiguration suite must be run directly before the deletion suite. This is because we do not
+  # currently wait for nodes to fully reconcile after changing the private key back to the valid key. Any tests
+  # added/moved in between these two suites may fail.
+  # This limitation will be removed with https://issues.redhat.com/browse/WINC-655
   printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 fi
