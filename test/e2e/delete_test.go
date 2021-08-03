@@ -20,6 +20,10 @@ import (
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
+// remotePowerShellCmdPrefix holds the PowerShell prefix that needs to be prefixed  for every remote PowerShell
+// command executed on the remote Windows VM
+const remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command \""
+
 func deletionTestSuite(t *testing.T) {
 	t.Run("Deletion", func(t *testing.T) { testWindowsNodeDeletion(t) })
 }
@@ -66,6 +70,10 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 			dirsCleanedUp, err := tc.checkDirsDoNotExist(addr)
 			require.NoError(t, err, "error determining if created directories exist")
 			assert.True(t, dirsCleanedUp, "directories not removed")
+
+			networksRemoved, err := tc.checkNetworksRemoved(addr)
+			require.NoError(t, err, "error determining if HNS networks are removed")
+			assert.True(t, networksRemoved, "HNS networks not removed")
 		})
 	}
 }
@@ -73,7 +81,7 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 // checkDirsDoNotExist returns true if the required directories do not exist on the Windows instance with the given
 // address
 func (tc *testContext) checkDirsDoNotExist(address string) (bool, error) {
-	command := "powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command \""
+	command := remotePowerShellCmdPrefix
 	for _, dir := range windows.RequiredDirectories {
 		command += fmt.Sprintf("if ((Test-Path %s) -eq $true) { Write-Output %s exists}", dir, dir)
 	}
@@ -83,6 +91,19 @@ func (tc *testContext) checkDirsDoNotExist(address string) (bool, error) {
 		return false, errors.Wrapf(err, "error confirming directories do not exist %s", out)
 	}
 	return !strings.Contains(out, "exists"), nil
+}
+
+// checkNetworksRemoved returns true if the HNS networks created by hybrid-overlay and the
+// HNS endpoint created by the operator do not exist on the Windows instance with the given address
+func (tc *testContext) checkNetworksRemoved(address string) (bool, error) {
+	command := fmt.Sprintf(remotePowerShellCmdPrefix + "Get-HnsNetwork; Get-HnsEndpoint\"")
+	out, err := tc.runSSHJob("check-hns-networks", command, address)
+	if err != nil {
+		return false, errors.Wrapf(err, "error confirming networks are removed %s", out)
+	}
+	return !(strings.Contains(out, windows.BaseOVNKubeOverlayNetwork) ||
+		strings.Contains(out, windows.OVNKubeOverlayNetwork) ||
+		strings.Contains(out, "VIPEndpoint")), nil
 }
 
 // testWindowsNodeDeletion tests the Windows node deletion from the cluster.
