@@ -13,16 +13,18 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	certificates "k8s.io/api/certificates/v1"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
+	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
@@ -36,6 +38,7 @@ func creationTestSuite(t *testing.T) {
 	t.Run("Node Metadata", testNodeMetadata)
 	t.Run("Services running", testExpectedServicesRunning)
 	t.Run("NodeTaint validation", testNodeTaint)
+	t.Run("CSR Validation", func(t *testing.T) { testCSRApproval(t) })
 	t.Run("UserData validation", testUserData)
 	t.Run("UserData idempotent check", testUserDataTamper)
 	t.Run("Node Logs", testNodeLogs)
@@ -60,7 +63,7 @@ func testWindowsNodeCreation(t *testing.T) {
 
 // deleteWindowsInstanceConfigMap deletes the windows-instances configmap if it exists
 func (tc *testContext) deleteWindowsInstanceConfigMap() error {
-	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), controllers.InstanceConfigMap,
+	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), wiparser.InstanceConfigMap,
 		metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
@@ -73,7 +76,7 @@ func (tc *testContext) deleteWindowsInstanceConfigMap() error {
 func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList) error {
 	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: controllers.InstanceConfigMap,
+			Name: wiparser.InstanceConfigMap,
 		},
 		Data: make(map[string]string),
 	}
@@ -121,7 +124,20 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 	if gc.numberOfBYOHNodes == 0 {
 		t.Skip("BYOH testing disabled")
 	}
-	_, err := tc.createWindowsMachineSet(gc.numberOfBYOHNodes, false)
+
+	// Patch the CVO with overrides spec value for cluster-machine-approver deployment
+	// Doing so, stops CVO from creating/updating its deployment hereafter.
+	patchData := `[{"op":"add","path":"/spec/overrides","value":[{"kind":"Deployment","group":"apps/v1","name":"machine-approver","namespace":"openshift-cluster-machine-approver","unmanaged":true}]}]`
+	_, err := tc.client.Config.ConfigV1().ClusterVersions().Patch(context.TODO(), "version", types.JSONPatchType, []byte(patchData), metav1.PatchOptions{})
+
+	// Scale the Cluster Machine Approver Deployment to 0
+	// This is required for testing BYOH CSR approval feature so that BYOH instances
+	// CSR's are not approved by Cluster Machine Approver
+	expectedPodCount := int32(0)
+	err = tc.scaleMachineApproverDeployment(&expectedPodCount)
+	require.NoError(t, err, "failed to scale Machine Approver pods")
+
+	_, err = tc.createWindowsMachineSet(gc.numberOfBYOHNodes, false)
 	require.NoError(t, err, "failed to create Windows MachineSet")
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfBYOHNodes), "Provisioned", false)
 	require.NoError(t, err, "Machines did not reach expected state")
@@ -272,15 +288,6 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 	// not take the number of nodes into account. If we are testing node creation without applying Windows label, we
 	// should throw error within 5 mins.
 	err = wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*creationTime, func() (done bool, err error) {
-		// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
-		//       ConfigMap controller does not have the ability to approve CSRs yet. This needs to be removed when that
-		//       functionality is added in https://issues.redhat.com/browse/WINC-581
-		if tc.CloudProvider.GetType() == config.VSpherePlatformType {
-			if err := tc.approveAllCSRs(); err != nil {
-				log.Printf("error approving CSRs: %s", err)
-				return false, nil
-			}
-		}
 		nodes, err := tc.listFullyConfiguredWindowsNodes(isBYOH)
 		if err != nil {
 			log.Printf("failed to get list of configured Windows nodes: %s", err)
@@ -345,20 +352,6 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 					return false, nil
 				}
 			}
-
-			// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
-			//       ConfigMap controller does not have the ability to approve CSRs yet. This can be removed if not
-			//       needed when that functionality is added in https://issues.redhat.com/browse/WINC-581
-			// verify the node CSR associated with the node is not waiting for approval.
-			csr, err := tc.findNodeCSR(node.GetName())
-			if err != nil {
-				log.Printf("error finding node CSR: %s", err)
-				return false, nil
-			}
-			if tc.isPending(csr) {
-				log.Printf("node csr is waiting for approval")
-				return false, nil
-			}
 		}
 		// Now verify that we have found all the nodes being waited for
 		if len(nodes) != int(nodeCount) {
@@ -405,90 +398,29 @@ func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, 
 	return windowsNodes, nil
 }
 
-// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
-//       ConfigMap controller does not have the ability to approve CSRs yet. This can be removed if not needed when that
-//       functionality is added in https://issues.redhat.com/browse/WINC-581
-// findNodeCSR returns the current CSR for the given node
-func (tc *testContext) findNodeCSR(nodeName string) (*certificates.CertificateSigningRequest, error) {
-	expectedCSRName := "system:node:" + nodeName
-	csrs, err := tc.client.K8s.CertificatesV1().CertificateSigningRequests().List(context.TODO(),
-		metav1.ListOptions{})
+// scaleMachineApproverDeployment scales the Machine Approver deployment pods to the expectedPodCount
+func (tc *testContext) scaleMachineApproverDeployment(expectedPodCount *int32) error {
+	deployment, err := tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Get(context.TODO(),
+		"machine-approver", metav1.GetOptions{})
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get CSR list")
+		return errors.Wrap(err, "error listing Cluster Machine Approver deployment")
 	}
-	for _, csr := range csrs.Items {
-		if csr.Spec.Username == expectedCSRName {
-			return &csr, nil
-		}
-	}
-	return nil, errors.Errorf("could not find CSR named %s", expectedCSRName)
-}
 
-// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
-//       ConfigMap controller does not have the ability to approve CSRs yet. This needs to be removed when that
-//       functionality is added in https://issues.redhat.com/browse/WINC-581
-// approveAllCSRs approves all CSRs that are waiting for an approval
-func (tc *testContext) approveAllCSRs() error {
-	csrs, err := tc.listPendingCSRs()
+	deployment.Spec.Replicas = expectedPodCount
+	_, err = tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Update(context.TODO(),
+		deployment, metav1.UpdateOptions{})
 	if err != nil {
-		return errors.Wrap(err, "error listing CSRs")
+		return errors.Wrap(err, "error updating Cluster Machine Approver deployment")
 	}
-	for _, csr := range csrs {
-		if err = tc.approve(csr); err != nil {
-			return errors.Wrapf(err, "error approving csr %s", csr.GetName())
+	retryInterval := retry.Interval
+	retryTimeout := retry.Timeout
+	if err = wait.Poll(retryInterval, retryTimeout, func() (bool, error) {
+		if deployment.Spec.Replicas == expectedPodCount {
+			return true, nil
 		}
+		return false, nil
+	}); err != nil {
+		return errors.Wrap(err, "error waiting for Cluster Machine Approver deployment to be scaled")
 	}
 	return nil
-}
-
-// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
-//       ConfigMap controller does not have the ability to approve CSRs yet. This can be removed if not needed when that
-//       functionality is added in https://issues.redhat.com/browse/WINC-581
-// isPending returns true if the CSR is neither approved, nor denied
-func (tc *testContext) isPending(csr *certificates.CertificateSigningRequest) bool {
-	for _, c := range csr.Status.Conditions {
-		if c.Type == certificates.CertificateApproved || c.Type == certificates.CertificateDenied {
-			return false
-		}
-	}
-	return true
-}
-
-// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
-//       ConfigMap controller does not have the ability to approve CSRs yet. This needs to be removed when that
-//       functionality is added in https://issues.redhat.com/browse/WINC-581
-// listPendingCSRs returns a list of CSRs which have neither been approved nor denied
-func (tc *testContext) listPendingCSRs() ([]*certificates.CertificateSigningRequest, error) {
-	var foundCSRs []*certificates.CertificateSigningRequest
-	csrs, err := tc.client.K8s.CertificatesV1().CertificateSigningRequests().List(context.TODO(),
-		metav1.ListOptions{})
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to get CSR list")
-	}
-	for i, csr := range csrs.Items {
-		if tc.isPending(&csr) {
-			foundCSRs = append(foundCSRs, &csrs.Items[i])
-		}
-	}
-	return foundCSRs, nil
-}
-
-// TODO: vSphere CSRs are not being approved due to a hostname mismatch. This is an issue only because the
-//       ConfigMap controller does not have the ability to approve CSRs yet. This needs to be removed when that
-//       functionality is added in https://issues.redhat.com/browse/WINC-581
-// approve approves the given CSR if it has not already been approved
-// Based on https://github.com/kubernetes/kubectl/blob/master/pkg/cmd/certificates/certificates.go#L237
-func (tc *testContext) approve(csr *certificates.CertificateSigningRequest) error {
-	// Add the approval status condition
-	csr.Status.Conditions = append(csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
-		Type:           certificates.CertificateApproved,
-		Reason:         "WMCOe2eTestRunnerApprove",
-		Message:        "This CSR was approved by WMCO runner",
-		LastUpdateTime: metav1.Now(),
-		Status:         v1.ConditionTrue,
-	})
-
-	_, err := tc.client.K8s.CertificatesV1().CertificateSigningRequests().UpdateApproval(context.TODO(), csr.GetName(),
-		csr, metav1.UpdateOptions{})
-	return err
 }

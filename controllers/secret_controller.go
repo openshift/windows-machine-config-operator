@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=*
@@ -224,10 +225,10 @@ func (r *SecretReconciler) getEncryptedUsername(ctx context.Context, node core.N
 	// The instance ConfigMap is the source of truth linking BYOH nodes to their underlying instances
 	instancesConfigMap := &core.ConfigMap{}
 	if err := r.client.Get(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
-		Name: InstanceConfigMap}, instancesConfigMap); err != nil {
+		Name: wiparser.InstanceConfigMap}, instancesConfigMap); err != nil {
 		return "", errors.Wrap(err, "unable to get instance configmap")
 	}
-	instanceUsername, err := getNodeUsername(instancesConfigMap.Data, &node)
+	instanceUsername, err := wiparser.GetNodeUsername(instancesConfigMap.Data, &node)
 	if err != nil {
 		return "", err
 	}
