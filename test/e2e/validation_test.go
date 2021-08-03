@@ -291,7 +291,7 @@ func (tc *testContext) runSSHJob(name, command, ip string) (string, error) {
 func (tc *testContext) getWinServices(addr string) (map[string]string, error) {
 	// This command returns CR+newline separated quoted CSV entries consisting of service name and status. For example:
 	// "kubelet","Running"\r\n"VaultSvc","Stopped"
-	command := fmt.Sprintf("powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command \"Get-Service | " +
+	command := fmt.Sprintf(remotePowerShellCmdPrefix + "Get-Service | " +
 		"Select-Object -Property Name,Status | ConvertTo-Csv -NoTypeInformation\"")
 	out, err := tc.runSSHJob("get-windows-svc-list", command, addr)
 	if err != nil {
