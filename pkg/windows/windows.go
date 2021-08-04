@@ -185,7 +185,7 @@ func New(workerIgnitionEndpoint, vxlanPort string, instance *instances.InstanceI
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", instance.Address))
-	log.V(1).Info("initializing SSH connection", "user", instance.Username)
+	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instance.Username, instance.Address, signer, log)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instance.Address)

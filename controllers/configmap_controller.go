@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -123,7 +124,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // of Nodes in the cluster, as each instance returned will contain a reference to its associated Node, if it has one
 // in the given NodeList. If an instance does not have an associated node from the NodeList, the node reference will
 // be nil.
-func (r *ConfigMapReconciler) parseInstances(configMapData map[string]string, nodes *core.NodeList) ([]*instances.InstanceInfo, error) {
+func parseInstances(configMapData map[string]string, nodes *core.NodeList) ([]*instances.InstanceInfo, error) {
 	if nodes == nil {
 		return nil, errors.New("nodes cannot be nil")
 	}
@@ -134,14 +135,14 @@ func (r *ConfigMapReconciler) parseInstances(configMapData map[string]string, no
 		if err := validateAddress(address); err != nil {
 			return nil, errors.Wrapf(err, "invalid address %s", address)
 		}
-		splitData := strings.SplitN(data, "=", 2)
-		if len(splitData) == 0 || splitData[0] != "username" {
-			return instanceList, errors.Errorf("data for entry %s has an incorrect format", address)
+		username, err := extractUsername(data)
+		if err != nil {
+			return instanceList, errors.Wrapf(err, "unable to get username for %s", address)
 		}
 
 		// Get the associated node if the described instance has one
 		node, _ := findNode(address, nodes)
-		instanceList = append(instanceList, instances.NewInstanceInfo(address, splitData[1], "", node))
+		instanceList = append(instanceList, instances.NewInstanceInfo(address, username, "", node))
 	}
 	return instanceList, nil
 }
@@ -167,6 +168,29 @@ func validateAddress(address string) error {
 	return nil
 }
 
+// getNodeUsername retrieves the username associated with the given node from the instance ConfigMap data
+func getNodeUsername(configMapData map[string]string, node *core.Node) (string, error) {
+	if node == nil {
+		return "", errors.New("cannot get username for nil node")
+	}
+	// Find entry in ConfigMap that is associated to node via address
+	for _, address := range node.Status.Addresses {
+		if value, found := configMapData[address.Address]; found {
+			return extractUsername(value)
+		}
+	}
+	return "", errors.Errorf("unable to find instance associated with node %s", node.GetName())
+}
+
+// extractUsername returns the username string from data in the form username=<username>
+func extractUsername(value string) (string, error) {
+	splitData := strings.SplitN(value, "=", 2)
+	if len(splitData) == 0 || splitData[0] != "username" {
+		return "", errors.New("data has an incorrect format")
+	}
+	return splitData[1], nil
+}
+
 // reconcileNodes corrects the discrepancy between the "expected" instances, and the "actual" Node list
 func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstances *core.ConfigMap) error {
 	nodes := &core.NodeList{}
@@ -175,9 +199,9 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	}
 
 	// Get the list of instances that are expected to be Nodes
-	instances, err := r.parseInstances(windowsInstances.Data, nodes)
+	instances, err := parseInstances(windowsInstances.Data, nodes)
 	if err != nil {
-		return errors.Wrap(err, "unable to parse hosts from ConfigMap")
+		return errors.Wrap(err, "unable to parse instances from ConfigMap")
 	}
 
 	// For each instance, ensure that it is configured into a node
@@ -200,9 +224,20 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 
 // ensureInstancesAreUpToDate configures all instances that require configuration
 func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.InstanceInfo) error {
+	// Get private key to encrypt instance usernames
+	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
+	if err != nil {
+		return err
+	}
 	for _, instance := range instances {
-		err := r.ensureInstanceIsUpToDate(instance, map[string]string{nodeconfig.WorkerLabel: ""},
-			map[string]string{BYOHAnnotation: "true", UsernameAnnotation: instance.Username})
+		encryptedUsername, err := crypto.EncryptToJSONString(instance.Username, privateKeyBytes)
+		if err != nil {
+			return errors.Wrapf(err, "unable to encrypt username for instance %s", instance.Address)
+		}
+
+		err = r.ensureInstanceIsUpToDate(instance, map[string]string{nodeconfig.WorkerLabel: ""},
+			map[string]string{BYOHAnnotation: "true", UsernameAnnotation: encryptedUsername})
 		if err != nil {
 			// It is better to return early like this, instead of trying to configure as many instances as possible in a
 			// single reconcile call, as it simplifies error collection. The order the map is read from is
