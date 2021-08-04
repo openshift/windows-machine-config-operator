@@ -12,12 +12,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batch "k8s.io/api/batch/v1"
+	certificates "k8s.io/api/certificates/v1"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/csr"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -335,4 +337,59 @@ func testExpectedServicesRunning(t *testing.T) {
 			}
 		})
 	}
+}
+
+// testCSRApproval tests if the BYOH CSR's have been approved by WMCO CSR approver
+func testCSRApproval(t *testing.T) {
+	testCtx, err := NewTestContext()
+	require.NoError(t, err)
+	if gc.numberOfBYOHNodes == 0 {
+		t.Skip("BYOH CSR approval testing disabled")
+	}
+	for _, node := range gc.byohNodes {
+		csrs, err := testCtx.findNodeCSRs(node.GetName())
+		require.NotEqual(t, len(csrs), 0, "could not find BYOH node CSR's")
+		require.NoError(t, err, "could not find BYOH node CSR's")
+
+		for _, csr := range csrs {
+			isWMCOApproved := func() bool {
+				for _, c := range csr.Status.Conditions {
+					if c.Type == certificates.CertificateApproved && c.Reason == "WMCOApproved" {
+						return true
+					}
+				}
+				return false
+			}()
+			assert.Equal(t, isWMCOApproved, true, "expected BYOH node CSR to be approved by WMCO CSR approver: %s", node.GetName())
+		}
+	}
+
+	// Scale the Cluster Machine Approver deployment back to 1.
+	expectedPodCount := int32(1)
+	err = testCtx.scaleMachineApproverDeployment(&expectedPodCount)
+	require.NoError(t, err, "failed to scale Cluster Machine Approver pods")
+}
+
+// findNodeCSRs returns the list of CSRs for the given node
+func (tc *testContext) findNodeCSRs(nodeName string) ([]certificates.CertificateSigningRequest, error) {
+	var nodeCSRs []certificates.CertificateSigningRequest
+	csrs, err := tc.client.K8s.CertificatesV1().CertificateSigningRequests().List(context.TODO(),
+		meta.ListOptions{})
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get CSR list")
+	}
+	for _, c := range csrs.Items {
+		parsedCSR, err := csr.ParseCSR(c.Spec.Request)
+		if err != nil {
+			return nil, err
+		}
+		dnsAddr := strings.TrimPrefix(parsedCSR.Subject.CommonName, csr.NodeUserNamePrefix)
+		if dnsAddr == "" {
+			return nil, err
+		}
+		if dnsAddr == nodeName {
+			nodeCSRs = append(nodeCSRs, c)
+		}
+	}
+	return nodeCSRs, nil
 }

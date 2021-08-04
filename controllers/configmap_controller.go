@@ -18,8 +18,6 @@ package controllers
 
 import (
 	"context"
-	"net"
-	"strings"
 
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
@@ -43,6 +41,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -54,8 +53,6 @@ const (
 	BYOHAnnotation = "windowsmachineconfig.openshift.io/byoh"
 	// UsernameAnnotation is a node annotation that contains the username used to log into the Windows instance
 	UsernameAnnotation = "windowsmachineconfig.openshift.io/username"
-	// InstanceConfigMap is the name of the ConfigMap where VMs to be configured should be described.
-	InstanceConfigMap = "windows-instances"
 )
 
 // ConfigMapReconciler reconciles a ConfigMap object
@@ -120,77 +117,6 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
 }
 
-// parseInstances gets the list of instances specified in the ConfigMap's data. This function should be passed a list
-// of Nodes in the cluster, as each instance returned will contain a reference to its associated Node, if it has one
-// in the given NodeList. If an instance does not have an associated node from the NodeList, the node reference will
-// be nil.
-func parseInstances(configMapData map[string]string, nodes *core.NodeList) ([]*instances.InstanceInfo, error) {
-	if nodes == nil {
-		return nil, errors.New("nodes cannot be nil")
-	}
-	instanceList := make([]*instances.InstanceInfo, 0)
-	// Get information about the instances from each entry. The expected key/value format for each entry is:
-	// <address>: username=<username>
-	for address, data := range configMapData {
-		if err := validateAddress(address); err != nil {
-			return nil, errors.Wrapf(err, "invalid address %s", address)
-		}
-		username, err := extractUsername(data)
-		if err != nil {
-			return instanceList, errors.Wrapf(err, "unable to get username for %s", address)
-		}
-
-		// Get the associated node if the described instance has one
-		node, _ := findNode(address, nodes)
-		instanceList = append(instanceList, instances.NewInstanceInfo(address, username, "", node))
-	}
-	return instanceList, nil
-}
-
-// validateAddress checks that the given address is either an ipv4 address, or resolves to any ip address
-func validateAddress(address string) error {
-	// first check if address is an IP address
-	if parsedAddr := net.ParseIP(address); parsedAddr != nil {
-		if parsedAddr.To4() != nil {
-			return nil
-		}
-		// if the address parses into an IP but is not ipv4 it must be ipv6
-		return errors.Errorf("ipv6 is not supported")
-	}
-	// Do a check that the DNS provided is valid
-	addressList, err := net.LookupHost(address)
-	if err != nil {
-		return errors.Wrapf(err, "error looking up DNS")
-	}
-	if len(addressList) == 0 {
-		return errors.Errorf("DNS did not resolve to an address")
-	}
-	return nil
-}
-
-// getNodeUsername retrieves the username associated with the given node from the instance ConfigMap data
-func getNodeUsername(configMapData map[string]string, node *core.Node) (string, error) {
-	if node == nil {
-		return "", errors.New("cannot get username for nil node")
-	}
-	// Find entry in ConfigMap that is associated to node via address
-	for _, address := range node.Status.Addresses {
-		if value, found := configMapData[address.Address]; found {
-			return extractUsername(value)
-		}
-	}
-	return "", errors.Errorf("unable to find instance associated with node %s", node.GetName())
-}
-
-// extractUsername returns the username string from data in the form username=<username>
-func extractUsername(value string) (string, error) {
-	splitData := strings.SplitN(value, "=", 2)
-	if len(splitData) == 0 || splitData[0] != "username" {
-		return "", errors.New("data has an incorrect format")
-	}
-	return splitData[1], nil
-}
-
 // reconcileNodes corrects the discrepancy between the "expected" instances, and the "actual" Node list
 func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstances *core.ConfigMap) error {
 	nodes := &core.NodeList{}
@@ -199,7 +125,7 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	}
 
 	// Get the list of instances that are expected to be Nodes
-	instances, err := parseInstances(windowsInstances.Data, nodes)
+	instances, err := wiparser.Parse(windowsInstances.Data, nodes)
 	if err != nil {
 		return errors.Wrap(err, "unable to parse instances from ConfigMap")
 	}
@@ -269,19 +195,6 @@ func (r *ConfigMapReconciler) deconfigureInstances(instances []*instances.Instan
 	return nil
 }
 
-// findNode returns a pointer to the node with an address matching the given address and a bool indicating if the node
-// was found or not.
-func findNode(address string, nodes *core.NodeList) (*core.Node, bool) {
-	for _, node := range nodes.Items {
-		for _, nodeAddress := range node.Status.Addresses {
-			if address == nodeAddress.Address {
-				return &node, true
-			}
-		}
-	}
-	return nil, false
-}
-
 // hasAssociatedInstance returns true if the given node is associated with an instance in the given slice
 func hasAssociatedInstance(node *core.Node, instances []*instances.InstanceInfo) bool {
 	for _, instance := range instances {
@@ -297,7 +210,7 @@ func hasAssociatedInstance(node *core.Node, instances []*instances.InstanceInfo)
 // mapToConfigMap fulfills the MapFn type, while always returning a request to the windows-instance ConfigMap
 func (r *ConfigMapReconciler) mapToConfigMap(_ client.Object) []reconcile.Request {
 	return []reconcile.Request{{
-		NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: InstanceConfigMap},
+		NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: wiparser.InstanceConfigMap},
 	}}
 }
 
@@ -323,5 +236,5 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // isValidConfigMap returns true if the ConfigMap object is the InstanceConfigMap
 func (r *ConfigMapReconciler) isValidConfigMap(o client.Object) bool {
-	return o.GetNamespace() == r.watchNamespace && o.GetName() == InstanceConfigMap
+	return o.GetNamespace() == r.watchNamespace && o.GetName() == wiparser.InstanceConfigMap
 }
