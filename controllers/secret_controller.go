@@ -185,7 +185,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 				continue
 			}
 			annotationsToApply := make(map[string]string)
-			if _, present := node.Annotations[BYOHAnnotation]; present {
+			if _, present := node.GetLabels()[BYOHLabel]; present {
 				// For BYOH nodes, update the username annotation and public key hash annotation using new private key
 				expectedUsernameAnnotation, err := r.getEncryptedUsername(ctx, node, privateKeyBytes)
 				if err != nil {
