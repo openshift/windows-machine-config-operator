@@ -204,7 +204,7 @@ func (r *WindowsMachineReconciler) isValidMachine(obj client.Object) bool {
 // Note: The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	log := r.log.WithValues("windowsmachine", request.NamespacedName)
+	log := r.log.WithValues("machine", request.NamespacedName)
 	log.V(1).Info("reconciling")
 
 	// Create a new signer from the private key the instances will be configured with
@@ -270,7 +270,6 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 				}
 				return ctrl.Result{}, r.deleteMachine(machine)
 			}
-			log.Info("machine has current version", "version", node.Annotations[metadata.VersionAnnotation])
 			// version annotation exists with a valid value, node is fully configured.
 			// configure Prometheus when we have already configured Windows Nodes. This is required to update Endpoints object if
 			// it gets reverted when the operator pod restarts.
@@ -314,7 +313,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 		return ctrl.Result{}, errors.Errorf("unable to get instance ID from provider ID for machine %s", machine.Name)
 	}
 
-	log.Info("processing")
+	log.Info("processing", "address", ipAddress)
 	// Make the Machine a Windows Worker node
 	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name); err != nil {
 		var authErr *windows.AuthErr
@@ -382,7 +381,6 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
 
-	r.log.Info("Windows VM has been configured as a worker node", "ID", instanceID)
 	return nil
 }
 

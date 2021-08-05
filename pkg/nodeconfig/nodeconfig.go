@@ -112,7 +112,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 			"creating new node config")
 	}
 
-	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", instance.Address))
+	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instance.Address))
 	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
 		instance, signer)
 	if err != nil {
@@ -205,6 +205,9 @@ func (nc *nodeConfig) Configure() error {
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, false); err != nil {
 			return errors.Wrapf(err, "error uncordoning the node %s", nc.node.GetName())
 		}
+
+		nc.log.Info("instance has been configured as a worker node", "version",
+			nc.node.Annotations[metadata.VersionAnnotation])
 		return nil
 	}()
 
@@ -383,6 +386,8 @@ func (nc *nodeConfig) Deconfigure() error {
 	if err != nil {
 		return errors.Wrapf(err, "error removing version annotation from node %s", nc.node.GetName())
 	}
+
+	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())
 	return nil
 }
 
