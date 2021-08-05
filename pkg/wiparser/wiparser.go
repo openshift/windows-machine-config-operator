@@ -11,14 +11,14 @@ import (
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 )
 
 // InstanceConfigMap is the name of the ConfigMap where VMs to be configured should be described.
 const InstanceConfigMap = "windows-instances"
 
 // GetInstances returns a list of Windows instances by parsing the Windows instance configMap.
-func GetInstances(c client.Client, namespace string) ([]*instances.InstanceInfo, error) {
+func GetInstances(c client.Client, namespace string) ([]*instance.Info, error) {
 	configMap := &core.ConfigMap{}
 	err := c.Get(context.TODO(), kubeTypes.NamespacedName{Namespace: namespace,
 		Name: InstanceConfigMap}, configMap)
@@ -43,11 +43,11 @@ func GetInstances(c client.Client, namespace string) ([]*instances.InstanceInfo,
 // of Nodes in the cluster, as each instance returned will contain a reference to its associated Node, if it has one
 // in the given NodeList. If an instance does not have an associated node from the NodeList, the node reference will
 // be nil.
-func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instances.InstanceInfo, error) {
+func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.Info, error) {
 	if nodes == nil {
 		return nil, errors.New("nodes cannot be nil")
 	}
-	instanceList := make([]*instances.InstanceInfo, 0)
+	instances := make([]*instance.Info, 0)
 	// Get information about the instances from each entry. The expected key/value format for each entry is:
 	// <address>: username=<username>
 	for address, data := range instancesData {
@@ -56,14 +56,14 @@ func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instances.
 		}
 		username, err := extractUsername(data)
 		if err != nil {
-			return instanceList, errors.Wrapf(err, "unable to get username for %s", address)
+			return instances, errors.Wrapf(err, "unable to get username for %s", address)
 		}
 
 		// Get the associated node if the described instance has one
 		node, _ := findNode(address, nodes)
-		instanceList = append(instanceList, instances.NewInstanceInfo(address, username, "", node))
+		instances = append(instances, instance.NewInfo(address, username, "", node))
 	}
-	return instanceList, nil
+	return instances, nil
 }
 
 // validateAddress checks that the given address is either an ipv4 address, or resolves to any ip address
