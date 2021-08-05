@@ -29,6 +29,15 @@ We strongly recommend not using the same
 [private key](https://docs.openshift.com/container-platform/4.6/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default)
 used when installing the cluster
 
+#### Changing the private key secret
+Changing the private key used by WMCO can be done by updating the contents of the existing `cloud-private-key` secret.
+Some important things to note:
+* Any existing Windows Machines will be destroyed and recreated in order to make use of the new key.
+  This will be done one at a time, until all Machines have been handled.
+* BYOH instances must be updated by the user, such that the new public key is present within the authorized_keys file.
+  You are free to remove the previous key. If the new key is not authorized, WMCO will not be able to access any BYOH
+  nodes. **Upgrade and Node removal functionality will not function properly until this step is complete.**
+
 ### Configuring BYOH (Bring Your Own Host) Windows instances
 WARNING: This is not a fully developed feature. Use at your own risk.
 
