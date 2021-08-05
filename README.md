@@ -41,13 +41,14 @@ Some important things to note:
 ### Configuring BYOH (Bring Your Own Host) Windows instances
 WARNING: This is not a fully developed feature. Use at your own risk.
 
+### Instance Pre-requisites
+Any Windows instances that are to be attached to the cluster as a node must fulfill these [pre-requisites](docs/byoh-instance-pre-requisites.md).
+
+### Adding instances
 A ConfigMap named `windows-instances` must be created in the WMCO namespace, describing the instances that should be
 joined to a cluster. The required information to configure an instance is:
 * An address to SSH into the instance with. This can be a DNS name or an ipv4 address.
-* An administrator user with the [private key](#create-a-private-key-secret) set as an authorized SSH key. This must
-  be done within the Windows instance by the user.
-
-Each instance described in the ConfigMap must have the Docker container runtime installed.
+* The name of the administrator user set up as part of the [instance pre-requisites](#instance-pre-requisites).
 
 Each entry in the data section of the ConfigMap should be formatted with the address as the key, and a value with the
 format of username=\<username\>. Please see the example below:
