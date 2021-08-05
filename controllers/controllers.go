@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
-	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -48,20 +48,20 @@ type instanceReconciler struct {
 // ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
 // defined by the current version of WMCO. If labelsToApply/annotationsToApply is not nil, the node will have the
 // specified annotations and/or labels applied to it.
-func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.InstanceInfo, labelsToApply, annotationsToApply map[string]string) error {
-	if instance == nil {
+func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Info, labelsToApply, annotationsToApply map[string]string) error {
+	if instanceInfo == nil {
 		return errors.New("instance cannot be nil")
 	}
 
 	// Instance is up to date, do nothing
-	if instance.UpToDate() {
+	if instanceInfo.UpToDate() {
 		// Instance being up to date indicates that node object is present with the version annotation
-		r.log.Info("instance is up to date", "node", instance.Node.GetName(), "version",
-			instance.Node.GetAnnotations()[metadata.VersionAnnotation])
+		r.log.Info("instance is up to date", "node", instanceInfo.Node.GetName(), "version",
+			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation])
 		return nil
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
+	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instanceInfo, r.signer,
 		labelsToApply, annotationsToApply)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
@@ -69,10 +69,10 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.Instan
 
 	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
 	// configured again.
-	if instance.UpgradeRequired() {
+	if instanceInfo.UpgradeRequired() {
 		// Instance requiring an upgrade indicates that node object is present with the version annotation
-		r.log.Info("instance requires upgrade", "node", instance.Node.GetName(), "version",
-			instance.Node.GetAnnotations()[metadata.VersionAnnotation], "expected version", version.Get())
+		r.log.Info("instance requires upgrade", "node", instanceInfo.Node.GetName(), "version",
+			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation], "expected version", version.Get())
 		if err := nc.Deconfigure(); err != nil {
 			return err
 		}
@@ -83,7 +83,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instance *instances.Instan
 
 // instanceFromNode returns an instance object for the given node. Requires a username that can be used to SSH into the
 // instance to be annotated on the node.
-func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instances.InstanceInfo, error) {
+func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, error) {
 	usernameAnnotation := node.Annotations[UsernameAnnotation]
 	if usernameAnnotation == "" {
 		return nil, errors.New("node is missing valid username annotation")
@@ -104,7 +104,7 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instances.Insta
 		return nil, errors.Wrapf(err, "unable to decrypt username annotation for node %s", node.Name)
 	}
 
-	return instances.NewInstanceInfo(addr, username, "", node), nil
+	return instance.NewInfo(addr, username, "", node), nil
 }
 
 // GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
