@@ -1,4 +1,4 @@
-package instances
+package instance
 
 import (
 	"testing"
@@ -14,17 +14,17 @@ import (
 func TestUpToDate(t *testing.T) {
 	testCases := []struct {
 		name        string
-		input       InstanceInfo
+		input       Info
 		expectedOut bool
 	}{
 		{
 			name:        "No associated Node",
-			input:       InstanceInfo{Node: nil},
+			input:       Info{Node: nil},
 			expectedOut: false,
 		},
 		{
 			name: "Version annotation missing",
-			input: InstanceInfo{
+			input: Info{
 				Node: &core.Node{
 					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{"wrong-annotation": version.Get()}},
 				},
@@ -33,7 +33,7 @@ func TestUpToDate(t *testing.T) {
 		},
 		{
 			name: "Version annotation mismatch",
-			input: InstanceInfo{
+			input: Info{
 				Node: &core.Node{
 					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{metadata.VersionAnnotation: "incorrect"}},
 				},
@@ -42,7 +42,7 @@ func TestUpToDate(t *testing.T) {
 		},
 		{
 			name: "Version annotation correct",
-			input: InstanceInfo{
+			input: Info{
 				Node: &core.Node{
 					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{metadata.VersionAnnotation: version.Get()}},
 				},
@@ -61,17 +61,17 @@ func TestUpToDate(t *testing.T) {
 func TestUpgradeRequired(t *testing.T) {
 	testCases := []struct {
 		name        string
-		input       InstanceInfo
+		input       Info
 		expectedOut bool
 	}{
 		{
 			name:        "No associated Node",
-			input:       InstanceInfo{Node: nil},
+			input:       Info{Node: nil},
 			expectedOut: false,
 		},
 		{
 			name: "Version annotation missing",
-			input: InstanceInfo{
+			input: Info{
 				Node: &core.Node{
 					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{"wrong-annotation": version.Get()}},
 				},
@@ -80,7 +80,7 @@ func TestUpgradeRequired(t *testing.T) {
 		},
 		{
 			name: "Version annotation mismatch",
-			input: InstanceInfo{
+			input: Info{
 				Node: &core.Node{
 					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{metadata.VersionAnnotation: "incorrect"}},
 				},
@@ -89,7 +89,7 @@ func TestUpgradeRequired(t *testing.T) {
 		},
 		{
 			name: "Version annotation correct",
-			input: InstanceInfo{
+			input: Info{
 				Node: &core.Node{
 					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{metadata.VersionAnnotation: version.Get()}},
 				},

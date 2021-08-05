@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 )
 
 const (
@@ -121,35 +121,35 @@ func TestAddressesEqual(t *testing.T) {
 	testCases := []struct {
 		name        string
 		nodeName    string
-		instances   []*instances.InstanceInfo
+		instances   []*instance.Info
 		output      bool
 		expectedErr bool
 	}{
 		{
 			name:        "instance IP matches node name",
 			nodeName:    "localhost",
-			instances:   []*instances.InstanceInfo{{Address: "127.0.0.1", Username: "username=core"}},
+			instances:   []*instance.Info{{Address: "127.0.0.1", Username: "username=core"}},
 			output:      true,
 			expectedErr: false,
 		},
 		{
 			name:        "instance DNS matches node name",
 			nodeName:    "localhost",
-			instances:   []*instances.InstanceInfo{{Address: "localhost", Username: "username=core"}},
+			instances:   []*instance.Info{{Address: "localhost", Username: "username=core"}},
 			output:      true,
 			expectedErr: false,
 		},
 		{
 			name:        "instance DNS not matching node name",
 			nodeName:    "localhost",
-			instances:   []*instances.InstanceInfo{{Address: "invalid", Username: "username=core"}},
+			instances:   []*instance.Info{{Address: "invalid", Username: "username=core"}},
 			output:      false,
 			expectedErr: false,
 		},
 		{
 			name:        "instance IP not matching node name",
 			nodeName:    "newhost",
-			instances:   []*instances.InstanceInfo{{Address: "127.0.0.1", Username: "username=core"}},
+			instances:   []*instance.Info{{Address: "127.0.0.1", Username: "username=core"}},
 			output:      false,
 			expectedErr: false,
 		},
