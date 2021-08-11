@@ -10,10 +10,13 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/version"
 )
 
 // instanceReconciler contains everything needed to perform actions on a Windows instance
@@ -93,4 +96,43 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
 	return nc.Deconfigure()
+}
+
+// windowsNodePredicate returns a predicate which filters out all node objects that are not Windows nodes.
+// If BYOH is true, only BYOH nodes will be allowed through, else no BYOH nodes will be allowed.
+func windowsNodePredicate(byoh bool) predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			if e.Object.GetLabels()[core.LabelOSStable] != "windows" {
+				return false
+			}
+			if (byoh && e.Object.GetAnnotations()[BYOHAnnotation] != "true") ||
+				(!byoh && e.Object.GetAnnotations()[BYOHAnnotation] == "true") {
+				return false
+			}
+			if e.Object.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() {
+				return true
+			}
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			if e.ObjectNew.GetLabels()[core.LabelOSStable] != "windows" {
+				return false
+			}
+			if (byoh && e.ObjectNew.GetAnnotations()[BYOHAnnotation] != "true") ||
+				(!byoh && e.ObjectNew.GetAnnotations()[BYOHAnnotation] == "true") {
+				return false
+			}
+			if e.ObjectNew.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() ||
+				e.ObjectNew.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] !=
+					e.ObjectOld.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] {
+				return true
+			}
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+	}
+
 }

@@ -14,26 +14,34 @@ import (
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 )
 
-// reconfigurationTest tests that the correct behavior occurs when a previously configured Machine is configured
-// again. In practice, this exact scenario should not happen, however it simulates a similar scenario where a Machine
-// was almost completely configured, an error occurred, and the Machine is requeued. This is a scenario that should be
+// reconfigurationTest tests that the correct behavior occurs when a previously configured instance is configured
+// again. In practice, this exact scenario should not happen, however it simulates a similar scenario where an instance
+// was almost completely configured, an error occurred, and the instance is requeued. This is a scenario that should be
 // expected to be ran into often enough, for reasons such as network instability. For that reason this test is warranted.
 func reconfigurationTest(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
-	nodes, err := testCtx.listFullyConfiguredWindowsNodes(false)
+	machineNodes, err := testCtx.listFullyConfiguredWindowsNodes(false)
+	require.NoError(t, err)
+	byohNodes, err := testCtx.listFullyConfiguredWindowsNodes(true)
 	require.NoError(t, err)
 
-	// Remove the version annotation of one of the nodes
+	// Remove the version annotation of one of each type of node
 	// Forward slash within a path is escaped as '~1'
 	escapedVersionAnnotation := strings.Replace(nc.VersionAnnotation, "/", "~1", -1)
 	patchData := fmt.Sprintf("[{\"op\": \"remove\", \"path\": \"/metadata/annotations/%s\"}]", escapedVersionAnnotation)
-	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), nodes[0].Name, types.JSONPatchType,
+	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), machineNodes[0].Name, types.JSONPatchType,
+		[]byte(patchData), metav1.PatchOptions{})
+	require.NoError(t, err)
+	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), byohNodes[0].Name, types.JSONPatchType,
 		[]byte(patchData), metav1.PatchOptions{})
 	require.NoError(t, err)
 
-	// The Windows node should eventually be returned to the state we expect it to be in
+	// The Windows nodes should eventually be returned to the state we expect them to be in
 	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
-	assert.NoError(t, err, "error waiting for Windows nodes to be reconfigured")
+	assert.NoError(t, err, "error waiting for Windows Machine nodes to be reconfigured")
+
+	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	assert.NoError(t, err, "error waiting for Windows BYOH nodes to be reconfigured")
 }
