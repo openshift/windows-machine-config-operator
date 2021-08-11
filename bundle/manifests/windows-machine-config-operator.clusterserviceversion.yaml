@@ -23,10 +23,10 @@ spec:
   description: |-
     ### Introduction
     The Windows Machine Config Operator configures Windows Machines into nodes, enabling Windows container workloads to
-    be run on OCP clusters. The operator is configured to watch for Machines with a `machine.openshift.io/os-id: Windows`
-    label. You can initiate the process by creating a MachineSet that uses a Windows image with the Docker
-    container runtime installed. The operator completes all the necessary steps to configure the underlying VM so that it can join
-    the cluster as a worker node.
+    be run on OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/latest/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
+    or by specifying existing instances through a [ConfigMap](https://docs.openshift.com/container-platform/latest/windows_containers/configuring-byoh-windows-instance.html)
+    Through either method, the Windows instance to be configured must have the Docker container runtime installed. The operator
+    completes all the necessary steps to configure the underlying VM so that it can join the cluster as a worker node.
 
     Usage of this operator requires a Red Hat OpenShift subscription. Users looking to deploy Windows containers workloads in
     production clusters should acquire a subscription before attempting to install this operator. Users without a subscription
@@ -34,8 +34,8 @@ spec:
 
     ### Pre-requisites
     * A Red Hat OpenShift subscription
-    * OCP 4.7 cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
-    * [vSphere prequisites](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/vsphere-prerequisites.md)
+    * OCP 4.8 cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
+    * [WMCO prerequisites](https://docs.openshift.com/container-platform/4.8/windows_containers/understanding-windows-container-workloads.html#wmco-prerequisites__understanding-windows-container-workloads)
 
     ### Usage
     Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
