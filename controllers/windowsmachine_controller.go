@@ -27,6 +27,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -250,10 +251,10 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 			return ctrl.Result{}, errors.Wrapf(err, "could not get node associated with machine %s", machine.GetName())
 		}
 
-		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; present {
+		if _, present := node.Annotations[metadata.VersionAnnotation]; present {
 			// If either the version annotation doesn't match the current operator version, or the private key used
 			// to configure the machine is out of date, the machine should be deleted
-			if node.Annotations[nodeconfig.VersionAnnotation] != version.Get() ||
+			if node.Annotations[metadata.VersionAnnotation] != version.Get() ||
 				node.Annotations[nodeconfig.PubKeyHashAnnotation] != nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
 				log.Info("deleting machine")
 				deletionAllowed, err := r.isAllowedDeletion(machine)
@@ -269,7 +270,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 				}
 				return ctrl.Result{}, r.deleteMachine(machine)
 			}
-			log.Info("machine has current version", "version", node.Annotations[nodeconfig.VersionAnnotation])
+			log.Info("machine has current version", "version", node.Annotations[metadata.VersionAnnotation])
 			// version annotation exists with a valid value, node is fully configured.
 			// configure Prometheus when we have already configured Windows Nodes. This is required to update Endpoints object if
 			// it gets reverted when the operator pod restarts.
@@ -376,7 +377,7 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		username = "Administrator"
 	}
 
-	if err := r.configureInstance(instances.NewInstanceInfo(ipAddress, username, hostname), nil); err != nil {
+	if err := r.ensureInstanceIsUpToDate(instances.NewInstanceInfo(ipAddress, username, hostname, nil), nil); err != nil {
 		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
 
@@ -471,7 +472,7 @@ func (r *WindowsMachineReconciler) isWindowsMachineHealthy(machine *mapi.Machine
 	if err != nil {
 		return false
 	}
-	_, present := node.Annotations[nodeconfig.VersionAnnotation]
+	_, present := node.Annotations[metadata.VersionAnnotation]
 	if !present {
 		return false
 	}

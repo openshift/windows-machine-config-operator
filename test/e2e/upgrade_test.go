@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 )
 
 const (
@@ -89,20 +89,24 @@ func (tc *testContext) configureUpgradeTest() error {
 		return err
 	}
 
-	// tamper version annotation on nodes configured by the Machine controller
+	// tamper version annotation on all nodes
 	machineNodes, err := tc.listFullyConfiguredWindowsNodes(false)
 	if err != nil {
-		return errors.Wrap(err, "error getting list of fully configured nodes")
+		return errors.Wrap(err, "error getting list of fully configured Machine nodes")
+	}
+	byohNodes, err := tc.listFullyConfiguredWindowsNodes(true)
+	if err != nil {
+		return errors.Wrap(err, "error getting list of fully configured BYOH nodes")
 	}
 
-	for _, node := range machineNodes {
-		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
+	for _, node := range append(machineNodes, byohNodes...) {
+		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.VersionAnnotation, "badVersion")
 		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
 			[]byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			return err
 		}
-		log.Printf("Node Annotation changed to %v", node.Annotations[nc.VersionAnnotation])
+		log.Printf("Node Annotation changed to %v", node.Annotations[metadata.VersionAnnotation])
 	}
 
 	// Scale up the WMCO deployment to 1
