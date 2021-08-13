@@ -1,4 +1,4 @@
-package instances
+package instance
 
 import (
 	core "k8s.io/api/core/v1"
@@ -7,8 +7,8 @@ import (
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
-// InstanceInfo represents a host that is meant to be joined to the cluster
-type InstanceInfo struct {
+// Info represents a instance that is meant to be joined to the cluster
+type Info struct {
 	// Address is the network address of the instance
 	Address string
 	// Username is the name of a user that can be ssh'd into.
@@ -19,14 +19,14 @@ type InstanceInfo struct {
 	Node *core.Node
 }
 
-// NewInstanceInfo returns a new instanceInfo. newHostname being set means that the instance's hostname should be
+// NewInfo returns a new Info. newHostname being set means that the instance's hostname should be
 // changed. An empty value is a no-op.
-func NewInstanceInfo(address, username, newHostname string, node *core.Node) *InstanceInfo {
-	return &InstanceInfo{Address: address, Username: username, NewHostname: newHostname, Node: node}
+func NewInfo(address, username, newHostname string, node *core.Node) *Info {
+	return &Info{Address: address, Username: username, NewHostname: newHostname, Node: node}
 }
 
 // UpToDate returns true if the instance was configured by the current WMCO version
-func (i *InstanceInfo) UpToDate() bool {
+func (i *Info) UpToDate() bool {
 	if i.Node == nil {
 		return false
 	}
@@ -35,7 +35,7 @@ func (i *InstanceInfo) UpToDate() bool {
 }
 
 // UpgradeRequired returns true if the instance needs to go through the upgrade process
-func (i *InstanceInfo) UpgradeRequired() bool {
+func (i *Info) UpgradeRequired() bool {
 	// instance being up to date implies instance is fully upgraded
 	if i.UpToDate() {
 		return false

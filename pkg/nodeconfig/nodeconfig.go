@@ -22,7 +22,7 @@ import (
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
-	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
@@ -91,7 +91,8 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
 func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
-	instance *instances.InstanceInfo, signer ssh.Signer, additionalLabels, additionalAnnotations map[string]string) (*nodeConfig, error) {
+	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
+	additionalAnnotations map[string]string) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -112,9 +113,9 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 			"creating new node config")
 	}
 
-	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instance.Address))
+	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
 	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
-		instance, signer)
+		instanceInfo, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}

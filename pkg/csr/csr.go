@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -174,7 +174,7 @@ func (a *Approver) validateNodeName(nodeName string) (bool, error) {
 // validateWithHostName returns true if the node name given matches the host name for any of the instances
 // provided in the instance list. If a match is found, it also validates if the node name complies with the DNS
 // RFC1123 naming convention for internet hosts.
-func (a *Approver) validateWithHostName(nodeName string, windowsInstances []*instances.InstanceInfo) (bool, error) {
+func (a *Approver) validateWithHostName(nodeName string, windowsInstances []*instance.Info) (bool, error) {
 	// Create a new signer using the private key secret
 	instanceSigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: a.namespace,
 		Name: secrets.PrivateKeySecret}, a.client)
@@ -287,13 +287,13 @@ func hasUsages(csr *certificates.CertificateSigningRequest, usages []certificate
 
 // matchesHostname returns true if given node name matches with host name of any of the instances present
 // in the given instance list
-func matchesHostname(nodeName string, windowsInstances []*instances.InstanceInfo,
+func matchesHostname(nodeName string, windowsInstances []*instance.Info,
 	instanceSigner ssh.Signer) (bool, error) {
-	for _, instance := range windowsInstances {
-		hostName, err := findHostName(instance, instanceSigner)
+	for _, instanceInfo := range windowsInstances {
+		hostName, err := findHostName(instanceInfo, instanceSigner)
 		if err != nil {
 			return false, errors.Wrapf(err, "unable to find host name for instance with address %s",
-				instance.Address)
+				instanceInfo.Address)
 		}
 		// check if the instance host name matches node name
 		if strings.Contains(hostName, nodeName) {
@@ -304,8 +304,8 @@ func matchesHostname(nodeName string, windowsInstances []*instances.InstanceInfo
 }
 
 // findHostName returns the actual host name of the instance by running the 'hostname' command
-func findHostName(instance *instances.InstanceInfo, instanceSigner ssh.Signer) (string, error) {
-	win, err := windows.New("", "", instance, instanceSigner)
+func findHostName(instanceInfo *instance.Info, instanceSigner ssh.Signer) (string, error) {
+	win, err := windows.New("", "", instanceInfo, instanceSigner)
 	if err != nil {
 		return "", errors.Wrap(err, "error instantiating Windows instance")
 	}
@@ -319,13 +319,13 @@ func findHostName(instance *instances.InstanceInfo, instanceSigner ssh.Signer) (
 
 // matchesDNS returns true if the node name passed matches with the instance address of any of the instances present
 // in the given instance list. If the address found is an IP address, we do a reverse lookup for the DNS address.
-func matchesDNS(nodeName string, windowsInstances []*instances.InstanceInfo) (bool, error) {
-	for _, instance := range windowsInstances {
+func matchesDNS(nodeName string, windowsInstances []*instance.Info) (bool, error) {
+	for _, instanceInfo := range windowsInstances {
 		// reverse lookup the instance if the address is an IP address
-		if parseAddr := net.ParseIP(instance.Address); parseAddr != nil {
-			dnsAddresses, err := net.LookupAddr(instance.Address)
+		if parseAddr := net.ParseIP(instanceInfo.Address); parseAddr != nil {
+			dnsAddresses, err := net.LookupAddr(instanceInfo.Address)
 			if err != nil {
-				return false, errors.Wrapf(err, "failed to lookup DNS for IP %s", instance.Address)
+				return false, errors.Wrapf(err, "failed to lookup DNS for IP %s", instanceInfo.Address)
 			}
 			for _, dns := range dnsAddresses {
 				if strings.Contains(dns, nodeName) {
@@ -333,7 +333,7 @@ func matchesDNS(nodeName string, windowsInstances []*instances.InstanceInfo) (bo
 				}
 			}
 		} else { // direct match if it is a DNS address
-			if strings.Contains(instance.Address, nodeName) {
+			if strings.Contains(instanceInfo.Address, nodeName) {
 				return true, nil
 			}
 		}
