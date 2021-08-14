@@ -8,7 +8,7 @@ import (
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 )
 
 func TestParse(t *testing.T) {
@@ -17,7 +17,7 @@ func TestParse(t *testing.T) {
 		name        string
 		input       map[string]string
 		nodeList    *core.NodeList
-		expectedOut []*instances.InstanceInfo
+		expectedOut []*instance.Info
 		expectedErr bool
 	}{
 		{
@@ -52,21 +52,21 @@ func TestParse(t *testing.T) {
 			name:        "valid dns address",
 			input:       map[string]string{"localhost": "username=core"},
 			nodeList:    &core.NodeList{},
-			expectedOut: []*instances.InstanceInfo{{Address: "localhost", Username: "core"}},
+			expectedOut: []*instance.Info{{Address: "localhost", Username: "core"}},
 			expectedErr: false,
 		},
 		{
 			name:        "valid ip address",
 			input:       map[string]string{"127.0.0.1": "username=core"},
 			nodeList:    &core.NodeList{},
-			expectedOut: []*instances.InstanceInfo{{Address: "127.0.0.1", Username: "core"}},
+			expectedOut: []*instance.Info{{Address: "127.0.0.1", Username: "core"}},
 			expectedErr: false,
 		},
 		{
 			name:        "valid dns and ip addresses with no nodes",
 			input:       map[string]string{"localhost": "username=core", "127.0.0.1": "username=Admin"},
 			nodeList:    &core.NodeList{},
-			expectedOut: []*instances.InstanceInfo{{Address: "localhost", Username: "core"}, {Address: "127.0.0.1", Username: "Admin"}},
+			expectedOut: []*instance.Info{{Address: "localhost", Username: "core"}, {Address: "127.0.0.1", Username: "Admin"}},
 			expectedErr: false,
 		},
 		{
@@ -86,7 +86,7 @@ func TestParse(t *testing.T) {
 					},
 				},
 			},
-			expectedOut: []*instances.InstanceInfo{
+			expectedOut: []*instance.Info{
 				{Address: "127.0.0.1", Username: "Admin", Node: nil},
 				{Address: "localhost", Username: "core", Node: nil},
 			},
@@ -119,7 +119,7 @@ func TestParse(t *testing.T) {
 					},
 				},
 			},
-			expectedOut: []*instances.InstanceInfo{
+			expectedOut: []*instance.Info{
 				{Address: "127.0.0.1", Username: "Admin", Node: &core.Node{ObjectMeta: meta.ObjectMeta{Name: "ip-node"},
 					Status: core.NodeStatus{Addresses: []core.NodeAddress{{Address: "127.0.0.1",
 						Type: core.NodeInternalIP}},
