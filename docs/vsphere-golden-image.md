@@ -129,6 +129,17 @@ Install the `docker` container runtime following the [Microsoft's documentation]
 Alternatively, you can run the provided PowerShell script [install-docker.ps1](vsphere_ci/scripts/install-docker.ps1) 
 to programmatically install `docker` in the Windows VM.
 
+### Set up for disconnected network environment
+
+If you plan to use the golden image in an air-gapped or disconnected network environment, you must pre-pull a
+compatible [Pause Image](https://kubernetes.io/docs/setup/production-environment/windows/intro-windows-in-kubernetes/#pause-image)
+container, since it's the only external resource required by Windows Machine Config Bootstrapper (WMCB).
+
+To pre-pull the container image run the following command:
+```bash
+    docker pull mcr.microsoft.com/oss/kubernetes/pause:3.4.1
+ ```
+
 ## 5. Set up incoming connection for container logs
 
 Create a new firewall rule in the Windows VM to allow incoming connections for container logs, usually 
