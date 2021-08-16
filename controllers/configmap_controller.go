@@ -180,19 +180,10 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 		return errors.Wrap(err, "unable to parse hosts from ConfigMap")
 	}
 
-	// For each host, ensure that it is configured into a node. On error of any host joining, return error and requeue.
-	// It is better to return early like this, instead of trying to configure as many nodes as possible in a single
-	// reconcile call, as it simplifies error collection. The order the map is read from is psuedo-random, so the
-	// configuration effort for configurable hosts will not be blocked by a specific host that has issues with
-	// configuration.
-	for _, instance := range instances {
-		err := r.ensureInstanceIsUpToDate(instance, map[string]string{nodeconfig.WorkerLabel: ""},
-			map[string]string{BYOHAnnotation: "true", UsernameAnnotation: instance.Username})
-		if err != nil {
-			r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure",
-				"unable to join instance with address %s to the cluster", instance.Address)
-			return errors.Wrapf(err, "error configuring host with address %s", instance.Address)
-		}
+	// For each instance, ensure that it is configured into a node
+	if err := r.ensureInstancesAreUpToDate(instances); err != nil {
+		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", err.Error())
+		return err
 	}
 
 	// Ensure that only instances currently specified by the ConfigMap are joined to the cluster as nodes
@@ -203,6 +194,22 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	// Once all the proper Nodes are in the cluster, configure the prometheus endpoints.
 	if err := r.prometheusNodeConfig.Configure(); err != nil {
 		return errors.Wrap(err, "unable to configure Prometheus")
+	}
+	return nil
+}
+
+// ensureInstancesAreUpToDate configures all instances that require configuration
+func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.InstanceInfo) error {
+	for _, instance := range instances {
+		err := r.ensureInstanceIsUpToDate(instance, map[string]string{nodeconfig.WorkerLabel: ""},
+			map[string]string{BYOHAnnotation: "true", UsernameAnnotation: instance.Username})
+		if err != nil {
+			// It is better to return early like this, instead of trying to configure as many instances as possible in a
+			// single reconcile call, as it simplifies error collection. The order the map is read from is
+			// psuedo-random, so the configuration effort for configurable hosts will not be blocked by a specific host
+			// that has issues with configuration.
+			return errors.Wrapf(err, "error configuring host with address %s", instance.Address)
+		}
 	}
 	return nil
 }
