@@ -253,7 +253,7 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services
 		// and not print error when the command takes too long to return after removing HNS networks.
 		if !(strings.HasPrefix(cmd, serviceQueryCmd) && strings.HasSuffix(err.Error(), serviceNotFound)) &&
-			!(strings.Contains(err.Error(), cmdExitNoStatus) && strings.HasSuffix(cmd, removeHNSCommand+";")) {
+			!(strings.Contains(err.Error(), cmdExitNoStatus) && strings.HasSuffix(cmd, removeHNSCommand+";\"")) {
 			vm.log.Error(err, "error running", "cmd", cmd, "out", out)
 		}
 		return out, errors.Wrapf(err, "error running %s", cmd)
