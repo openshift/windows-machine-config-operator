@@ -13,8 +13,6 @@ import (
 )
 
 func TestParseInstances(t *testing.T) {
-	r := ConfigMapReconciler{}
-
 	testCases := []struct {
 		name        string
 		input       map[string]string
@@ -136,13 +134,95 @@ func TestParseInstances(t *testing.T) {
 	}
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			out, err := r.parseInstances(test.input, test.nodeList)
+			out, err := parseInstances(test.input, test.nodeList)
 			if test.expectedErr {
 				assert.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
 			assert.ElementsMatch(t, test.expectedOut, out)
+		})
+	}
+}
+
+func TestGetNodeUsername(t *testing.T) {
+	testNode := &core.Node{
+		ObjectMeta: meta.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: core.NodeStatus{
+			Addresses: []core.NodeAddress{
+				{Address: "111.1.1.1", Type: core.NodeInternalIP},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name        string
+		data        map[string]string
+		node        *core.Node
+		expectedOut string
+		expectedErr bool
+	}{
+		{
+			name:        "invalid node",
+			data:        map[string]string{"localhost": "username=core"},
+			node:        nil,
+			expectedOut: "",
+			expectedErr: true,
+		},
+		{
+			name:        "empty map data",
+			data:        map[string]string{},
+			node:        testNode,
+			expectedOut: "",
+			expectedErr: true,
+		},
+		{
+			name:        "bad map data",
+			data:        map[string]string{"localhost": "core"},
+			node:        testNode,
+			expectedOut: "",
+			expectedErr: true,
+		},
+		{
+			name:        "bad map data left hand side",
+			data:        map[string]string{"localhost": "notusername=core"},
+			node:        testNode,
+			expectedOut: "",
+			expectedErr: true,
+		},
+		{
+			name:        "node not in map data",
+			data:        map[string]string{"localhost": "username=core"},
+			node:        testNode,
+			expectedOut: "",
+			expectedErr: true,
+		},
+		{
+			name:        "one entry in map data",
+			data:        map[string]string{"111.1.1.1": "username=core"},
+			node:        testNode,
+			expectedOut: "core",
+			expectedErr: false,
+		},
+		{
+			name:        "multiple entries in map data",
+			data:        map[string]string{"localhost": "username=core", "111.1.1.1": "username=Admin"},
+			node:        testNode,
+			expectedOut: "Admin",
+			expectedErr: false,
+		},
+	}
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			out, err := getNodeUsername(test.data, test.node)
+			if test.expectedErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, test.expectedOut, out)
 		})
 	}
 }
