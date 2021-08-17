@@ -169,7 +169,7 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			return isValidWindowsNode(e.Object, byoh)
 		},
 	}
 
