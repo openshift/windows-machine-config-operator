@@ -797,15 +797,15 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 func (vm *windows) removeHNSNetworks() error {
 	vm.log.Info("removing HNS networks")
 	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
-	cmd := "\"$net0 = Get-HnsNetwork | where { $_.Name -eq '" + BaseOVNKubeOverlayNetwork + "'};" +
-		"$net1 = Get-HnsNetwork | where { $_.Name -eq '" + OVNKubeOverlayNetwork + "'};" +
-		"$net0 | Remove-HnsNetwork;" +
-		"$net1 | Remove-HnsNetwork;\""
-	_, err := vm.Run(cmd, true)
-	// PowerShell returns error waiting without exit status or signal error when the HNS networks are removed.
-	if err != nil && !strings.Contains(err.Error(), cmdExitNoStatus) {
-		return errors.Wrapf(err, "error removing %s and %s required HNS networks",
-			BaseOVNKubeOverlayNetwork, OVNKubeOverlayNetwork)
+	for _, network := range []string{BaseOVNKubeOverlayNetwork, OVNKubeOverlayNetwork} {
+		cmd := "\"Get-HnsNetwork | where { $_.Name -eq '" + network + "'}| Remove-HnsNetwork;\""
+		// PowerShell returns error waiting without exit status or signal error when the OVNKubeOverlayNetwork is removed.
+		if _, err := vm.Run(cmd, true); err != nil && !(network == OVNKubeOverlayNetwork && strings.Contains(err.Error(), cmdExitNoStatus)) {
+			return errors.Wrapf(err, "error removing %s HNS network", network)
+		}
+		if err := vm.Reinitialize(); err != nil {
+			return errors.Wrapf(err, "error reinitializing VM after removing %s HNS network", network)
+		}
 	}
 	return nil
 }
