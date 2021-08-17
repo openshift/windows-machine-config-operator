@@ -149,11 +149,7 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 func windowsNodePredicate(byoh bool) predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			if e.Object.GetLabels()[core.LabelOSStable] != "windows" {
-				return false
-			}
-			if (byoh && e.Object.GetLabels()[BYOHLabel] != "true") ||
-				(!byoh && e.Object.GetLabels()[BYOHLabel] == "true") {
+			if !isValidWindowsNode(e.Object, byoh) {
 				return false
 			}
 			if e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get() {
@@ -162,11 +158,7 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			if e.ObjectNew.GetLabels()[core.LabelOSStable] != "windows" {
-				return false
-			}
-			if (byoh && e.ObjectNew.GetLabels()[BYOHLabel] != "true") ||
-				(!byoh && e.ObjectNew.GetLabels()[BYOHLabel] == "true") {
+			if !isValidWindowsNode(e.ObjectNew, byoh) {
 				return false
 			}
 			if e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation] != version.Get() ||
@@ -181,4 +173,17 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 		},
 	}
 
+}
+
+// isValidWindowsNode returns true if the node object has the Windows label and the BYOH
+// label present for only the BYOH nodes based on the value of the byoh boolean parameter.
+func isValidWindowsNode(o client.Object, byoh bool) bool {
+	if o.GetLabels()[core.LabelOSStable] != "windows" {
+		return false
+	}
+	if (byoh && o.GetLabels()[BYOHLabel] != "true") ||
+		(!byoh && o.GetLabels()[BYOHLabel] == "true") {
+		return false
+	}
+	return true
 }
