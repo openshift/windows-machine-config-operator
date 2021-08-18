@@ -124,10 +124,7 @@ func (c *sshConnectivity) run(cmd string) (string, error) {
 	}()
 
 	out, err := session.CombinedOutput(cmd)
-	if err != nil {
-		return string(out), err
-	}
-	return string(out), nil
+	return string(out), err
 }
 
 // transfer uses FTP to copy the file from the local disk to the remote VM directory, creating the directory if needed
