@@ -22,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -77,7 +78,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 			client:               mgr.GetClient(),
 			k8sclientset:         clientset,
 			clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
-			log:                  ctrl.Log.WithName("controllers").WithName("ConfigMap"),
+			log:                  ctrl.Log.WithName("controllers").WithName("configmap"),
 			watchNamespace:       watchNamespace,
 			recorder:             mgr.GetEventRecorderFor("configmap"),
 			vxlanPort:            clusterConfig.Network().VXLANPort(),
@@ -132,6 +133,7 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 		return errors.Wrap(err, "unable to parse instances from ConfigMap")
 	}
 
+	r.log.Info("processing", "instances in", wiparser.InstanceConfigMap)
 	// For each instance, ensure that it is configured into a node
 	if err := r.ensureInstancesAreUpToDate(instances); err != nil {
 		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", err.Error())
@@ -158,6 +160,8 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.
 	if err != nil {
 		return err
 	}
+	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
+		Namespace: r.watchNamespace}}
 	for _, instance := range instances {
 		encryptedUsername, err := crypto.EncryptToJSONString(instance.Username, privateKeyBytes)
 		if err != nil {
@@ -172,6 +176,8 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.
 			// that has issues with configuration.
 			return errors.Wrapf(err, "error configuring host with address %s", instance.Address)
 		}
+		r.recorder.Eventf(windowsInstances, core.EventTypeNormal, "InstanceSetup",
+			"Configured instance with address %s as a worker node", instance.Address)
 	}
 	return nil
 }
@@ -179,6 +185,8 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.
 // deconfigureInstances removes all BYOH nodes that are not specified in the given instances slice, and
 // deconfigures the instances associated with them. The nodes parameter should be a list of all Windows BYOH nodes.
 func (r *ConfigMapReconciler) deconfigureInstances(instances []*instances.InstanceInfo, nodes *core.NodeList) error {
+	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
+		Namespace: r.watchNamespace}}
 	for _, node := range nodes.Items {
 		// Check for instances associated with this node
 		if hasEntry := hasAssociatedInstance(&node, instances); hasEntry {
@@ -188,6 +196,8 @@ func (r *ConfigMapReconciler) deconfigureInstances(instances []*instances.Instan
 		if err := r.deconfigureInstance(&node); err != nil {
 			return errors.Wrapf(err, "unable to deconfigure instance with node %s", node.GetName())
 		}
+		r.recorder.Eventf(windowsInstances, core.EventTypeNormal, "InstanceTeardown",
+			"Deconfigured node with addresses %v", node.Status.Addresses)
 	}
 	return nil
 }
