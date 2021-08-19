@@ -68,17 +68,18 @@ the network interface and creates the `tools.conf` file.
 
 Install and configure the OpenSSH Server on the Windows virtual machine with automatic startup and key based-authentication.
 See [Microsoft documentation](https://docs.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse)
-to install using PowerShell.
+to install using PowerShell. Given we are setting up SSH access for an administrator, please follow the
+[Microsoft documentation](https://docs.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement#administrative-user)
+to deploy the public key. This public key must corresspond to private key present in the [secret](../README.md#create-a-private-key-secret).
 
-Alternatively, the provided PowerShell script [install-openssh.ps1](vsphere_ci/scripts/install-openssh.ps1) aims to 
-programmatically install and configure the OpenSSH Server with the public key file from section [Add the Administrator 
-Public Key](#add-the-administrator-public-key). For example, you can run the following command:
+Alternatively, you can use the PowerShell script [install-openssh.ps1](vsphere_ci/scripts/install-openssh.ps1) to programmatically 
+install and configure the OpenSSH Server:
 
-```
+```powershell
     ./install-openssh.ps1 <path/to/public_key_file>
 ```
 
-where, `<path/to/public_key_file>` is the path to the public key file corresponding to the [private key.](../README.md#create-a-private-key-secret)
+where, `<path/to/public_key_file>` is the path to the public key file corresponding to the private key.
 
 Ensure the SSH service is running and that it will start on boot by running the following PowerShell command:
 
@@ -101,30 +102,9 @@ In case no firewall rule exist, you must create it by running the following Powe
     New-NetFirewallRule -DisplayName 'OpenSSH Server (sshd)' -LocalPort 22 -Enabled True -Direction Inbound -Protocol TCP -Action Allow 
 ```
 
-### Add the Administrator Public Key
-
-This section provides an overview of how to use key-based authentication with OpenSSH server, similar to Linux 
-environments commonly setup of public-key/private-key pairs to drive authentication without passwords. Key pairs refer 
-to the public and private key files that are used by certain authentication protocols.
-
-**Important**: You need to have OpenSSH Server installed first. Please see [Set up SSH](#3-set-up-ssh).
-
-#### Private key generation
-
-To use key-based authentication, you first need to generate public/private key pairs. 
-
-As the private key file let's reuse the exiting [the secret](../README.md#create-a-private-key-secret) created while 
-installing WMCO, along with the corresponding public key file.
-
-#### Deploying the public key
-
-The contents of the public key file needs to be placed on the Windows VM as a text file called 
-`administrators_authorized_keys` in the *C:\ProgramData\ssh\\* directory to allow administration access via SSH, as 
-describe by the [Microsoft documentation.](https://docs.microsoft.com/en-us/windows-server/administration/openssh/openssh_keymanagement#administrative-user) 
-
 ## 4. Set up the container runtime
 
-Install the `docker` container runtime following the [Microsoft's documentation](https://docs.microsoft.com/en-us/virtualization/windowscontainers/quick-start/set-up-environment?tabs=Windows-Server).
+Install the `docker` container runtime following the [Microsoft documentation](https://docs.microsoft.com/en-us/virtualization/windowscontainers/quick-start/set-up-environment?tabs=Windows-Server).
 
 Alternatively, you can run the provided PowerShell script [install-docker.ps1](vsphere_ci/scripts/install-docker.ps1) 
 to programmatically install `docker` in the Windows VM.
@@ -144,10 +124,17 @@ To deploy the Windows VM as a reusable image, you have to first generalize the V
 such as installed drivers. Running the `sysprep` command with a *unattend* answer file generalizes the image and 
 makes it ready for future deployments, maintaining all the changes needed for the WMCO installation. 
 
-You can find an example [unattend.xml](unattend.xml) file in this repository. It is just an example and, it **should 
-not** be used directly. You must customize the example to fit your needs.
+A reference [unattend.xml](unattend.xml) file is provided; it **cannot** be used directly. You must customize it
+replacing the `MyPassword` placeholder with the desired password for the Administrator account; it prevents the built-in
+Administrator account from having a blank password by default. It's recommended to follow the [Microsoft best 
+practices for choosing the password.](https://docs.microsoft.com/en-us/windows/security/threat-protection/security-policy-settings/password-must-meet-complexity-requirements)
 
-To execute the `sysprep` command use:
+Please note that, the `ComputerName` value in the [unattend.xml](unattend.xml) file must follow the
+[Kubernetes' names specification](https://kubernetes.io/docs/concepts/overview/working-with-objects/names). The latter,
+also applies to Guest OS customization performed on the resulting template while creating new VMs.
+
+Before executing the `sysprep` command, clone the VM and then run `sysprep` command in the cloned VM. To execute
+the `sysprep` command use:
 
 ```cmd
     C:\Windows\System32\Sysprep\sysprep.exe /generalize /oobe /shutdown /unattend:<path/to/unattend.xml>
@@ -158,13 +145,21 @@ where `<path/to/unattend.xml>` is the path to the customized answer file.
 Note: There is [a limit](https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/sysprep--generalize--a-windows-installation#limits-on-how-many-times-you-can-run-sysprep)
 on how many times you can run the `sysprep` command.
 
-## 7. Set up the virtual machine golden image
+## 7. Set up the virtual machine template
 
 Once the `sysprep` command completes the Windows virtual machine will power off. 
 
-You **must not** use this Windows virtual machine anymore. 
+You **must not** use or power on this virtual machine anymore.
 
-Add the cloned Windows virtual machine as a template in the [machineset](../README.md#configuring-windows-instances-provisioned-through-machinesets).
+Next, you need to convert this virtual machine, in Power-Off status, to a Template as shown in Figure 1.
+
+|![Convert VM to Template](images/vcenter-vm-to-template.png)|
+|:---|
+|Figure 1. Steps to convert a VM to Template in vCenter|
+
+## 8. Using the virtual machine template
+
+In order to use the recently created template, enter the template name in the [machineset](../README.md#configuring-windows-instances-provisioned-through-machinesets).
 
 ```yaml
     apiVersion: machine.openshift.io/v1beta1
@@ -173,11 +168,8 @@ Add the cloned Windows virtual machine as a template in the [machineset](../READ
       template:
         spec:
           providerSpec:
-            template: <Cloned Windows Virtual Machine>
+            template: <Windows Virtual Machine Template Name>
 ```
-
-If you want to update the virtual machine golden image, make the changes in the original Windows virtual machine, 
-clone it and run `sysprep` command again.
 
 ## Supporting information
 
