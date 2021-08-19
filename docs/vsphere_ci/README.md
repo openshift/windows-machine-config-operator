@@ -33,6 +33,7 @@ bastion host and has the following files:
     - authorized_keys
     - autounattend.xml
     - install-vm-tools.cmd
+    - configure-vm-tools.ps1
     - install-openssh.ps1
     - install-docker.ps1
     - install-firewall-rules.ps1
@@ -45,6 +46,7 @@ The [autounattend.xml](scripts/autounattend.xml) file must be edited to update t
 `WindowsPassword` with a user provided password. Then, it executes the following steps:
 
 - Runs `install-vm-tools.cmd` script which installs VMWare tools
+- Runs `configure-vm-tools.ps1` script which configures VMWare tools
 - Runs `install-openssh.ps1` script which installs and configures OpenSSH Server
 - Runs `install-docker.ps1` script which installs Docker
 - Runs `install-firewall-rules.ps1` script which configures the firewall rules
@@ -63,18 +65,20 @@ In order to use the provided [reference build file](build.json) as a valid confi
 adjust the following variables:
 
 - `<vmtools-iso-path>` Path where VMWare Tools ISO is available in vSphere datacenter
-  (default: `[] /usr/lib/vmware/isoimages/windows.iso`)  
+  (default: `[] /usr/lib/vmware/isoimages/windows.iso`)
 - `<os-iso-path>` Path where Windows OS ISO is available in vSphere datacenter
 - `<vm-template-folder>` Name of the folder where the VM templates will be created by Packer
 - `<vm-template-name>` Name of the VM template that will be created by Packer
-- `<vm-elevated-password>` Password for the Windows virtual machine Administrator user
+- `<vm-elevated-password>` Password for the Windows virtual machine Administrator user,
+  must match with the password entered in the [autounattend.xml](scripts/autounattend.xml) script
 - `<vsphere-cluster>` Name of the vSphere cluster
 - `<vsphere-datacenter>` Name of the vSphere datacenter
 - `<vsphere-datastore>` Name of the vSphere datastore
-- `<vsphere-network>` The vSphere environment network
-- `<vsphere-server>` The vSphere environment server URL
-- `<vsphere-user>` The vSphere username to login
-- `<vsphere-password>` The vSphere password to login
+- `<vsphere-server>` The vCenter server hostname, with no scheme (`https://`) nor path separators (`/`).
+  For example: `vcenter.example.com`.
+  See [Packer documentation](https://www.packer.io/docs/builders/vsphere/vsphere-iso) for more information
+- `<vsphere-user>` The vCenter username
+- `<vsphere-password>` The vCenter password
 
 ## Building with Packer
 
@@ -103,23 +107,11 @@ Packer mounts the Windows iso and starts the VM.
 - [autounattend.xml](scripts/autounattend.xml) is a special file in Windows which gets automatically executed once the
 VM starts. You can specify all the commands that needs to executed on first boot.
   
-## Post Packer build
+## Using the virtual machine template
 
-Once the Packer build completes successfully, the template must be converted to a VM.
-
-![Convert to VM](images/VMConversion.png)
-
-In order to use the recently converted Windows virtual machine, add it as a template in a [machine set](../../README.md#configuring-windows-instances-provisioned-through-machinesets).
-
-```yaml
-    apiVersion: machine.openshift.io/v1beta1
-    kind: MachineSet
-    spec:
-      template:
-        spec:
-          providerSpec:
-            template: <Windows Virtual Machine Name>
-```
+Once the Packer build completes successfully, a new VM template with name `<vm-template-name>` will be created in
+the folder `<vm-template-folder>` following the [Variables](#variables). The later VM template is ready to use as a
+golden image, as described in [the documentation](../vsphere-golden-image.md#8-using-the-virtual-machine-template).
 
 ## References
 - [Sample autounattend](https://github.com/guillermo-musumeci/packer-vsphere-iso-windows/blob/master/win2019.base/win2019.base.json)
