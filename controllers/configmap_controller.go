@@ -37,7 +37,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
-	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -153,7 +153,7 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 }
 
 // ensureInstancesAreUpToDate configures all instances that require configuration
-func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.InstanceInfo) error {
+func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instance.Info) error {
 	// Get private key to encrypt instance usernames
 	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
@@ -162,29 +162,29 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instances.
 	}
 	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
 		Namespace: r.watchNamespace}}
-	for _, instance := range instances {
-		encryptedUsername, err := crypto.EncryptToJSONString(instance.Username, privateKeyBytes)
+	for _, instanceInfo := range instances {
+		encryptedUsername, err := crypto.EncryptToJSONString(instanceInfo.Username, privateKeyBytes)
 		if err != nil {
-			return errors.Wrapf(err, "unable to encrypt username for instance %s", instance.Address)
+			return errors.Wrapf(err, "unable to encrypt username for instance %s", instanceInfo.Address)
 		}
-		err = r.ensureInstanceIsUpToDate(instance, map[string]string{BYOHLabel: "true", nodeconfig.WorkerLabel: ""},
+		err = r.ensureInstanceIsUpToDate(instanceInfo, map[string]string{BYOHLabel: "true", nodeconfig.WorkerLabel: ""},
 			map[string]string{UsernameAnnotation: encryptedUsername})
 		if err != nil {
 			// It is better to return early like this, instead of trying to configure as many instances as possible in a
 			// single reconcile call, as it simplifies error collection. The order the map is read from is
 			// psuedo-random, so the configuration effort for configurable hosts will not be blocked by a specific host
 			// that has issues with configuration.
-			return errors.Wrapf(err, "error configuring host with address %s", instance.Address)
+			return errors.Wrapf(err, "error configuring host with address %s", instanceInfo.Address)
 		}
 		r.recorder.Eventf(windowsInstances, core.EventTypeNormal, "InstanceSetup",
-			"Configured instance with address %s as a worker node", instance.Address)
+			"Configured instance with address %s as a worker node", instanceInfo.Address)
 	}
 	return nil
 }
 
 // deconfigureInstances removes all BYOH nodes that are not specified in the given instances slice, and
 // deconfigures the instances associated with them. The nodes parameter should be a list of all Windows BYOH nodes.
-func (r *ConfigMapReconciler) deconfigureInstances(instances []*instances.InstanceInfo, nodes *core.NodeList) error {
+func (r *ConfigMapReconciler) deconfigureInstances(instances []*instance.Info, nodes *core.NodeList) error {
 	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
 		Namespace: r.watchNamespace}}
 	for _, node := range nodes.Items {
@@ -203,10 +203,10 @@ func (r *ConfigMapReconciler) deconfigureInstances(instances []*instances.Instan
 }
 
 // hasAssociatedInstance returns true if the given node is associated with an instance in the given slice
-func hasAssociatedInstance(node *core.Node, instances []*instances.InstanceInfo) bool {
-	for _, instance := range instances {
+func hasAssociatedInstance(node *core.Node, instances []*instance.Info) bool {
+	for _, instanceInfo := range instances {
 		for _, nodeAddress := range node.Status.Addresses {
-			if instance.Address == nodeAddress.Address {
+			if instanceInfo.Address == nodeAddress.Address {
 				return true
 			}
 		}

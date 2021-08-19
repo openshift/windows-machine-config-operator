@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
-	"github.com/openshift/windows-machine-config-operator/pkg/instances"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -376,7 +376,7 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		username = "Administrator"
 	}
 
-	err := r.ensureInstanceIsUpToDate(instances.NewInstanceInfo(ipAddress, username, hostname, nil), nil, nil)
+	err := r.ensureInstanceIsUpToDate(instance.NewInfo(ipAddress, username, hostname, nil), nil, nil)
 	if err != nil {
 		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
