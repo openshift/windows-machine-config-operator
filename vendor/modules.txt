@@ -487,7 +487,7 @@ k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/netutil
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/cli-runtime v0.21.1
+# k8s.io/cli-runtime v0.21.3
 k8s.io/cli-runtime/pkg/genericclioptions
 k8s.io/cli-runtime/pkg/printers
 k8s.io/cli-runtime/pkg/resource
@@ -644,7 +644,7 @@ k8s.io/klog/v2
 # k8s.io/kube-openapi v0.0.0-20210421082810-95288971da7e
 k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/util/proto/validation
-# k8s.io/kubectl v0.21.1
+# k8s.io/kubectl v0.21.3
 ## explicit
 k8s.io/kubectl/pkg/cmd/util
 k8s.io/kubectl/pkg/drain
