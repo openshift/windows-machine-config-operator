@@ -2,6 +2,7 @@ package windows
 
 import (
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 	"time"
@@ -524,6 +525,32 @@ func (vm *windows) transferFiles() error {
 	return nil
 }
 
+// getIPV4Address returns an ipv4 address of the host. An error will be thrown if the windows object was created with an
+// ipv6 address or a DNS address that does not resolve to an ipv4 address.
+func (vm *windows) getIPV4Address() (string, error) {
+	if ip := net.ParseIP(vm.instance.Address); ip != nil {
+		// Address is either an ipv6 or ipv4 address
+		ipv4 := ip.To4()
+		if ipv4 == nil {
+			return "", errors.Errorf("error using IP %s: only ipv4 addresses are supported", ip.String())
+		}
+		return ipv4.String(), nil
+	}
+
+	// DNS address in this case
+	ips, err := net.LookupIP(vm.instance.Address)
+	if err != nil {
+		return "", errors.Wrapf(err, "lookup of address %s failed", vm.instance.Address)
+	}
+	// Get first ipv4 address returned
+	for _, returnedIP := range ips {
+		if returnedIP.To4() != nil {
+			return returnedIP.String(), nil
+		}
+	}
+	return "", errors.Errorf("%s does not resolve to an ipv4 address", vm.instance.Address)
+}
+
 // runBootstrapper copies the bootstrapper and runs the code on the remote Windows VM
 func (vm *windows) runBootstrapper() error {
 	err := vm.initializeBootstrapperFiles()
@@ -532,6 +559,13 @@ func (vm *windows) runBootstrapper() error {
 	}
 	wmcbInitializeCmd := k8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
 		"worker.ign --kubelet-path " + k8sDir + "kubelet.exe"
+	if vm.instance.SetNodeIP {
+		nodeIP, err := vm.getIPV4Address()
+		if err != nil {
+			return err
+		}
+		wmcbInitializeCmd += " --node-ip=" + nodeIP
+	}
 
 	out, err := vm.Run(wmcbInitializeCmd, true)
 	vm.log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
