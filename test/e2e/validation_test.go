@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -81,6 +82,67 @@ func testNodeMetadata(t *testing.T) {
 				"public key annotation applied to Linux node %s", node.GetName())
 		}
 	})
+}
+
+// testNodeIPArg tests that the node-ip kubelet arg is set only when platform type == none
+func testNodeIPArg(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+	nodeIPArg := "--node-ip"
+
+	// Nodes configured from Machines should never have the node-ip arg set
+	t.Run("machines", func(t *testing.T) {
+		if numberOfMachineNodes == 0 {
+			t.Skip("0 expected machine nodes")
+		}
+		for _, node := range gc.machineNodes {
+			out, err := tc.getKubeletServiceBinPath(&node)
+			require.NoError(t, err, "error getting kubelet binpath")
+			assert.NotContains(t, out, nodeIPArg,
+				"node-ip arg should not be set for nodes configured from Machines")
+		}
+	})
+
+	// BYOH nodes should only have the node-ip arg set when platform type == 'none'
+	t.Run("byoh", func(t *testing.T) {
+		if numberOfBYOHNodes == 0 {
+			t.Skip("0 expected byoh nodes")
+		}
+		for _, node := range gc.byohNodes {
+			t.Run(node.GetName(), func(t *testing.T) {
+				out, err := tc.getKubeletServiceBinPath(&node)
+				require.NoError(t, err, "error getting kubelet binpath")
+
+				// node-ip flag should only be set when platform type == 'none'
+				if tc.CloudProvider.GetType() == config.NonePlatformType {
+					// TODO: Check the actual value of this and compare to the value stored in the ConfigMap
+					//       https://issues.redhat.com/browse/WINC-671
+					assert.Contains(t, out, nodeIPArg, "node-ip arg must be present on platform 'none'")
+				} else {
+					assert.NotContains(t, out, nodeIPArg,
+						"node-ip arg should not be set for platforms other than 'none'")
+				}
+			})
+		}
+
+	})
+}
+
+// getKubeletServiceBinPath returns the binpath of the kubelet service. This includes the kubelet executable path and
+// arguments.
+func (tc *testContext) getKubeletServiceBinPath(node *core.Node) (string, error) {
+	command := remotePowerShellCmdPrefix +
+		" Get-WmiObject win32_service | Where-Object {$_.Name -eq \\\"kubelet\\\"}| select PathName |" +
+		" ConvertTo-Csv\""
+	addr, err := controllers.GetAddress(node.Status.Addresses)
+	if err != nil {
+		return "", errors.Wrap(err, "error getting node address")
+	}
+	out, err := tc.runSSHJob("kubelet-query", command, addr)
+	if err != nil {
+		return "", errors.Wrap(err, "error querying kubelet service")
+	}
+	return out, nil
 }
 
 // getInstanceID gets the instanceID of VM for a given cloud provider ID

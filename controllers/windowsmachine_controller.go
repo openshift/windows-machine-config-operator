@@ -53,11 +53,6 @@ const (
 // WindowsMachineReconciler is used to create a controller which manages Windows Machine objects
 type WindowsMachineReconciler struct {
 	instanceReconciler
-	// platform indicates the cloud on which OpenShift cluster is running
-	// TODO: Remove this once we figure out how to be provider agnostic. This is specific to proper usage of userData
-	// 		 in vSphere
-	//		 https://bugzilla.redhat.com/show_bug.cgi?id=1876987
-	platform oconfig.PlatformType
 }
 
 // NewWindowsMachineReconciler returns a pointer to a WindowsMachineReconciler
@@ -89,8 +84,8 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 			recorder:             mgr.GetEventRecorderFor("windowsmachine"),
 			watchNamespace:       watchNamespace,
 			prometheusNodeConfig: pc,
+			platform:             clusterConfig.Platform(),
 		},
-		platform: clusterConfig.Platform(),
 	}, nil
 }
 
@@ -380,7 +375,7 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		username = "Administrator"
 	}
 
-	err := r.ensureInstanceIsUpToDate(instance.NewInfo(ipAddress, username, hostname, nil), nil, nil)
+	err := r.ensureInstanceIsUpToDate(instance.NewInfo(ipAddress, username, hostname, false, nil), nil, nil)
 	if err != nil {
 		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
