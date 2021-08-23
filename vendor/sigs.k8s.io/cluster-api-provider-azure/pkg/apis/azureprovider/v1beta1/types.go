@@ -401,11 +401,25 @@ type Image struct {
 type VMIdentity string
 
 type OSDisk struct {
-	OSType      string      `json:"osType"`
-	ManagedDisk ManagedDisk `json:"managedDisk"`
-	DiskSizeGB  int32       `json:"diskSizeGB"`
+	OSType      string                `json:"osType"`
+	ManagedDisk ManagedDiskParameters `json:"managedDisk"`
+	DiskSizeGB  int32                 `json:"diskSizeGB"`
 }
 
-type ManagedDisk struct {
-	StorageAccountType string `json:"storageAccountType"`
+type ManagedDiskParameters struct {
+	StorageAccountType string                       `json:"storageAccountType"`
+	DiskEncryptionSet  *DiskEncryptionSetParameters `json:"diskEncryptionSet,omitempty"`
+}
+
+type DiskEncryptionSetParameters struct {
+	ID string `json:"id,omitempty"`
+}
+
+// SecurityProfile specifies the Security profile settings for a
+// virtual machine or virtual machine scale set.
+type SecurityProfile struct {
+	// This field indicates whether Host Encryption should be enabled
+	// or disabled for a virtual machine or virtual machine scale
+	// set. Default is disabled.
+	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }

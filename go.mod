@@ -3,17 +3,18 @@ module github.com/openshift/windows-machine-config-operator
 go 1.16
 
 replace (
-	sigs.k8s.io/cluster-api-provider-aws => github.com/openshift/cluster-api-provider-aws v0.2.1-0.20200520125206-5e266b553d8e // This is coming from machine-api repo
-	sigs.k8s.io/cluster-api-provider-azure => github.com/openshift/cluster-api-provider-azure v0.1.0-alpha.3.0.20200902180535-72169c58a81f
+	// These are coming from the machine-api repo
+	sigs.k8s.io/cluster-api-provider-aws => github.com/openshift/cluster-api-provider-aws v0.2.1-0.20201125052318-b85a18cbf338
+	sigs.k8s.io/cluster-api-provider-azure => github.com/openshift/cluster-api-provider-azure v0.0.0-20210209143830-3442c7a36c1e
 )
 
 require (
-	github.com/aws/aws-sdk-go v1.27.0
+	github.com/aws/aws-sdk-go v1.35.20
 	github.com/go-logr/logr v0.4.0
-	github.com/openshift/api v0.0.0-20210521075222-e273a339932a
+	github.com/openshift/api v0.0.0-20210713130143-be21c6cb1bea
 	github.com/openshift/client-go v0.0.0-20210521082421-73d9475a9142
-	github.com/openshift/library-go v0.0.0-20210521084623-7392ea9b02ca
-	github.com/openshift/machine-api-operator v0.2.1-0.20200722104429-f4f9b84df9b7
+	github.com/openshift/library-go v0.0.0-20210727084322-8a96c0a97c06
+	github.com/openshift/machine-api-operator v0.2.1-0.20210811215339-a6349c0280cc
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
