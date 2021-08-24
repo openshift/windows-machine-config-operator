@@ -491,7 +491,7 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 							},
 						},
 					},
-					NodeSelector: map[string]string{"beta.kubernetes.io/os": "windows"},
+					NodeSelector: map[string]string{"kubernetes.io/os": "windows"},
 				},
 			},
 		},
@@ -546,7 +546,7 @@ func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
 
 // createLinuxJob creates a job which will run the provided command with a ubi8 image
 func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.Job, error) {
-	linuxNodeSelector := map[string]string{"beta.kubernetes.io/os": "linux"}
+	linuxNodeSelector := map[string]string{"kubernetes.io/os": "linux"}
 	return tc.createJob(name, ubi8Image, command, linuxNodeSelector, []v1.Toleration{}, nil)
 }
 
@@ -570,7 +570,7 @@ func (tc *testContext) getWinCurlerCommand(winServerIP string) []string {
 
 // createWindowsServerJob creates a job which will run the provided command with a Windows Server image
 func (tc *testContext) createWindowsServerJob(name string, command []string, affinity *v1.Affinity) (*batchv1.Job, error) {
-	windowsNodeSelector := map[string]string{"beta.kubernetes.io/os": "windows"}
+	windowsNodeSelector := map[string]string{"kubernetes.io/os": "windows"}
 	windowsTolerations := []v1.Toleration{{Key: "os", Value: "Windows", Effect: v1.TaintEffectNoSchedule}}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations, affinity)
