@@ -89,7 +89,7 @@ func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus
 		OSDisk: azureprovider.OSDisk{
 			OSType:     "Windows",
 			DiskSizeGB: defaultOSDiskSizeGB,
-			ManagedDisk: azureprovider.ManagedDisk{
+			ManagedDisk: azureprovider.ManagedDiskParameters{
 				StorageAccountType: defaultStorageAccountType,
 			},
 		},
