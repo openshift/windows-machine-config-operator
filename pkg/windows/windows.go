@@ -73,6 +73,11 @@ const (
 	// representing ERROR_SERVICE_DOES_NOT_EXIST
 	// referenced: https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
 	serviceNotFound = "status 1060"
+	// cmdExitNoStatus is part of the error message returned when a command takes too long to report status back to
+	// PowerShell.
+	cmdExitNoStatus = "command exited without exit status or exit signal"
+	// removeHNSCommand is the Windows command used to remove HNS network.
+	removeHNSCommand = "Remove-HnsNetwork"
 )
 
 var (
@@ -245,8 +250,10 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 
 	out, err := vm.interact.run(cmd)
 	if err != nil {
-		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services.
-		if !(strings.HasPrefix(cmd, serviceQueryCmd) && strings.HasSuffix(err.Error(), serviceNotFound)) {
+		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services
+		// and not print error when the command takes too long to return after removing HNS networks.
+		if !(strings.HasPrefix(cmd, serviceQueryCmd) && strings.HasSuffix(err.Error(), serviceNotFound)) &&
+			!(strings.Contains(err.Error(), cmdExitNoStatus) && strings.HasSuffix(cmd, removeHNSCommand+";")) {
 			vm.log.Error(err, "error running", "cmd", cmd, "out", out)
 		}
 		return out, errors.Wrapf(err, "error running %s", cmd)
@@ -305,6 +312,9 @@ func (vm *windows) Deconfigure() error {
 	}
 	if err := vm.removeDirectories(); err != nil {
 		return errors.Wrap(err, "unable to remove created directories")
+	}
+	if err := vm.removeHNSNetworks(); err != nil {
+		return errors.Wrap(err, "unable to remove required HNS networks")
 	}
 	return nil
 }
@@ -781,6 +791,23 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 	// make the output normalized with the go sha256 library
 	sha := strings.ToLower(strings.TrimSpace(out))
 	return &payload.FileInfo{Path: path, SHA256: sha}, nil
+}
+
+// removeHNSNetworks remove the HNS networks created by the hybrid-overlay configuration process
+func (vm *windows) removeHNSNetworks() error {
+	vm.log.Info("removing HNS networks")
+	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
+	cmd := "\"$net0 = Get-HnsNetwork | where { $_.Name -eq '" + BaseOVNKubeOverlayNetwork + "'};" +
+		"$net1 = Get-HnsNetwork | where { $_.Name -eq '" + OVNKubeOverlayNetwork + "'};" +
+		"$net0 | Remove-HnsNetwork;" +
+		"$net1 | Remove-HnsNetwork;\""
+	_, err := vm.Run(cmd, true)
+	// PowerShell returns error waiting without exit status or signal error when the HNS networks are removed.
+	if err != nil && !strings.Contains(err.Error(), cmdExitNoStatus) {
+		return errors.Wrapf(err, "error removing %s and %s required HNS networks",
+			BaseOVNKubeOverlayNetwork, OVNKubeOverlayNetwork)
+	}
+	return nil
 }
 
 // Generic helper methods
