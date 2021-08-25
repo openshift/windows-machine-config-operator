@@ -106,6 +106,9 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			return r.isValidMachine(e.ObjectNew) && isWindowsMachine(e.ObjectNew.GetLabels())
 		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return r.isValidMachine(e.Object) && isWindowsMachine(e.Object.GetLabels())
+		},
 		// process delete event
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return r.isValidMachine(e.Object) && isWindowsMachine(e.Object.GetLabels())
