@@ -313,8 +313,8 @@ func (vm *windows) Deconfigure() error {
 	if err := vm.removeDirectories(); err != nil {
 		return errors.Wrap(err, "unable to remove created directories")
 	}
-	if err := vm.removeHNSNetworks(); err != nil {
-		return errors.Wrap(err, "unable to remove required HNS networks")
+	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
+		return errors.Wrap(err, "unable to ensure HNS networks are removed")
 	}
 	return nil
 }
@@ -793,19 +793,39 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 	return &payload.FileInfo{Path: path, SHA256: sha}, nil
 }
 
-// removeHNSNetworks remove the HNS networks created by the hybrid-overlay configuration process
-func (vm *windows) removeHNSNetworks() error {
+// ensureHNSNetworksAreRemoved ensures the HNS networks created by the hybrid-overlay configuration process are removed
+// by repeatedly checking and retrying the removal of each network.
+func (vm *windows) ensureHNSNetworksAreRemoved() error {
 	vm.log.Info("removing HNS networks")
+	var err error
 	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
 	for _, network := range []string{BaseOVNKubeOverlayNetwork, OVNKubeOverlayNetwork} {
-		cmd := "\"Get-HnsNetwork | where { $_.Name -eq '" + network + "'}| Remove-HnsNetwork;\""
-		// PowerShell returns error waiting without exit status or signal error when the OVNKubeOverlayNetwork is removed.
-		if _, err := vm.Run(cmd, true); err != nil && !(network == OVNKubeOverlayNetwork && strings.Contains(err.Error(), cmdExitNoStatus)) {
-			return errors.Wrapf(err, "error removing %s HNS network", network)
+		err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+			if err := vm.removeHNSNetwork(network); err != nil {
+				return false, errors.Wrapf(err, "error removing %s HNS network", network)
+			}
+			if err := vm.Reinitialize(); err != nil {
+				return false, errors.Wrapf(err, "error reinitializing VM after removing %s HNS network", network)
+			}
+			out, err := vm.Run(getHNSNetworkCmd(network), true)
+			if err != nil {
+				return false, errors.Wrapf(err, "error waiting for %s HNS network", network)
+			}
+			return !strings.Contains(out, network), nil
+		})
+		if err != nil {
+			return errors.Wrapf(err, "failed ensuring %s HNS network is removed", network)
 		}
-		if err := vm.Reinitialize(); err != nil {
-			return errors.Wrapf(err, "error reinitializing VM after removing %s HNS network", network)
-		}
+	}
+	return nil
+}
+
+// removeHNSNetwork removes the given HNS network.
+func (vm *windows) removeHNSNetwork(networkName string) error {
+	cmd := getHNSNetworkCmd(networkName) + " | Remove-HnsNetwork;\""
+	// PowerShell returns error waiting without exit status or signal error when the OVNKubeOverlayNetwork is removed.
+	if out, err := vm.Run(cmd, true); err != nil && !(networkName == OVNKubeOverlayNetwork && strings.Contains(err.Error(), cmdExitNoStatus)) {
+		return errors.Wrapf(err, "failed to remove %s HNS network with output: %s", networkName, out)
 	}
 	return nil
 }
@@ -820,4 +840,9 @@ func mkdirCmd(dirName string) string {
 // rmDirCmd returns the Windows command to recursively remove a directory if it exists
 func rmDirCmd(dirName string) string {
 	return "if exist " + dirName + " rmdir " + dirName + " /s /q"
+}
+
+// getHNSNetworkCmd returns the Windows command to get HNS network by name
+func getHNSNetworkCmd(networkName string) string {
+	return "\"Get-HnsNetwork | where { $_.Name -eq '" + networkName + "'}"
 }
