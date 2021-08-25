@@ -149,13 +149,8 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 func windowsNodePredicate(byoh bool) predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			if !isValidWindowsNode(e.Object, byoh) {
-				return false
-			}
-			if e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get() {
-				return true
-			}
-			return false
+			return isValidWindowsNode(e.Object, byoh) &&
+				e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get()
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			if !isValidWindowsNode(e.ObjectNew, byoh) {
@@ -167,6 +162,10 @@ func windowsNodePredicate(byoh bool) predicate.Funcs {
 				return true
 			}
 			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return isValidWindowsNode(e.Object, byoh) &&
+				e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get()
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return isValidWindowsNode(e.Object, byoh)

@@ -230,6 +230,9 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			return r.isValidConfigMap(e.ObjectNew)
 		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return r.isValidConfigMap(e.Object)
+		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return r.isValidConfigMap(e.Object)
 		},
