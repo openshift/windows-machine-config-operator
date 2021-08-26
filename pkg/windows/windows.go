@@ -167,8 +167,6 @@ type Windows interface {
 
 // windows implements the Windows interface
 type windows struct {
-	// address is the network address of the Windows instance
-	address string
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
 	// the OpenShift worker ignition file.
 	workerIgnitionEndpoint string
@@ -178,8 +176,8 @@ type windows struct {
 	interact connectivity
 	// vxlanPort is the custom VXLAN port
 	vxlanPort string
-	// if hostName is set, the hostname of the VM will be set to its value when the VM is being configured.
-	hostName string
+	// instance contains information about the Windows instance to interact with
+	instance *instance.Info
 	log      logr.Logger
 }
 
@@ -193,11 +191,10 @@ func New(workerIgnitionEndpoint, vxlanPort string, instanceInfo *instance.Info, 
 	}
 
 	return &windows{
-			address:                instanceInfo.Address,
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			vxlanPort:              vxlanPort,
-			hostName:               instanceInfo.NewHostname,
+			instance:               instanceInfo,
 			log:                    log,
 		},
 		nil
@@ -206,7 +203,7 @@ func New(workerIgnitionEndpoint, vxlanPort string, instanceInfo *instance.Info, 
 // Interface methods
 
 func (vm *windows) Address() string {
-	return vm.address
+	return vm.instance.Address
 }
 
 func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
@@ -325,7 +322,7 @@ func (vm *windows) Configure() error {
 		return errors.Wrap(err, "unable to stop required services")
 	}
 	// Set the hostName of the Windows VM if needed
-	if vm.hostName != "" {
+	if vm.instance.NewHostname != "" {
 		if err := vm.ensureHostName(); err != nil {
 			return err
 		}
@@ -473,12 +470,12 @@ func (vm *windows) isHostNameChangeNeeded() (bool, error) {
 	if err != nil {
 		return false, errors.Wrapf(err, "error getting the host name, with stdout %s", out)
 	}
-	return !strings.Contains(out, vm.hostName), nil
+	return !strings.Contains(out, vm.instance.NewHostname), nil
 }
 
 // changeHostName changes the hostName of the Windows VM to match the expected value
 func (vm *windows) changeHostName() error {
-	changeHostNameCommand := "Rename-Computer -NewName " + vm.hostName + " -Force -Restart"
+	changeHostNameCommand := "Rename-Computer -NewName " + vm.instance.NewHostname + " -Force -Restart"
 	out, err := vm.Run(changeHostNameCommand, true)
 	if err != nil {
 		vm.log.Info("changing host name failed", "command", changeHostNameCommand, "output", out)
