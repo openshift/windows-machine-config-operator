@@ -28,10 +28,13 @@ get_spec() {
   local az=$2
   local provider=$3
 
-  machineSetName="$infraID"-windows-worker-"$az"
-  if [ "$provider" = "azure" ]; then
-    # Shorter name for azure as VMs with more than 15 characters in name does not come up
-    machineSetName="winworker"
+  # set machineset name, short name for Azure and vSphere due to
+  # the limit in the number of characters for VM name
+  machineSetName="winworker"
+  # check provider
+  if [ "$provider" = "aws" ]; then
+    # improve machineset name for aws provider
+    machineSetName="$infraID"-"$machineSetName"-"$az"
   fi
 
   cat <<EOF
@@ -67,7 +70,7 @@ EOF
 get_aws_ms() {
 
   if [ "$#" -lt 4 ]; then
-    error-exit incorrect parameter count for get_spec $#
+    error-exit incorrect parameter count for get_aws_ms $#
   fi
 
   local infraID=$1
