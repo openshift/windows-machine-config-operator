@@ -48,6 +48,7 @@ import (
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
 
 const (
 	// BYOHLabel is a label that should be applied to all Windows nodes not associated with a Machine.
