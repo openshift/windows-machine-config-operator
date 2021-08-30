@@ -148,7 +148,7 @@ func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
 
 // Configure configures the Windows VM to make it a Windows worker node
 func (nc *nodeConfig) Configure() error {
-	drainHelper := &drain.Helper{Ctx: context.TODO(), Client: nc.k8sclientset}
+	drainHelper := nc.newDrainHelper()
 	// If we find a node  it implies that we are reconfiguring and we should cordon the node
 	if err := nc.setNode(true); err == nil {
 		// Make a best effort to cordon the node until it is fully configured
@@ -358,6 +358,38 @@ func (nc *nodeConfig) configureCNI() error {
 	return nil
 }
 
+// ErrWriter is a wrapper to enable error-level logging inside kubectl drainer implementation
+type ErrWriter struct {
+	log logr.Logger
+}
+
+func (ew ErrWriter) Write(p []byte) (n int, err error) {
+	// log error
+	ew.log.Error(err, string(p))
+	return len(p), nil
+}
+
+// OutWriter is a wrapper to enable debug-level logging inside kubectl drainer implementation
+type OutWriter struct {
+	log logr.Logger
+}
+
+func (ow OutWriter) Write(p []byte) (n int, err error) {
+	// log debug
+	ow.log.V(1).Info(string(p))
+	return len(p), nil
+}
+
+// newDrainHelper returns new drain.Helper instance
+func (nc *nodeConfig) newDrainHelper() *drain.Helper {
+	return &drain.Helper{
+		Ctx:    context.TODO(),
+		Client: nc.k8sclientset,
+		ErrOut: &ErrWriter{nc.log},
+		Out:    &OutWriter{nc.log},
+	}
+}
+
 // Deconfigure removes the node from the cluster, reverting changes made by the Configure function
 func (nc *nodeConfig) Deconfigure() error {
 	// Set nc.node to the existing node
@@ -366,7 +398,7 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	// Cordon and drain the Node before we interact with the instance
-	drainHelper := &drain.Helper{Ctx: context.TODO(), Client: nc.k8sclientset}
+	drainHelper := nc.newDrainHelper()
 	if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
 		return errors.Wrapf(err, "unable to cordon node %s", nc.node.GetName())
 	}
