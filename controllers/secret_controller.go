@@ -35,6 +35,8 @@ import (
 
 const (
 	userDataSecret = "windows-user-data"
+	// SecretController is the name of this controller in logs and other outputs.
+	SecretController = "secret"
 )
 
 // NewSecretReconciler returns a pointer to a SecretReconciler
@@ -42,7 +44,7 @@ func NewSecretReconciler(mgr manager.Manager, watchNamespace string) *SecretReco
 	reconciler := &SecretReconciler{
 		client:         mgr.GetClient(),
 		scheme:         mgr.GetScheme(),
-		log:            ctrl.Log.WithName("controller").WithName("secret"),
+		log:            ctrl.Log.WithName("controller").WithName(SecretController),
 		watchNamespace: watchNamespace}
 	return reconciler
 }
@@ -125,7 +127,7 @@ type SecretReconciler struct {
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) (reconcile.Result, error) {
-	log := r.log.WithValues("secret", request.NamespacedName)
+	log := r.log.WithValues(SecretController, request.NamespacedName)
 
 	keySigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
