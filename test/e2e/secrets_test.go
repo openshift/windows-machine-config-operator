@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"log"
 	"testing"
-	"time"
 
 	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
@@ -22,6 +21,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
@@ -109,7 +109,7 @@ func testUserDataTamper(t *testing.T) {
 			}
 
 			// wait for userData secret creation / update to take effect.
-			err := wait.Poll(5*time.Second, 20*time.Second, func() (done bool, err error) {
+			err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (done bool, err error) {
 				secretInstance, err = tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(), "windows-user-data", meta.GetOptions{})
 				if err != nil {
 					if apierrors.IsNotFound(err) {
