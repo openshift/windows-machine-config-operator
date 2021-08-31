@@ -34,6 +34,11 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
 )
 
+const (
+	// CSRController is the name of this controller in logs and other outputs.
+	CSRController = "certificatesigningrequests"
+)
+
 // certificateSigningRequestsReconciler reconciles a CertificateSigningRequests object
 type certificateSigningRequestsReconciler struct {
 	instanceReconciler
@@ -56,12 +61,12 @@ func NewCertificateSigningRequestsReconciler(mgr manager.Manager, clusterConfig 
 	return &certificateSigningRequestsReconciler{
 		instanceReconciler: instanceReconciler{
 			client:             mgr.GetClient(),
-			log:                ctrl.Log.WithName("controllers").WithName("CertificateSigningRequests"),
+			log:                ctrl.Log.WithName("controllers").WithName(CSRController),
 			k8sclientset:       clientset,
 			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
 			vxlanPort:          "",
 			watchNamespace:     watchNamespace,
-			recorder:           mgr.GetEventRecorderFor("certificateSigningRequests"),
+			recorder:           mgr.GetEventRecorderFor(CSRController),
 		},
 	}, nil
 }
@@ -69,7 +74,7 @@ func NewCertificateSigningRequestsReconciler(mgr manager.Manager, clusterConfig 
 // Reconcile is part of the main kubernetes reconciliation loop which reads that state of the cluster for a
 // CertificateSigningRequests object and aims to move the current state of the cluster closer to the desired state.
 func (r *certificateSigningRequestsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = r.log.WithValues("certificatesigningrequests", req.NamespacedName)
+	_ = r.log.WithValues(CSRController, req.NamespacedName)
 
 	certificateSigningRequest := &certificates.CertificateSigningRequest{}
 	if err := r.client.Get(ctx, req.NamespacedName, certificateSigningRequest); err != nil {
