@@ -59,7 +59,7 @@ while getopts ":m:c:b:st:" opt; do
       fi
       ;;
     \? )
-      echo "Usage: $0 [-n] [-s] [-b] [-t]"
+      echo "Usage: $0 [-m] [-c] [-s] [-b] [-t]"
       exit 0
       ;;
   esac
