@@ -9,12 +9,12 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 )
 
@@ -31,15 +31,69 @@ const (
 	windowsWorkloadTesterJob = "windows-workload-tester"
 )
 
+// getNodeTypeAffinities generate node affinity for non-BYOH and BYOH nodes if present
+func getNodeTypeAffinities() ([]*v1.Affinity, error) {
+	var affinities []*v1.Affinity
+	if gc.numberOfMachineNodes >= 1 {
+		affinityNoByoh, err := getNodeAffinityForLabel(v1.NodeSelectorOpDoesNotExist, controllers.BYOHLabel)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error creating node affinity without BYOH label")
+		}
+		affinities = append(affinities, affinityNoByoh)
+	}
+	if gc.numberOfBYOHNodes >= 1 {
+		affinityByoh, err := getNodeAffinityForLabel(v1.NodeSelectorOpIn, controllers.BYOHLabel, "true")
+		if err != nil {
+			return nil, errors.Wrapf(err, "error creating node affinity for BYOH label")
+		}
+		affinities = append(affinities, affinityByoh)
+	}
+	return affinities, nil
+}
+
+// generateLinuxWorkloadTesterCommand creates a Job to curl Windows webserver every 5 seconds.
+// If the webserver is not accessible for few minutes Curl Windows webserver
+// exit the pod with an error.
+func generateLinuxWorkloadTesterCommand(clusterIP string) []string {
+	return []string{
+		"bash",
+		"-c",
+		" while true;" +
+			" do curl " + clusterIP + ";" +
+			" if [ $? != 0 ]; then" +
+			" sleep 60;" +
+			" curl " + clusterIP + " || exit 1;" +
+			" fi; " +
+			"sleep 5; " +
+			"done"}
+}
+
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
 func upgradeTestSuite(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
-	// test if Windows workloads are running by creating a Job that curls the workloads continuously.
-	testerJob, err := testCtx.deployWindowsWorkloadAndTester()
-	require.NoError(t, err, "error testing Windows workloads")
-	defer testCtx.deleteJob(testerJob.Name)
+	// generate node affinities
+	affinities, err := getNodeTypeAffinities()
+	require.NoError(t, err, "error getting node affinity")
+	// loop affinities to ensure deployed workloads will exclusively run based
+	// on the given affinity, e.g.  BYOH and/or Machine nodes
+	for _, affinity := range affinities {
+		// test if Windows workloads are running by creating a Job that curls the workloads continuously.
+		deployment, err := testCtx.deployWindowsWebServer("win-webserver", affinity)
+		require.NoErrorf(t, err, "error creating Windows Webserver deployment for upgrade test")
+		defer testCtx.deleteDeployment(deployment.Name)
+
+		// create a clusterIP service which can be used to reach the Windows webserver
+		intermediarySVC, err := testCtx.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
+		require.NoErrorf(t, err, "error creating service for deployment %s", deployment.Name)
+		defer testCtx.deleteService(intermediarySVC.Name)
+
+		// create a Job object that continuously curls the webserver every 5 seconds.
+		testerJob, err := testCtx.createLinuxJob(windowsWorkloadTesterJob, generateLinuxWorkloadTesterCommand(intermediarySVC.Spec.ClusterIP))
+		require.NoErrorf(t, err, "error creating linux job %s", windowsWorkloadTesterJob)
+		defer testCtx.deleteJob(testerJob.Name)
+	}
 
 	// apply configuration steps before running the upgrade tests
 	err = testCtx.configureUpgradeTest()
@@ -68,6 +122,7 @@ func testUpgradeVersion(t *testing.T) {
 	// Test if prometheus is reconfigured with ip addresses of newly configured nodes
 	testPrometheus(t)
 
+	// TODO: Fix matching label for jobs. See https://issues.redhat.com/browse/WINC-673
 	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
 	pods, err := testCtx.client.K8s.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(),
 		metav1.ListOptions{FieldSelector: "status.phase=Failed",
@@ -150,34 +205,4 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 	})
 
 	return err
-}
-
-// deployWindowsWorkloadAndTester tests if the Windows Webserver deployment is available.
-// This is achieved by creating a Job object that continuously curls the webserver every 5 seconds.
-func (tc *testContext) deployWindowsWorkloadAndTester() (*batchv1.Job, error) {
-	// Create a Windows Webserver deployment
-	deployment, err := tc.deployWindowsWebServer("win-webserver", nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "error creating Windows Webserver deployment for upgrade test")
-	}
-	defer tc.deleteDeployment(deployment.Name)
-
-	// Create a clusterIP service which can be used to reach the Windows webserver
-	intermediarySVC, err := tc.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create service ")
-	}
-	defer tc.deleteService(intermediarySVC.Name)
-	// Create a Job to curl Windows webserver
-	// Curl Windows webserver every 5 seconds. If the webserver is not accessible for few minutes
-	// exit the pod with an error.
-	command := []string{"bash", "-c",
-		" while true; do curl " + intermediarySVC.Spec.ClusterIP + "; if [ $? != 0 ]; then sleep 60; curl " +
-			intermediarySVC.Spec.ClusterIP + "|| exit 1;" + " fi; sleep 5; done"}
-
-	job, err := tc.createLinuxJob(windowsWorkloadTesterJob, command)
-	if err != nil {
-		return nil, err
-	}
-	return job, nil
 }

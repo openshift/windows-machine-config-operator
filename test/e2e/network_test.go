@@ -344,6 +344,39 @@ func getAffinityForNode(node *v1.Node) (*v1.Affinity, error) {
 	}, nil
 }
 
+// getNodeAffinityForLabel returns a node affinity that matches the associated label key and values for the given
+// operator. `values` equals `nil` suppress the property, useful for `NodeSelectorOpDoesNotExist` operator.
+func getNodeAffinityForLabel(operator v1.NodeSelectorOperator, key string, values ...string) (*v1.Affinity, error) {
+	if operator == "" {
+		return nil, errors.New("operator cannot be empty")
+	}
+	if key == "" {
+		return nil, errors.New("key cannot be empty")
+	}
+	// build match expression
+	expression := v1.NodeSelectorRequirement{
+		Key:      key,
+		Operator: operator,
+	}
+	// use values, if any
+	if values != nil {
+		expression.Values = values
+	}
+	return &v1.Affinity{
+		NodeAffinity: &v1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
+				NodeSelectorTerms: []v1.NodeSelectorTerm{
+					{
+						MatchExpressions: []v1.NodeSelectorRequirement{
+							expression,
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
 // ensureNamespace checks if a namespace with the provided name exists and creates one if it does not
 func (tc *testContext) ensureNamespace(name string) error {
 	// Check if the namespace exists
