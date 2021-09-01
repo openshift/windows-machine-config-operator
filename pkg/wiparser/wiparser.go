@@ -61,7 +61,7 @@ func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.I
 
 		// Get the associated node if the described instance has one
 		node, _ := findNode(address, nodes)
-		instances = append(instances, instance.NewInfo(address, username, "", node))
+		instances = append(instances, instance.NewInfo(address, username, "", false, node))
 	}
 	return instances, nil
 }

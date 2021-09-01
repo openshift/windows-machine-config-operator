@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 
+	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -83,6 +84,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 			recorder:             mgr.GetEventRecorderFor("configmap"),
 			vxlanPort:            clusterConfig.Network().VXLANPort(),
 			prometheusNodeConfig: pc,
+			platform:             clusterConfig.Platform(),
 		},
 	}, nil
 }
@@ -163,6 +165,9 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instance.I
 	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
 		Namespace: r.watchNamespace}}
 	for _, instanceInfo := range instances {
+		// When platform type is none, kubelet will pick a random interface to use for the Node's IP. In that case we
+		// should override that with the IP that the user is providing via the ConfigMap.
+		instanceInfo.SetNodeIP = r.platform == config.NonePlatformType
 		encryptedUsername, err := crypto.EncryptToJSONString(instanceInfo.Username, privateKeyBytes)
 		if err != nil {
 			return errors.Wrapf(err, "unable to encrypt username for instance %s", instanceInfo.Address)
