@@ -135,8 +135,9 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
 type Windows interface {
-	// Address Returns the network address used to configure the Windows instance
-	Address() string
+	// GetIPV4Address returns an ipv4 address of the instance. An error will be thrown if the instance was configured
+	// with an ipv6 address or a DNS address that does not resolve to an ipv4 network address.
+	GetIPV4Address() (string, error)
 	// EnsureFile ensures the given file exists within the specified directory on the Windows VM. The file will be copied
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
@@ -203,8 +204,28 @@ func New(workerIgnitionEndpoint, vxlanPort string, instanceInfo *instance.Info, 
 
 // Interface methods
 
-func (vm *windows) Address() string {
-	return vm.instance.Address
+func (vm *windows) GetIPV4Address() (string, error) {
+	if ip := net.ParseIP(vm.instance.Address); ip != nil {
+		// Address is either an ipv6 or ipv4 address
+		ipv4 := ip.To4()
+		if ipv4 == nil {
+			return "", errors.Errorf("error using IP %s: only ipv4 addresses are supported", ip.String())
+		}
+		return ipv4.String(), nil
+	}
+
+	// DNS address in this case
+	ips, err := net.LookupIP(vm.instance.Address)
+	if err != nil {
+		return "", errors.Wrapf(err, "lookup of address %s failed", vm.instance.Address)
+	}
+	// Get first ipv4 address returned
+	for _, returnedIP := range ips {
+		if returnedIP.To4() != nil {
+			return returnedIP.String(), nil
+		}
+	}
+	return "", errors.Errorf("%s does not resolve to an ipv4 address", vm.instance.Address)
 }
 
 func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
@@ -525,32 +546,6 @@ func (vm *windows) transferFiles() error {
 	return nil
 }
 
-// getIPV4Address returns an ipv4 address of the host. An error will be thrown if the windows object was created with an
-// ipv6 address or a DNS address that does not resolve to an ipv4 address.
-func (vm *windows) getIPV4Address() (string, error) {
-	if ip := net.ParseIP(vm.instance.Address); ip != nil {
-		// Address is either an ipv6 or ipv4 address
-		ipv4 := ip.To4()
-		if ipv4 == nil {
-			return "", errors.Errorf("error using IP %s: only ipv4 addresses are supported", ip.String())
-		}
-		return ipv4.String(), nil
-	}
-
-	// DNS address in this case
-	ips, err := net.LookupIP(vm.instance.Address)
-	if err != nil {
-		return "", errors.Wrapf(err, "lookup of address %s failed", vm.instance.Address)
-	}
-	// Get first ipv4 address returned
-	for _, returnedIP := range ips {
-		if returnedIP.To4() != nil {
-			return returnedIP.String(), nil
-		}
-	}
-	return "", errors.Errorf("%s does not resolve to an ipv4 address", vm.instance.Address)
-}
-
 // runBootstrapper copies the bootstrapper and runs the code on the remote Windows VM
 func (vm *windows) runBootstrapper() error {
 	err := vm.initializeBootstrapperFiles()
@@ -560,7 +555,7 @@ func (vm *windows) runBootstrapper() error {
 	wmcbInitializeCmd := k8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
 		"worker.ign --kubelet-path " + k8sDir + "kubelet.exe"
 	if vm.instance.SetNodeIP {
-		nodeIP, err := vm.getIPV4Address()
+		nodeIP, err := vm.GetIPV4Address()
 		if err != nil {
 			return err
 		}
