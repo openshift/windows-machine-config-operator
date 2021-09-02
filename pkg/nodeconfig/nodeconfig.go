@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
@@ -283,7 +284,12 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 		retryInterval = 10 * time.Second
 		retryTimeout = 30 * time.Second
 	}
-	err := wait.Poll(retryInterval, retryTimeout, func() (bool, error) {
+
+	instanceAddress, err := nc.GetIPV4Address()
+	if err != nil {
+		return err
+	}
+	err = wait.Poll(retryInterval, retryTimeout, func() (bool, error) {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			meta.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
@@ -294,17 +300,13 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 			return false, nil
 		}
 		// get the node with IP address used to configure it
-		for _, node := range nodes.Items {
-			for _, nodeAddress := range node.Status.Addresses {
-				if nc.Address() == nodeAddress.Address {
-					nc.node = &node
-					return true, nil
-				}
-			}
+		if node, found := nodeutil.FindByAddress(instanceAddress, nodes); found {
+			nc.node = node
+			return true, nil
 		}
 		return false, nil
 	})
-	return errors.Wrapf(err, "unable to find node with address %s", nc.Address())
+	return errors.Wrapf(err, "unable to find node with address %s", instanceAddress)
 }
 
 // waitForNodeAnnotation checks if the node object has the given annotation and waits for retry.Interval seconds and
