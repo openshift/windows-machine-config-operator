@@ -273,7 +273,7 @@ func (vm *windows) EnsureRequiredServicesStopped() error {
 	for _, svcName := range RequiredServices {
 		svc := &service{name: svcName}
 		if err := vm.ensureServiceNotRunning(svc); err != nil {
-			return errors.Wrap(err, "could not stop service %d")
+			return errors.Wrapf(err, "could not stop service %s", svcName)
 		}
 	}
 	return nil
