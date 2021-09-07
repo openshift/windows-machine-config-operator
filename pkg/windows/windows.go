@@ -69,10 +69,10 @@ const (
 	remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass "
 	// serviceQueryCmd is the Windows command used to query a service
 	serviceQueryCmd = "sc.exe qc "
-	// serviceNotFound is part of the error message returned when a service does not exist. 1060 is an error code
+	// serviceNotFound is part of the error output returned when a service does not exist. 1060 is an error code
 	// representing ERROR_SERVICE_DOES_NOT_EXIST
 	// referenced: https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
-	serviceNotFound = "status 1060"
+	serviceNotFound = "FAILED 1060"
 	// cmdExitNoStatus is part of the error message returned when a command takes too long to report status back to
 	// PowerShell.
 	cmdExitNoStatus = "command exited without exit status or exit signal"
@@ -271,7 +271,7 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 	if err != nil {
 		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services
 		// and not print error when the command takes too long to return after removing HNS networks.
-		if !(strings.HasPrefix(cmd, serviceQueryCmd) && strings.HasSuffix(err.Error(), serviceNotFound)) &&
+		if !(strings.Contains(cmd, serviceQueryCmd) && strings.Contains(out, serviceNotFound)) &&
 			!(strings.Contains(err.Error(), cmdExitNoStatus) && strings.HasSuffix(cmd, removeHNSCommand+";\"")) {
 			vm.log.Error(err, "error running", "cmd", cmd, "out", out)
 		}
@@ -709,9 +709,9 @@ func (vm *windows) deleteService(svc *service) error {
 
 // serviceExists checks if the given service exists on Windows VM
 func (vm *windows) serviceExists(serviceName string) (bool, error) {
-	_, err := vm.Run(serviceQueryCmd+serviceName, false)
+	out, err := vm.Run(serviceQueryCmd+serviceName, false)
 	if err != nil {
-		if strings.Contains(err.Error(), serviceNotFound) {
+		if strings.Contains(out, serviceNotFound) {
 			return false, nil
 		}
 		return false, err
