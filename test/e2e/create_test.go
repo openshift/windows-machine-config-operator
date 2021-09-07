@@ -38,6 +38,7 @@ func creationTestSuite(t *testing.T) {
 	}
 	t.Run("Node Metadata", testNodeMetadata)
 	t.Run("Services running", testExpectedServicesRunning)
+	t.Run("NodeIP Arg", testNodeIPArg)
 	t.Run("NodeTaint validation", testNodeTaint)
 	t.Run("CSR Validation", func(t *testing.T) { testCSRApproval(t) })
 	t.Run("UserData validation", testUserData)
