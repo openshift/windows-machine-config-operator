@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 )
 
 // InstanceConfigMap is the name of the ConfigMap where VMs to be configured should be described.
@@ -60,7 +61,7 @@ func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.I
 		}
 
 		// Get the associated node if the described instance has one
-		node, _ := findNode(address, nodes)
+		node, _ := nodeutil.FindByAddress(address, nodes)
 		instances = append(instances, instance.NewInfo(address, username, "", false, node))
 	}
 	return instances, nil
@@ -85,19 +86,6 @@ func validateAddress(address string) error {
 		return errors.Errorf("DNS did not resolve to an address")
 	}
 	return nil
-}
-
-// findNode returns a pointer to the node with an address matching the given address and a bool indicating if the node
-// was found or not.
-func findNode(address string, nodes *core.NodeList) (*core.Node, bool) {
-	for _, node := range nodes.Items {
-		for _, nodeAddress := range node.Status.Addresses {
-			if address == nodeAddress.Address {
-				return &node, true
-			}
-		}
-	}
-	return nil, false
 }
 
 // GetNodeUsername retrieves the username associated with the given node from the instance ConfigMap data
