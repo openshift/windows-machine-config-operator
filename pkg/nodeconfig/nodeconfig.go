@@ -297,7 +297,7 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 			return false, nil
 		}
 		// get the node with IP address used to configure it
-		if node, found := nodeutil.FindByAddress(instanceAddress, nodes); found {
+		if node := nodeutil.FindByAddress(instanceAddress, nodes); node != nil {
 			nc.node = node
 			return true, nil
 		}
