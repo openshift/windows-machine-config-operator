@@ -2,7 +2,6 @@ package wiparser
 
 import (
 	"context"
-	"net"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -52,45 +51,20 @@ func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.I
 	// Get information about the instances from each entry. The expected key/value format for each entry is:
 	// <address>: username=<username>
 	for address, data := range instancesData {
-		if err := validateAddress(address); err != nil {
-			return nil, errors.Wrapf(err, "invalid address %s", address)
-		}
 		username, err := extractUsername(data)
 		if err != nil {
 			return instances, errors.Wrapf(err, "unable to get username for %s", address)
 		}
 
-		// Get the associated node if the described instance has one
-		node, _ := nodeutil.FindByAddress(address, nodes)
-
-		instanceInfo, err := instance.NewInfo(address, username, "", false, node)
+		// Create instance info with the associated node if the described instance has one.
+		// Address validation occurs upon construction.
+		instanceInfo, err := instance.NewInfo(address, username, "", false, nodeutil.FindByAddress(address, nodes))
 		if err != nil {
 			return nil, err
 		}
 		instances = append(instances, instanceInfo)
 	}
 	return instances, nil
-}
-
-// validateAddress checks that the given address is either an ipv4 address, or resolves to any ip address
-func validateAddress(address string) error {
-	// first check if address is an IP address
-	if parsedAddr := net.ParseIP(address); parsedAddr != nil {
-		if parsedAddr.To4() != nil {
-			return nil
-		}
-		// if the address parses into an IP but is not ipv4 it must be ipv6
-		return errors.Errorf("ipv6 is not supported")
-	}
-	// Do a check that the DNS provided is valid
-	addressList, err := net.LookupHost(address)
-	if err != nil {
-		return errors.Wrapf(err, "error looking up DNS")
-	}
-	if len(addressList) == 0 {
-		return errors.Errorf("DNS did not resolve to an address")
-	}
-	return nil
 }
 
 // GetNodeUsername retrieves the username associated with the given node from the instance ConfigMap data
