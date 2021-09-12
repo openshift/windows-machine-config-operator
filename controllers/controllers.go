@@ -107,7 +107,7 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, 
 		return nil, errors.Wrapf(err, "unable to decrypt username annotation for node %s", node.Name)
 	}
 
-	return instance.NewInfo(addr, username, "", false, node), nil
+	return instance.NewInfo(addr, username, "", false, node)
 }
 
 // GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
