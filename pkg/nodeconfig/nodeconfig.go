@@ -285,11 +285,8 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 		retryTimeout = 30 * time.Second
 	}
 
-	instanceAddress, err := nc.GetIPV4Address()
-	if err != nil {
-		return err
-	}
-	err = wait.Poll(retryInterval, retryTimeout, func() (bool, error) {
+	instanceAddress := nc.GetIPv4Address()
+	err := wait.Poll(retryInterval, retryTimeout, func() (bool, error) {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			meta.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
