@@ -31,11 +31,10 @@ func TestFindNode(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name          string
-		address       string
-		nodeList      *core.NodeList
-		expectedOut   *core.Node
-		expectedFound bool
+		name        string
+		address     string
+		nodeList    *core.NodeList
+		expectedOut *core.Node
 	}{
 		{
 			name:    "empty node list",
@@ -43,8 +42,7 @@ func TestFindNode(t *testing.T) {
 			nodeList: &core.NodeList{
 				Items: []core.Node{},
 			},
-			expectedOut:   nil,
-			expectedFound: false,
+			expectedOut: nil,
 		},
 		{
 			name:    "not found",
@@ -52,8 +50,7 @@ func TestFindNode(t *testing.T) {
 			nodeList: &core.NodeList{
 				Items: []core.Node{ipNode, dnsNode},
 			},
-			expectedOut:   nil,
-			expectedFound: false,
+			expectedOut: nil,
 		},
 		{
 			name:    "simple happy path",
@@ -61,8 +58,7 @@ func TestFindNode(t *testing.T) {
 			nodeList: &core.NodeList{
 				Items: []core.Node{ipNode},
 			},
-			expectedOut:   &ipNode,
-			expectedFound: true,
+			expectedOut: &ipNode,
 		},
 		{
 			name:    "multiple node happy path",
@@ -70,15 +66,12 @@ func TestFindNode(t *testing.T) {
 			nodeList: &core.NodeList{
 				Items: []core.Node{ipNode, dnsNode},
 			},
-			expectedOut:   &dnsNode,
-			expectedFound: true,
+			expectedOut: &dnsNode,
 		},
 	}
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			node, found := FindByAddress(test.address, test.nodeList)
-
-			assert.Equal(t, test.expectedFound, found)
+			node := FindByAddress(test.address, test.nodeList)
 			assert.Equal(t, test.expectedOut, node)
 		})
 	}
