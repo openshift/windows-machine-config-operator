@@ -212,7 +212,7 @@ func (r *ConfigMapReconciler) deconfigureInstances(instances []*instance.Info, n
 func hasAssociatedInstance(node *core.Node, instances []*instance.Info) bool {
 	for _, instanceInfo := range instances {
 		for _, nodeAddress := range node.Status.Addresses {
-			if instanceInfo.Address == nodeAddress.Address {
+			if instanceInfo.IPv4Address == nodeAddress.Address {
 				return true
 			}
 		}
