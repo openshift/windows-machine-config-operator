@@ -1,8 +1,10 @@
 package vsphere
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/pkg/errors"
@@ -32,10 +34,24 @@ func New(clientset *clusterinfo.OpenShift) (*Provider, error) {
 }
 
 // newVSphereMachineProviderSpec returns a vSphereMachineProviderSpec generated from the inputs, or an error
-func newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSphereMachineProviderSpec, error) {
+func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSphereMachineProviderSpec, error) {
 	if clusterID == "" {
 		return nil, fmt.Errorf("clusterID is empty")
 	}
+	workspace, err := p.getWorkspaceFromExistingMachineSet(clusterID)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("creating machineset provider spec which targets %s\n", workspace.Server)
+
+	// The template is an image which has been properly sysprepped.  The image is derived from an environment variable
+	// defined in the job spec.
+	vmTemplate := os.Getenv("VM_TEMPLATE")
+	if vmTemplate == "" {
+		vmTemplate = "windows-golden-images/windows-server-2004-template"
+	}
+
+	log.Printf("creating machineset based on template %s\n", vmTemplate)
 
 	return &vsphere.VSphereMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
@@ -52,17 +68,38 @@ func newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSphereMachinePro
 		},
 		NumCPUs:           int32(4),
 		NumCoresPerSocket: int32(1),
-		// The template is hardcoded with an image which has been properly sysprepped.
-		// TODO: Find a way to automatically update this with latest image
-		Template: "windows-golden-images/windows-server-2004-template",
-		Workspace: &vsphere.Workspace{
-			Datacenter:   "SDDC-Datacenter",
-			Datastore:    "WorkloadDatastore",
-			Folder:       "/SDDC-Datacenter/vm/" + clusterID,
-			ResourcePool: "/SDDC-Datacenter/host/Cluster-1/Resources",
-			Server:       "vcenter.sddc-44-236-21-251.vmwarevmc.com",
-		},
+		Template:          vmTemplate,
+		Workspace:         workspace,
 	}, nil
+}
+
+// getWorkspaceFromExistingMachineSet returns Workspace from a machineset provisioned during installation
+func (p *Provider) getWorkspaceFromExistingMachineSet(clusterID string) (*vsphere.Workspace, error) {
+	if clusterID == "" {
+		return nil, fmt.Errorf("clusterID is empty")
+	}
+	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-cluster=" + clusterID}
+	machineSets, err := p.oc.Machine.MachineSets("openshift-machine-api").List(context.TODO(), listOptions)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get machinesets")
+	}
+
+	if len(machineSets.Items) == 0 {
+		return nil, errors.Wrap(err, "no matching machinesets found")
+	}
+
+	machineSet := machineSets.Items[0]
+	providerSpecRaw := machineSet.Spec.Template.Spec.ProviderSpec.Value
+	if providerSpecRaw == nil || providerSpecRaw.Raw == nil {
+		return nil, errors.Wrap(err, "no provider spec found")
+	}
+	var providerSpec vsphere.VSphereMachineProviderSpec
+	err = json.Unmarshal(providerSpecRaw.Raw, &providerSpec)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to unmarshal providerSpec")
+	}
+
+	return providerSpec.Workspace, nil
 }
 
 // getNetwork returns the network that needs to be used in the MachineSet
@@ -84,11 +121,11 @@ func getNetwork() string {
 func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
 	clusterID, err := p.oc.GetInfrastructureID()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get cluster id: %v", err)
+		return nil, errors.Wrap(err, "unable to get cluster id")
 	}
 
 	// create new machine provider spec for deploying Windows node
-	providerSpec, err := newVSphereMachineProviderSpec(clusterID)
+	providerSpec, err := p.newVSphereMachineProviderSpec(clusterID)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create new vSphere machine provider spec")
 	}
