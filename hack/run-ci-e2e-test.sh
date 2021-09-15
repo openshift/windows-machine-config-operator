@@ -87,12 +87,11 @@ fi
 
 # OPERATOR_IMAGE defines where the WMCO image to test with is located. If $OPERATOR_IMAGE is already set, use its value.
 # Setting $OPERATOR_IMAGE is required for local testing.
-# In OpenShift CI $IMAGE_FORMAT will be set to a value such as registry.svc.ci.openshift.org/ci-op-<input-hash>/stable:${component}
-# We need to replace ${component} with the name of the WMCO image.
-# The stable namespace is used as it will use the last promoted version when the test is run in an repository other than this one.
-# When running in this repository the image built in the pipeline will be used instead.
-# https://steps.svc.ci.openshift.org/help/ci-operator#release
-OPERATOR_IMAGE=${OPERATOR_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//stable:windows-machine-config-operator-test}}
+# In CI $OPERATOR_IMAGE environment variable is declared through a dependency in test references declared at
+# https://github.com/openshift/release/tree/master/ci-operator/step-registry/windows/e2e/operator/test
+if [[ -z "$OPERATOR_IMAGE" ]]; then
+  error-exit "The OPERATOR_IMAGE environment variable was not found."
+fi
 
 # generate the WMCO binary if we are not running the test through CI. This binary is used to validate WMCO version
 # while running the validation test. For CI, we use different `wmcoPath` based on how we generate the container image.
