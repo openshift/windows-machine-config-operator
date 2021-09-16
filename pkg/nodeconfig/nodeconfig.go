@@ -66,6 +66,28 @@ type nodeConfig struct {
 	additionalLabels map[string]string
 }
 
+// ErrWriter is a wrapper to enable error-level logging inside kubectl drainer implementation
+type ErrWriter struct {
+	log logr.Logger
+}
+
+func (ew ErrWriter) Write(p []byte) (n int, err error) {
+	// log error
+	ew.log.Error(err, string(p))
+	return len(p), nil
+}
+
+// OutWriter is a wrapper to enable debug-level logging inside kubectl drainer implementation
+type OutWriter struct {
+	log logr.Logger
+}
+
+func (ow OutWriter) Write(p []byte) (n int, err error) {
+	// log debug
+	ow.log.V(1).Info(string(p))
+	return len(p), nil
+}
+
 // discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
 func discoverKubeAPIServerEndpoint() (string, error) {
 	cfg, err := crclientcfg.GetConfig()
@@ -356,28 +378,6 @@ func (nc *nodeConfig) configureCNI() error {
 			configFile)
 	}
 	return nil
-}
-
-// ErrWriter is a wrapper to enable error-level logging inside kubectl drainer implementation
-type ErrWriter struct {
-	log logr.Logger
-}
-
-func (ew ErrWriter) Write(p []byte) (n int, err error) {
-	// log error
-	ew.log.Error(err, string(p))
-	return len(p), nil
-}
-
-// OutWriter is a wrapper to enable debug-level logging inside kubectl drainer implementation
-type OutWriter struct {
-	log logr.Logger
-}
-
-func (ow OutWriter) Write(p []byte) (n int, err error) {
-	// log debug
-	ow.log.V(1).Info(string(p))
-	return len(p), nil
 }
 
 // newDrainHelper returns new drain.Helper instance
