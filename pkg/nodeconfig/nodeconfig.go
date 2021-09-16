@@ -77,14 +77,14 @@ func (ew ErrWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// OutWriter is a wrapper to enable debug-level logging inside kubectl drainer implementation
+// OutWriter is a wrapper to enable info-level logging inside kubectl drainer implementation
 type OutWriter struct {
 	log logr.Logger
 }
 
 func (ow OutWriter) Write(p []byte) (n int, err error) {
-	// log debug
-	ow.log.V(1).Info(string(p))
+	// log info
+	ow.log.Info(string(p))
 	return len(p), nil
 }
 
