@@ -131,14 +131,13 @@ func testNodeIPArg(t *testing.T) {
 // getKubeletServiceBinPath returns the binpath of the kubelet service. This includes the kubelet executable path and
 // arguments.
 func (tc *testContext) getKubeletServiceBinPath(node *core.Node) (string, error) {
-	command := remotePowerShellCmdPrefix +
-		" Get-WmiObject win32_service | Where-Object {$_.Name -eq \\\"kubelet\\\"}| select PathName |" +
-		" ConvertTo-Csv\""
+	command := "Get-WmiObject win32_service | Where-Object {$_.Name -eq \\\"kubelet\\\"}| select PathName | " +
+		"ConvertTo-Csv"
 	addr, err := controllers.GetAddress(node.Status.Addresses)
 	if err != nil {
 		return "", errors.Wrap(err, "error getting node address")
 	}
-	out, err := tc.runSSHJob("kubelet-query", command, addr)
+	out, err := tc.runPowerShellSSHJob("kubelet-query", command, addr)
 	if err != nil {
 		return "", errors.Wrap(err, "error querying kubelet service")
 	}
@@ -289,13 +288,31 @@ func (tc *testContext) sshSetup() error {
 	return nil
 }
 
-// runSSHJob creates and waits for a Kubernetes job to run. The command provided will be executed on the host specified
-// by the provided IP.
-func (tc *testContext) runSSHJob(name, command, ip string) (string, error) {
+// runPowerShellSSHJob creates and waits for a Kubernetes job to run. The command provided will be executed through
+// PowerShell, on the host specified by the provided IP.
+func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, error) {
+	keyMountDir := "/private-key"
+	sshCommand := []string{"bash", "-c",
+		fmt.Sprintf(
+			// first determine if the host has PowerShell or cmd as the default shell by running a simple PowerShell
+			// command. If it succeeds, then the host's default shell is PowerShell
+			"if ssh -o StrictHostKeyChecking=no -i %s %s@%s 'Get-Help';"+
+				"then CMD_PREFIX=\"\";CMD_SUFFIX=\"\";"+
+				// if PowerShell is not the default shell, explicitly run the command through PowerShell
+				"else CMD_PREFIX=\""+remotePowerShellCmdPrefix+" \\\"\";CMD_SUFFIX=\"\\\"\";"+
+				"fi;"+
+				"ssh -o StrictHostKeyChecking=no -i %s %s@%s ${CMD_PREFIX}' %s '${CMD_SUFFIX}",
+			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip,
+			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip, command)}
+
+	return tc.runJob(name, sshCommand)
+}
+
+// runJob creates and waits for a Kubernetes job to run. The command provided will be executed on a Linux worker,
+// using the tools image.
+func (tc *testContext) runJob(name string, command []string) (string, error) {
 	// Create a job which runs the provided command via SSH
 	keyMountDir := "/private-key"
-	sshCommand := []string{"bash", "-c", fmt.Sprintf("ssh -o StrictHostKeyChecking=no -i %s %s@%s '%s'",
-		filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip, command)}
 	keyMode := int32(0600)
 	job := &batch.Job{
 		ObjectMeta: meta.ObjectMeta{
@@ -312,7 +329,7 @@ func (tc *testContext) runSSHJob(name, command, ip string) (string, error) {
 							Name:            name,
 							Image:           tc.toolsImage,
 							ImagePullPolicy: core.PullIfNotPresent,
-							Command:         sshCommand,
+							Command:         command,
 							VolumeMounts: []core.VolumeMount{{
 								Name:      "private-key",
 								MountPath: keyMountDir,
@@ -353,9 +370,8 @@ func (tc *testContext) runSSHJob(name, command, ip string) (string, error) {
 func (tc *testContext) getWinServices(addr string) (map[string]string, error) {
 	// This command returns CR+newline separated quoted CSV entries consisting of service name and status. For example:
 	// "kubelet","Running"\r\n"VaultSvc","Stopped"
-	command := fmt.Sprintf(remotePowerShellCmdPrefix + "Get-Service | " +
-		"Select-Object -Property Name,Status | ConvertTo-Csv -NoTypeInformation\"")
-	out, err := tc.runSSHJob("get-windows-svc-list", command, addr)
+	command := "Get-Service | Select-Object -Property Name,Status | ConvertTo-Csv -NoTypeInformation"
+	out, err := tc.runPowerShellSSHJob("get-windows-svc-list", command, addr)
 	if err != nil {
 		return nil, errors.Wrap(err, "error running SSH job")
 	}
