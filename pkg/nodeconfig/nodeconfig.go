@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/drain"
@@ -21,7 +22,10 @@ import (
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
@@ -36,8 +40,6 @@ const (
 	WindowsOSLabel = "node.openshift.io/os_id=Windows"
 	// WorkerLabel is the label that needs to be applied to the Windows node to make it worker node
 	WorkerLabel = "node-role.kubernetes.io/worker"
-	// VersionAnnotation indicates the version of WMCO that configured the node
-	VersionAnnotation = "windowsmachineconfig.openshift.io/version"
 	// PubKeyHashAnnotation corresponds to the public key present on the VM
 	PubKeyHashAnnotation = "windowsmachineconfig.openshift.io/pub-key-hash"
 )
@@ -58,6 +60,10 @@ type nodeConfig struct {
 	// clusterServiceCIDR holds the service CIDR for cluster
 	clusterServiceCIDR string
 	log                logr.Logger
+	// additionalAnnotations are extra annotations that should be applied to configured nodes
+	additionalAnnotations map[string]string
+	// additionalLabels are extra labels that should be applied to configured nodes
+	additionalLabels map[string]string
 }
 
 // discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
@@ -85,8 +91,9 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
-func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, hostname, clusterServiceCIDR,
-	vxlanPort, username string, signer ssh.Signer) (*nodeConfig, error) {
+func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
+	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
+	additionalAnnotations map[string]string) (*nodeConfig, error) {
 	var err error
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
@@ -107,16 +114,16 @@ func NewNodeConfig(clientset *kubernetes.Clientset, ipAddress, hostname, cluster
 			"creating new node config")
 	}
 
-	log := ctrl.Log.WithName(fmt.Sprintf("nodeconfig %s", ipAddress))
-	win, err := windows.New(ipAddress, hostname, nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
-		username, signer)
+	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
+	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
+		instanceInfo, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
 	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
-		log: log}, nil
+		log: log, additionalLabels: additionalLabels, additionalAnnotations: additionalAnnotations}, nil
 }
 
 // getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
@@ -141,7 +148,7 @@ func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
 
 // Configure configures the Windows VM to make it a Windows worker node
 func (nc *nodeConfig) Configure() error {
-	drainHelper := &drain.Helper{Ctx: context.TODO(), Client: nc.k8sclientset}
+	drainHelper := nc.newDrainHelper()
 	// If we find a node  it implies that we are reconfiguring and we should cordon the node
 	if err := nc.setNode(true); err == nil {
 		// Make a best effort to cordon the node until it is fully configured
@@ -166,6 +173,18 @@ func (nc *nodeConfig) Configure() error {
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
 			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
 		}
+
+		// Ensure we are labeling and annotating the node as soon as the Node object is created, so that we can identify
+		// which controller should be watching it
+		annotationsToApply := map[string]string{PubKeyHashAnnotation: nc.publicKeyHash}
+		for key, value := range nc.additionalAnnotations {
+			annotationsToApply[key] = value
+		}
+		if err := nc.applyLabelsAndAnnotations(nc.additionalLabels, annotationsToApply); err != nil {
+			return errors.Wrapf(err, "error updating public key hash and additional annotations on node %s",
+				nc.node.GetName())
+		}
+
 		// Now that basic kubelet configuration is complete, configure networking in the node
 		if err := nc.configureNetwork(); err != nil {
 			return errors.Wrap(err, "configuring node network failed")
@@ -177,18 +196,20 @@ func (nc *nodeConfig) Configure() error {
 		if err := nc.setNode(false); err != nil {
 			return errors.Wrap(err, "error getting node object")
 		}
-		nc.addVersionAnnotation()
-		nc.addPubKeyHashAnnotation()
-		node, err := nc.k8sclientset.CoreV1().Nodes().Update(context.TODO(), nc.node, meta.UpdateOptions{})
-		if err != nil {
-			return errors.Wrap(err, "error updating node labels and annotations")
+
+		// Version annotation is the indicator that the node was fully configured by this version of WMCO, so it should
+		// be added at the end of the process.
+		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{metadata.VersionAnnotation: version.Get()}); err != nil {
+			return errors.Wrapf(err, "error updating version annotation on node %s", nc.node.GetName())
 		}
-		nc.node = node
 
 		// Uncordon the node now that it is fully configured
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, false); err != nil {
 			return errors.Wrapf(err, "error uncordoning the node %s", nc.node.GetName())
 		}
+
+		nc.log.Info("instance has been configured as a worker node", "version",
+			nc.node.Annotations[metadata.VersionAnnotation])
 		return nil
 	}()
 
@@ -200,6 +221,21 @@ func (nc *nodeConfig) Configure() error {
 		}
 	}
 	return err
+}
+
+// applyLabelsAndAnnotations applies all the given labels and annotations and updates the Node object in NodeConfig
+func (nc *nodeConfig) applyLabelsAndAnnotations(labels, annotations map[string]string) error {
+	patchData, err := metadata.GenerateAddPatch(labels, annotations)
+	if err != nil {
+		return err
+	}
+	node, err := nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
+		patchData, meta.PatchOptions{})
+	if err != nil {
+		return errors.Wrapf(err, "unable to apply patch data %s", patchData)
+	}
+	nc.node = node
+	return nil
 }
 
 // configureNetwork configures k8s networking in the node
@@ -238,16 +274,6 @@ func (nc *nodeConfig) configureNetwork() error {
 	return nil
 }
 
-// addVersionAnnotation adds the version annotation to nc.node
-func (nc *nodeConfig) addVersionAnnotation() {
-	nc.node.Annotations[VersionAnnotation] = version.Get()
-}
-
-// addPubKeyHashAnnotation adds the public key annotation to nc.node
-func (nc *nodeConfig) addPubKeyHashAnnotation() {
-	nc.node.Annotations[PubKeyHashAnnotation] = nc.publicKeyHash
-}
-
 // setNode finds the Node associated with the VM that has been configured, and sets the node field of the
 // nodeConfig object. If quickCheck is set, the function does a quicker check for the node which is useful in the node
 // reconfiguration case.
@@ -258,6 +284,8 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 		retryInterval = 10 * time.Second
 		retryTimeout = 30 * time.Second
 	}
+
+	instanceAddress := nc.GetIPv4Address()
 	err := wait.Poll(retryInterval, retryTimeout, func() (bool, error) {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			meta.ListOptions{LabelSelector: WindowsOSLabel})
@@ -269,17 +297,13 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 			return false, nil
 		}
 		// get the node with IP address used to configure it
-		for _, node := range nodes.Items {
-			for _, nodeAddress := range node.Status.Addresses {
-				if nc.IP() == nodeAddress.Address {
-					nc.node = &node
-					return true, nil
-				}
-			}
+		if node := nodeutil.FindByAddress(instanceAddress, nodes); node != nil {
+			nc.node = node
+			return true, nil
 		}
 		return false, nil
 	})
-	return errors.Wrapf(err, "unable to find node with IP %s", nc.IP())
+	return errors.Wrapf(err, "unable to find node with address %s", instanceAddress)
 }
 
 // waitForNodeAnnotation checks if the node object has the given annotation and waits for retry.Interval seconds and
@@ -295,7 +319,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 		}
 		_, found := node.Annotations[annotation]
 		if found {
-			//update node to avoid staleness
+			// update node to avoid staleness
 			nc.node = node
 			return true, nil
 		}
@@ -313,7 +337,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 func (nc *nodeConfig) configureCNI() error {
 	// set the hostSubnet value in the network struct
 	if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
-		return errors.Wrapf(err, "error populating host subnet in node network")
+		return errors.Wrap(err, "error populating host subnet in node network")
 	}
 	// populate the CNI config file with the host subnet and the service network CIDR
 	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, payload.CNIConfigTemplatePath)
@@ -328,6 +352,74 @@ func (nc *nodeConfig) configureCNI() error {
 		nc.log.Error(err, " error deleting temp CNI config", "file",
 			configFile)
 	}
+	return nil
+}
+
+// ErrWriter is a wrapper to enable error-level logging inside kubectl drainer implementation
+type ErrWriter struct {
+	log logr.Logger
+}
+
+func (ew ErrWriter) Write(p []byte) (n int, err error) {
+	// log error
+	ew.log.Error(err, string(p))
+	return len(p), nil
+}
+
+// OutWriter is a wrapper to enable debug-level logging inside kubectl drainer implementation
+type OutWriter struct {
+	log logr.Logger
+}
+
+func (ow OutWriter) Write(p []byte) (n int, err error) {
+	// log debug
+	ow.log.V(1).Info(string(p))
+	return len(p), nil
+}
+
+// newDrainHelper returns new drain.Helper instance
+func (nc *nodeConfig) newDrainHelper() *drain.Helper {
+	return &drain.Helper{
+		Ctx:    context.TODO(),
+		Client: nc.k8sclientset,
+		ErrOut: &ErrWriter{nc.log},
+		Out:    &OutWriter{nc.log},
+	}
+}
+
+// Deconfigure removes the node from the cluster, reverting changes made by the Configure function
+func (nc *nodeConfig) Deconfigure() error {
+	// Set nc.node to the existing node
+	if err := nc.setNode(true); err != nil {
+		return err
+	}
+
+	// Cordon and drain the Node before we interact with the instance
+	drainHelper := nc.newDrainHelper()
+	if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
+		return errors.Wrapf(err, "unable to cordon node %s", nc.node.GetName())
+	}
+	if err := drain.RunNodeDrain(drainHelper, nc.node.GetName()); err != nil {
+		return errors.Wrapf(err, "unable to drain node %s", nc.node.GetName())
+	}
+
+	// Revert the changes we've made to the instance by removing services and deleting all installed files
+	if err := nc.Windows.Deconfigure(); err != nil {
+		return errors.Wrap(err, "error deconfiguring instance")
+	}
+
+	// Clear the version annotation from the node object to indicate the node is not configured
+	patchData, err := metadata.GenerateRemovePatch([]string{}, []string{metadata.VersionAnnotation})
+	if err != nil {
+		return errors.Wrapf(err, "error creating version annotation remove request")
+	}
+	_, err = nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
+		patchData, meta.PatchOptions{})
+	if err != nil {
+		return errors.Wrapf(err, "error removing version annotation from node %s", nc.node.GetName())
+	}
+
+	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())
 	return nil
 }
 

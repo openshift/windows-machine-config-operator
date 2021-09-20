@@ -1,40 +1,100 @@
 # Windows Machine Config Operator
 
 ## Introduction
-The Windows Machine Config Operator configures Windows Machines into nodes, enabling Windows container workloads to
-be ran within OKD/OCP clusters. The operator is configured to watch for [Machines](https://docs.openshift.com/container-platform/4.5/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws) with a `machine.openshift.io/os-id: Windows`
-label. The way a user will initiate the process is by creating a MachineSet which uses a Windows image with the Docker
-container runtime installed. The operator will do all the necessary steps to configure the underlying VM so that it can join
-the cluster as a worker node.
+The Windows Machine Config Operator configures Windows instances into nodes, enabling Windows container workloads to
+be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/4.5/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
+or by specifying existing instances through a ConfigMap. Through either method, the Windows instance must have the
+Docker container runtime installed. The operator will do all the necessary steps to configure the instance so that it
+can join the cluster as a worker node.
 
 More design details can be explored in the [WMCO enhancement](https://github.com/openshift/enhancements/blob/master/enhancements/windows-containers/windows-machine-config-operator.md).
 
 ## Pre-requisites
-- OKD/OCP 4.6 cluster running on Azure, AWS or vSphere configured with [hybrid OVN Kubernetes networking](docs/setup-hybrid-OVNKubernetes-cluster.md)
-- [Install](https://sdk.operatorframework.io/docs/installation/) operator-sdk v1.6.1
-- The operator is written using operator-sdk [v1.6.1](https://github.com/operator-framework/operator-sdk/releases/tag/v1.6.1)
-  and has the same [pre-requisites](https://sdk.operatorframework.io/docs/installation/#prerequisites) as it
-  does.
-- [vSphere prerequisites](docs/vsphere-prerequisites.md)
+- [Cluster and OS pre-requisites](docs/wmco-prerequisites.md)
 
 ## Usage
+
+### Installation
 The operator can be installed from the *community-operators* catalog on OperatorHub.
 It can also be build and installed from source manually, see the [development instructions](docs/HACKING.md).
 
+### Create a private key secret
 Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
-the private key that will be used to access the Windows VMs:
+the private key that will be used to access the Windows instances:
 ```shell script
 # Create secret containing the private key in the openshift-windows-machine-config-operator namespace
 oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
 ```
- We strongly recommend not using the same
+We strongly recommend not using the same
 [private key](https://docs.openshift.com/container-platform/4.6/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default)
 used when installing the cluster
 
+#### Changing the private key secret
+Changing the private key used by WMCO can be done by updating the contents of the existing `cloud-private-key` secret.
+Some important things to note:
+* Any existing Windows Machines will be destroyed and recreated in order to make use of the new key.
+  This will be done one at a time, until all Machines have been handled.
+* BYOH instances must be updated by the user, such that the new public key is present within the authorized_keys file.
+  You are free to remove the previous key. If the new key is not authorized, WMCO will not be able to access any BYOH
+  nodes. **Upgrade and Node removal functionality will not function properly until this step is complete.**
+
+### Configuring BYOH (Bring Your Own Host) Windows instances
+WARNING: This is not a fully developed feature. Use at your own risk.
+
+### Instance Pre-requisites
+Any Windows instances that are to be attached to the cluster as a node must fulfill these [pre-requisites](docs/byoh-instance-pre-requisites.md).
+
+### Adding instances
+A ConfigMap named `windows-instances` must be created in the WMCO namespace, describing the instances that should be
+joined to a cluster. The required information to configure an instance is:
+* An address to SSH into the instance with. This can be a DNS name or an ipv4 address.
+* The name of the administrator user set up as part of the [instance pre-requisites](#instance-pre-requisites).
+
+Each entry in the data section of the ConfigMap should be formatted with the address as the key, and a value with the
+format of username=\<username\>. Please see the example below:
+
+```yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: windows-instances
+  namespace: openshift-windows-machine-config-operator
+data:
+  10.1.42.1: |-
+    username=Administrator
+  instance.dns.com: |-
+    username=core
+```
+
+#### Removing BYOH Windows instances
+BYOH instances that are attached to the cluster as a node can be removed by deleting the instance's entry in the
+ConfigMap. This process will revert instances back to the state they were in before, barring any logs and container
+runtime artifacts.
+
+In order for an instance to be cleanly removed, it must be accessible with the current private key provided
+to WMCO.
+
+For example, in order to remove the instance `10.1.42.1` from the above example, the ConfigMap would be changed to
+the following:
+
+```yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: windows-instances
+  namespace: openshift-windows-machine-config-operator
+data:
+  instance.dns.com: |-
+    username=core
+```
+
+Deleting `windows-instances` is viewed as a request to deconfigure all Windows instances added as Nodes.
+
+### Configuring Windows instances provisioned through MachineSets
 Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
 Please note that the windows-user-data secret will be created by the WMCO lazily when it is configuring the first
 Windows Machine. After that, the windows-user-data will be available for the subsequent MachineSets to be consumed.
-It might take around 10 minutes for the Windows VM to be configured so that it joins the cluster. Please note that
+It might take around 10 minutes for the Windows instance to be configured so that it joins the cluster. Please note that
 the MachineSet should have following labels:
 * *machine.openshift.io/os-id: Windows*
 * *machine.openshift.io/cluster-api-machine-role: worker*
@@ -51,7 +111,7 @@ oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
 The following template variables need to be replaced as follows with values from your vSphere environment:
 * *\<Windows_VM_template\>*: template name
-* *\<VM Network Name\>*: network name
+* *\<VM Network Name\>*: network name, must match the network name where other Linux workers are in the cluster
 * *\<vCenter DataCenter Name\>*: datacenter name
 * *\<Path to VM Folder in vCenter\>*: path where your OpenShift cluster is running
 * *\<vCenter Datastore Name\>*: datastore name

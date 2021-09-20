@@ -2,8 +2,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -24,9 +22,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=*
@@ -55,6 +56,7 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err != nil {
 		r.log.Error(err, "Unable to retrieve private key, please ensure it is created")
 	}
+
 	privateKeyPredicate := builder.WithPredicates(predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return isPrivateKeySecret(e.Object, r.watchNamespace)
@@ -126,10 +128,11 @@ type SecretReconciler struct {
 func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) (reconcile.Result, error) {
 	log := r.log.WithValues("secret", request.NamespacedName)
 
-	privateKey, err := secrets.GetPrivateKey(request.NamespacedName, r.client)
+	keySigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		if k8sapierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
+			// Private key secret was not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
 			return reconcile.Result{}, nil
@@ -137,7 +140,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return reconcile.Result{}, errors.Wrapf(err, "unable to get secret %s", request.NamespacedName)
 	}
 	// Generate expected userData based on the existing private key
-	validUserData, err := secrets.GenerateUserData(privateKey)
+	validUserData, err := secrets.GenerateUserData(keySigner.PublicKey())
 	if err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "error generating %s secret", userDataSecret)
 	}
@@ -162,31 +165,47 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		return reconcile.Result{}, nil
 	} else {
 		// userdata secret data does not match what is expected
-		// Mark nodes configured with the previous private key for deletion
-		signer, err := signer.Create(privateKey)
-		if err != nil {
-			return reconcile.Result{}, errors.Wrap(err, "error creating signer from private key")
-		}
 		nodes := &core.NodeList{}
 		err = r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
 		if err != nil {
 			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
 		}
-		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(signer.PublicKey())
-		escapedPubKeyAnnotation := strings.Replace(nodeconfig.PubKeyHashAnnotation, "/", "~1", -1)
-		patchData := fmt.Sprintf(`[{"op":"add","path":"/metadata/annotations/%s","value":""}]`, escapedPubKeyAnnotation)
+
+		// Modify annotations on nodes configured with the previous private key, if it has changed
+		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
+		privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+			Name: secrets.PrivateKeySecret}, r.client)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
 		for _, node := range nodes.Items {
-			existingPubKeyAnno := node.Annotations[nodeconfig.PubKeyHashAnnotation]
-			if existingPubKeyAnno == expectedPubKeyAnno {
+			// Since the public key hash and username annotations are both dependant on the private key secret as well
+			// as applied and updated at the same time, checking one is enough to see if the private key is up to date
+			if node.Annotations[nodeconfig.PubKeyHashAnnotation] == expectedPubKeyAnno {
 				continue
 			}
-			node.Annotations[nodeconfig.PubKeyHashAnnotation] = ""
-			err = r.client.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, []byte(patchData)))
-			if err != nil {
-				return reconcile.Result{}, errors.Wrapf(err, "error clearing public key annotation on node %s",
-					node.GetName())
+			annotationsToApply := make(map[string]string)
+			if _, present := node.GetLabels()[BYOHLabel]; present {
+				// For BYOH nodes, update the username annotation and public key hash annotation using new private key
+				expectedUsernameAnnotation, err := r.getEncryptedUsername(ctx, node, privateKeyBytes)
+				if err != nil {
+					return reconcile.Result{}, errors.Wrapf(err, "unable to retrieve expected username annotation")
+				}
+
+				annotationsToApply = map[string]string{
+					UsernameAnnotation:              expectedUsernameAnnotation,
+					nodeconfig.PubKeyHashAnnotation: expectedPubKeyAnno,
+				}
+			} else {
+				// For Nodes associated with Machines, clear the public key annotation, as the clearing of the
+				// annotation is used solely to kick off the deletion and recreation of Machines.
+				annotationsToApply = map[string]string{nodeconfig.PubKeyHashAnnotation: ""}
 			}
-			log.V(1).Info("patched node object", "node", node.GetName(), "patch", patchData)
+
+			if err := metadata.ApplyAnnotations(r.client, ctx, node, annotationsToApply); err != nil {
+				return reconcile.Result{}, errors.Wrapf(err, "error updating annotations on node %s", node.GetName())
+			}
+			log.V(1).Info("patched node object", "node", node.GetName(), "patch", annotationsToApply)
 		}
 
 		// Set userdata to expected value
@@ -199,6 +218,25 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 		// Secret updated successfully
 		return reconcile.Result{}, nil
 	}
+}
+
+// getEncryptedUsername retrieves the username associated with a given node and ecrypts it using the given key
+func (r *SecretReconciler) getEncryptedUsername(ctx context.Context, node core.Node, key []byte) (string, error) {
+	// The instance ConfigMap is the source of truth linking BYOH nodes to their underlying instances
+	instancesConfigMap := &core.ConfigMap{}
+	if err := r.client.Get(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: wiparser.InstanceConfigMap}, instancesConfigMap); err != nil {
+		return "", errors.Wrap(err, "unable to get instance configmap")
+	}
+	instanceUsername, err := wiparser.GetNodeUsername(instancesConfigMap.Data, &node)
+	if err != nil {
+		return "", err
+	}
+	encryptedUsername, err := crypto.EncryptToJSONString(instanceUsername, key)
+	if err != nil {
+		return "", errors.Wrapf(err, "error encrypting node %s username", node.GetName())
+	}
+	return encryptedUsername, nil
 }
 
 // RemoveInvalidAnnotationsFromLinuxNodes makes a best effort to remove annotations applied by previous versions of WMCO.
@@ -215,12 +253,14 @@ func (r *SecretReconciler) RemoveInvalidAnnotationsFromLinuxNodes(config *rest.C
 	}
 	// The public key hash was accidentally added to Linux nodes in WMCO 2.0 and must be removed.
 	// The `/` in the annotation key needs to be escaped in order to not be considered a "directory" in the path.
-	escapedPubKeyAnnotation := strings.Replace(nodeconfig.PubKeyHashAnnotation, "/", "~1", -1)
-	patchData := fmt.Sprintf(`[{"op":"remove","path":"/metadata/annotations/%s"}]`, escapedPubKeyAnnotation)
+	patchData, err := metadata.GenerateRemovePatch([]string{}, []string{nodeconfig.PubKeyHashAnnotation})
+	if err != nil {
+		return errors.Wrapf(err, "error creating public key annotation add request")
+	}
 	for _, node := range nodes.Items {
 		if _, present := node.Annotations[nodeconfig.PubKeyHashAnnotation]; present == true {
 			_, err = kc.CoreV1().Nodes().Patch(context.TODO(), node.GetName(), kubeTypes.JSONPatchType,
-				[]byte(patchData), meta.PatchOptions{})
+				patchData, meta.PatchOptions{})
 			if err != nil {
 				return errors.Wrapf(err, "error removing public key annotation from node %s", node.GetName())
 			}

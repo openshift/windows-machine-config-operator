@@ -6,19 +6,15 @@ import (
 	"net"
 	"strings"
 
-	"github.com/go-logr/logr"
 	oconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,6 +26,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -54,28 +52,7 @@ const (
 
 // WindowsMachineReconciler is used to create a controller which manages Windows Machine objects
 type WindowsMachineReconciler struct {
-	client client.Client
-	log    logr.Logger
-	scheme *runtime.Scheme
-	// k8sclientset holds the kube client that we can re-use for all kube objects other than custom resources.
-	k8sclientset *kubernetes.Clientset
-	// clusterServiceCIDR holds the cluster network service CIDR
-	clusterServiceCIDR string
-	// signer is a signer created from the user's private key
-	signer ssh.Signer
-	// vxlanPort is the custom VXLAN port
-	vxlanPort string
-	// recorder to generate events
-	recorder record.EventRecorder
-	// watchNamespace is the namespace the operator is watching as defined by the operator CSV
-	watchNamespace string
-	// prometheusConfig stores information required to configure Prometheus
-	prometheusNodeConfig *metrics.PrometheusNodeConfig
-	// platform indicates the cloud on which OpenShift cluster is running
-	// TODO: Remove this once we figure out how to be provider agnostic. This is specific to proper usage of userData
-	// 		 in vSphere
-	//		 https://bugzilla.redhat.com/show_bug.cgi?id=1876987
-	platform oconfig.PlatformType
+	instanceReconciler
 }
 
 // NewWindowsMachineReconciler returns a pointer to a WindowsMachineReconciler
@@ -98,16 +75,17 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 	}
 
 	return &WindowsMachineReconciler{
-		client:               mgr.GetClient(),
-		log:                  ctrl.Log.WithName("controller").WithName("windowsmachine"),
-		scheme:               mgr.GetScheme(),
-		k8sclientset:         clientset,
-		clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
-		vxlanPort:            clusterConfig.Network().VXLANPort(),
-		recorder:             mgr.GetEventRecorderFor("windowsmachine"),
-		watchNamespace:       watchNamespace,
-		prometheusNodeConfig: pc,
-		platform:             clusterConfig.Platform(),
+		instanceReconciler: instanceReconciler{
+			client:               mgr.GetClient(),
+			log:                  ctrl.Log.WithName("controller").WithName("windowsmachine"),
+			k8sclientset:         clientset,
+			clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
+			vxlanPort:            clusterConfig.Network().VXLANPort(),
+			recorder:             mgr.GetEventRecorderFor("windowsmachine"),
+			watchNamespace:       watchNamespace,
+			prometheusNodeConfig: pc,
+			platform:             clusterConfig.Platform(),
+		},
 	}, nil
 }
 
@@ -123,41 +101,19 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			return r.isValidMachine(e.ObjectNew) && isWindowsMachine(e.ObjectNew.GetLabels())
 		},
-		// ignore delete event for all Machines as WMCO does not react to node getting deleted
+		GenericFunc: func(e event.GenericEvent) bool {
+			return r.isValidMachine(e.Object) && isWindowsMachine(e.Object.GetLabels())
+		},
+		// process delete event
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			return r.isValidMachine(e.Object) && isWindowsMachine(e.Object.GetLabels())
 		},
 	}
 
-	nodePredicate := predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			if e.Object.GetLabels()[core.LabelOSStable] != "windows" {
-				return false
-			}
-			if e.Object.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() {
-				return true
-			}
-			return false
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			if e.ObjectNew.GetLabels()[core.LabelOSStable] != "windows" {
-				return false
-			}
-			if e.ObjectNew.GetAnnotations()[nodeconfig.VersionAnnotation] != version.Get() ||
-				e.ObjectNew.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] !=
-					e.ObjectOld.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] {
-				return true
-			}
-			return false
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
-		},
-	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&mapi.Machine{}, builder.WithPredicates(machinePredicate)).
 		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToMachine),
-			builder.WithPredicates(nodePredicate)).
+			builder.WithPredicates(windowsNodePredicate(false))).
 		Complete(r)
 }
 
@@ -246,24 +202,16 @@ func (r *WindowsMachineReconciler) isValidMachine(obj client.Object) bool {
 // Note: The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	log := r.log.WithValues("windowsmachine", request.NamespacedName)
+	log := r.log.WithValues("machine", request.NamespacedName)
 	log.V(1).Info("reconciling")
 
-	// Get the private key that will be used to configure the instance
+	// Create a new signer from the private key the instances will be configured with
 	// Doing this before fetching the machine allows us to warn the user better about the missing private key
-	privateKey, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
-		Name: secrets.PrivateKeySecret}, r.client)
+	var err error
+	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret},
+		r.client)
 	if err != nil {
-		if k8sapierrors.IsNotFound(err) {
-			// Private key was removed, requeue
-			return ctrl.Result{}, errors.Wrapf(err, "%s does not exist, please create it", secrets.PrivateKeySecret)
-		}
-		return ctrl.Result{}, errors.Wrapf(err, "unable to get secret %s", request.NamespacedName)
-	}
-	// Update the signer with the current privateKey
-	r.signer, err = signer.Create(privateKey)
-	if err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "error creating signer")
+		return ctrl.Result{}, errors.Wrapf(err, "unable to get signer from secret %s", request.NamespacedName)
 	}
 
 	// Fetch the Machine instance
@@ -271,9 +219,10 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 	if err := r.client.Get(ctx, request.NamespacedName, machine); err != nil {
 		if k8sapierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
-			return ctrl.Result{}, nil
+			// In the case the machine was deleted, ensure that the metrics subsets are configured properly, so that
+			// the current Windows nodes are properly reflected there.
+			log.V(1).Info("not found")
+			return ctrl.Result{}, r.prometheusNodeConfig.Configure()
 		}
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
@@ -301,10 +250,10 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 			return ctrl.Result{}, errors.Wrapf(err, "could not get node associated with machine %s", machine.GetName())
 		}
 
-		if _, present := node.Annotations[nodeconfig.VersionAnnotation]; present {
+		if _, present := node.Annotations[metadata.VersionAnnotation]; present {
 			// If either the version annotation doesn't match the current operator version, or the private key used
 			// to configure the machine is out of date, the machine should be deleted
-			if node.Annotations[nodeconfig.VersionAnnotation] != version.Get() ||
+			if node.Annotations[metadata.VersionAnnotation] != version.Get() ||
 				node.Annotations[nodeconfig.PubKeyHashAnnotation] != nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
 				log.Info("deleting machine")
 				deletionAllowed, err := r.isAllowedDeletion(machine)
@@ -320,7 +269,6 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 				}
 				return ctrl.Result{}, r.deleteMachine(machine)
 			}
-			log.Info("machine has current version", "version", node.Annotations[nodeconfig.VersionAnnotation])
 			// version annotation exists with a valid value, node is fully configured.
 			// configure Prometheus when we have already configured Windows Nodes. This is required to update Endpoints object if
 			// it gets reverted when the operator pod restarts.
@@ -341,7 +289,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 	}
 
 	// validate userData secret
-	if err := r.validateUserData(privateKey); err != nil {
+	if err := r.validateUserData(); err != nil {
 		return ctrl.Result{}, errors.Wrapf(err, "error validating userData secret")
 	}
 
@@ -364,7 +312,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 		return ctrl.Result{}, errors.Errorf("unable to get instance ID from provider ID for machine %s", machine.Name)
 	}
 
-	log.Info("processing")
+	log.Info("processing", "address", ipAddress)
 	// Make the Machine a Windows Worker node
 	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name); err != nil {
 		var authErr *windows.AuthErr
@@ -427,32 +375,34 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		username = "Administrator"
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, ipAddress, hostname, r.clusterServiceCIDR,
-		r.vxlanPort, username, r.signer)
+	instanceInfo, err := instance.NewInfo(ipAddress, username, hostname, false, nil)
 	if err != nil {
-		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
+		return err
 	}
-	if err := nc.Configure(); err != nil {
-		// TODO: Unwrap to extract correct error
-		return errors.Wrapf(err, "failed to configure Windows VM %s", instanceID)
+	err = r.ensureInstanceIsUpToDate(instanceInfo, nil, nil)
+	if err != nil {
+		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
 
-	r.log.Info("Windows VM has been configured as a worker node", "ID", instanceID)
 	return nil
 }
 
-// validateUserData validates userData secret. It returns error if the secret doesn`t
-// contain expected public key bytes.
-func (r *WindowsMachineReconciler) validateUserData(privateKey []byte) error {
-	userDataSecret := &core.Secret{}
-	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: "windows-user-data", Namespace: "openshift-machine-api"}, userDataSecret)
+// validateUserData validates the userData secret. It returns error if the secret doesn`t contain the expected public
+// key bytes.
+func (r *WindowsMachineReconciler) validateUserData() error {
+	if r.signer == nil {
+		return errors.New("signer must not be nil")
+	}
 
+	userDataSecret := &core.Secret{}
+	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: secrets.UserDataSecret,
+		Namespace: secrets.UserDataNamespace}, userDataSecret)
 	if err != nil {
-		return errors.Errorf("could not find Windows userData secret in required namespace: %v", err)
+		return errors.Wrap(err, "could not find Windows userData secret in required namespace")
 	}
 
 	secretData := string(userDataSecret.Data["userData"][:])
-	desiredUserDataSecret, err := secrets.GenerateUserData(privateKey)
+	desiredUserDataSecret, err := secrets.GenerateUserData(r.signer.PublicKey())
 	if err != nil {
 		return err
 	}
@@ -524,7 +474,7 @@ func (r *WindowsMachineReconciler) isWindowsMachineHealthy(machine *mapi.Machine
 	if err != nil {
 		return false
 	}
-	_, present := node.Annotations[nodeconfig.VersionAnnotation]
+	_, present := node.Annotations[metadata.VersionAnnotation]
 	if !present {
 		return false
 	}

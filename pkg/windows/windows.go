@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
@@ -72,10 +73,34 @@ const (
 	// representing ERROR_SERVICE_DOES_NOT_EXIST
 	// referenced: https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
 	serviceNotFound = "status 1060"
+	// cmdExitNoStatus is part of the error message returned when a command takes too long to report status back to
+	// PowerShell.
+	cmdExitNoStatus = "command exited without exit status or exit signal"
+	// removeHNSCommand is the Windows command used to remove HNS network.
+	removeHNSCommand = "Remove-HnsNetwork"
 )
 
-// filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
-var filesToTransfer map[*payload.FileInfo]string
+var (
+	// filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
+	filesToTransfer map[*payload.FileInfo]string
+	// RequiredServices is a list of Windows services installed by WMCO
+	// The order of this slice matters due to service dependencies. If a service depends on another service, the
+	// dependent service should be placed before the service it depends on.
+	RequiredServices = []string{
+		windowsExporterServiceName,
+		kubeProxyServiceName,
+		hybridOverlayServiceName,
+		kubeletServiceName}
+	// RequiredDirectories is a list of directories to be created by WMCO
+	RequiredDirectories = []string{
+		k8sDir,
+		remoteDir,
+		cniDir,
+		cniConfDir,
+		logDir,
+		kubeProxyLogDir,
+		hybridOverlayLogDir}
+)
 
 // getFilesToTransfer returns the properly populated filesToTransfer map
 func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
@@ -109,8 +134,8 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
 type Windows interface {
-	// IP Returns the IP used to configure the Windows VM
-	IP() string
+	// GetIPv4Address returns the IPv4 address of the associated instance.
+	GetIPv4Address() string
 	// EnsureFile ensures the given file exists within the specified directory on the Windows VM. The file will be copied
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
@@ -136,12 +161,12 @@ type Windows interface {
 	ConfigureKubeProxy(string, string) error
 	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
 	EnsureRequiredServicesStopped() error
+	// Deconfigure removes all files and services created as part of the configuration process
+	Deconfigure() error
 }
 
 // windows implements the Windows interface
 type windows struct {
-	// ipAddress is the IP address associated with the Windows VM created
-	ipAddress string
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
 	// the OpenShift worker ignition file.
 	workerIgnitionEndpoint string
@@ -151,30 +176,26 @@ type windows struct {
 	interact connectivity
 	// vxlanPort is the custom VXLAN port
 	vxlanPort string
-	// if hostName is set, the hostname of the VM will be set to its value when the VM is being configured.
-	hostName string
+	// instance contains information about the Windows instance to interact with
+	// A valid instance is configured with a network address that either is an IPv4 address or resolves to one.
+	instance *instance.Info
 	log      logr.Logger
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(ipAddress, hostName, workerIgnitionEndpoint, vxlanPort, username string, signer ssh.Signer) (Windows, error) {
-	if workerIgnitionEndpoint == "" {
-		return nil, errors.New("cannot use empty ignition endpoint")
-	}
-
-	log := ctrl.Log.WithName(fmt.Sprintf("VM %s", ipAddress))
-	log.V(1).Info("initializing SSH connection", "user", username)
-	conn, err := newSshConnectivity(username, ipAddress, signer, log)
+func New(workerIgnitionEndpoint, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer) (Windows, error) {
+	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
+	log.V(1).Info("initializing SSH connection")
+	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", ipAddress)
+		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instanceInfo.Address)
 	}
 
 	return &windows{
-			ipAddress:              ipAddress,
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			vxlanPort:              vxlanPort,
-			hostName:               hostName,
+			instance:               instanceInfo,
 			log:                    log,
 		},
 		nil
@@ -182,8 +203,8 @@ func New(ipAddress, hostName, workerIgnitionEndpoint, vxlanPort, username string
 
 // Interface methods
 
-func (vm *windows) IP() string {
-	return vm.ipAddress
+func (vm *windows) GetIPv4Address() string {
+	return vm.instance.IPv4Address
 }
 
 func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
@@ -227,8 +248,10 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 
 	out, err := vm.interact.run(cmd)
 	if err != nil {
-		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services.
-		if !(strings.HasPrefix(cmd, serviceQueryCmd) && strings.HasSuffix(err.Error(), serviceNotFound)) {
+		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services
+		// and not print error when the command takes too long to return after removing HNS networks.
+		if !(strings.HasPrefix(cmd, serviceQueryCmd) && strings.HasSuffix(err.Error(), serviceNotFound)) &&
+			!(strings.Contains(err.Error(), cmdExitNoStatus) && strings.HasSuffix(cmd, removeHNSCommand+";\"")) {
 			vm.log.Error(err, "error running", "cmd", cmd, "out", out)
 		}
 		return out, errors.Wrapf(err, "error running %s", cmd)
@@ -245,14 +268,51 @@ func (vm *windows) Reinitialize() error {
 }
 
 func (vm *windows) EnsureRequiredServicesStopped() error {
-	// This slice order matters due to service dependencies
-	requiredSVCs := []string{windowsExporterServiceName, kubeProxyServiceName, hybridOverlayServiceName,
-		kubeletServiceName}
-	for _, svcName := range requiredSVCs {
+	for _, svcName := range RequiredServices {
 		svc := &service{name: svcName}
 		if err := vm.ensureServiceNotRunning(svc); err != nil {
-			return errors.Wrap(err, "could not stop service %d")
+			return errors.Wrapf(err, "could not stop service %s", svcName)
 		}
+	}
+	return nil
+}
+
+// ensureServicesAreRemoved ensures that all services installed by WMCO are removed from the instance
+func (vm *windows) ensureServicesAreRemoved() error {
+	for _, svcName := range RequiredServices {
+		svc := &service{name: svcName}
+
+		// If the service is not installed, do nothing
+		exists, err := vm.serviceExists(svc.name)
+		if err != nil {
+			return errors.Wrapf(err, "unable to check if %s service exists", svc.name)
+		}
+		if !exists {
+			continue
+		}
+
+		// Make sure the service is stopped before we attempt to delete it
+		if err := vm.ensureServiceNotRunning(svc); err != nil {
+			return errors.Wrapf(err, "could not stop service %s", svc.name)
+		}
+		if err := vm.deleteService(svc); err != nil {
+			return errors.Wrapf(err, "could not delete service %s", svcName)
+		}
+		vm.log.Info("deconfigured", "service", svc.name)
+	}
+	return nil
+}
+
+func (vm *windows) Deconfigure() error {
+	vm.log.Info("deconfiguring")
+	if err := vm.ensureServicesAreRemoved(); err != nil {
+		return errors.Wrap(err, "unable to remove Windows services")
+	}
+	if err := vm.removeDirectories(); err != nil {
+		return errors.Wrap(err, "unable to remove created directories")
+	}
+	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
+		return errors.Wrap(err, "unable to ensure HNS networks are removed")
 	}
 	return nil
 }
@@ -263,7 +323,7 @@ func (vm *windows) Configure() error {
 		return errors.Wrap(err, "unable to stop required services")
 	}
 	// Set the hostName of the Windows VM if needed
-	if vm.hostName != "" {
+	if vm.instance.NewHostname != "" {
 		if err := vm.ensureHostName(); err != nil {
 			return err
 		}
@@ -281,7 +341,7 @@ func (vm *windows) Configure() error {
 	return vm.runBootstrapper()
 }
 
-// Start Windows metrics exporter service, only if the file is present on the VM
+// ConfigureWindowsExporter starts Windows metrics exporter service, only if the file is present on the VM
 func (vm *windows) ConfigureWindowsExporter() error {
 	windowsExporterService, err := newService(windowsExporterPath, windowsExporterServiceName, windowsExporterServiceArgs)
 	if err != nil {
@@ -292,6 +352,8 @@ func (vm *windows) ConfigureWindowsExporter() error {
 		return errors.Wrapf(err, "error ensuring %s Windows service has started running", windowsExporterServiceName)
 	}
 
+	vm.log.Info("configured", "service", windowsExporterServiceName, "args",
+		windowsExporterServiceArgs)
 	return nil
 }
 
@@ -409,18 +471,18 @@ func (vm *windows) isHostNameChangeNeeded() (bool, error) {
 	if err != nil {
 		return false, errors.Wrapf(err, "error getting the host name, with stdout %s", out)
 	}
-	return !strings.Contains(out, vm.hostName), nil
+	return !strings.Contains(out, vm.instance.NewHostname), nil
 }
 
 // changeHostName changes the hostName of the Windows VM to match the expected value
 func (vm *windows) changeHostName() error {
-	changeHostNameCommand := "Rename-Computer -NewName " + vm.hostName + " -Force -Restart"
+	changeHostNameCommand := "Rename-Computer -NewName " + vm.instance.NewHostname + " -Force -Restart"
 	out, err := vm.Run(changeHostNameCommand, true)
 	if err != nil {
 		vm.log.Info("changing host name failed", "command", changeHostNameCommand, "output", out)
 		return errors.Wrap(err, "changing host name failed")
 	}
-	//Reinitialize the SSH connection given changing the host name requires a VM restart
+	// Reinitialize the SSH connection given changing the host name requires a VM restart
 	if err := vm.Reinitialize(); err != nil {
 		return errors.Wrap(err, "error reinitializing VM after changing hostname")
 	}
@@ -429,18 +491,20 @@ func (vm *windows) changeHostName() error {
 
 // createDirectories creates directories required for configuring the Windows node on the VM
 func (vm *windows) createDirectories() error {
-	directoriesToCreate := []string{
-		k8sDir,
-		remoteDir,
-		cniDir,
-		cniConfDir,
-		logDir,
-		kubeProxyLogDir,
-		hybridOverlayLogDir,
-	}
-	for _, dir := range directoriesToCreate {
+	for _, dir := range RequiredDirectories {
 		if _, err := vm.Run(mkdirCmd(dir), false); err != nil {
 			return errors.Wrapf(err, "unable to create remote directory %s", dir)
+		}
+	}
+	return nil
+}
+
+// removeDirectories removes all directories created as part of the configuration process
+func (vm *windows) removeDirectories() error {
+	vm.log.Info("removing directories")
+	for _, dir := range RequiredDirectories {
+		if _, err := vm.Run(rmDirCmd(dir), false); err != nil {
+			return errors.Wrapf(err, "unable to remove directory %s", dir)
 		}
 	}
 	return nil
@@ -469,6 +533,9 @@ func (vm *windows) runBootstrapper() error {
 	}
 	wmcbInitializeCmd := k8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
 		"worker.ign --kubelet-path " + k8sDir + "kubelet.exe"
+	if vm.instance.SetNodeIP {
+		wmcbInitializeCmd += " --node-ip=" + vm.GetIPv4Address()
+	}
 
 	out, err := vm.Run(wmcbInitializeCmd, true)
 	vm.log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
@@ -480,6 +547,9 @@ func (vm *windows) runBootstrapper() error {
 
 // initializeTestBootstrapperFiles initializes the files required for initialize-kubelet
 func (vm *windows) initializeBootstrapperFiles() error {
+	if vm.workerIgnitionEndpoint == "" {
+		return errors.New("cannot use empty ignition endpoint")
+	}
 	// Ignition v2.3.0 maps to Ignition config spec v3.1.0.
 	ignitionAcceptHeaderSpec := "application/vnd.coreos.ignition+json`;version=3.1.0"
 	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
@@ -574,6 +644,34 @@ func (vm *windows) stopService(svc *service) error {
 	})
 	if err != nil {
 		return errors.Wrapf(err, "error waiting for the %s service to stop", svc.name)
+	}
+
+	return nil
+}
+
+// deleteService deletes the specified Windows service
+func (vm *windows) deleteService(svc *service) error {
+	if svc == nil {
+		return errors.New("service object cannot be nil")
+	}
+
+	// Success here means that the stop has initiated, not necessarily completed
+	out, err := vm.Run("sc.exe delete "+svc.name, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to delete %s service with output: %s", svc.name, out)
+	}
+
+	// Wait until the service is fully deleted
+	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		exists, err := vm.serviceExists(svc.name)
+		if err != nil {
+			vm.log.V(1).Error(err, "unable to check if Windows service exists", "service", svc.name)
+			return false, nil
+		}
+		return !exists, nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "error waiting for the %s service to be deleted", svc.name)
 	}
 
 	return nil
@@ -696,9 +794,56 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 	return &payload.FileInfo{Path: path, SHA256: sha}, nil
 }
 
+// ensureHNSNetworksAreRemoved ensures the HNS networks created by the hybrid-overlay configuration process are removed
+// by repeatedly checking and retrying the removal of each network.
+func (vm *windows) ensureHNSNetworksAreRemoved() error {
+	vm.log.Info("removing HNS networks")
+	var err error
+	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
+	for _, network := range []string{BaseOVNKubeOverlayNetwork, OVNKubeOverlayNetwork} {
+		err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+			if err := vm.removeHNSNetwork(network); err != nil {
+				return false, errors.Wrapf(err, "error removing %s HNS network", network)
+			}
+			if err := vm.Reinitialize(); err != nil {
+				return false, errors.Wrapf(err, "error reinitializing VM after removing %s HNS network", network)
+			}
+			out, err := vm.Run(getHNSNetworkCmd(network), true)
+			if err != nil {
+				return false, errors.Wrapf(err, "error waiting for %s HNS network", network)
+			}
+			return !strings.Contains(out, network), nil
+		})
+		if err != nil {
+			return errors.Wrapf(err, "failed ensuring %s HNS network is removed", network)
+		}
+	}
+	return nil
+}
+
+// removeHNSNetwork removes the given HNS network.
+func (vm *windows) removeHNSNetwork(networkName string) error {
+	cmd := getHNSNetworkCmd(networkName) + " | Remove-HnsNetwork;\""
+	// PowerShell returns error waiting without exit status or signal error when the OVNKubeOverlayNetwork is removed.
+	if out, err := vm.Run(cmd, true); err != nil && !(networkName == OVNKubeOverlayNetwork && strings.Contains(err.Error(), cmdExitNoStatus)) {
+		return errors.Wrapf(err, "failed to remove %s HNS network with output: %s", networkName, out)
+	}
+	return nil
+}
+
 // Generic helper methods
 
 // mkdirCmd returns the Windows command to create a directory if it does not exists
 func mkdirCmd(dirName string) string {
 	return "if not exist " + dirName + " mkdir " + dirName
+}
+
+// rmDirCmd returns the Windows command to recursively remove a directory if it exists
+func rmDirCmd(dirName string) string {
+	return "if exist " + dirName + " rmdir " + dirName + " /s /q"
+}
+
+// getHNSNetworkCmd returns the Windows command to get HNS network by name
+func getHNSNetworkCmd(networkName string) string {
+	return "\"Get-HnsNetwork | where { $_.Name -eq '" + networkName + "'}"
 }

@@ -6,14 +6,15 @@ set -o pipefail
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
 
-NODE_COUNT=""
+MACHINE_NODE_COUNT_OPTION=""
+BYOH_NODE_COUNT_OPTION=""
 SKIP_NODE_DELETION=""
 WMCO_PATH_OPTION=""
 
 export CGO_ENABLED=0
 
 get_WMCO_logs() {
-  oc logs -l name=windows-machine-config-operator -n openshift-windows-machine-config-operator --tail=-1 >> "$ARTIFACT_DIR"/wmco.log
+  oc logs -l name=windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE --tail=-1 >> "$ARTIFACT_DIR"/wmco.log
 }
 
 # This function runs operator-sdk test with certain go test arguments
@@ -29,17 +30,20 @@ OSDK_WMCO_test() {
   local OSDK_PATH=$1
   local TEST_FLAGS=$2
 
-  if ! $OSDK_PATH test local ./test/e2e --no-setup --debug --operator-namespace=openshift-windows-machine-config-operator --go-test-flags "$TEST_FLAGS"; then
+  if ! $OSDK_PATH test local ./test/e2e --no-setup --debug --operator-namespace=$WMCO_DEPLOY_NAMESPACE --go-test-flags "$TEST_FLAGS"; then
     get_WMCO_logs
     return 1
   fi
 }
 
 TEST="all"
-while getopts ":n:b:st:" opt; do
+while getopts ":m:c:b:st:" opt; do
   case ${opt} in
-    n ) # process option for the node count
-      NODE_COUNT=$OPTARG
+    m ) # number of instances to create and configure using the Machine controller
+      MACHINE_NODE_COUNT_OPTION="--machine-node-count=$OPTARG"
+      ;;
+    c ) # number of instances to create and configure using the ConfigMap controller
+      BYOH_NODE_COUNT_OPTION="--byoh-node-count=$OPTARG"
       ;;
     s ) # process option for skipping deleting Windows VMs created by test suite
       SKIP_NODE_DELETION="true"
@@ -71,12 +75,6 @@ if ! [[ "$OPENSHIFT_CI" == "true" &&  "$TEST" = "upgrade" ]]; then
   OSDK=$(get_operator_sdk)
 fi
 
-# Set default values for the flags. Without this operator-sdk flags are getting
-# polluted, i.e. if a flag is not passed or passed as empty value
-# the value is literally taken as "" instead of empty-string so default values we
-# specified in main_test.go has literally no effect. Not sure, if this is because of
-# the way operator-sdk testing is done using `go test []string{}
-NODE_COUNT=${NODE_COUNT:-2}
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"false"}
 
 # If ARTIFACT_DIR is not set, create a temp directory for artifacts
@@ -89,12 +87,11 @@ fi
 
 # OPERATOR_IMAGE defines where the WMCO image to test with is located. If $OPERATOR_IMAGE is already set, use its value.
 # Setting $OPERATOR_IMAGE is required for local testing.
-# In OpenShift CI $IMAGE_FORMAT will be set to a value such as registry.svc.ci.openshift.org/ci-op-<input-hash>/stable:${component}
-# We need to replace ${component} with the name of the WMCO image.
-# The stable namespace is used as it will use the last promoted version when the test is run in an repository other than this one.
-# When running in this repository the image built in the pipeline will be used instead.
-# https://steps.svc.ci.openshift.org/help/ci-operator#release
-OPERATOR_IMAGE=${OPERATOR_IMAGE:-${IMAGE_FORMAT//\/stable:\$\{component\}//stable:windows-machine-config-operator-test}}
+# In CI $OPERATOR_IMAGE environment variable is declared through a dependency in test references declared at
+# https://github.com/openshift/release/tree/master/ci-operator/step-registry/windows/e2e/operator/test
+if [[ -z "$OPERATOR_IMAGE" ]]; then
+  error-exit "The OPERATOR_IMAGE environment variable was not found."
+fi
 
 # generate the WMCO binary if we are not running the test through CI. This binary is used to validate WMCO version
 # while running the validation test. For CI, we use different `wmcoPath` based on how we generate the container image.
@@ -128,11 +125,11 @@ fi
 
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the creation tests of the Windows VMs
 printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 # Get logs for the creation tests
 printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
 get_WMCO_logs
@@ -140,17 +137,21 @@ get_WMCO_logs
 if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
   # Run the network tests
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 fi
 
 if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   # Run the upgrade tests and skip deletion of the Windows VMs
   printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
   # Run the reconfiguration test
+  # The reconfiguration suite must be run directly before the deletion suite. This is because we do not
+  # currently wait for nodes to fully reconcile after changing the private key back to the valid key. Any tests
+  # added/moved in between these two suites may fail.
+  # This limitation will be removed with https://issues.redhat.com/browse/WINC-655
   printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args --node-count=$NODE_COUNT --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 fi
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created

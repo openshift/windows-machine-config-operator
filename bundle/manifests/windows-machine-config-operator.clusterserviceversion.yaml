@@ -8,14 +8,14 @@ metadata:
     certified: "false"
     createdAt: REPLACE_DATE
     description: An operator that enables Windows container workloads on OCP
-    olm.skipRange: '>=1.0.0 <2.0.0'
+    olm.skipRange: '>=2.0.0 <3.0.0'
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     operators.operatorframework.io/builder: operator-sdk-v2.0.0+git
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat
-  name: windows-machine-config-operator.v2.0.0
+  name: windows-machine-config-operator.v3.1.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -23,10 +23,10 @@ spec:
   description: |-
     ### Introduction
     The Windows Machine Config Operator configures Windows Machines into nodes, enabling Windows container workloads to
-    be run on OCP clusters. The operator is configured to watch for Machines with a `machine.openshift.io/os-id: Windows`
-    label. You can initiate the process by creating a MachineSet that uses a Windows image with the Docker
-    container runtime installed. The operator completes all the necessary steps to configure the underlying VM so that it can join
-    the cluster as a worker node.
+    be run on OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/latest/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
+    or by specifying existing instances through a [ConfigMap](https://docs.openshift.com/container-platform/latest/windows_containers/configuring-byoh-windows-instance.html)
+    Through either method, the Windows instance to be configured must have the Docker container runtime installed. The operator
+    completes all the necessary steps to configure the underlying VM so that it can join the cluster as a worker node.
 
     Usage of this operator requires a Red Hat OpenShift subscription. Users looking to deploy Windows containers workloads in
     production clusters should acquire a subscription before attempting to install this operator. Users without a subscription
@@ -34,8 +34,8 @@ spec:
 
     ### Pre-requisites
     * A Red Hat OpenShift subscription
-    * OCP 4.7 cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
-    * [vSphere prequisites](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/vsphere-prerequisites.md)
+    * OCP 4.8 cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
+    * [WMCO prerequisites](https://docs.openshift.com/container-platform/4.8/windows_containers/understanding-windows-container-workloads.html#wmco-prerequisites__understanding-windows-container-workloads)
 
     ### Usage
     Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
@@ -148,6 +148,32 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - configmaps
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - ""
+          resources:
           - endpoints
           verbs:
           - create
@@ -184,6 +210,12 @@ spec:
         - apiGroups:
           - ""
           resources:
+          - pods/eviction
+          verbs:
+          - create
+        - apiGroups:
+          - ""
+          resources:
           - secrets
           verbs:
           - create
@@ -200,6 +232,43 @@ spec:
           - create
           - delete
           - get
+        - apiGroups:
+          - certificates.k8s.io
+          resources:
+          - certificatesigningrequests
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - certificates.k8s.io
+          resources:
+          - certificatesigningrequests/approval
+          verbs:
+          - update
+        - apiGroups:
+          - certificates.k8s.io
+          resources:
+          - certificatesigningrequests/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - certificates.k8s.io
+          resources:
+          - certificatesigningrequests/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - certificates.k8s.io
+          resourceNames:
+          - kubernetes.io/kube-apiserver-client-kubelet
+          - kubernetes.io/kubelet-serving
+          resources:
+          - signers
+          verbs:
+          - approve
         - apiGroups:
           - config.openshift.io
           resources:
@@ -253,12 +322,12 @@ spec:
           replicas: 1
           selector:
             matchLabels:
-              control-plane: controller-manager
+              name: windows-machine-config-operator
           strategy: {}
           template:
             metadata:
               labels:
-                control-plane: controller-manager
+                name: windows-machine-config-operator
             spec:
               containers:
               - args:
@@ -283,6 +352,7 @@ spec:
               hostNetwork: true
               nodeSelector:
                 node-role.kubernetes.io/master: ""
+              priorityClassName: system-cluster-critical
               serviceAccountName: windows-machine-config-operator
               terminationGracePeriodSeconds: 10
               tolerations:
@@ -340,4 +410,4 @@ spec:
   minKubeVersion: 1.21.0
   provider:
     name: Red Hat
-  version: 2.0.0
+  version: 3.1.0

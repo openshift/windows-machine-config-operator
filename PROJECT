@@ -1,8 +1,18 @@
 domain: windowsmachineconfig.openshift.io
-layout: go.kubebuilder.io/v3
+layout:
+- go.kubebuilder.io/v3
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: windows-machine-config-operator
 repo: github.com/openshift/windows-machine-config-operator
+resources:
+- controller: true
+  domain: windowsmachineconfig.openshift.io
+  kind: ConfigMap
+  version: v1
+- controller: true
+  domain: windowsmachineconfig.openshift.io
+  kind: CertificateSigningRequests
+  version: v1
 version: "3"

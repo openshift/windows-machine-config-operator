@@ -1,6 +1,12 @@
 ⚠⚠⚠ THIS IS A LIVING DOCUMENT AND LIKELY TO CHANGE QUICKLY ⚠⚠⚠
 
 # Hacking on the WMCO
+## Pre-requisites
+- [Cluster and OS pre-requisites](wmco-prerequisites.md)
+- [Install](https://sdk.operatorframework.io/docs/installation/) operator-sdk v1.6.1
+- The operator is written using operator-sdk 
+[v1.6.1](https://github.com/operator-framework/operator-sdk/releases/tag/v1.6.1) and has the same 
+[pre-requisites](https://sdk.operatorframework.io/docs/installation/#prerequisites) as it does.
 
 ## Build
 To build and push the operator image, execute:
@@ -70,7 +76,8 @@ hack/run-ci-e2e-test.sh
 
 Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
 - `-s` to skip the deletion of Windows nodes that are created as part of test suite run
-- `-n` to represent the number of Windows nodes to be created for test run
+- `-m` to represent the number of Windows instances to be configured by the Windows Machine controller
+- `-c` to represent the number of Windows instances to be configured by the ConfigMap controller
 - `-b` gives an alternative path to the WMCO binary. This option overridden in OpenShift CI.
        When building the operator locally, the WMCO binary is created as part of the operator image build process and
        can be found at `build/_output/bin/windows-machine-config-operator`, this is the default value of this option.
@@ -79,9 +86,10 @@ Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
   - `basic` creation, network and deletion tests are run
   - `upgrade` creation, upgrade, reconfiguration and deletion tests are run
 
-Example command to spin up 2 Windows nodes and retain them after test run:
+Example command to run the full test suite with 2 instances configured by the Windows Machine controller, and 1
+configured by the ConfigMap controller, skipping the deletion of all the nodes.
 ```shell script
-hack/run-ci-e2e-test.sh -s -n 2      
+hack/run-ci-e2e-test.sh -s -m 2 -c 1
 ```
 Please note that you do not need to run `hack/olm.sh run` before `hack/run-ci-e2e-test.sh`.
 

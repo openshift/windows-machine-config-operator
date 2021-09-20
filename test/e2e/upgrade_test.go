@@ -9,13 +9,13 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 )
 
 const (
@@ -31,22 +31,83 @@ const (
 	windowsWorkloadTesterJob = "windows-workload-tester"
 )
 
+// getNodeTypeAffinities generate node affinity for non-BYOH and BYOH nodes if present
+func getNodeTypeAffinities() ([]*v1.Affinity, error) {
+	var affinities []*v1.Affinity
+	if gc.numberOfMachineNodes >= 1 {
+		affinityNoByoh, err := getNodeAffinityForLabel(v1.NodeSelectorOpDoesNotExist, controllers.BYOHLabel)
+		if err != nil {
+			return nil, errors.Wrapf(err, "error creating node affinity without BYOH label")
+		}
+		affinities = append(affinities, affinityNoByoh)
+	}
+	if gc.numberOfBYOHNodes >= 1 {
+		affinityByoh, err := getNodeAffinityForLabel(v1.NodeSelectorOpIn, controllers.BYOHLabel, "true")
+		if err != nil {
+			return nil, errors.Wrapf(err, "error creating node affinity for BYOH label")
+		}
+		affinities = append(affinities, affinityByoh)
+	}
+	return affinities, nil
+}
+
+// generateLinuxWorkloadTesterCommand creates a Job to curl Windows webserver every 5 seconds.
+// If the webserver is not accessible for few minutes Curl Windows webserver
+// exit the pod with an error.
+func generateLinuxWorkloadTesterCommand(clusterIP string) []string {
+	return []string{
+		"bash",
+		"-c",
+		" while true;" +
+			" do curl " + clusterIP + ";" +
+			" if [ $? != 0 ]; then" +
+			" sleep 60;" +
+			" curl " + clusterIP + " || exit 1;" +
+			" fi; " +
+			"sleep 5; " +
+			"done"}
+}
+
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
 func upgradeTestSuite(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
-	// test if Windows workloads are running by creating a Job that curls the workloads continuously.
-	testerJob, err := testCtx.deployWindowsWorkloadAndTester()
-	require.NoError(t, err, "error testing Windows workloads")
-	defer testCtx.deleteJob(testerJob.Name)
+	// generate node affinities
+	affinities, err := getNodeTypeAffinities()
+	require.NoError(t, err, "error getting node affinity")
+	// loop affinities to ensure deployed workloads will exclusively run based
+	// on the given affinity, e.g.  BYOH and/or Machine nodes
+	for _, affinity := range affinities {
+		// test if Windows workloads are running by creating a Job that curls the workloads continuously.
+		deployment, err := testCtx.deployWindowsWebServer("win-webserver", affinity)
+		require.NoErrorf(t, err, "error creating Windows Webserver deployment for upgrade test")
+		defer testCtx.deleteDeployment(deployment.Name)
+
+		// create a clusterIP service which can be used to reach the Windows webserver
+		intermediarySVC, err := testCtx.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
+		require.NoErrorf(t, err, "error creating service for deployment %s", deployment.Name)
+		defer testCtx.deleteService(intermediarySVC.Name)
+
+		// create a Job object that continuously curls the webserver every 5 seconds.
+		testerJob, err := testCtx.createLinuxJob(windowsWorkloadTesterJob, generateLinuxWorkloadTesterCommand(intermediarySVC.Spec.ClusterIP))
+		require.NoErrorf(t, err, "error creating linux job %s", windowsWorkloadTesterJob)
+		defer testCtx.deleteJob(testerJob.Name)
+	}
 
 	// apply configuration steps before running the upgrade tests
 	err = testCtx.configureUpgradeTest()
 	require.NoError(t, err, "error configuring upgrade")
 
+	// get current Windows node state
+	// TODO: waitForWindowsNodes currently loads nodes into global context, so we need this (even though BYOH
+	// 		 nodes are not being upgraded/tested here). Remove as part of https://issues.redhat.com/browse/WINC-620
+	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
+	require.NoError(t, err, "wrong number of Machine controller nodes found")
+	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	require.NoError(t, err, "wrong number of ConfigMap controller nodes found")
+
 	t.Run("Operator version upgrade", testUpgradeVersion)
-	t.Run("Version annotation tampering", testTamperAnnotation)
 }
 
 // testUpgradeVersion tests the upgrade scenario of the operator. The node version annotation is changed when
@@ -56,48 +117,20 @@ func testUpgradeVersion(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
-	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, true)
-	require.NoError(t, err, "windows node upgrade failed")
 	// Test the node metadata and if the version annotation corresponds to the current operator version
 	testNodeMetadata(t)
 	// Test if prometheus is reconfigured with ip addresses of newly configured nodes
 	testPrometheus(t)
 
+	// TODO: Fix matching label for jobs. See https://issues.redhat.com/browse/WINC-673
 	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
-	pods, err := testCtx.client.K8s.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(), metav1.ListOptions{FieldSelector: "status.phase=Failed",
-		LabelSelector: "job-name=" + windowsWorkloadTesterJob + "-job"})
+	pods, err := testCtx.client.K8s.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(),
+		metav1.ListOptions{FieldSelector: "status.phase=Failed",
+			LabelSelector: "job-name=" + windowsWorkloadTesterJob + "-job"})
 
 	require.NoError(t, err)
-	require.Equal(t, 0, len(pods.Items), "unable to access Windows workloads for significant amount of time during upgrade")
+	require.Equal(t, 0, len(pods.Items), "Windows workloads inaccessible for significant amount of time during upgrade")
 
-}
-
-// testTamperAnnotation tests if the operator deletes machines and recreates them, if the node annotation is changed to an invalid value
-// with the expected annotation when the operator is in running state
-func testTamperAnnotation(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-
-	// tamper node annotation
-	nodes, err := testCtx.client.K8s.CoreV1().Nodes().List(context.TODO(),
-		metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
-	require.NoError(t, err)
-
-	for _, node := range nodes.Items {
-		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
-		_, err := testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
-		require.NoError(t, err)
-		if err == nil {
-			break
-		}
-	}
-
-	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, true)
-	require.NoError(t, err, "windows node upgrade failed")
-	// Test the node metadata and if the version annotation corresponds to the current operator version
-	testNodeMetadata(t)
-	// Test if prometheus is reconfigured with ip address of newly configured node
-	testPrometheus(t)
 }
 
 // configureUpgradeTest carries out steps required before running tests for upgrade scenario.
@@ -111,22 +144,24 @@ func (tc *testContext) configureUpgradeTest() error {
 		return err
 	}
 
-	// Override the Windows Node Version Annotation
-	nodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nc.WindowsOSLabel})
+	// tamper version annotation on all nodes
+	machineNodes, err := tc.listFullyConfiguredWindowsNodes(false)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "error getting list of fully configured Machine nodes")
 	}
-	if len(nodes.Items) != int(gc.numberOfNodes) {
-		return errors.Wrapf(nil, "unexpected number of nodes %v", gc.numberOfNodes)
+	byohNodes, err := tc.listFullyConfiguredWindowsNodes(true)
+	if err != nil {
+		return errors.Wrap(err, "error getting list of fully configured BYOH nodes")
 	}
 
-	for _, node := range nodes.Items {
-		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.VersionAnnotation, "badVersion")
-		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
+	for _, node := range append(machineNodes, byohNodes...) {
+		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.VersionAnnotation, "badVersion")
+		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
+			[]byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			return err
 		}
-		log.Printf("Node Annotation changed to %v", node.Annotations[nc.VersionAnnotation])
+		log.Printf("Node Annotation changed to %v", node.Annotations[metadata.VersionAnnotation])
 	}
 
 	// Scale up the WMCO deployment to 1
@@ -170,34 +205,4 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 	})
 
 	return err
-}
-
-// deployWindowsWorkloadAndTester tests if the Windows Webserver deployment is available.
-// This is achieved by creating a Job object that continuously curls the webserver every 5 seconds.
-func (tc *testContext) deployWindowsWorkloadAndTester() (*batchv1.Job, error) {
-	// Create a Windows Webserver deployment
-	deployment, err := tc.deployWindowsWebServer("win-webserver", nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "error creating Windows Webserver deployment for upgrade test")
-	}
-	defer tc.deleteDeployment(deployment.Name)
-
-	// Create a clusterIP service which can be used to reach the Windows webserver
-	intermediarySVC, err := tc.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not create service ")
-	}
-	defer tc.deleteService(intermediarySVC.Name)
-	// Create a Job to curl Windows webserver
-	// Curl Windows webserver every 5 seconds. If the webserver is not accessible for few minutes
-	// exit the pod with an error.
-	command := []string{"bash", "-c",
-		" while true; do curl " + intermediarySVC.Spec.ClusterIP + "; if [ $? != 0 ]; then sleep 60; curl " +
-			intermediarySVC.Spec.ClusterIP + "|| exit 1;" + " fi; sleep 5; done"}
-
-	job, err := tc.createLinuxJob(windowsWorkloadTesterJob, command)
-	if err != nil {
-		return nil, err
-	}
-	return job, nil
 }

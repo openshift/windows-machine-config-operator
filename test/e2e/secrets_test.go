@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,18 +26,18 @@ import (
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
-// getExpectedPublicKey returns the public key associated with the private key within the cloud-private-key secret
-func (tc *testContext) getExpectedPublicKey() (ssh.PublicKey, error) {
+// getExpectedKeyPair returns the private key within the cloud-private-key secret and the associated public key
+func (tc *testContext) getExpectedKeyPair() ([]byte, ssh.PublicKey, error) {
 	privateKey, err := tc.getCloudPrivateKey()
 	if err != nil {
-		return nil, errors.Wrap(err, "error retrieving private key")
+		return nil, nil, errors.Wrap(err, "error retrieving private key")
 	}
 	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to parse private key")
+		return nil, nil, errors.Wrapf(err, "unable to parse private key")
 	}
 
-	return signer.PublicKey(), nil
+	return privateKey, signer.PublicKey(), nil
 }
 
 // getCloudPrivateKey returns the private key present within the cloud-private-key secret
@@ -68,8 +69,8 @@ func testUserData(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 
-	pubKey, err := tc.getExpectedPublicKey()
-	require.NoError(t, err, "error determining expected public key")
+	_, pubKey, err := tc.getExpectedKeyPair()
+	require.NoError(t, err, "error getting the expected public/private key pair")
 	userData, err := tc.getUserDataContents()
 	require.NoError(t, err, "could not retrieve userdata contents")
 	assert.Contains(t, userData, string(ssh.MarshalAuthorizedKey(pubKey)), "public key not found within Windows userdata")
@@ -128,6 +129,31 @@ func testUserDataTamper(t *testing.T) {
 	}
 }
 
+// testPrivateKeyChange alters the private key used to SSH into instances and ensures nodes are updated properly
+func testPrivateKeyChange(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	// This test cannot be run on vSphere because this random key is not part of the vSphere template image.
+	// Moreover this test is platform agnostic so is not needed to be run for every supported platform.
+	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
+		t.Skipf("Skipping for %s", config.VSpherePlatformType)
+	}
+	err = tc.createPrivateKeySecret(false)
+	require.NoError(t, err, "error replacing known private key secret with a random key")
+
+	// Ensure Machines nodes are re-created and configured using the new private key
+	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	assert.NoError(t, err, "error waiting for Windows nodes configured with newly created private key")
+	// Ensure public key hash and encrypted username annotations are updated correctly on BYOH nodes
+	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	assert.NoError(t, err, "error waiting for Windows nodes updated with newly created private key")
+
+	// Re-create the known private key so SSH connection can be re-established
+	// TODO: Remove dependency on this secret by rotating keys as part of https://issues.redhat.com/browse/WINC-655
+	require.NoError(t, tc.createPrivateKeySecret(true), "error confirming known private key secret exists")
+}
+
 // generatePrivateKey generates a random RSA private key
 func generatePrivateKey() ([]byte, error) {
 	var keyData []byte
@@ -147,7 +173,8 @@ func generatePrivateKey() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// createPrivateKeySecret ensures that a private key secret exists with the correct data
+// createPrivateKeySecret ensures that a private key secret exists with the correct data in both the operator and test
+// namespaces
 func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 	if err := tc.ensurePrivateKeyDeleted(); err != nil {
 		return errors.Wrap(err, "error ensuring any existing private key is removed")
@@ -169,24 +196,28 @@ func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 	privateKeySecret := core.Secret{
 		Data: map[string][]byte{secrets.PrivateKeySecretKey: keyData},
 		ObjectMeta: meta.ObjectMeta{
-			Name:      secrets.PrivateKeySecret,
-			Namespace: tc.namespace,
+			Name: secrets.PrivateKeySecret,
 		},
 	}
-	_, err = tc.client.K8s.CoreV1().Secrets(tc.namespace).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
-	return err
+
+	// Create the private key secret in both the operator's namespace, and the test namespace. This is needed to make it
+	// possible to SSH into the Windows nodes from pods spun up in the test namespace.
+	for _, ns := range []string{tc.namespace, tc.workloadNamespace} {
+		_, err := tc.client.K8s.CoreV1().Secrets(ns).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
+		if err != nil {
+			return errors.Wrapf(err, "could not create private key secret in namespace %s", ns)
+		}
+	}
+	return nil
 }
 
-// ensurePrivateKeyDeleted ensures that the privateKeySecret is deleted
+// ensurePrivateKeyDeleted ensures that the privateKeySecret is deleted in both the operator and test namespaces
 func (tc *testContext) ensurePrivateKeyDeleted() error {
-	secretsClient := tc.client.K8s.CoreV1().Secrets(tc.namespace)
-	if _, err := secretsClient.Get(context.TODO(), secrets.PrivateKeySecret, meta.GetOptions{}); err != nil {
-		if apierrors.IsNotFound(err) {
-			// secret doesnt exist, do nothing
-			return nil
+	for _, ns := range []string{tc.namespace, tc.workloadNamespace} {
+		err := tc.client.K8s.CoreV1().Secrets(ns).Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return errors.Wrapf(err, "could not delete private key secret in namespace %s", ns)
 		}
-		return errors.Wrap(err, "could not get private key secret")
 	}
-	// Secret exists, delete it
-	return secretsClient.Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
+	return nil
 }

@@ -3,8 +3,11 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -28,8 +31,10 @@ func testNetwork(t *testing.T) {
 	// Populate the global test context
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
-	err = testCtx.waitForWindowsNodes(gc.numberOfNodes, true, false, false)
-	assert.NoError(t, err, "timed out waiting for Windows node")
+	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
+	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
 	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
@@ -48,8 +53,8 @@ var (
 type operatingSystem string
 
 const (
-	linux   operatingSystem = "linux"
-	windows operatingSystem = "windows"
+	linux     operatingSystem = "linux"
+	windowsOS operatingSystem = "windows"
 )
 
 // testEastWestNetworking deploys Windows and Linux pods, and tests that the pods can communicate
@@ -69,7 +74,7 @@ func testEastWestNetworking(t *testing.T) {
 		},
 		{
 			name:            "windows and windows",
-			curlerOS:        windows,
+			curlerOS:        windowsOS,
 			useClusterIPSVC: false,
 		},
 		{
@@ -79,15 +84,15 @@ func testEastWestNetworking(t *testing.T) {
 		},
 		{
 			name:            "windows and windows through a clusterIP svc",
-			curlerOS:        windows,
+			curlerOS:        windowsOS,
 			useClusterIPSVC: true,
 		},
 	}
-	require.Greater(t, len(gc.nodes), 0, "test requires at least one Windows node to run")
-	firstNodeAffinity, err := getAffinityForNode(&gc.nodes[0])
+	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
+	firstNodeAffinity, err := getAffinityForNode(&gc.allNodes()[0])
 	require.NoError(t, err, "could not get affinity for node")
 
-	for _, node := range gc.nodes {
+	for _, node := range gc.allNodes() {
 		t.Run(node.Name, func(t *testing.T) {
 			affinity, err := getAffinityForNode(&node)
 			require.NoError(t, err, "could not get affinity for node")
@@ -103,6 +108,7 @@ func testEastWestNetworking(t *testing.T) {
 			}
 			require.NoError(t, err, "could not create Windows Server deployment")
 			defer testCtx.deleteDeployment(winServerDeployment.Name)
+			testCtx.collectDeploymentLogs(winServerDeployment)
 
 			// Get the pod so we can use its IP
 			winServerIP, err := testCtx.getPodIP(*winServerDeployment.Spec.Selector)
@@ -128,7 +134,7 @@ func testEastWestNetworking(t *testing.T) {
 						curlerCommand := []string{"bash", "-c", "curl " + endpointIP}
 						curlerJob, err = testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), curlerCommand)
 						require.NoError(t, err, "could not create Linux job")
-					} else if tt.curlerOS == windows {
+					} else if tt.curlerOS == windowsOS {
 						// Always deploy the Windows curler pod on the first node. Because we test scaling multiple
 						// Windows nodes, this allows us to test that Windows pods can communicate with other Windows
 						// pods located on both the same node, and other nodes.
@@ -148,13 +154,61 @@ func testEastWestNetworking(t *testing.T) {
 	}
 }
 
+// collectDeploymentLogs collects logs of a deployment to the Artifacts directory
+func (tc *testContext) collectDeploymentLogs(deployment *appsv1.Deployment) {
+	// map of labels expected to be on each pod in the deployment
+	matchLabels := deployment.Spec.Selector.MatchLabels
+	if len(matchLabels) == 0 {
+		log.Printf("deployment pod label map is empty")
+		return
+	}
+	var keyValPairs []string
+	for key, value := range matchLabels {
+		keyValPairs = append(keyValPairs, key+"="+value)
+	}
+	labelSelector := strings.Join(keyValPairs, ",")
+	tc.writePodLogs(labelSelector)
+}
+
+// getLogs uses a label selector and returns the logs associated with each pod
+func (tc *testContext) getLogs(podLabelSelector string) (string, error) {
+	if podLabelSelector == "" {
+		return "", errors.Errorf("pod label selector is empty")
+	}
+	pods, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: podLabelSelector})
+	if err != nil {
+		return "", errors.Wrap(err, "error getting pod list")
+	}
+	if len(pods.Items) == 0 {
+		return "", fmt.Errorf("expected at least 1 pod and found 0")
+	}
+	var logs string
+	for _, pod := range pods.Items {
+		logStream, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).GetLogs(pod.Name,
+			&v1.PodLogOptions{}).Stream(context.TODO())
+		if err != nil {
+			return "", errors.Wrap(err, "error getting pod logs")
+		}
+		podLogs, err := ioutil.ReadAll(logStream)
+		if err != nil {
+			logStream.Close()
+			return "", errors.Wrap(err, "error reading pod logs")
+		}
+		// appending the pod logs onto the existing logs
+		logs += fmt.Sprintf("%s: %s\n", pod.Name, podLogs)
+		logStream.Close()
+	}
+	return logs, nil
+}
+
 // testNorthSouthNetworking deploys a Windows Server pod, and tests that we can network with it from outside the cluster
 func testNorthSouthNetworking(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
 	// Require at least one node to test
-	require.NotEmpty(t, gc.nodes)
+	require.NotEmpty(t, gc.allNodes())
 
 	// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
 	// So trying multiple times
@@ -167,6 +221,7 @@ func testNorthSouthNetworking(t *testing.T) {
 	}
 	require.NoError(t, err, "could not create Windows Server deployment")
 	defer testCtx.deleteDeployment(winServerDeployment.GetName())
+	testCtx.collectDeploymentLogs(winServerDeployment)
 
 	// Ignore the LoadBalancer test for vSphere as it has to be created manually
 	// https://docs.openshift.com/container-platform/4.5/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html#nw-using-load-balancer-getting-traffic_configuring-ingress-cluster-traffic-load-balancer
@@ -289,6 +344,39 @@ func getAffinityForNode(node *v1.Node) (*v1.Affinity, error) {
 	}, nil
 }
 
+// getNodeAffinityForLabel returns a node affinity that matches the associated label key and values for the given
+// operator. `values` equals `nil` suppress the property, useful for `NodeSelectorOpDoesNotExist` operator.
+func getNodeAffinityForLabel(operator v1.NodeSelectorOperator, key string, values ...string) (*v1.Affinity, error) {
+	if operator == "" {
+		return nil, errors.New("operator cannot be empty")
+	}
+	if key == "" {
+		return nil, errors.New("key cannot be empty")
+	}
+	// build match expression
+	expression := v1.NodeSelectorRequirement{
+		Key:      key,
+		Operator: operator,
+	}
+	// use values, if any
+	if values != nil {
+		expression.Values = values
+	}
+	return &v1.Affinity{
+		NodeAffinity: &v1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
+				NodeSelectorTerms: []v1.NodeSelectorTerm{
+					{
+						MatchExpressions: []v1.NodeSelectorRequirement{
+							expression,
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
 // ensureNamespace checks if a namespace with the provided name exists and creates one if it does not
 func (tc *testContext) ensureNamespace(name string) error {
 	// Check if the namespace exists
@@ -364,13 +452,14 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 // getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
 func (tc *testContext) getWindowsServerContainerImage() string {
 	var windowsServerImage string
-	// If we're using a custom VXLANPort we need to use 1909. On Azure we are testing 20H2. For other providers we use
-	// 1809
 	if tc.hasCustomVXLAN {
-		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1909"
+		// If we're using a custom VXLANPort we need to use 2004
+		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-2004"
 	} else if tc.CloudProvider.GetType() == config.AzurePlatformType {
+		// On Azure we are testing 20H2
 		windowsServerImage = "mcr.microsoft.com/windows/servercore:2009"
 	} else {
+		// For other providers we use 1809
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1809"
 	}
 	return windowsServerImage
@@ -435,7 +524,7 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 							},
 						},
 					},
-					NodeSelector: map[string]string{"beta.kubernetes.io/os": "windows"},
+					NodeSelector: map[string]string{"kubernetes.io/os": "windows"},
 				},
 			},
 		},
@@ -490,7 +579,7 @@ func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
 
 // createLinuxJob creates a job which will run the provided command with a ubi8 image
 func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.Job, error) {
-	linuxNodeSelector := map[string]string{"beta.kubernetes.io/os": "linux"}
+	linuxNodeSelector := map[string]string{"kubernetes.io/os": "linux"}
 	return tc.createJob(name, ubi8Image, command, linuxNodeSelector, []v1.Toleration{}, nil)
 }
 
@@ -514,7 +603,7 @@ func (tc *testContext) getWinCurlerCommand(winServerIP string) []string {
 
 // createWindowsServerJob creates a job which will run the provided command with a Windows Server image
 func (tc *testContext) createWindowsServerJob(name string, command []string, affinity *v1.Affinity) (*batchv1.Job, error) {
-	windowsNodeSelector := map[string]string{"beta.kubernetes.io/os": "windows"}
+	windowsNodeSelector := map[string]string{"kubernetes.io/os": "windows"}
 	windowsTolerations := []v1.Toleration{{Key: "os", Value: "Windows", Effect: v1.TaintEffectNoSchedule}}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations, affinity)
@@ -566,22 +655,48 @@ func (tc *testContext) deleteJob(name string) error {
 func (tc *testContext) waitUntilJobSucceeds(name string) error {
 	var job *batchv1.Job
 	var err error
+	var labelSelector string
 	for i := 0; i < retryCount; i++ {
 		job, err = tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
+		labelSelector = "job-name=" + job.Name
 		if job.Status.Succeeded > 0 {
+			tc.writePodLogs(labelSelector)
 			return nil
 		}
 		if job.Status.Failed > 0 {
+			tc.writePodLogs(labelSelector)
 			events, _ := tc.getPodEvents(name)
 			return errors.Errorf("job %v failed: %v", job, events)
 		}
 		time.Sleep(retryInterval)
 	}
+	tc.writePodLogs(labelSelector)
 	events, _ := tc.getPodEvents(name)
 	return errors.Errorf("job %v timed out: %v", job, events)
+}
+
+// writePodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts dir
+func (tc *testContext) writePodLogs(labelSelector string) {
+	logs, err := tc.getLogs(labelSelector)
+	if err != nil {
+		log.Printf("Unable to get logs associated with pod: %s", labelSelector)
+		return
+	}
+	podLogFile := fmt.Sprintf("%s.log", labelSelector)
+	podArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "pods")
+	podDir := filepath.Join(podArtifacts, labelSelector)
+	err = os.MkdirAll(podDir, os.ModePerm)
+	if err != nil {
+		log.Printf("Error creating pod log collection directory in directory: %s", podDir)
+	}
+	outputFile := filepath.Join(podDir, filepath.Base(podLogFile))
+	logsErr := ioutil.WriteFile(outputFile, []byte(logs), os.ModePerm)
+	if logsErr != nil {
+		log.Printf("Unable to write pod logs with label %s to file %s", labelSelector, outputFile)
+	}
 }
 
 // getPowerShellExe returns the PowerShell executable name. This depends on the container image used which is figured
