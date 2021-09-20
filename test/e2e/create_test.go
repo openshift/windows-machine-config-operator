@@ -29,6 +29,10 @@ import (
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
+// vmConfigurationTime is the maximum amount of time expected for a Windows VM to be fully configured and ready for WMCO
+// after the hardware is provisioned.
+const vmConfigurationTime = 10 * time.Minute
+
 func creationTestSuite(t *testing.T) {
 	// The order of tests here are important. Any node object related tests should be run only after
 	// testWindowsNodeCreation as that initializes the node objects in the global context.
@@ -143,11 +147,43 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 	require.NoError(t, err, "failed to create Windows MachineSet")
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfBYOHNodes), "Provisioned", false)
 	require.NoError(t, err, "Machines did not reach expected state")
+
+	// Change the default shell to PowerShell for the first BYOH VM. We expect there to be BYOH VMs with either
+	// cmd or PowerShell as the default shell, so getting a mix of both, either between different BYOH VMs, or with the
+	// VMs spun up for the Machine testing is important.
+
+	err = tc.setPowerShellDefaultShell(&machines.Items[0])
+	require.NoErrorf(t, err, "unable to change default shell of machine %s", machines.Items[0].GetName())
+
 	t.Run("VM is configured by ConfigMap controller", func(t *testing.T) {
 		err = tc.createWindowsInstanceConfigMap(machines)
 		require.NoError(t, err, "error creating ConfigMap")
 		err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
 		assert.NoError(t, err, "Windows node creation failed")
+	})
+}
+
+// setPowerShellDefaultShell changes the instance backed by the given Machine to have a default SSH shell of PowerShell
+func (tc *testContext) setPowerShellDefaultShell(machine *mapi.Machine) error {
+	// This needs to be retried as it will only succeed once the VM is fully initialized
+	// even though the machine is fully provisioned with an IP address, the Windows VM is not guaranteed to be fully
+	// set up. It can take more than 5 minutes for the VM to be fully configured with the SSH server running, after the
+	// Machine has hit the 'Provisioned' state.
+	// This should not increase the overall test time, as WMCO would have to wait for the VM to be ready anyway.
+	return wait.Poll(nodeRetryInterval, vmConfigurationTime, func() (done bool, err error) {
+		command := "New-ItemProperty -Path \"HKLM:\\SOFTWARE\\OpenSSH\" -Name DefaultShell " +
+			"-Value \"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -PropertyType String -Force"
+		addr, err := controllers.GetAddress(machine.Status.Addresses)
+		if err != nil {
+			log.Printf("Machine %s does not have a valid address, retrying...", machine.GetName())
+			return false, nil
+		}
+		_, err = tc.runPowerShellSSHJob("change-default-shell", command, addr)
+		if err != nil {
+			log.Printf("failed to change %s default shell to Powershell, retrying...", machine.GetName())
+			return false, nil
+		}
+		return true, nil
 	})
 }
 
