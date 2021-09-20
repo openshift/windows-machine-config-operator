@@ -11,3 +11,4 @@ The following pre-requisites must be fulfilled in order to add a Windows BYOH no
   * Contain only lowercase alphanumeric characters or '-'.
   * Start with an alphanumeric character.
   * End with an alphanumeric character.
+* A PTR record must exist corresponding to the instance address which resolves to the instance hostname for successful reverse DNS lookups. 
