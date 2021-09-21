@@ -23,6 +23,8 @@ find_files() {
         -o -wholename './.git' \
         -o -wholename '*/vendor/*' \
         -o -wholename './containernetworking-plugins' \
+        -o -wholename './containerd' \
+        -o -wholename './hcsshim' \
         -o -wholename './kubelet' \
         -o -wholename './kube-proxy' \
         -o -wholename './ovn-kubernetes' \
