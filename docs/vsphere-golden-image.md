@@ -15,15 +15,20 @@ the patch is not available.*
 ## 2. Create the virtual machine
 
 To start with, create a new virtual machine in vSphere from the selected Windows Server distribution using the ISO image.
-See [vSphere documentation](https://docs.vmware.com/en/VMware-vSphere/6.0/com.vmware.vsphere.hostclient.doc/GUID-7834894B-DD17-4D59-A9BF-A33D02478521.html)
+See [vSphere documentation](https://docs.vmware.com/en/VMware-vSphere/index.html) for installation guidelines.
 
 ### Setup VMware Tools
 
-Install VMware Tools version 11.0.6 or greater. See the [VMware Tools documentation](https://docs.vmware.com/en/VMware-Tools/11.2.0/com.vmware.vsphere.vmwaretools.doc/GUID-D8892B15-73A5-4FCE-AB7D-56C2C90BD951.html) for more information.
+Install VMware Tools version 11.0.6 or greater. See the [VMware Tools documentation](https://docs.vmware.com/en/VMware-Tools/index.html) for more information.
 
-Enable the VMware Tools configuration file [tools.conf](https://docs.vmware.com/en/VMware-Tools/11.2.0/com.vmware.vsphere.vmwaretools.doc/GUID-EA16729B-43C9-4DF9-B780-9B358E71B4AB.html) within the Windows virtual machine.
+Ensure the *VMware Tools* Windows service is running and will start on boot, You can query the `VMTools` service by 
+running the following PowerShell command:
 
-For example in Windows Server version 2004 the VMware Tools configuration file can be found at
+```powershell
+    Get-Service -Name VMTools | Select Status, StartType 
+```
+
+Ensure the VMware Tools configuration file `tools.conf` is present in the following location:
 
 ```
     C:\ProgramData\VMware\VMware Tools\tools.conf
@@ -33,36 +38,22 @@ In case the configuration file does not exist, VMware Tools installs an example 
 directory as the location above, or you can download it from the
 [open-vm-tools](https://raw.githubusercontent.com/vmware/open-vm-tools/master/open-vm-tools/tools.conf) repository.
 
-Ensure the virtual machine has a valid IP address in vCenter. Refer to the *IP Addresses* section in the *Summary* tab 
-of the vSphere Web Client or run the `ipconfig` command in the Windows VM.
+#### Disable the network interface exclusion
 
-Ensure the *VMware Tools* Windows service is running and will start on boot. Refer to [VMware Tools service 
-documentation](https://docs.vmware.com/en/VMware-vSphere/6.0/com.vmware.vsphere.vm_admin.doc/GUID-0BD592B1-A300-4C09-808A-BB447FAE2C2A.html) 
-or run the following PowerShell command:
-
-```powershell
-    Get-Service -Name VMTools | Select Status, StartType 
-```
-
-### Exclude the network interface in the VMware Tools configuration
-
-Enable the following entry in the VMware Tools configuration file to ensure that the cloned vNIC generated on 
-the Windows VM by the hybrid-overlay won't be ignored.
+Uncomment the `exclude-nics` option in the `tools.conf` file and clear any existing values, the value must be 
+empty (no value), to ensure that any vNIC generated on the Windows VM by the hybrid-overlay won't be excluded,
+allowing VMware Tools to report the IP addresses in vCenter.
 
 ```bash
     exclude-nics=
 ``` 
 
-Alternatively, you can run the following PowerShell script that downloads the example configuration file, excludes 
-the network interface and creates the `tools.conf` file.
+Alternatively, you can run the provided PowerShell script [configure-vm-tools.ps1](vsphere_ci/scripts/configure-vm-tools.ps1) 
+that downloads the example configuration file, disables the network interface exclusion and creates the `tools.conf` 
+file in the expected location.
 
-```powershell
-    Invoke-WebRequest -O tools.conf https://raw.githubusercontent.com/vmware/open-vm-tools/master/open-vm-tools/tools.conf
-    
-    (Get-Content -Path tools.conf) -replace '#exclude-nics=','exclude-nics=' | Set-Content -Force -Path tools.conf
-    
-    mv -Force tools.conf 'C:\ProgramData\VMware\VMware Tools\tools.conf'
-```
+Ensure the virtual machine has a valid IP address in vCenter. Refer to the *IP Addresses* section in the *Summary* tab
+of the vSphere Web Client or run the `ipconfig` command in the Windows VM.
 
 ## 3. Set up SSH
 
