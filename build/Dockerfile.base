@@ -26,6 +26,16 @@ WORKDIR /build/windows-machine-config-operator/windows_exporter/
 COPY windows_exporter/ .
 RUN GOOS=windows ./promu build -v
 
+# Build containerd
+WORKDIR /build/windows-machine-config-operator/containerd/
+COPY containerd/ .
+RUN GOOS=windows make
+
+# Build containerd shim
+WORKDIR /build/windows-machine-config-operator/hcsshim/
+COPY hcsshim/ .
+RUN GOOS=windows go build ./cmd/containerd-shim-runhcs-v1
+
 # Build kubelet
 WORKDIR /build/windows-machine-config-operator/kubelet/
 COPY kubelet/ .
@@ -56,6 +66,11 @@ COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-contr
 
 # Copy windows_exporter.exe
 COPY --from=build /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe .
+
+# Copy containerd.exe and containerd-shim-runhcs-v1.exe
+WORKDIR /payload/containerd/
+COPY --from=build /build/windows-machine-config-operator/containerd/bin/containerd.exe .
+COPY --from=build /build/windows-machine-config-operator/hcsshim/containerd-shim-runhcs-v1.exe .
 
 # Copy kubelet.exe and kube-proxy.exe
 WORKDIR /payload/kube-node/
