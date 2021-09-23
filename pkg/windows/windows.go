@@ -426,15 +426,15 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 }
 
 func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
-	sVIP, err := vm.getSourceVIP()
+	endpointIP, err := vm.createHNSEndpoint()
 	if err != nil {
-		return errors.Wrap(err, "error getting source VIP")
+		return errors.Wrap(err, "error creating HNS endpoint")
 	}
 
 	kubeProxyServiceArgs := "--windows-service --v=4 --proxy-mode=kernelspace --feature-gates=WinOverlay=true " +
 		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
 		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
-		"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + sVIP +
+		"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + endpointIP +
 		" --enable-dsr=false\" depend= " + hybridOverlayServiceName
 
 	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs)
@@ -759,8 +759,9 @@ func (vm *windows) waitForServiceToRun(serviceName string) error {
 	return fmt.Errorf("timeout waiting for %s service to be in running state: %v", serviceName, err)
 }
 
-// getSourceVIP returns the source VIP of the VM
-func (vm *windows) getSourceVIP() (string, error) {
+// createHNSEndpoint makes a request to create a new HNS endpoint for the Hybrid Overlay network on the VM. On success,
+// the IP of the endpoint will be returned.
+func (vm *windows) createHNSEndpoint() (string, error) {
 	cmd := "\"Import-Module -DisableNameChecking " + hnsPSModule + "; " +
 		"$net = (Get-HnsNetwork | where { $_.Name -eq 'OVNKubernetesHybridOverlayNetwork' }); " +
 		"$endpoint = New-HnsEndpoint -NetworkId $net.ID -Name VIPEndpoint; " +
@@ -773,11 +774,11 @@ func (vm *windows) getSourceVIP() (string, error) {
 	}
 
 	// stdout will have trailing '\r\n', so need to trim it
-	sourceVIP := strings.TrimSpace(out)
-	if sourceVIP == "" {
-		return "", fmt.Errorf("source VIP is empty")
+	endpointIP := strings.TrimSpace(out)
+	if endpointIP == "" {
+		return "", fmt.Errorf("expected HNS endpoint IP is missing")
 	}
-	return sourceVIP, nil
+	return endpointIP, nil
 }
 
 // newFileInfo returns a pointer to a FileInfo object created from the specified file on the Windows VM
