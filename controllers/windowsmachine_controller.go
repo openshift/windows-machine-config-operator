@@ -119,7 +119,8 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 		// process delete event
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return r.isValidMachine(e.Object) && isWindowsMachine(e.Object.GetLabels())
+			// for Windows machines only
+			return isWindowsMachine(e.Object.GetLabels())
 		},
 	}
 
