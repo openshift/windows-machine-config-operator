@@ -8,6 +8,7 @@ may be relevant.
 | Amazon Web Services (AWS)| 4.6+                        | WMCO 1.0+                |
 | Azure                    | 4.6+                        | WMCO 1.0+                |
 | VMware vSphere           | 4.7+                        | WMCO 2.0+                |
+| Platform none (BYOH)     | 4.8+                        | WMCO 3.1.0+              |
 
 ## Supported Windows Server versions
 The following table outlines the supported
@@ -19,9 +20,9 @@ these errors, only use the appropriate version according to the cloud provider i
 
 | Cloud Provider      | Supported Windows Server version                                        |
 | -----------         | -----------                                                             |
-| AWS                 | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 1809  |
-| Azure               | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 1809  |
-| VMware vSphere      | Windows Server Semi-Annual Channel (SAC): Windows Server 2004           |
+| AWS                 | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019  |
+| Azure               | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019  |
+| VMware vSphere      | Windows Server Semi-Annual Channel (SAC): Windows Server 2004, 20H2     |
 
 ## Supported Networking
 [OVNKubernetes hybrid networking](setup-hybrid-OVNKubernetes-cluster.md) is the only supported networking configuration.
@@ -38,8 +39,8 @@ Note: OpenShiftSDN networking is the default network for OpenShift clusters. It 
 
 | Hybrid OVNKubernetes      | Supported Windows Server version                                      |
 | -----------               | -----------                                                           |
-| Default VXLAN port        | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 1809|
-| Custom VXLAN port         | Windows Server Semi-Annual Channel (SAC): Windows Server 2004         |
+| Default VXLAN port        | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019|
+| Custom VXLAN port         | Windows Server Semi-Annual Channel (SAC): Windows Server 2004, 20H2   |
 
 ## Supported Installation method
 * Installer-Provisioned Infrastructure installation method is the only supported installation method. This is 
