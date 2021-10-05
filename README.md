@@ -39,7 +39,6 @@ Some important things to note:
   nodes. **Upgrade and Node removal functionality will not function properly until this step is complete.**
 
 ### Configuring BYOH (Bring Your Own Host) Windows instances
-WARNING: This is not a fully developed feature. Use at your own risk.
 
 ### Instance Pre-requisites
 Any Windows instances that are to be attached to the cluster as a node must fulfill these [pre-requisites](docs/byoh-instance-pre-requisites.md).
