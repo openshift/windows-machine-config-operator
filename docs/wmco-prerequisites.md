@@ -50,3 +50,18 @@ consistent across all supported cloud providers.
 
 ## vSphere Specific Requirements
 Please refer to [VMware vSphere pre-requisites](vsphere-prerequisites.md).
+
+## Supported Platforms for Community Operator
+| Cloud Provider            | Available for Trial |
+| -----------               | -----------         |
+| AWS IPI                   | Yes                 |
+| AWS IPI BYOH              | Yes                 |
+| AWS UPI BYOH              | Yes                 |
+| Azure IPI                 | Yes                 |
+| Azure IPI BYOH            | Yes                 |
+| Azure UPI BYOH            | Yes                 |
+| BareMetal BYOH            | Yes                 | 
+| Platform-Type = None      | Yes                 |
+| VMware vSphere IPI        | Yes                 |
+| VMware vSphere IPI BYOH   | Yes                 |
+| VMware vSphere UPI BYOH   | Yes                 |
