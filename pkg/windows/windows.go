@@ -63,7 +63,7 @@ const (
 	// windowsExporterServiceArgs specifies metrics for the windows_exporter service to collect
 	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
 	windowsExporterServiceArgs = "--collectors.enabled " +
-		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info\""
+		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info"
 	// remotePowerShellCmdPrefix holds the PowerShell prefix that needs to be prefixed  for every remote PowerShell
 	// command executed on the remote Windows VM
 	remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass "
@@ -343,7 +343,8 @@ func (vm *windows) Configure() error {
 
 // ConfigureWindowsExporter starts Windows metrics exporter service, only if the file is present on the VM
 func (vm *windows) ConfigureWindowsExporter() error {
-	windowsExporterService, err := newService(windowsExporterPath, windowsExporterServiceName, windowsExporterServiceArgs)
+	windowsExporterService, err := newService(windowsExporterPath, windowsExporterServiceName,
+		windowsExporterServiceArgs, nil)
 	if err != nil {
 		return errors.Wrapf(err, "error creating %s service object", windowsExporterServiceName)
 	}
@@ -364,11 +365,12 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 	}
 
 	hybridOverlayServiceArgs := "--node " + nodeName + customVxlanPortArg + " --k8s-kubeconfig c:\\k\\kubeconfig " +
-		"--windows-service " + "--logfile " + hybridOverlayLogDir + "hybrid-overlay.log\" depend= " + kubeletServiceName
+		"--windows-service " + "--logfile " + hybridOverlayLogDir + "hybrid-overlay.log"
 
 	vm.log.Info("configure", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
 
-	hybridOverlayService, err := newService(hybridOverlayPath, hybridOverlayServiceName, hybridOverlayServiceArgs)
+	hybridOverlayService, err := newService(hybridOverlayPath, hybridOverlayServiceName, hybridOverlayServiceArgs,
+		[]string{kubeletServiceName})
 	if err != nil {
 		return errors.Wrapf(err, "error creating %s service object", hybridOverlayServiceName)
 	}
@@ -435,9 +437,10 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
 		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
 		"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + endpointIP +
-		" --enable-dsr=false\" depend= " + hybridOverlayServiceName
+		" --enable-dsr=false"
 
-	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs)
+	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs,
+		[]string{hybridOverlayServiceName})
 	if err != nil {
 		return errors.Wrapf(err, "error creating %s service object", kubeProxyServiceName)
 	}
@@ -585,7 +588,13 @@ func (vm *windows) createService(svc *service) error {
 	if svc == nil {
 		return errors.New("service object should not be nil")
 	}
-	svcCreateCmd := "sc.exe create " + svc.name + " binPath=\"" + svc.binaryPath + " " + svc.args + " start=auto"
+	svcCreateCmd := fmt.Sprintf("sc.exe create %s binPath=\"%s %s\" start=auto", svc.name, svc.binaryPath,
+		svc.args)
+	if len(svc.dependencies) > 0 {
+		dependencyList := strings.Join(svc.dependencies, "/")
+		svcCreateCmd += " depend=" + dependencyList
+	}
+
 	_, err := vm.Run(svcCreateCmd, false)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create service %s", svc.name)
