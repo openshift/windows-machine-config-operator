@@ -71,7 +71,7 @@ func MarkAsFree(c client.Client, watchNamespace string, recorder record.EventRec
 		return err
 	}
 	// If Upgradeable condition is already True, no-op to avoid redundant API calls
-	if validate(opCond.Spec.Conditions, operators.Upgradeable, meta.ConditionTrue) {
+	if Validate(opCond.Spec.Conditions, operators.Upgradeable, meta.ConditionTrue) {
 		return nil
 	}
 
@@ -105,7 +105,7 @@ func MarkAsBusy(c client.Client, watchNamespace string, recorder record.EventRec
 		return err
 	}
 	// If Upgradeable condition is already False, no-op to avoid redundant API calls
-	if validate(opCond.Spec.Conditions, operators.Upgradeable, meta.ConditionFalse) {
+	if Validate(opCond.Spec.Conditions, operators.Upgradeable, meta.ConditionFalse) {
 		return nil
 	}
 
@@ -118,10 +118,8 @@ func MarkAsBusy(c client.Client, watchNamespace string, recorder record.EventRec
 	return nil
 }
 
-// interal helper methods
-
-// validate checks that the given condition is present and holds the expected status value within the given list
-func validate(conditions []meta.Condition, conditionType string, expectedStatus meta.ConditionStatus) bool {
+// Validate checks that the given condition is present and holds the expected status value within the given list
+func Validate(conditions []meta.Condition, conditionType string, expectedStatus meta.ConditionStatus) bool {
 	for _, cond := range conditions {
 		if cond.Type == conditionType {
 			return cond.Status == expectedStatus
@@ -129,6 +127,8 @@ func validate(conditions []meta.Condition, conditionType string, expectedStatus 
 	}
 	return false
 }
+
+// interal helper methods
 
 // set sets the given condition's values within the given OperatorCondition.
 // Only returns after waiting for a made change to take effect.
@@ -180,7 +180,7 @@ func wait(c client.Client, watchNamespace, condType string, expectedStatus meta.
 		if err != nil {
 			return false, err
 		}
-		return validate(opCond.Status.Conditions, condType, expectedStatus), nil
+		return Validate(opCond.Status.Conditions, condType, expectedStatus), nil
 	})
 	if err != nil {
 		return errors.Wrapf(err, "failed to verify condition type %s has status %s", condType, expectedStatus)
