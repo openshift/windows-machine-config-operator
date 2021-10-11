@@ -13,6 +13,7 @@ import (
 	monitoringClient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sclient "k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlruntimecfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
@@ -25,6 +26,7 @@ type OpenShift struct {
 	Route      routeClient.RouteV1Interface
 	K8s        k8sclient.Interface
 	Images     imageClient.ImageV1Interface
+	Cache      client.Client
 }
 
 // GetOpenShift creates client for the current OpenShift cluster. If KUBECONFIG env var is set, it is used to
