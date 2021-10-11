@@ -3,12 +3,15 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	config "github.com/openshift/api/config/v1"
+	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,11 +21,15 @@ import (
 	rbac "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
@@ -454,4 +461,29 @@ func (tc *testContext) findNodeCSRs(nodeName string) ([]certificates.Certificate
 		}
 	}
 	return nodeCSRs, nil
+}
+
+// validateUpgradeableCondition ensures that the operator's Upgradeable condition is correctly communicated to OLM
+func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatus) error {
+	ocName, present := os.LookupEnv(condition.OperatorConditionName)
+	if !present {
+		// Implies operator is not OLM-managed
+		return nil
+	}
+	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+		oc := &operators.OperatorCondition{}
+		err := tc.client.Cache.Get(context.TODO(), types.NamespacedName{Namespace: tc.namespace, Name: ocName}, oc)
+		if err != nil {
+			log.Printf("unable to get OperatorCondition %s from namespace %s", ocName, tc.namespace)
+			return false, nil
+		}
+
+		specCheck := condition.Validate(oc.Spec.Conditions, operators.Upgradeable, expected)
+		statusCheck := condition.Validate(oc.Status.Conditions, operators.Upgradeable, expected)
+		return specCheck && statusCheck, nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "failed to verify condition type %s has status %s", operators.Upgradeable, expected)
+	}
+	return nil
 }
