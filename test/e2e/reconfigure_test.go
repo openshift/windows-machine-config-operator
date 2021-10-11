@@ -49,6 +49,10 @@ func reconfigurationTest(t *testing.T) {
 	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), machineNodes[0].Name, types.JSONPatchType,
 		patchData, metav1.PatchOptions{})
 	require.NoError(t, err)
+	// Ensure operator communicates to OLM that upgrade is not safe when processing Machine nodes
+	err = testCtx.validateUpgradeableCondition(metav1.ConditionFalse)
+	require.NoError(t, err, "operator Upgradeable condition not in proper state")
+
 	_, err = testCtx.client.K8s.CoreV1().Nodes().Patch(context.TODO(), byohNodes[0].Name, types.JSONPatchType,
 		patchData, metav1.PatchOptions{})
 	require.NoError(t, err)
@@ -59,6 +63,9 @@ func reconfigurationTest(t *testing.T) {
 
 	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
 	assert.NoError(t, err, "error waiting for Windows BYOH nodes to be reconfigured")
+
+	err = testCtx.validateUpgradeableCondition(metav1.ConditionTrue)
+	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 }
 
 // testReAddInstance tests the case where a Windows BYOH instance was removed from the cluster, and then re-added.
@@ -92,6 +99,9 @@ func testReAddInstance(t *testing.T) {
 	windowsInstances, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Patch(context.TODO(),
 		wiparser.InstanceConfigMap, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
 	require.NoError(t, err, "error patching windows-instances ConfigMap data with remove operation")
+	// Ensure operator communicates to OLM that upgrade is not safe when processing BYOH nodes
+	err = tc.validateUpgradeableCondition(metav1.ConditionFalse)
+	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 
 	// wait for the node to be removed
 	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes-1, false, true, true)
@@ -115,4 +125,7 @@ func testReAddInstance(t *testing.T) {
 	// wait for the node to be successfully re-added
 	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
 	assert.NoError(t, err, "error waiting for the Windows node to be re-added")
+
+	err = tc.validateUpgradeableCondition(metav1.ConditionTrue)
+	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 }
