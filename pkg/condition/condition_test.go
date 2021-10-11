@@ -85,7 +85,7 @@ func TestValidate(t *testing.T) {
 	}
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			out := validate(test.inputList, test.condType, test.status)
+			out := Validate(test.inputList, test.condType, test.status)
 			assert.Equal(t, out, test.expectedOut)
 		})
 	}
