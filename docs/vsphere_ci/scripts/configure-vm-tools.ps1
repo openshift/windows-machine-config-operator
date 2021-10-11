@@ -5,8 +5,8 @@
 
 # download configuration template
 Invoke-WebRequest -O tools.conf https://raw.githubusercontent.com/vmware/open-vm-tools/master/open-vm-tools/tools.conf
-# exclude network interface
-(Get-Content -Path tools.conf) -replace '#exclude-nics=','exclude-nics=' | Set-Content -Force -Path tools.conf
+# include all network interfaces (exclude none), allowing VMware Tools to report the IP addresses in vCenter
+(Get-Content -Path tools.conf) -replace '#exclude-nics=vEthernet\*','exclude-nics=' | Set-Content -Force -Path tools.conf
 # target location
 $toolsConfFilePath="$env:ProgramData\VMware\VMware Tools\tools.conf"
 # set configuration
