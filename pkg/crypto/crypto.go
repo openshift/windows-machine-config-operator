@@ -13,6 +13,9 @@ import (
 
 const (
 	wmcoMarker = "<wmcoMarker>"
+	tag        = "ENCRYPTED DATA"
+	startTag   = "-----BEGIN " + tag + "-----"
+	endTag     = "-----END " + tag + "-----"
 )
 
 // EncryptToJSONString returns the encrypted JSON text value of the given string
@@ -40,7 +43,6 @@ func encrypt(plaintext string, key []byte) (string, error) {
 	}
 
 	// Prepare PGP block with a wrapper tag around the encrypted data
-	tag := "ENCRYPTED DATA"
 	msgBuffer := bytes.NewBuffer(nil)
 	encoder, err := armor.Encode(msgBuffer, tag, nil)
 	if err != nil {
@@ -61,13 +63,27 @@ func encrypt(plaintext string, key []byte) (string, error) {
 	writer.Close()
 	encoder.Close()
 
-	return string(msgBuffer.Bytes()), nil
+	// Remove unnecessary characters and trim new lines before storing as
+	// part of node Annotations username.
+	encryptedStr := string(msgBuffer.Bytes())
+	encryptedStr = strings.TrimPrefix(encryptedStr, startTag)
+	encryptedStr = strings.TrimSuffix(encryptedStr, endTag)
+	encryptedStr = strings.Trim(encryptedStr, "\n")
+	return encryptedStr, nil
 }
 
 // decrypt converts encrypted contents to plaintext using the given key as a passphrase
 func decrypt(encrypted string, key []byte) (string, error) {
 	if key == nil {
 		return "", errors.New("decryption passphrase cannot be empty")
+	}
+	// As we trim and remove unnecessary characters during encrypt call, we need to
+	// insert them back to encrypted string to get original value.
+	// 1. add start tag 2. add new lines 3.encrypted string 4. add new line 5. add end tag
+	// For more details : https://tools.ietf.org/id/draft-ietf-openpgp-rfc4880bis-06.html#cleartext-signature-framework
+	// for upgrade case, we might still get old format string. if so we can skip below insert logic
+	if !strings.HasPrefix(encrypted, startTag) {
+		encrypted = startTag + "\n\n" + encrypted + "\n" + endTag
 	}
 
 	// Unwrap encoded block holding the message content
