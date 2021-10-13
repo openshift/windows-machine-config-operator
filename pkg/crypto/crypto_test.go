@@ -6,6 +6,8 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -126,6 +128,60 @@ func TestEncryptDecrypt(t *testing.T) {
 	})
 }
 
+func TestUpgradePathDecrypt(t *testing.T) {
+	simplePassphrase := []byte("secret key")
+	rsaPassphrase, _ := generatePrivateKey()
+
+	testCases := []struct {
+		name           string
+		input          string
+		encryptKey     []byte
+		decryptKey     []byte
+		expectedOut    string
+		expectedEncErr bool
+		expectedDecErr bool
+	}{
+		// happy path
+		{
+			name:           "decrypt previous version encrypted key",
+			input:          "Administrator",
+			encryptKey:     simplePassphrase,
+			decryptKey:     simplePassphrase,
+			expectedOut:    "Administrator",
+			expectedEncErr: false,
+			expectedDecErr: false,
+		},
+		// error case
+		{
+			name:           "decrypt attempt with wrong key",
+			input:          "Administrator",
+			encryptKey:     simplePassphrase,
+			decryptKey:     rsaPassphrase,
+			expectedOut:    "",
+			expectedEncErr: false,
+			expectedDecErr: true,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			cipherText, err := generateBuggyEncryptedString(test.input, test.encryptKey)
+			if test.expectedEncErr {
+				assert.Error(t, err)
+				return
+			}
+
+			out, err := DecryptFromJSONString(cipherText, test.decryptKey)
+			if test.expectedDecErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, test.expectedOut, out)
+		})
+	}
+}
+
 // generatePrivateKey generates a random RSA private key
 func generatePrivateKey() ([]byte, error) {
 	var keyData []byte
@@ -143,4 +199,39 @@ func generatePrivateKey() ([]byte, error) {
 		return nil, errors.Wrap(err, "error encoding generated private key")
 	}
 	return buf.Bytes(), nil
+}
+
+// generateBuggyEncryptedString encrypt given string and returns it without modifying it
+// In older WMCO version encrypted string has extra tags. When we try to decrypt older
+// version( WMCO 3.1.0 and below) encrypted string in newer version we need to make sure we are
+// handling it properly in our code. This function generates encrypted string with tags and
+// helps to validate this case.
+func generateBuggyEncryptedString(plaintext string, key []byte) (string, error) {
+	if key == nil {
+		return "", errors.New("encryption passphrase cannot be nil")
+	}
+
+	// Prepare PGP block with a wrapper tag around the encrypted data
+	tag := "ENCRYPTED DATA"
+	msgBuffer := bytes.NewBuffer(nil)
+	encoder, err := armor.Encode(msgBuffer, tag, nil)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to create armor block with tag %s", tag)
+	}
+
+	writer, err := openpgp.SymmetricallyEncrypt(encoder, key, nil, nil)
+	if err != nil {
+		return "", errors.Wrap(err, "failure during encryption")
+	}
+	_, err = writer.Write([]byte(plaintext))
+	if err != nil {
+		// Prevent leak in case of stream failure
+		encoder.Close()
+		return "", err
+	}
+	// Both writers must be closed before reading the bytes written to the buffer
+	writer.Close()
+	encoder.Close()
+
+	return string(msgBuffer.Bytes()), nil
 }
