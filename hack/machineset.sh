@@ -28,10 +28,13 @@ get_spec() {
   local az=$2
   local provider=$3
 
-  machineSetName="$infraID"-windows-worker-"$az"
-  if [ "$provider" = "azure" ]; then
-    # Shorter name for azure as VMs with more than 15 characters in name does not come up
-    machineSetName="winworker"
+  # set machineset name, short name for Azure and vSphere due to
+  # the limit in the number of characters for VM name
+  machineSetName="winworker"
+  # check provider
+  if [ "$provider" = "aws" ]; then
+    # improve machineset name for aws provider
+    machineSetName="$infraID"-"$machineSetName"-"$az"
   fi
 
   cat <<EOF
@@ -67,7 +70,7 @@ EOF
 get_aws_ms() {
 
   if [ "$#" -lt 4 ]; then
-    error-exit incorrect parameter count for get_spec $#
+    error-exit incorrect parameter count for get_aws_ms $#
   fi
 
   local infraID=$1
@@ -168,6 +171,70 @@ $(get_spec $infraID $az $provider)
 EOF
 }
 
+# get_vsphere_ms creates a MachineSet for vSphere Cloud Provider
+get_vsphere_ms() {
+
+  if [ "$#" -lt 2 ]; then
+    error-exit incorrect parameter count for get_vsphere_ms $#
+  fi
+
+  local infraID=$1
+  local provider=$2
+
+  # set golden image template name
+  # TODO: read from parameter
+  template="windows-golden-images/windows-server-2004-template"
+
+  # TODO: Reduce the number of API calls, make just one call
+  #       to `oc get machines` and pass the data around. This is the
+  #       3rd call being introduced across the script and can be avoided
+  providerSpec=$(oc get machines \
+                -n openshift-machine-api \
+                -l machine.openshift.io/cluster-api-machine-role=worker \
+                -o jsonpath="{.items[0].spec.providerSpec.value}" \
+  ) || {
+    error-exit "error getting providerSpec for ${provider} cluster ${infraID}"
+  }
+  if [ -z "$providerSpec" ]; then
+    error-exit "cannot find providerSpec for ${provider} cluster ${infraID}"
+  fi
+  # get credentialsSecret
+  credentialsSecret=$(echo "${providerSpec}" | jq -r '.credentialsSecret.name')
+  # get network name TODO: review when devices > 1
+  networkName=$(echo "${providerSpec}" | jq -r '.network.devices[0].networkName')
+  # get workspace specs
+  datacenter=$(echo "${providerSpec}" | jq -r '.workspace.datacenter')
+  datastore=$(echo "${providerSpec}" | jq -r '.workspace.datastore')
+  folder=$(echo "${providerSpec}" | jq -r '.workspace.folder')
+  resourcePool=$(echo "${providerSpec}" | jq -r '.workspace.resourcePool')
+  server=$(echo "${providerSpec}" | jq -r '.workspace.server')
+  # build machineset
+  cat <<EOF
+$(get_spec $infraID "" $provider)
+      providerSpec:
+        value:
+          apiVersion: vsphereprovider.openshift.io/v1beta1
+          credentialsSecret:
+            name: ${credentialsSecret}
+          diskGiB: 128
+          kind: VSphereMachineProviderSpec
+          memoryMiB: 16384
+          network:
+            devices:
+            - networkName: ${networkName}
+          numCPUs: 4
+          numCoresPerSocket: 1
+          snapshot: ""
+          template: ${template}
+          workspace:
+            datacenter: ${datacenter}
+            datastore: ${datastore}
+            folder: ${folder}
+            resourcePool: ${resourcePool}
+            server: ${server}
+EOF
+}
+
 # Retrieves the Cloud Provider for the OpenShift Cluster
 provider="$(oc -n openshift-kube-apiserver get configmap config -o json | jq -r '.data."config.yaml"' | jq '.apiServerArguments."cloud-provider"' | jq -r '.[]')"
 
@@ -187,6 +254,9 @@ case "$provider" in
     ;;
     azure)
       ms=$(get_azure_ms $infraID $region $az $provider)
+    ;;
+    vsphere)
+      ms=$(get_vsphere_ms $infraID $provider)
     ;;
     *)
       error-exit "platform '$provider' is not yet supported by this script"
