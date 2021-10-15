@@ -15,6 +15,7 @@ require (
 	github.com/openshift/client-go v0.0.0-20210730113412-1811c1b3fc0e
 	github.com/openshift/library-go v0.0.0-20210811133500-5e31383de2a7
 	github.com/openshift/machine-api-operator v0.2.1-0.20210820103535-d50698c302f5
+	github.com/operator-framework/api v0.10.5
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
