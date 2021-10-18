@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/operator-framework/operator-lib/leader"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,6 +43,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(mapi.AddToScheme(scheme))
+	utilruntime.Must(operators.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 

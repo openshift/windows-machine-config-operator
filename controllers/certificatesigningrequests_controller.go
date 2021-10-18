@@ -31,7 +31,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
+)
+
+const (
+	// CSRController is the name of this controller in logs and other outputs.
+	CSRController = "certificatesigningrequests"
 )
 
 // certificateSigningRequestsReconciler reconciles a CertificateSigningRequests object
@@ -56,20 +62,30 @@ func NewCertificateSigningRequestsReconciler(mgr manager.Manager, clusterConfig 
 	return &certificateSigningRequestsReconciler{
 		instanceReconciler: instanceReconciler{
 			client:             mgr.GetClient(),
-			log:                ctrl.Log.WithName("controllers").WithName("CertificateSigningRequests"),
+			log:                ctrl.Log.WithName("controllers").WithName(CSRController),
 			k8sclientset:       clientset,
 			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
 			vxlanPort:          "",
 			watchNamespace:     watchNamespace,
-			recorder:           mgr.GetEventRecorderFor("certificateSigningRequests"),
+			recorder:           mgr.GetEventRecorderFor(CSRController),
 		},
 	}, nil
 }
 
 // Reconcile is part of the main kubernetes reconciliation loop which reads that state of the cluster for a
 // CertificateSigningRequests object and aims to move the current state of the cluster closer to the desired state.
-func (r *certificateSigningRequestsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = r.log.WithValues("certificatesigningrequests", req.NamespacedName)
+func (r *certificateSigningRequestsReconciler) Reconcile(ctx context.Context,
+	req ctrl.Request) (result ctrl.Result, reconcileErr error) {
+	_ = r.log.WithValues(CSRController, req.NamespacedName)
+
+	// Prevent WMCO upgrades while CSRs are being processed
+	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, CSRController); err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		reconcileErr = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, CSRController,
+			result.Requeue, reconcileErr)
+	}()
 
 	certificateSigningRequest := &certificates.CertificateSigningRequest{}
 	if err := r.client.Get(ctx, req.NamespacedName, certificateSigningRequest); err != nil {
