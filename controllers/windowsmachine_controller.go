@@ -8,6 +8,7 @@ import (
 
 	oconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	mclient "github.com/openshift/machine-api-operator/pkg/generated/clientset/versioned/typed/machine/v1beta1"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -56,6 +57,8 @@ const (
 // WindowsMachineReconciler is used to create a controller which manages Windows Machine objects
 type WindowsMachineReconciler struct {
 	instanceReconciler
+	// machineClient holds the information for machine client
+	machineClient *mclient.MachineV1beta1Client
 }
 
 // NewWindowsMachineReconciler returns a pointer to a WindowsMachineReconciler
@@ -69,6 +72,11 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating kubernetes clientset")
+	}
+
+	machineClient, err := mclient.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating machine client")
 	}
 
 	// Initialize prometheus configuration
@@ -89,6 +97,7 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 			prometheusNodeConfig: pc,
 			platform:             clusterConfig.Platform(),
 		},
+		machineClient: machineClient,
 	}, nil
 }
 
@@ -134,9 +143,8 @@ func (r *WindowsMachineReconciler) mapNodeToMachine(object client.Object) []reco
 	}
 
 	// Map the Node to the associated Machine through the Node's UID
-	machines := &mapi.MachineList{}
-	err := r.client.List(context.TODO(), machines,
-		client.MatchingLabels(map[string]string{MachineOSLabel: "Windows"}))
+	machines, err := r.machineClient.Machines(machineAPINamespace).List(context.TODO(),
+		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows"})
 	if err != nil {
 		r.log.Error(err, "could not get a list of machines")
 	}
@@ -229,8 +237,9 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	}
 
 	// Fetch the Machine instance
-	machine := &mapi.Machine{}
-	if err := r.client.Get(ctx, request.NamespacedName, machine); err != nil {
+	machine, err := r.machineClient.Machines(machineAPINamespace).Get(ctx,
+		request.Name, meta.GetOptions{})
+	if err != nil {
 		if k8sapierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
 			// In the case the machine was deleted, ensure that the metrics subsets are configured properly, so that
@@ -439,17 +448,15 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) (boo
 	}
 	machinesetName := machine.OwnerReferences[0].Name
 
-	machines := &mapi.MachineList{}
-	err := r.client.List(context.TODO(), machines,
-		client.MatchingLabels(map[string]string{MachineOSLabel: "Windows"}))
+	machines, err := r.machineClient.Machines(machineAPINamespace).List(context.TODO(),
+		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows"})
 	if err != nil {
 		return false, errors.Wrap(err, "cannot list Machines")
 	}
 
 	// get Windows MachineSet
-	windowsMachineSet := &mapi.MachineSet{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: machinesetName,
-		Namespace: "openshift-machine-api"}, windowsMachineSet)
+	windowsMachineSet, err := r.machineClient.MachineSets(machineAPINamespace).Get(context.TODO(),
+		machinesetName, meta.GetOptions{})
 	if err != nil {
 		return false, errors.Wrap(err, "cannot get MachineSet")
 	}
