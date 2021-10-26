@@ -308,6 +308,16 @@ spec:
           - get
           - list
         - apiGroups:
+          - operators.coreos.com
+          resources:
+          - operatorconditions
+          verbs:
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
           - security.openshift.io
           resourceNames:
           - hostnetwork
@@ -315,16 +325,6 @@ spec:
           - securitycontextconstraints
           verbs:
           - use
-        - apiGroups:
-          - operators.coreos.com
-          resources:
-          - operatorconditions
-          verbs:
-          - get
-          - list
-          - watch
-          - update
-          - patch
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator
