@@ -19,6 +19,8 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
+//+kubebuilder:rbac:groups="operators.coreos.com",resources=operatorconditions,verbs=get;list;patch;update;watch
+
 const (
 	upgradeableTrueReason   = "upgradeIsSafe"
 	upgradeableTrueMessage  = "The operator is safe for upgrade"
