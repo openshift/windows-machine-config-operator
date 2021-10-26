@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"runtime"
 	"strings"
 
 	osconfigv1 "github.com/openshift/api/config/v1"
@@ -17,7 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -80,8 +79,7 @@ const (
 
 	// AWS Defaults
 	defaultAWSCredentialsSecret = "aws-cloud-credentials"
-	defaultAWSX86InstanceType   = "m5.large"
-	defaultAWSARMInstanceType   = "m6g.large"
+	defaultAWSInstanceType      = "m4.large"
 
 	// Azure Defaults
 	defaultAzureVMSize            = "Standard_D4s_V3"
@@ -298,8 +296,7 @@ func getMachineDefaulterOperation(platformStatus *osconfigv1.PlatformStatus) mac
 		if platformStatus.AWS != nil {
 			region = platformStatus.AWS.Region
 		}
-		arch := runtime.GOARCH
-		return awsDefaulter{region: region, arch: arch}.defaultAWS
+		return awsDefaulter{region: region}.defaultAWS
 	case osconfigv1.AzurePlatformType:
 		return defaultAzure
 	case osconfigv1.GCPPlatformType:
@@ -535,7 +532,6 @@ func (h *machineDefaulterHandler) Handle(ctx context.Context, req admission.Requ
 
 type awsDefaulter struct {
 	region string
-	arch   string
 }
 
 func (a awsDefaulter) defaultAWS(m *Machine, config *admissionConfig) (bool, []string, utilerrors.Aggregate) {
@@ -550,11 +546,7 @@ func (a awsDefaulter) defaultAWS(m *Machine, config *admissionConfig) (bool, []s
 	}
 
 	if providerSpec.InstanceType == "" {
-		if a.arch == "arm64" {
-			providerSpec.InstanceType = defaultAWSARMInstanceType
-		} else {
-			providerSpec.InstanceType = defaultAWSX86InstanceType
-		}
+		providerSpec.InstanceType = defaultAWSInstanceType
 	}
 
 	if providerSpec.Placement.Region == "" {
@@ -578,7 +570,7 @@ func (a awsDefaulter) defaultAWS(m *Machine, config *admissionConfig) (bool, []s
 		return false, warnings, utilerrors.NewAggregate(errs)
 	}
 
-	m.Spec.ProviderSpec.Value = &kruntime.RawExtension{Raw: rawBytes}
+	m.Spec.ProviderSpec.Value = &runtime.RawExtension{Raw: rawBytes}
 	return true, warnings, nil
 }
 
@@ -742,7 +734,7 @@ func defaultAzure(m *Machine, config *admissionConfig) (bool, []string, utilerro
 		return false, warnings, utilerrors.NewAggregate(errs)
 	}
 
-	m.Spec.ProviderSpec.Value = &kruntime.RawExtension{Raw: rawBytes}
+	m.Spec.ProviderSpec.Value = &runtime.RawExtension{Raw: rawBytes}
 	return true, warnings, nil
 }
 
@@ -885,7 +877,7 @@ func defaultGCP(m *Machine, config *admissionConfig) (bool, []string, utilerrors
 		return false, warnings, utilerrors.NewAggregate(errs)
 	}
 
-	m.Spec.ProviderSpec.Value = &kruntime.RawExtension{Raw: rawBytes}
+	m.Spec.ProviderSpec.Value = &runtime.RawExtension{Raw: rawBytes}
 	return true, warnings, nil
 }
 
@@ -1068,7 +1060,7 @@ func defaultVSphere(m *Machine, config *admissionConfig) (bool, []string, utiler
 		return false, warnings, utilerrors.NewAggregate(errs)
 	}
 
-	m.Spec.ProviderSpec.Value = &kruntime.RawExtension{Raw: rawBytes}
+	m.Spec.ProviderSpec.Value = &runtime.RawExtension{Raw: rawBytes}
 	return true, warnings, nil
 }
 

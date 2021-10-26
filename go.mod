@@ -11,10 +11,10 @@ replace (
 require (
 	github.com/aws/aws-sdk-go v1.38.23
 	github.com/go-logr/logr v0.4.0
-	github.com/openshift/api v0.0.0-20210816181336-8ff39b776da3
+	github.com/openshift/api v0.0.0-20211025104849-a11323ccb6ea
 	github.com/openshift/client-go v0.0.0-20210730113412-1811c1b3fc0e
 	github.com/openshift/library-go v0.0.0-20210811133500-5e31383de2a7
-	github.com/openshift/machine-api-operator v0.2.1-0.20210820103535-d50698c302f5
+	github.com/openshift/machine-api-operator v0.2.1-0.20210504014029-a132ec00f7dd
 	github.com/operator-framework/api v0.10.5
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/pkg/errors v0.9.1

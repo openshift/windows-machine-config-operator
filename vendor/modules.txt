@@ -1,4 +1,4 @@
-# cloud.google.com/go v0.81.0
+# cloud.google.com/go v0.65.0
 cloud.google.com/go/compute/metadata
 # github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1
 github.com/Azure/go-ansiterm
@@ -164,7 +164,7 @@ github.com/modern-go/concurrent
 github.com/modern-go/reflect2
 # github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00
 github.com/monochromegane/go-gitignore
-# github.com/openshift/api v0.0.0-20210816181336-8ff39b776da3
+# github.com/openshift/api v0.0.0-20211025104849-a11323ccb6ea
 ## explicit
 github.com/openshift/api/config/v1
 github.com/openshift/api/image/docker10
@@ -191,7 +191,7 @@ github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alp
 github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1alpha1/fake
 github.com/openshift/client-go/route/clientset/versioned/scheme
 github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
-# github.com/openshift/cluster-api-provider-gcp v0.0.1-0.20210615203611-a02074e8d5bb
+# github.com/openshift/cluster-api-provider-gcp v0.0.1-0.20201201000827-1117a4fc438c
 github.com/openshift/cluster-api-provider-gcp/pkg/apis/gcpprovider/v1beta1
 # github.com/openshift/library-go v0.0.0-20210811133500-5e31383de2a7
 ## explicit
@@ -199,7 +199,7 @@ github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
 github.com/openshift/library-go/pkg/image/internal/reference
 github.com/openshift/library-go/pkg/image/reference
-# github.com/openshift/machine-api-operator v0.2.1-0.20210820103535-d50698c302f5
+# github.com/openshift/machine-api-operator v0.2.1-0.20210504014029-a132ec00f7dd
 ## explicit
 github.com/openshift/machine-api-operator/pkg/apis/machine
 github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1
@@ -248,7 +248,7 @@ github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
 # github.com/russross/blackfriday v1.5.2
 github.com/russross/blackfriday
-# github.com/spf13/cobra v1.2.1
+# github.com/spf13/cobra v1.1.3
 github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.5
 ## explicit
@@ -308,10 +308,9 @@ golang.org/x/net/http/httpguts
 golang.org/x/net/http2
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
-# golang.org/x/oauth2 v0.0.0-20210402161424-2e8d93401602
+# golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 golang.org/x/oauth2
 golang.org/x/oauth2/google
-golang.org/x/oauth2/google/internal/externalaccount
 golang.org/x/oauth2/internal
 golang.org/x/oauth2/jws
 golang.org/x/oauth2/jwt
@@ -661,7 +660,7 @@ k8s.io/kubectl/pkg/util/openapi/validation
 k8s.io/kubectl/pkg/util/templates
 k8s.io/kubectl/pkg/util/term
 k8s.io/kubectl/pkg/validation
-# k8s.io/utils v0.0.0-20210802155522-efc7438f0176
+# k8s.io/utils v0.0.0-20210722164352-7f3ee0f31471
 k8s.io/utils/buffer
 k8s.io/utils/exec
 k8s.io/utils/integer
