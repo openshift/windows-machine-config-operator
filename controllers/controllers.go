@@ -25,6 +25,11 @@ import (
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
+const (
+	// machineAPINamespace is the name of the namespace in which machine objects and userData secret is created.
+	machineAPINamespace = "openshift-machine-api"
+)
+
 // instanceReconciler contains everything needed to perform actions on a Windows instance
 type instanceReconciler struct {
 	// Client is the cache client
