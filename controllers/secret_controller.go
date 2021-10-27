@@ -34,8 +34,7 @@ import (
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=create;get;list;watch;update
 
 const (
-	userDataSecret    = "windows-user-data"
-	userDataNamespace = "openshift-machine-api"
+	userDataSecret = "windows-user-data"
 )
 
 // NewSecretReconciler returns a pointer to a SecretReconciler
@@ -102,7 +101,7 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // isUserDataSecret returns true if the provided object is the userData Secret
 func isUserDataSecret(obj client.Object) bool {
-	return obj.GetName() == userDataSecret && obj.GetNamespace() == userDataNamespace
+	return obj.GetName() == userDataSecret && obj.GetNamespace() == machineAPINamespace
 }
 
 // isPrivateKeySecret returns true if the provided object is the private key secret
@@ -147,7 +146,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 
 	userData := &core.Secret{}
 	// Fetch UserData instance
-	err = r.client.Get(ctx, kubeTypes.NamespacedName{Name: userDataSecret, Namespace: userDataNamespace}, userData)
+	err = r.client.Get(ctx, kubeTypes.NamespacedName{Name: userDataSecret, Namespace: machineAPINamespace}, userData)
 	if err != nil && k8sapierrors.IsNotFound(err) {
 		// Secret is deleted
 		log.Info("secret not found, creating the secret", "name", userDataSecret)
