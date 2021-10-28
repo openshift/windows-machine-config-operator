@@ -97,7 +97,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name:  "valid dns and ip addresses with associated nodes",
-			input: map[string]string{"localhost": "username=core", "127.0.0.1": "username=Admin"},
+			input: map[string]string{"localhost": "username=core", "127.0.0.2": "username=Admin"},
 			nodeList: &core.NodeList{
 				Items: []core.Node{
 					{
@@ -106,7 +106,7 @@ func TestParse(t *testing.T) {
 						},
 						Status: core.NodeStatus{
 							Addresses: []core.NodeAddress{
-								{Address: "127.0.0.1", Type: core.NodeInternalIP},
+								{Address: "127.0.0.2", Type: core.NodeInternalIP},
 							},
 						},
 					},
@@ -116,22 +116,22 @@ func TestParse(t *testing.T) {
 						},
 						Status: core.NodeStatus{
 							Addresses: []core.NodeAddress{
-								{Address: "localhost", Type: core.NodeInternalDNS},
+								{Address: "127.0.0.1", Type: core.NodeInternalIP},
 							},
 						},
 					},
 				},
 			},
 			expectedOut: []*instance.Info{
-				{Address: "127.0.0.1", IPv4Address: "127.0.0.1", Username: "Admin",
+				{Address: "127.0.0.2", IPv4Address: "127.0.0.2", Username: "Admin",
 					Node: &core.Node{ObjectMeta: meta.ObjectMeta{Name: "ip-node"},
-						Status: core.NodeStatus{Addresses: []core.NodeAddress{{Address: "127.0.0.1",
+						Status: core.NodeStatus{Addresses: []core.NodeAddress{{Address: "127.0.0.2",
 							Type: core.NodeInternalIP}},
 						}}},
 				{Address: "localhost", IPv4Address: "127.0.0.1", Username: "core",
 					Node: &core.Node{ObjectMeta: meta.ObjectMeta{Name: "dns-node"},
-						Status: core.NodeStatus{Addresses: []core.NodeAddress{{Address: "localhost",
-							Type: core.NodeInternalDNS}},
+						Status: core.NodeStatus{Addresses: []core.NodeAddress{{Address: "127.0.0.1",
+							Type: core.NodeInternalIP}},
 						}}},
 			},
 			expectedErr: false,
