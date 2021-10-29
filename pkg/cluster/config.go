@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/apparentlymart/go-cidr/cidr"
 	oconfig "github.com/openshift/api/config/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
@@ -295,4 +296,21 @@ func ValidateCIDR(cidr string) error {
 		return errors.Wrapf(err, "received invalid CIDR value %s", cidr)
 	}
 	return nil
+}
+
+// GetDNS parses a subnet in CIDR format as defined by RFC 4632 and RFC 4291
+// and returns the IP address of the Cluster DNS.
+// Example: 172.30.0.0/16 returns 172.30.0.10
+func GetDNS(subnet string) (string, error) {
+	_, network, err := net.ParseCIDR(subnet)
+	if err != nil {
+		return "", err
+	}
+	//  clusterDNS is the 10th IP for the given subnet
+	//  this is a widespread convention set by upstream Kubernetes
+	clusterDNS, err := cidr.Host(network, 10)
+	if err != nil {
+		return "", err
+	}
+	return clusterDNS.String(), nil
 }
