@@ -170,6 +170,8 @@ type windows struct {
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
 	// the OpenShift worker ignition file.
 	workerIgnitionEndpoint string
+	// clusterDNS is the IP address of the DNS server used for all containers
+	clusterDNS string
 	// signer is used for authenticating against the VM
 	signer ssh.Signer
 	// interact is used to connect to and interact with the VM
@@ -185,7 +187,7 @@ type windows struct {
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(workerIgnitionEndpoint, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer) (Windows, error) {
+func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer) (Windows, error) {
 	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
@@ -196,6 +198,7 @@ func New(workerIgnitionEndpoint, vxlanPort string, instanceInfo *instance.Info, 
 	return &windows{
 			interact:               conn,
 			workerIgnitionEndpoint: workerIgnitionEndpoint,
+			clusterDNS:             clusterDNS,
 			vxlanPort:              vxlanPort,
 			instance:               instanceInfo,
 			log:                    log,
@@ -560,7 +563,9 @@ func (vm *windows) runBootstrapper() error {
 	if vm.instance.SetNodeIP {
 		wmcbInitializeCmd += " --node-ip=" + vm.GetIPv4Address()
 	}
-
+	if vm.clusterDNS != "" {
+		wmcbInitializeCmd += " --cluster-dns " + vm.clusterDNS
+	}
 	out, err := vm.Run(wmcbInitializeCmd, true)
 	vm.log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
 	if err != nil {
