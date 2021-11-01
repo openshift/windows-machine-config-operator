@@ -22,7 +22,7 @@ import (
 
 // remotePowerShellCmdPrefix holds the PowerShell prefix that needs to be prefixed  for every remote PowerShell
 // command executed on the remote Windows VM
-const remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command \""
+const remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command "
 
 func deletionTestSuite(t *testing.T) {
 	t.Run("Deletion", func(t *testing.T) { testWindowsNodeDeletion(t) })
@@ -81,12 +81,12 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 // checkDirsDoNotExist returns true if the required directories do not exist on the Windows instance with the given
 // address
 func (tc *testContext) checkDirsDoNotExist(address string) (bool, error) {
-	command := remotePowerShellCmdPrefix
+	command := ""
 	for _, dir := range windows.RequiredDirectories {
 		command += fmt.Sprintf("if ((Test-Path %s) -eq $true) { Write-Output %s exists}", dir, dir)
 	}
-	command += "exit 0\""
-	out, err := tc.runSSHJob("check-win-dirs", command, address)
+	command += "exit 0"
+	out, err := tc.runPowerShellSSHJob("check-win-dirs", command, address)
 	if err != nil {
 		return false, errors.Wrapf(err, "error confirming directories do not exist %s", out)
 	}
@@ -96,8 +96,8 @@ func (tc *testContext) checkDirsDoNotExist(address string) (bool, error) {
 // checkNetworksRemoved returns true if the HNS networks created by hybrid-overlay and the
 // HNS endpoint created by the operator do not exist on the Windows instance with the given address
 func (tc *testContext) checkNetworksRemoved(address string) (bool, error) {
-	command := fmt.Sprintf(remotePowerShellCmdPrefix + "Get-HnsNetwork; Get-HnsEndpoint\"")
-	out, err := tc.runSSHJob("check-hns-networks", command, address)
+	command := "Get-HnsNetwork; Get-HnsEndpoint"
+	out, err := tc.runPowerShellSSHJob("check-hns-networks", command, address)
 	if err != nil {
 		return false, errors.Wrapf(err, "error confirming networks are removed %s", out)
 	}
