@@ -13,12 +13,16 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
-
-	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
-// sshPort is the default SSH port
-const sshPort = "22"
+const (
+	// sshPort is the default SSH port
+	sshPort = "22"
+	// TCPConnTimeout is the maximum amount of time for a single TCP connection to establish
+	TCPConnTimeout = time.Second * 45
+	// SSHRetryTimeout is the total time we will retry to establish an SSH connection with a particular socket address
+	SSHRetryTimeout = time.Minute * 5
+)
 
 // AuthErr occurs when our authentication into the VM is rejected
 type AuthErr struct {
@@ -82,11 +86,12 @@ func (c *sshConnectivity) init() error {
 			ssh.PublicKeys(c.signer),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         TCPConnTimeout,
 	}
 	var err error
 	var sshClient *ssh.Client
 	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data
-	err = wait.PollImmediate(time.Minute, retry.Timeout, func() (bool, error) {
+	err = wait.PollImmediate(time.Minute, SSHRetryTimeout, func() (bool, error) {
 		sshClient, err = ssh.Dial("tcp", c.ipAddress+":"+sshPort, config)
 		if err == nil {
 			return true, nil
