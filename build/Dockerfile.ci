@@ -88,6 +88,15 @@ COPY tools.go tools.go
 COPY .gitignore .gitignore
 RUN make build
 
+# Generate the private key to be used in cloud-private-key secret
+FROM quay.io/centos/centos:stream8
+LABEL stage=key
+
+WORKDIR /windows-key/
+
+RUN dnf update && dnf install openssh
+RUN ssh-keygen -N "" -t ed25519 -f windows-key.pem
+
 # Build the operator image with following payload structure
 # /payload/
 #├── cni
@@ -111,6 +120,10 @@ RUN make build
 
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.16-openshift-4.8
 LABEL stage=operator
+
+# Copy the private key
+WORKDIR /windows-key/
+COPY --from=key /windows-key/windows-key.pem .
 
 # Copy wmcb.exe
 WORKDIR /payload/

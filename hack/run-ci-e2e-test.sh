@@ -93,10 +93,18 @@ if [[ -z "$OPERATOR_IMAGE" ]]; then
   error-exit "The OPERATOR_IMAGE environment variable was not found."
 fi
 
+# Default value /windows-key/windows-key.pem is the key created in Dockerfile.ci
+WINDOWS_KEY="/windows-key/windows-key.pem"
+
 # generate the WMCO binary if we are not running the test through CI. This binary is used to validate WMCO version
 # while running the validation test. For CI, we use different `wmcoPath` based on how we generate the container image.
+# Generate a private key used in the cloud-private-key secret. In CI, this is part of the test image created. We are
+# doing it this way because the image from which this script is run in CI does not have openssh installed and there is
+# no option to dnf install it.
 if [[ "$OPENSHIFT_CI" != "true" ]]; then
   make build
+  WINDOWS_KEY="/tmp/windows-key.pem"
+  ssh-keygen -N "" -t ed25519 -f $WINDOWS_KEY
 fi
 
 # Setup and run the operator
@@ -125,11 +133,11 @@ fi
 
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$WINDOWS_KEY $WMCO_PATH_OPTION
 
 # Run the creation tests of the Windows VMs
 printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$WINDOWS_KEY $WMCO_PATH_OPTION
 # Get logs for the creation tests
 printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
 get_WMCO_logs
@@ -137,13 +145,13 @@ get_WMCO_logs
 if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
   # Run the network tests
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$WINDOWS_KEY $WMCO_PATH_OPTION
 fi
 
 if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   # Run the upgrade tests and skip deletion of the Windows VMs
   printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$WINDOWS_KEY $WMCO_PATH_OPTION
 
   # Run the reconfiguration test
   # The reconfiguration suite must be run directly before the deletion suite. This is because we do not
@@ -151,13 +159,13 @@ if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   # added/moved in between these two suites may fail.
   # This limitation will be removed with https://issues.redhat.com/browse/WINC-655
   printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
+  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$WINDOWS_KEY $WMCO_PATH_OPTION
 fi
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
 if ! $SKIP_NODE_DELETION; then
-  go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args --private-key-path=$KUBE_SSH_KEY_PATH
+  go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args --private-key-path=$WINDOWS_KEY
   # Get logs on success before cleanup
   PRINT_UPGRADE=""
   if [[ "$TEST" = "upgrade" ]]; then
