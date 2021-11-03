@@ -15,11 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/iam"
 	config "github.com/openshift/api/config/v1"
-	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	mapi "github.com/openshift/api/machine/v1beta1"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	awsprovider "sigs.k8s.io/cluster-api-provider-aws/pkg/apis/awsprovider/v1beta1"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
@@ -344,27 +343,27 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 		machineLabels[k] = v
 	}
 
-	providerSpec := &awsprovider.AWSMachineProviderConfig{
-		AMI: awsprovider.AWSResourceReference{
+	providerSpec := &mapi.AWSMachineProviderConfig{
+		AMI: mapi.AWSResourceReference{
 			ID: &a.imageID,
 		},
 		InstanceType: a.instanceType,
-		IAMInstanceProfile: &awsprovider.AWSResourceReference{
+		IAMInstanceProfile: &mapi.AWSResourceReference{
 			ID: instanceProfile.Name,
 		},
 		CredentialsSecret: &core.LocalObjectReference{
 			Name: "aws-cloud-credentials",
 		},
-		SecurityGroups: []awsprovider.AWSResourceReference{
+		SecurityGroups: []mapi.AWSResourceReference{
 			{
 				ID: &sgID,
 			},
 		},
-		Subnet: awsprovider.AWSResourceReference{
+		Subnet: mapi.AWSResourceReference{
 			ID: subnet.SubnetId,
 		},
 		// query placement
-		Placement: awsprovider.Placement{
+		Placement: mapi.Placement{
 			Region:           a.region,
 			AvailabilityZone: *subnet.AvailabilityZone,
 		},

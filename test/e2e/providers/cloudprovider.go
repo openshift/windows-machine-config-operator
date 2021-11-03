@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	config "github.com/openshift/api/config/v1"
-	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	mapi "github.com/openshift/api/machine/v1beta1"
 	"github.com/pkg/errors"
 
 	oc "github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
