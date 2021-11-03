@@ -1,7 +1,7 @@
 {
   "variables": {
     "os-iso-path": "[WorkloadDatastore] windows-iso-images/winsrv2004_sep_2020_x64_dvd.iso",
-    "vmtools-iso-path": "[WorkloadDatastore] windows-iso-images/vmtools-v11333-windows.iso",
+    "vmtools-iso-path": "[WorkloadDatastore] windows-iso-images/vmtools-v11360-windows.iso",
     "vm-template-folder": "windows-golden-images",
     "vm-template-name": "windows-server-2004-template",
     "vm-elevated-password": "WindowsPassword",
