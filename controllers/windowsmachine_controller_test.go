@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	mapi "github.com/openshift/api/machine/v1beta1"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"

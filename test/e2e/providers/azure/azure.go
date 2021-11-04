@@ -6,11 +6,10 @@ import (
 	"fmt"
 
 	config "github.com/openshift/api/config/v1"
-	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	mapi "github.com/openshift/api/machine/v1beta1"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	azureprovider "sigs.k8s.io/cluster-api-provider-azure/pkg/apis/azureprovider/v1beta1"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
@@ -48,7 +47,7 @@ func New(clientset *clusterinfo.OpenShift, hasCustomVXLANPort bool) (*Provider, 
 }
 
 // newAzureMachineProviderSpec returns an AzureMachineProviderSpec generated from the inputs, or an error
-func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus, location, zone, vmSize string) (*azureprovider.AzureMachineProviderSpec, error) {
+func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus, location, zone, vmSize string) (*mapi.AzureMachineProviderSpec, error) {
 	if clusterID == "" {
 		return nil, fmt.Errorf("clusterID is empty")
 	}
@@ -64,7 +63,7 @@ func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus
 	rg := status.Azure.ResourceGroupName
 	netrg := status.Azure.NetworkResourceGroupName
 
-	return &azureprovider.AzureMachineProviderSpec{
+	return &mapi.AzureMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
 			APIVersion: "azureproviderconfig.openshift.io/v1beta1",
 			Kind:       "AzureMachineProviderSpec",
@@ -80,16 +79,16 @@ func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus
 		Location: location,
 		Zone:     &zone,
 		VMSize:   vmSize,
-		Image: azureprovider.Image{
+		Image: mapi.Image{
 			Publisher: defaultImagePublisher,
 			Offer:     defaultImageOffer,
 			SKU:       defaultImageSKU,
 			Version:   defaultImageVersion,
 		},
-		OSDisk: azureprovider.OSDisk{
+		OSDisk: mapi.OSDisk{
 			OSType:     "Windows",
 			DiskSizeGB: defaultOSDiskSizeGB,
-			ManagedDisk: azureprovider.ManagedDiskParameters{
+			ManagedDisk: mapi.ManagedDiskParameters{
 				StorageAccountType: defaultStorageAccountType,
 			},
 		},
@@ -118,7 +117,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 	if err != nil {
 		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)
 	}
-	masterProviderSpec := new(azureprovider.AzureMachineProviderSpec)
+	masterProviderSpec := new(mapi.AzureMachineProviderSpec)
 	err = json.Unmarshal(machines.Spec.ProviderSpec.Value.Raw, masterProviderSpec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal master-0 azure machine provider spec: %v", err)

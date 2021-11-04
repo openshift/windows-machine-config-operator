@@ -10,8 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	config "github.com/openshift/api/config/v1"
-	mapi "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
-	vsphere "github.com/openshift/machine-api-operator/pkg/apis/vsphereprovider/v1beta1"
+	mapi "github.com/openshift/api/machine/v1beta1"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,7 +33,7 @@ func New(clientset *clusterinfo.OpenShift) (*Provider, error) {
 }
 
 // newVSphereMachineProviderSpec returns a vSphereMachineProviderSpec generated from the inputs, or an error
-func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSphereMachineProviderSpec, error) {
+func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*mapi.VSphereMachineProviderSpec, error) {
 	if clusterID == "" {
 		return nil, fmt.Errorf("clusterID is empty")
 	}
@@ -53,7 +52,7 @@ func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSp
 
 	log.Printf("creating machineset based on template %s\n", vmTemplate)
 
-	return &vsphere.VSphereMachineProviderSpec{
+	return &mapi.VSphereMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
 			APIVersion: "vsphereprovider.openshift.io/v1beta1",
 			Kind:       "VSphereMachineProviderSpec",
@@ -63,8 +62,8 @@ func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSp
 		},
 		DiskGiB:   int32(128),
 		MemoryMiB: int64(16384),
-		Network: vsphere.NetworkSpec{
-			Devices: []vsphere.NetworkDeviceSpec{{NetworkName: getNetwork()}},
+		Network: mapi.NetworkSpec{
+			Devices: []mapi.NetworkDeviceSpec{{NetworkName: getNetwork()}},
 		},
 		NumCPUs:           int32(4),
 		NumCoresPerSocket: int32(1),
@@ -74,7 +73,7 @@ func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSp
 }
 
 // getWorkspaceFromExistingMachineSet returns Workspace from a machineset provisioned during installation
-func (p *Provider) getWorkspaceFromExistingMachineSet(clusterID string) (*vsphere.Workspace, error) {
+func (p *Provider) getWorkspaceFromExistingMachineSet(clusterID string) (*mapi.Workspace, error) {
 	if clusterID == "" {
 		return nil, fmt.Errorf("clusterID is empty")
 	}
@@ -93,7 +92,7 @@ func (p *Provider) getWorkspaceFromExistingMachineSet(clusterID string) (*vspher
 	if providerSpecRaw == nil || providerSpecRaw.Raw == nil {
 		return nil, errors.Wrap(err, "no provider spec found")
 	}
-	var providerSpec vsphere.VSphereMachineProviderSpec
+	var providerSpec mapi.VSphereMachineProviderSpec
 	err = json.Unmarshal(providerSpecRaw.Raw, &providerSpec)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to unmarshal providerSpec")
