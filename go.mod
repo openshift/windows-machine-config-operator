@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
+	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.38.23
 	github.com/go-logr/logr v0.4.0
 	github.com/openshift/api v0.0.0-20211103131146-a0807454a876
