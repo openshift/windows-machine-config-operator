@@ -257,6 +257,11 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.R
 		err := r.client.Get(ctx, kubeTypes.NamespacedName{Namespace: machine.Status.NodeRef.Namespace,
 			Name: machine.Status.NodeRef.Name}, node)
 		if err != nil {
+			// Do not requeue if associated node cannot be found (i.e. deleted) for a running machine
+			if k8sapierrors.IsNotFound(err) {
+				log.Info("the node associated with this machine does not exist, no-op", "name", machine.GetName())
+				return ctrl.Result{}, nil
+			}
 			return ctrl.Result{}, errors.Wrapf(err, "could not get node associated with machine %s", machine.GetName())
 		}
 
