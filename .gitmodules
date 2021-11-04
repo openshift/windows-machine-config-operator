@@ -9,7 +9,7 @@
 [submodule "containernetworking-plugins"]
 	path = containernetworking-plugins
 	url = https://github.com/openshift/containernetworking-plugins
-	branch = release-4.9
+	branch = release-4.10
 [submodule "promu"]
 	path = promu
 	url = https://github.com/openshift/prometheus-promu
