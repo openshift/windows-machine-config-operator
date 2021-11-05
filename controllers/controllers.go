@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
@@ -193,4 +194,15 @@ func isValidWindowsNode(o client.Object, byoh bool) bool {
 		return false
 	}
 	return true
+}
+
+// markAsFreeOnSuccess is called after a controller's Reconcile function returns. If the given controller finished
+// reconciling without error or requesting a requeue event, the controller is marked as free.
+// When all controllers are free, WMCO upgrades are unblocked.
+func markAsFreeOnSuccess(c client.Client, watchNamespace string, recorder record.EventRecorder, controllerName string,
+	requeue bool, err error) error {
+	if !requeue && err == nil {
+		return condition.MarkAsFree(c, watchNamespace, recorder, controllerName)
+	}
+	return err
 }

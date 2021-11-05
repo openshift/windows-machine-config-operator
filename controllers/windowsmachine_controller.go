@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
@@ -49,6 +50,8 @@ const (
 	maxUnhealthyCount = 1
 	// MachineOSLabel is the label used to identify the Windows Machines.
 	MachineOSLabel = "machine.openshift.io/os-id"
+	// WindowsMachineController is the name of this controller in logs and other outputs.
+	WindowsMachineController = "windowsmachine"
 )
 
 // WindowsMachineReconciler is used to create a controller which manages Windows Machine objects
@@ -85,11 +88,11 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 	return &WindowsMachineReconciler{
 		instanceReconciler: instanceReconciler{
 			client:               mgr.GetClient(),
-			log:                  ctrl.Log.WithName("controller").WithName("windowsmachine"),
+			log:                  ctrl.Log.WithName("controller").WithName(WindowsMachineController),
 			k8sclientset:         clientset,
 			clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
 			vxlanPort:            clusterConfig.Network().VXLANPort(),
-			recorder:             mgr.GetEventRecorderFor("windowsmachine"),
+			recorder:             mgr.GetEventRecorderFor(WindowsMachineController),
 			watchNamespace:       watchNamespace,
 			prometheusNodeConfig: pc,
 			platform:             clusterConfig.Platform(),
@@ -210,9 +213,19 @@ func (r *WindowsMachineReconciler) isValidMachine(obj client.Object) bool {
 // and what is in the Machine.Spec
 // Note: The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
-func (r *WindowsMachineReconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
-	log := r.log.WithValues("machine", request.NamespacedName)
+func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
+	request ctrl.Request) (result ctrl.Result, reconcileErr error) {
+	log := r.log.WithValues(WindowsMachineController, request.NamespacedName)
 	log.V(1).Info("reconciling")
+
+	// Prevent WMCO upgrades while Machine nodes are being processed
+	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, WindowsMachineController); err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		reconcileErr = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, WindowsMachineController,
+			result.Requeue, reconcileErr)
+	}()
 
 	// Create a new signer from the private key the instances will be configured with
 	// Doing this before fetching the machine allows us to warn the user better about the missing private key

@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"log"
 	"testing"
-	"time"
 
 	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
@@ -22,6 +21,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
@@ -109,7 +109,7 @@ func testUserDataTamper(t *testing.T) {
 			}
 
 			// wait for userData secret creation / update to take effect.
-			err := wait.Poll(5*time.Second, 20*time.Second, func() (done bool, err error) {
+			err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (done bool, err error) {
 				secretInstance, err = tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(), "windows-user-data", meta.GetOptions{})
 				if err != nil {
 					if apierrors.IsNotFound(err) {
@@ -141,6 +141,9 @@ func testPrivateKeyChange(t *testing.T) {
 	}
 	err = tc.createPrivateKeySecret(false)
 	require.NoError(t, err, "error replacing known private key secret with a random key")
+	// Ensure operator communicates to OLM that upgrade is not safe when processing secret resources
+	err = tc.validateUpgradeableCondition(meta.ConditionFalse)
+	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 
 	// Ensure Machines nodes are re-created and configured using the new private key
 	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
@@ -148,6 +151,9 @@ func testPrivateKeyChange(t *testing.T) {
 	// Ensure public key hash and encrypted username annotations are updated correctly on BYOH nodes
 	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
 	assert.NoError(t, err, "error waiting for Windows nodes updated with newly created private key")
+
+	err = tc.validateUpgradeableCondition(meta.ConditionTrue)
+	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 
 	// Re-create the known private key so SSH connection can be re-established
 	// TODO: Remove dependency on this secret by rotating keys as part of https://issues.redhat.com/browse/WINC-655

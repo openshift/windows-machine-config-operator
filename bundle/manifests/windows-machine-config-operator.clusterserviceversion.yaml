@@ -315,6 +315,16 @@ spec:
           - securitycontextconstraints
           verbs:
           - use
+        - apiGroups:
+          - operators.coreos.com
+          resources:
+          - operatorconditions
+          verbs:
+          - get
+          - list
+          - watch
+          - update
+          - patch
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator

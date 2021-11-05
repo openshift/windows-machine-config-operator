@@ -12,6 +12,7 @@ import (
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -35,6 +37,8 @@ import (
 
 const (
 	userDataSecret = "windows-user-data"
+	// SecretController is the name of this controller in logs and other outputs.
+	SecretController = "secret"
 )
 
 // NewSecretReconciler returns a pointer to a SecretReconciler
@@ -42,8 +46,9 @@ func NewSecretReconciler(mgr manager.Manager, watchNamespace string) *SecretReco
 	reconciler := &SecretReconciler{
 		client:         mgr.GetClient(),
 		scheme:         mgr.GetScheme(),
-		log:            ctrl.Log.WithName("controller").WithName("secret"),
-		watchNamespace: watchNamespace}
+		log:            ctrl.Log.WithName("controller").WithName(SecretController),
+		watchNamespace: watchNamespace,
+		recorder:       mgr.GetEventRecorderFor(SecretController)}
 	return reconciler
 }
 
@@ -118,14 +123,26 @@ type SecretReconciler struct {
 	log    logr.Logger
 	// watchNamespace is the namespace the operator is watching as defined by the operator CSV
 	watchNamespace string
+	// recorder to generate events
+	recorder record.EventRecorder
 }
 
 // Reconcile reads that state of the cluster for a Secret object and makes changes based on the state read
 // and what is in the Secret.Spec
 // The Controller will requeue the Request to be processed again if the returned error is non-nil or
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
-func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) (reconcile.Result, error) {
-	log := r.log.WithValues("secret", request.NamespacedName)
+func (r *SecretReconciler) Reconcile(ctx context.Context,
+	request ctrl.Request) (result reconcile.Result, reconcileErr error) {
+	log := r.log.WithValues(SecretController, request.NamespacedName)
+
+	// Prevent WMCO upgrades while secret-based resources are being processed
+	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, SecretController); err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		reconcileErr = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, SecretController,
+			result.Requeue, reconcileErr)
+	}()
 
 	keySigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)

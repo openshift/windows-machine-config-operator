@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
@@ -57,6 +58,8 @@ const (
 	BYOHLabel = "windowsmachineconfig.openshift.io/byoh"
 	// UsernameAnnotation is a node annotation that contains the username used to log into the Windows instance
 	UsernameAnnotation = "windowsmachineconfig.openshift.io/username"
+	// ConfigMapController is the name of this controller in logs and other outputs.
+	ConfigMapController = "configmap"
 )
 
 // ConfigMapReconciler reconciles a ConfigMap object
@@ -81,9 +84,9 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 			client:               mgr.GetClient(),
 			k8sclientset:         clientset,
 			clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
-			log:                  ctrl.Log.WithName("controllers").WithName("configmap"),
+			log:                  ctrl.Log.WithName("controllers").WithName(ConfigMapController),
 			watchNamespace:       watchNamespace,
-			recorder:             mgr.GetEventRecorderFor("configmap"),
+			recorder:             mgr.GetEventRecorderFor(ConfigMapController),
 			vxlanPort:            clusterConfig.Network().VXLANPort(),
 			prometheusNodeConfig: pc,
 			platform:             clusterConfig.Platform(),
@@ -95,10 +98,20 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 // move the current state of the cluster closer to the desired state.
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.2/pkg/reconcile
-func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = r.log.WithValues("configmap", req.NamespacedName)
+func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
+	req ctrl.Request) (result ctrl.Result, reconcileErr error) {
+	_ = r.log.WithValues(ConfigMapController, req.NamespacedName)
 
 	var err error
+	// Prevent WMCO upgrades while BYOH nodes are being processed.
+	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, ConfigMapController); err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		reconcileErr = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, ConfigMapController,
+			result.Requeue, reconcileErr)
+	}()
+
 	// Create a new signer using the private key that the instances will be configured with
 	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
