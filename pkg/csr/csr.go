@@ -36,9 +36,9 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
-//+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests,verbs=update/approval
+//+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests/approval,verbs=update
 //+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests,verbs=get;list;watch
-//+kubebuilder:rbac:groups="certificates.k8s.io",resources=signers,verbs=Approve,resourceNames=kubernetes.io/kube-apiserver-client-kubelet;kubernetes.io/kubelet-serving
+//+kubebuilder:rbac:groups="certificates.k8s.io",resources=signers,verbs=approve,resourceNames=kubernetes.io/kube-apiserver-client-kubelet;kubernetes.io/kubelet-serving
 
 const (
 	nodeGroup          = "system:nodes"
