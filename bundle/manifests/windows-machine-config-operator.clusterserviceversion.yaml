@@ -122,7 +122,7 @@ spec:
               snapshot: ""
               template: <Windows_VM_template
               userDataSecret:
-                name: worker-user-data-managed
+                name: windows-user-data
               workspace:
                 datacenter: <vCenter DataCenter Name>
                 datastore: <vCenter Datastore Name>
