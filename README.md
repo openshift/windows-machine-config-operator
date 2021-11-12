@@ -61,7 +61,7 @@ metadata:
 data:
   10.1.42.1: |-
     username=Administrator
-  instance.dns.com: |-
+  instance.example.com: |-
     username=core
 ```
 
@@ -83,7 +83,7 @@ metadata:
   name: windows-instances
   namespace: openshift-windows-machine-config-operator
 data:
-  instance.dns.com: |-
+  instance.example.com: |-
     username=core
 ```
 
