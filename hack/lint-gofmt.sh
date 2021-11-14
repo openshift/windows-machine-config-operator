@@ -22,6 +22,7 @@ find_files() {
         -o -wholename './target' \
         -o -wholename './.git' \
         -o -wholename '*/vendor/*' \
+        -o -wholename './cloud-provider-azure' \
         -o -wholename './containernetworking-plugins' \
         -o -wholename './containerd' \
         -o -wholename './hcsshim' \
