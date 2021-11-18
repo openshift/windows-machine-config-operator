@@ -1,12 +1,11 @@
 package instance
 
 import (
-	"net"
-
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
+	"github.com/openshift/windows-machine-config-operator/pkg/netutil"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
@@ -30,7 +29,7 @@ type Info struct {
 // NewInfo returns a new Info. newHostname being set means that the instance's hostname should be
 // changed. An empty value is a no-op.
 func NewInfo(address, username, newHostname string, setNodeIP bool, node *core.Node) (*Info, error) {
-	ipv4, err := resolveToIPv4Address(address)
+	ipv4, err := netutil.ResolveToIPv4Address(address)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid address %s, unable to create instance info", address)
 	}
@@ -69,30 +68,4 @@ func (i *Info) UpgradeRequired() bool {
 	// Version annotation has an incorrect value, this was configured by an older version of WMCO and should be
 	// fully deconfigured before being configured by the current version.
 	return true
-}
-
-// resolveToIPv4Address returns an IPv4 address associated with the given address. An error will be thrown if given
-// an IPv6 address or a DNS address that does not resolve to an IPv4 network address.
-func resolveToIPv4Address(address string) (string, error) {
-	if ip := net.ParseIP(address); ip != nil {
-		// Address is either an IPv6 or IPv4 address
-		ipv4 := ip.To4()
-		if ipv4 == nil {
-			return "", errors.Errorf("not an IPv4 network address: %s", ip.String())
-		}
-		return ipv4.String(), nil
-	}
-
-	// DNS address in this case
-	ips, err := net.LookupIP(address)
-	if err != nil {
-		return "", errors.Wrapf(err, "lookup of address %s failed", address)
-	}
-	// Get first IPv4 address returned
-	for _, returnedIP := range ips {
-		if returnedIP.To4() != nil {
-			return returnedIP.String(), nil
-		}
-	}
-	return "", errors.Errorf("%s does not resolve to an IPv4 address", address)
 }

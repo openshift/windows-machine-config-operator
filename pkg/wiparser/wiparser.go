@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
+	"github.com/openshift/windows-machine-config-operator/pkg/netutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 )
 
@@ -56,9 +57,15 @@ func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.I
 			return instances, errors.Wrapf(err, "unable to get username for %s", address)
 		}
 
+		// Node is only guaranteed to be found when looking for its IP address
+		resolvedAddress, err := netutil.ResolveToIPv4Address(address)
+		if err != nil {
+			return nil, err
+		}
+
 		// Create instance info with the associated node if the described instance has one.
 		// Address validation occurs upon construction.
-		instanceInfo, err := instance.NewInfo(address, username, "", false, nodeutil.FindByAddress(address, nodes))
+		instanceInfo, err := instance.NewInfo(address, username, "", false, nodeutil.FindByAddress(resolvedAddress, nodes))
 		if err != nil {
 			return nil, err
 		}
