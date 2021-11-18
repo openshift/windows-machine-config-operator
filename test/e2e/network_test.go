@@ -53,8 +53,9 @@ var (
 type operatingSystem string
 
 const (
-	linux     operatingSystem = "linux"
-	windowsOS operatingSystem = "windows"
+	linux         operatingSystem = "linux"
+	windowsOS     operatingSystem = "windows"
+	powerShellExe                 = "pwsh.exe"
 )
 
 // testEastWestNetworking deploys Windows and Linux pods, and tests that the pods can communicate
@@ -373,7 +374,7 @@ func (tc *testContext) deleteNamespace(name string) error {
 // deployWindowsWebServer creates a deployment with a single Windows Server pod, listening on port 80
 func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	// This will run a Server on the container, which can be reached with a GET request
-	winServerCommand := []string{tc.getPowerShellExe(), "-command",
+	winServerCommand := []string{powerShellExe, "-command",
 		"$listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start(); " +
 			"Write-Host('Listening at http://*:80/'); while ($listener.IsListening) { " +
 			"$context = $listener.GetContext(); $response = $context.Response; " +
@@ -424,7 +425,7 @@ func (tc *testContext) getWindowsServerContainerImage() string {
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-2004"
 	} else if tc.CloudProvider.GetType() == config.AzurePlatformType {
 		// On Azure we are testing 20H2
-		windowsServerImage = "mcr.microsoft.com/windows/servercore:2009"
+		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-20h2"
 	} else {
 		// For other providers we use 1809
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1809"
@@ -561,7 +562,7 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affin
 func (tc *testContext) getWinCurlerCommand(winServerIP string) []string {
 	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
 	// takes some time to finish initial network setup.
-	winCurlerCommand := []string{tc.getPowerShellExe(), "-command", "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
+	winCurlerCommand := []string{powerShellExe, "-command", "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
 		"$response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP +
 		"; $code = $response.StatusCode; echo \"GET returned code $code\";" +
 		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"}
@@ -664,15 +665,4 @@ func (tc *testContext) writePodLogs(labelSelector string) {
 	if logsErr != nil {
 		log.Printf("Unable to write pod logs with label %s to file %s", labelSelector, outputFile)
 	}
-}
-
-// getPowerShellExe returns the PowerShell executable name. This depends on the container image used which is figured
-// out transitively based on the cloud provider as we use different images in each cloud provider.
-func (tc *testContext) getPowerShellExe() string {
-	powerShellExe := "pwsh.exe"
-	// We use the servercore image on Azure, where the PowerShell exe is powershell.exe
-	if tc.CloudProvider.GetType() == config.AzurePlatformType {
-		powerShellExe = "powershell.exe"
-	}
-	return powerShellExe
 }
