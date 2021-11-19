@@ -4,10 +4,15 @@ A [projected volume](https://kubernetes.io/docs/concepts/storage/volumes/#projec
 volume sources into the same directory in the container. With the [proposal for file permission handling in projected
 service account volume](https://github.com/kubernetes/enhancements/pull/1598) enhancement, the projected files have
 the correct permissions set including container user ownership for Linux pods when `RunAsUser` is set in the Pod 
-`SecurityContext`. However, for Windows pods this is not the case when `RunAsUsername` is set, due to differences in 
-the way user accounts are managed in Windows. Windows stores and manages local user and group accounts in a database
-file called Security Account Manager (SAM). This database is not shared between the Windows container host and the
-running containers. This prevents the kubelet from setting correct ownership on the files in the projected volume.
+`SecurityContext`. In Windows pods that have a projected volume and `RunAsUsername` set in the Pod `SecurityContext`,
+the ownership is not enforced due to the way user accounts are managed in Windows. Windows stores and manages local
+user and group accounts in a database file called Security Account Manager (SAM). Each container maintains its own
+instance of the SAM database, to which the host has no visibility into while the container is running. Windows
+containers are designed to run the user mode portion of the OS in isolation from the host, hence the maintenance of a
+virtual SAM database. As a result, the kubelet running on the host does not have the ability to dynamically configure
+host file ownership for virtualized container accounts. If files on the host machine are to be shared with the
+container, they should be placed into their own volume mount outside of the `C:\` drive.
+
 This problem is tracked by [Windows Pod with RunAsUserName and a Projected Volume does not honor file
 permissions in the volume](https://github.com/kubernetes/kubernetes/issues/102849) issue.
 
