@@ -225,7 +225,7 @@ func (ovn *ovnKubernetes) VXLANPort() string {
 
 // Validate for OVN Kubernetes checks for network type and hybrid overlay.
 func (ovn *ovnKubernetes) Validate() error {
-	//check if hybrid overlay is enabled for the cluster
+	// check if hybrid overlay is enabled for the cluster
 	networkCR, err := ovn.operatorClient.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error getting cluster network.operator object")
