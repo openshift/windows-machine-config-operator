@@ -52,7 +52,7 @@ func TestNetworkConfigurationFactory(t *testing.T) {
 }
 
 // TestNetworkConfigurationValidate tests if validate() method throws error when network is of required type, but network configuration
-//cannot be validated
+// cannot be validated
 func TestNetworkConfigurationValidate(t *testing.T) {
 	var tests = []struct {
 		name         string
