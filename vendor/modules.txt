@@ -23,6 +23,9 @@ github.com/MakeNowJust/heredoc
 github.com/PuerkitoBio/purell
 # github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578
 github.com/PuerkitoBio/urlesc
+# github.com/apparentlymart/go-cidr v1.1.0
+## explicit
+github.com/apparentlymart/go-cidr/cidr
 # github.com/aws/aws-sdk-go v1.38.23
 ## explicit
 github.com/aws/aws-sdk-go/aws
