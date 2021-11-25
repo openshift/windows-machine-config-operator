@@ -1,6 +1,6 @@
 ⚠⚠⚠ THIS IS A LIVING DOCUMENT AND LIKELY TO CHANGE QUICKLY ⚠⚠⚠
 
-# Hacking on the WMCO
+# Hacking on the WMCO 
 ## Pre-requisites
 - [Cluster and OS pre-requisites](wmco-prerequisites.md)
 - [Install](https://sdk.operatorframework.io/docs/installation/) operator-sdk v1.6.1
