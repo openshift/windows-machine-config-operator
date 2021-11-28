@@ -21,9 +21,10 @@ require (
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	golang.org/x/mod v0.4.2
 	golang.org/x/tools v0.1.5 // indirect
-	k8s.io/api v0.22.2
-	k8s.io/apimachinery v0.22.2
-	k8s.io/client-go v0.22.2
-	k8s.io/kubectl v0.22.1
+	k8s.io/api v0.22.4
+	k8s.io/apimachinery v0.22.4
+	k8s.io/client-go v0.22.4
+	k8s.io/cloud-provider v0.22.4
+	k8s.io/kubectl v0.22.4
 	sigs.k8s.io/controller-runtime v0.10.3
 )
