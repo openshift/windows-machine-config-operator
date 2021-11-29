@@ -4,10 +4,10 @@
 ## Pre-requisites
 - [Cluster and OS pre-requisites](wmco-prerequisites.md)
 - [Install](https://sdk.operatorframework.io/docs/installation/) operator-sdk v1.6.1
-- The operator is written using operator-sdk 
-[v1.6.1](https://github.com/operator-framework/operator-sdk/releases/tag/v1.6.1) and has the same 
-[pre-requisites](https://sdk.operatorframework.io/docs/installation/#prerequisites) as it does.
-- git submodules need to be initialized and up to date Before running build command. Pls refer [Updating Git submodules](Updating Git submodules)
+- The operator is written using operator-sdk [v1.6.1](https://github.com/operator-framework/operator-sdk/releases/tag/v1.6.1)
+  and has the same [pre-requisites](https://sdk.operatorframework.io/docs/installation/#prerequisites) as it does.
+- Git submodules need to be initialized and up to date before running the build command. Please refer to
+  [updating Git submodules](#updating-git-submodules).
 - Verify push/pull access to a container registry from where the cluster can pull image from.
 
 ## User Workflows
