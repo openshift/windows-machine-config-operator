@@ -6,9 +6,10 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"testing"
+
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
-	"testing"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
