@@ -102,7 +102,6 @@ func main() {
 
 	// Checking if required files exist before starting the operator
 	requiredFiles := []string{
-		payload.FlannelCNIPluginPath,
 		payload.HostLocalCNIPlugin,
 		payload.WinBridgeCNIPlugin,
 		payload.WinOverlayCNIPlugin,

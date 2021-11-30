@@ -1,6 +1,9 @@
 FROM docker.io/openshift/origin-release:golang-1.16 as build
 LABEL stage=build
 
+# dos2unix is needed to build CNI plugins
+RUN yum install -y dos2unix
+
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
@@ -117,7 +120,6 @@ COPY --from=build /build/windows-machine-config-operator/kube-proxy/_output/loca
 
 # Copy CNI plugin binaries and CNI config template cni-conf-template.json
 WORKDIR /payload/cni/
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/flannel.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .
