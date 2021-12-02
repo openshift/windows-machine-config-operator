@@ -28,9 +28,6 @@ const (
 	HNSPSModule = payloadDirectory + "/powershell/hns.psm1"
 	// cniDirectory is the directory for storing the CNI plugins and the CNI config template
 	cniDirectory = "/cni/"
-	// FlannelCNIPluginPath is the path of the flannel CNI plugin binary. The container image should already have this
-	// binary mounted
-	FlannelCNIPluginPath = payloadDirectory + cniDirectory + "flannel.exe"
 	// HostLocalCNIPlugin is the path of the host-local CNI plugin binary. The container image should already have
 	// this binary mounted
 	HostLocalCNIPlugin = payloadDirectory + cniDirectory + "host-local.exe"

@@ -7,6 +7,9 @@ FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.16-openshift-4.8 as b
 LABEL stage=build
 WORKDIR /build/
 
+# dos2unix is needed to build CNI plugins
+RUN yum install -y dos2unix
+
 # Download client binaries
 # TODO: Remove this, see https://issues.redhat.com/browse/WINC-520 
 RUN curl -L -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.6.4/openshift-client-linux-4.6.4.tar.gz -o openshift-origin-client-tools.tar.gz \
@@ -134,7 +137,6 @@ COPY --from=build /build/windows-machine-config-operator/kube-proxy/_output/loca
 
 # Copy CNI plugin binaries and CNI config template cni-conf-template.json
 WORKDIR /payload/cni/
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/flannel.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .

@@ -113,7 +113,6 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		payload.HybridOverlayPath:        k8sDir,
 		payload.HNSPSModule:              remoteDir,
 		payload.WindowsExporterPath:      k8sDir,
-		payload.FlannelCNIPluginPath:     cniDir,
 		payload.WinBridgeCNIPlugin:       cniDir,
 		payload.HostLocalCNIPlugin:       cniDir,
 		payload.WinOverlayCNIPlugin:      cniDir,
