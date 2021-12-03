@@ -22,7 +22,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
 )
 
@@ -35,6 +37,9 @@ func testNetwork(t *testing.T) {
 	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
 	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
 	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
+
+	err = testCtx.waitForWindowsNetwork()
+	assert.NoError(t, err, "timed out waiting for vSwitch hybrid overlay network adapter in Windows nodes")
 
 	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
@@ -657,6 +662,75 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 func (tc *testContext) deleteJob(name string) error {
 	jobsClient := tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace)
 	return jobsClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
+}
+
+// getWinNetAdapterInfo returns a string with the network adapter information for a
+// Windows node given the IP address. An optional name like parameter is available for
+// a lookup by network adapter name. netAdapterName equals an empty string returns all.
+func (tc *testContext) getWinNetAdapterInfo(nodeIP, netAdapterNameLike string) (string, error) {
+	// check nodeIP
+	if nodeIP == "" {
+		return "", errors.New("nodeIP cannot be empty")
+	}
+	// get network adapters including hidden
+	command := "Get-NetAdapter -IncludeHidden"
+	// check netAdapterNameLike
+	if netAdapterNameLike != "" {
+		// add netAdapterNameLike like filter
+		command = command + " -Name '*" + netAdapterNameLike + "*'"
+	}
+	// format output as list with common properties
+	command = command + " | Format-List"
+	out, err := tc.runPowerShellSSHJob("get-windows-net-adapter-info", command, nodeIP)
+	if err != nil {
+		return "", errors.Wrapf(err, "error running SSH job with command %s", command)
+	}
+	return out, nil
+}
+
+// waitForWindowsNetwork waits until all Windows nodes have a network adapter with
+// name "vSwitch (BaseOVNKubernetesHybridOverlayNetwork)".
+// Throws an error if timeout is reached. Total timeout is 2 minutes per Windows node count.
+func (tc *testContext) waitForWindowsNetwork() error {
+	nodes := gc.allNodes()
+	nodeCount := len(nodes)
+	if (nodeCount) == 0 {
+		// nothing to do
+		return nil
+	}
+	// allow 2 minute timeout per node
+	timeout := 2 * time.Minute * time.Duration(nodeCount)
+
+	startTime := time.Now()
+	err := wait.Poll(retryInterval, timeout, func() (done bool, err error) {
+		// loop nodes
+		for _, node := range nodes {
+			// get node IP Address
+			nodeIP, err := controllers.GetAddress(node.Status.Addresses)
+			if err != nil {
+				log.Printf("expected IP address for node %v", node.Name)
+				return false, nil
+			}
+			// get network adapter info
+			properties, err := tc.getWinNetAdapterInfo(nodeIP, "vSwitch")
+			if err != nil {
+				log.Printf("expected Net Adapter properties in node %v. %v", node.Name, err)
+				return false, nil
+			}
+			// check network adapter is present
+			if !strings.Contains(properties, "BaseOVNKubernetesHybridOverlayNetwork") {
+				return false, nil
+			}
+		}
+		// network adapter found in all nodes
+		return true, nil
+	})
+	endTime := time.Now()
+	// print elapsed time
+	log.Printf("%v elapsed waiting for vSwitch network adapter in %v node(s)",
+		endTime.Sub(startTime), len(nodes))
+	// throw error
+	return err
 }
 
 // waitUntilJobSucceeds will return an error if the job fails or reaches a timeout
