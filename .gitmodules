@@ -32,3 +32,6 @@
 	path = hcsshim
 	url = https://github.com/openshift/hcsshim
 	branch = master
+[submodule "csi-proxy"]
+	path = csi-proxy
+	url = https://github.com/kubernetes-csi/csi-proxy.git
