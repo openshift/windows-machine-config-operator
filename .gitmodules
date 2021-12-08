@@ -28,7 +28,3 @@
 	path = containerd
 	url = https://github.com/openshift/containerd
 	branch = release/1.5
-[submodule "hcsshim"]
-	path = hcsshim
-	url = https://github.com/openshift/hcsshim
-	branch = master
