@@ -38,6 +38,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
+//+kubebuilder:rbac:groups=config.openshift.io,resources=clusteroperators,verbs=get;list;watch
 //+kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch;delete
 //+kubebuilder:rbac:groups=machine.openshift.io,resources=machinesets,verbs=get;list;watch
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=*

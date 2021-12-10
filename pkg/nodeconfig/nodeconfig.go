@@ -18,6 +18,8 @@ import (
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	cloudproviderapi "k8s.io/cloud-provider/api"
+	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	"k8s.io/kubectl/pkg/drain"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -65,6 +67,8 @@ type nodeConfig struct {
 	additionalAnnotations map[string]string
 	// additionalLabels are extra labels that should be applied to configured nodes
 	additionalLabels map[string]string
+	// platformType holds the name of the platform where cluster is deployed
+	platformType configv1.PlatformType
 }
 
 // ErrWriter is a wrapper to enable error-level logging inside kubectl drainer implementation
@@ -118,6 +122,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
 	var err error
+
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
 		// We couldn't find it in cache. Let's compute it now.
@@ -149,7 +154,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
-	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log),
+	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log), platformType: platformType,
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
 		log: log, additionalLabels: additionalLabels, additionalAnnotations: additionalAnnotations}, nil
 }
@@ -213,6 +218,29 @@ func (nc *nodeConfig) Configure() error {
 				nc.node.GetName())
 		}
 
+		ownedByCCM, err := isCloudControllerOwnedByCCM()
+		if err != nil {
+			return errors.Wrap(err, "unable to check if cloud controller owned by cloud controller manager")
+		}
+
+		// Configuring cloud node manager for Azure platform with CCM support
+		if ownedByCCM && nc.platformType == configv1.AzurePlatformType {
+			if err := nc.Windows.ConfigureAzureCloudNodeManager(nc.node.GetName()); err != nil {
+				return errors.Wrap(err, "configuring azure cloud node manager failed")
+			}
+
+			// If we deploy on Azure with CCM support, we have to explicitly remove the cloud taint, because cloud node manager
+			// running on the node can't do it itself. The taint should be removed only when the related CSR
+			// has been approved.
+			cloudTaint := &core.Taint{
+				Key:    cloudproviderapi.TaintExternalCloudProvider,
+				Effect: core.TaintEffectNoSchedule,
+			}
+			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
+				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
+			}
+		}
+
 		// Now that basic kubelet configuration is complete, configure networking in the node
 		if err := nc.configureNetwork(); err != nil {
 			return errors.Wrap(err, "configuring node network failed")
@@ -264,6 +292,22 @@ func (nc *nodeConfig) applyLabelsAndAnnotations(labels, annotations map[string]s
 	}
 	nc.node = node
 	return nil
+}
+
+// isCloudControllerOwnedByCCM checks if Cloud Controllers are managed by Cloud Controller Manager (CCM)
+// instead of Kube Controller Manager.
+func isCloudControllerOwnedByCCM() (bool, error) {
+	cfg, err := crclientcfg.GetConfig()
+	if err != nil {
+		return false, errors.Wrap(err, "unable to get config to talk to kubernetes api server")
+	}
+
+	client, err := clientset.NewForConfig(cfg)
+	if err != nil {
+		return false, errors.Wrap(err, "unable to get client from the given config")
+	}
+
+	return cluster.IsCloudControllerOwnedByCCM(client)
 }
 
 // configureNetwork configures k8s networking in the node

@@ -186,3 +186,11 @@ rules:
   - securitycontextconstraints
   verbs:
   - use
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - clusteroperators
+  verbs:
+  - get
+  - list
+  - watch

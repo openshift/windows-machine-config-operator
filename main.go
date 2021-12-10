@@ -113,6 +113,7 @@ func main() {
 		payload.CNIConfigTemplatePath,
 		payload.HNSPSModule,
 		payload.WindowsExporterPath,
+		payload.AzureCloudNodeManagerPath,
 	}
 	if err := checkIfRequiredFilesExist(requiredFiles); err != nil {
 		setupLog.Error(err, "could not start the operator")
