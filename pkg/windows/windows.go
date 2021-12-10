@@ -459,7 +459,7 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 	kubeProxyServiceArgs := "--windows-service --v=4 --proxy-mode=kernelspace --feature-gates=WinOverlay=true " +
 		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
 		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
-		"--network-name=OVNKubernetesHybridOverlayNetwork --source-vip=" + endpointIP +
+		"--network-name=" + OVNKubeOverlayNetwork + " --source-vip=" + endpointIP +
 		" --enable-dsr=false"
 
 	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs,
@@ -797,7 +797,7 @@ func (vm *windows) waitForServiceToRun(serviceName string) error {
 // the IP of the endpoint will be returned.
 func (vm *windows) createHNSEndpoint() (string, error) {
 	cmd := "\"Import-Module -DisableNameChecking " + hnsPSModule + "; " +
-		"$net = (Get-HnsNetwork | where { $_.Name -eq 'OVNKubernetesHybridOverlayNetwork' }); " +
+		"$net = (Get-HnsNetwork | where { $_.Name -eq '" + OVNKubeOverlayNetwork + "' }); " +
 		"$endpoint = New-HnsEndpoint -NetworkId $net.ID -Name VIPEndpoint; " +
 		"Attach-HNSHostEndpoint -EndpointID $endpoint.ID -CompartmentID 1; " +
 		"(Get-NetIPConfiguration -AllCompartments -All -Detailed | " +
