@@ -71,7 +71,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instanceInfo, r.signer,
-		labelsToApply, annotationsToApply)
+		labelsToApply, annotationsToApply, r.platform)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
@@ -139,7 +139,7 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
-		nil, nil)
+		nil, nil, r.platform)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
