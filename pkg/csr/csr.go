@@ -89,9 +89,9 @@ func (a *Approver) Approve() error {
 	a.csr.Status.Conditions = append(a.csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
 		Type:           certificates.CertificateApproved,
 		Status:         "True",
-		Message:        "Approved by WMCO",
+		Message:        "This CSR was approved by the WMCO certificate Approver.",
 		LastUpdateTime: meta.Now(),
-		Reason:         "WMCOApproved",
+		Reason:         "WMCOApprove",
 	})
 
 	if _, err := a.k8sclientset.CertificatesV1().CertificateSigningRequests().UpdateApproval(context.Background(),
