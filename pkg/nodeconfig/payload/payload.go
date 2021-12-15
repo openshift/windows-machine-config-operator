@@ -49,6 +49,11 @@ const (
 	// WindowsExporterPath contains the path of the windows_exporter binary. The container image should already have
 	// this binary mounted
 	WindowsExporterPath = payloadDirectory + WindowsExporterName
+	// AzureCloudNodeManager is the name of the cloud node manager for Azure platform
+	AzureCloudNodeManager = "azure-cloud-node-manager.exe"
+	// AzureCloudNodeManagerPath contains the path of the azure cloud node manager binary. The container image should
+	// already have this binary mounted
+	AzureCloudNodeManagerPath = payloadDirectory + AzureCloudNodeManager
 )
 
 // FileInfo contains information about a file

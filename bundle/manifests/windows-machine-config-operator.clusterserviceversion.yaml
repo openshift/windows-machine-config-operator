@@ -272,6 +272,14 @@ spec:
         - apiGroups:
           - config.openshift.io
           resources:
+          - clusteroperators
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - config.openshift.io
+          resources:
           - infrastructures
           verbs:
           - get

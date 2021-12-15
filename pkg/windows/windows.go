@@ -40,6 +40,8 @@ const (
 	cniConfDir = cniDir + "config\\"
 	// windowsExporterPath is the location of the windows_exporter.exe
 	windowsExporterPath = k8sDir + "windows_exporter.exe"
+	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
+	azureCloudNodeManagerPath = k8sDir + payload.AzureCloudNodeManager
 	// kubeProxyPath is the location of the kube-proxy exe
 	kubeProxyPath = k8sDir + "kube-proxy.exe"
 	// hybridOverlayPath is the location of the hybrid-overlay-node exe
@@ -60,6 +62,8 @@ const (
 	kubeletServiceName = "kubelet"
 	// windowsExporterServiceName is the name of the windows_exporter Windows service
 	windowsExporterServiceName = "windows_exporter"
+	// AzureCloudNodeManagerServiceName is the name of the azure cloud node manager service
+	AzureCloudNodeManagerServiceName = "cloud-node-manager"
 	// windowsExporterServiceArgs specifies metrics for the windows_exporter service to collect
 	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
 	windowsExporterServiceArgs = "--collectors.enabled " +
@@ -108,16 +112,17 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		return filesToTransfer, nil
 	}
 	srcDestPairs := map[string]string{
-		payload.IgnoreWgetPowerShellPath: remoteDir,
-		payload.WmcbPath:                 k8sDir,
-		payload.HybridOverlayPath:        k8sDir,
-		payload.HNSPSModule:              remoteDir,
-		payload.WindowsExporterPath:      k8sDir,
-		payload.WinBridgeCNIPlugin:       cniDir,
-		payload.HostLocalCNIPlugin:       cniDir,
-		payload.WinOverlayCNIPlugin:      cniDir,
-		payload.KubeProxyPath:            k8sDir,
-		payload.KubeletPath:              k8sDir,
+		payload.IgnoreWgetPowerShellPath:  remoteDir,
+		payload.WmcbPath:                  k8sDir,
+		payload.HybridOverlayPath:         k8sDir,
+		payload.HNSPSModule:               remoteDir,
+		payload.WindowsExporterPath:       k8sDir,
+		payload.WinBridgeCNIPlugin:        cniDir,
+		payload.HostLocalCNIPlugin:        cniDir,
+		payload.WinOverlayCNIPlugin:       cniDir,
+		payload.KubeProxyPath:             k8sDir,
+		payload.KubeletPath:               k8sDir,
+		payload.AzureCloudNodeManagerPath: k8sDir,
 	}
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
@@ -158,6 +163,8 @@ type Windows interface {
 	ConfigureWindowsExporter() error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy(string, string) error
+	// ConfigureAzureCloudNodeManager ensures that the azure-cloud-node-manager service is running
+	ConfigureAzureCloudNodeManager(string) error
 	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
 	EnsureRequiredServicesStopped() error
 	// Deconfigure removes all files and services created as part of the configuration process
@@ -294,7 +301,7 @@ func (vm *windows) Reinitialize() error {
 }
 
 func (vm *windows) EnsureRequiredServicesStopped() error {
-	for _, svcName := range RequiredServices {
+	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
 		svc := &service{name: svcName}
 		if err := vm.ensureServiceNotRunning(svc); err != nil {
 			return errors.Wrapf(err, "could not stop service %s", svcName)
@@ -305,7 +312,7 @@ func (vm *windows) EnsureRequiredServicesStopped() error {
 
 // ensureServicesAreRemoved ensures that all services installed by WMCO are removed from the instance
 func (vm *windows) ensureServicesAreRemoved() error {
-	for _, svcName := range RequiredServices {
+	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
 		svc := &service{name: svcName}
 
 		// If the service is not installed, do nothing
@@ -346,7 +353,7 @@ func (vm *windows) Deconfigure() error {
 func (vm *windows) Configure() error {
 	vm.log.Info("configuring")
 	if err := vm.EnsureRequiredServicesStopped(); err != nil {
-		return errors.Wrap(err, "unable to stop required services")
+		return errors.Wrap(err, "unable to stop all services")
 	}
 	// Set the hostName of the Windows VM if needed
 	if vm.instance.NewHostname != "" {
@@ -450,6 +457,25 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 	}
 
 	vm.log.Info("configured kubelet for CNI", "cmd", configureCNICmd, "output", out)
+	return nil
+}
+
+func (vm *windows) ConfigureAzureCloudNodeManager(nodeName string) error {
+	azureCloudNodeManagerServiceArgs := "--windows-service --node-name=" + nodeName + " --wait-routes=false --kubeconfig c:\\k\\kubeconfig"
+
+	azureCloudNodeManagerService, err := newService(
+		azureCloudNodeManagerPath,
+		AzureCloudNodeManagerServiceName,
+		azureCloudNodeManagerServiceArgs,
+		nil)
+	if err != nil {
+		return errors.Wrapf(err, "error creating %s service object", AzureCloudNodeManagerServiceName)
+	}
+
+	if err := vm.ensureServiceIsRunning(azureCloudNodeManagerService); err != nil {
+		return errors.Wrapf(err, "error ensuring %s Windows service has started running", AzureCloudNodeManagerServiceName)
+	}
+	vm.log.Info("configured", "service", AzureCloudNodeManagerServiceName, "args", azureCloudNodeManagerServiceArgs)
 	return nil
 }
 

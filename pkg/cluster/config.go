@@ -25,6 +25,10 @@ const (
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
 	// 1.20.x are supported for baseK8sVersion 1.20)
 	baseK8sVersion = "v1.22"
+	// cloudControllerOwnershipConditionType defines the Condition type for Cloud Controllers ownership
+	cloudControllerOwnershipConditionType = "CloudControllerOwner"
+	// clusterCloudControllerManagerOperatorName is the registered name of Cluster Cloud Controller Manager Operator
+	clusterCloudControllerManagerOperatorName = "cloud-controller-manager"
 )
 
 // Network interface contains methods to interact with cluster network objects
@@ -313,4 +317,26 @@ func GetDNS(subnet string) (string, error) {
 		return "", err
 	}
 	return clusterDNS.String(), nil
+}
+
+// IsCloudControllerOwnedByCCM checks if Cloud Controllers are managed by Cloud Controller Manager (CCM)
+// instead of Kube Controller Manager.
+// For more information: https://github.com/openshift/enhancements/blob/master/enhancements/machine-api/out-of-tree-provider-support.md
+func IsCloudControllerOwnedByCCM(oclient configclient.Interface) (bool, error) {
+	co, err := oclient.ConfigV1().ClusterOperators().Get(context.TODO(), clusterCloudControllerManagerOperatorName, meta.GetOptions{})
+	if err != nil {
+		return false, errors.Wrap(err, "unable to get cluster operator resource")
+	}
+
+	// If there is no condition, we assume that CCM doesn't own the Cloud Controllers
+	ownedByCCM := false
+	if co.Status.Conditions != nil {
+		for _, cond := range co.Status.Conditions {
+			if cond.Type == cloudControllerOwnershipConditionType {
+				ownedByCCM = cond.Status == oconfig.ConditionTrue
+			}
+		}
+	}
+
+	return ownedByCCM, nil
 }

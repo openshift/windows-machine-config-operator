@@ -51,6 +51,11 @@ COPY kube-proxy/ .
 ENV KUBE_BUILD_PLATFORMS windows/amd64
 RUN make WHAT=cmd/kube-proxy
 
+# Build azure-cloud-node-manager
+WORKDIR /build/windows-machine-config-operator/cloud-provider-azure/
+COPY cloud-provider-azure/ .
+RUN GOOS=windows go build -o azure-cloud-node-manager.exe ./cmd/cloud-node-manager
+
 # Build CNI plugins
 WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
 COPY containernetworking-plugins/ .
@@ -76,6 +81,7 @@ RUN make build
 
 # Build the operator image with following payload structure
 # /payload/
+#├── azure-cloud-node-manager.exe
 #├── cni
 #│   ├── flannel.exe
 #│   ├── host-local.exe
@@ -107,6 +113,9 @@ COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-contr
 
 # Copy windows_exporter.exe
 COPY --from=build /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe .
+
+# Copy azure-cloud-node-manager.exe
+COPY --from=build /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe .
 
 # Copy containerd.exe and containerd-shim-runhcs-v1.exe
 WORKDIR /payload/containerd/

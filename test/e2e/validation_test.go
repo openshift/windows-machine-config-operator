@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
@@ -408,6 +409,9 @@ func testExpectedServicesRunning(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 
+	ownedByCCM, err := cluster.IsCloudControllerOwnedByCCM(tc.client.Config)
+	require.NoError(t, err)
+
 	for _, node := range gc.allNodes() {
 		t.Run(node.GetName(), func(t *testing.T) {
 			addr, err := controllers.GetAddress(node.Status.Addresses)
@@ -418,6 +422,18 @@ func testExpectedServicesRunning(t *testing.T) {
 				t.Run(svcName, func(t *testing.T) {
 					require.Contains(t, svcs, svcName, "service not found")
 					assert.Equal(t, "Running", svcs[svcName])
+				})
+			}
+			// For Azure deployments with Cloud Controller Manager support with also need to check that
+			// the cloud node manager service is running
+			if ownedByCCM && tc.CloudProvider.GetType() == config.AzurePlatformType {
+				t.Run(windows.AzureCloudNodeManagerServiceName, func(t *testing.T) {
+					require.Contains(t, svcs, windows.AzureCloudNodeManagerServiceName, "service not found")
+					assert.Equal(t, "Running", svcs[windows.AzureCloudNodeManagerServiceName])
+				})
+			} else {
+				t.Run(windows.AzureCloudNodeManagerServiceName, func(t *testing.T) {
+					require.NotContains(t, svcs, windows.AzureCloudNodeManagerServiceName, "service found")
 				})
 			}
 		})
