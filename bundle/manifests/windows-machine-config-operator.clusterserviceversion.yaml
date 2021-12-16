@@ -356,7 +356,7 @@ spec:
                 - name: OPERATOR_NAME
                   value: windows-machine-config-operator
                 image: REPLACE_IMAGE
-                imagePullPolicy: IfNotPresent
+                imagePullPolicy: Always
                 name: manager
                 resources: {}
               hostNetwork: true

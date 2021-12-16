@@ -431,6 +431,13 @@ func testCSRApproval(t *testing.T) {
 	if gc.numberOfBYOHNodes == 0 {
 		t.Skip("BYOH CSR approval testing disabled")
 	}
+
+	deployment, err := testCtx.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Get(context.TODO(),
+		"machine-approver", meta.GetOptions{})
+	require.NoError(t, err, "error listing Cluster Machine Approver deployment")
+	log.Printf("before testCSRApproval deployment %s/%s... currently at %d pods, expected %d pods",
+		deployment.GetNamespace(), deployment.GetName(), *deployment.Spec.Replicas, 0)
+
 	for _, node := range gc.byohNodes {
 		csrs, err := testCtx.findNodeCSRs(node.GetName())
 		require.NotEqual(t, len(csrs), 0, "could not find BYOH node CSR's")
@@ -453,6 +460,8 @@ func testCSRApproval(t *testing.T) {
 	expectedPodCount := int32(1)
 	err = testCtx.scaleMachineApproverDeployment(&expectedPodCount)
 	require.NoError(t, err, "failed to scale Cluster Machine Approver pods")
+	log.Printf("after testCSRApproval deployment %s/%s... currently at %d pods, expected %d pods",
+		deployment.GetNamespace(), deployment.GetName(), *deployment.Spec.Replicas, expectedPodCount)
 }
 
 // findNodeCSRs returns the list of CSRs for the given node

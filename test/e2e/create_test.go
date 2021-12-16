@@ -14,7 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -229,6 +229,14 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, wi
 		listOptions.LabelSelector += "," + controllers.MachineOSLabel + "=Windows"
 	} else {
 		listOptions.LabelSelector += "," + controllers.MachineOSLabel + "!=Windows"
+
+		deployment, err := tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Get(context.TODO(),
+			"machine-approver", metav1.GetOptions{})
+		if err != nil {
+			return nil, errors.Wrap(err, "error listing Cluster Machine Approver deployment")
+		}
+		log.Printf("at start of waitForWindowsMachines()... deployment %s/%s currently at %d pods, expected %d pods",
+			deployment.GetNamespace(), deployment.GetName(), *deployment.Spec.Replicas, 0)
 	}
 	err := wait.Poll(retryInterval, machineStateTimeLimit, func() (done bool, err error) {
 		machines, err = tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
@@ -283,6 +291,14 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, wi
 		machineType = "with the Windows label"
 	} else {
 		machineType = "without the Windows label"
+
+		deployment, err := tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Get(context.TODO(),
+			"machine-approver", metav1.GetOptions{})
+		if err != nil {
+			return nil, errors.Wrap(err, "error listing Cluster Machine Approver deployment")
+		}
+		log.Printf("at end of waitForWindowsMachines()... deployment %s/%s currently at %d pods, expected %d pods",
+			deployment.GetNamespace(), deployment.GetName(), *deployment.Spec.Replicas, 0)
 	}
 	endTime := time.Now()
 	log.Printf("%v time is required for %d Machines %s to reach phase %s", endTime.Sub(startTime),
@@ -299,6 +315,14 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 		nodeconfig.PubKeyHashAnnotation}
 	if isBYOH {
 		annotations = append(annotations, controllers.UsernameAnnotation)
+
+		deployment, err := tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Get(context.TODO(),
+			"machine-approver", metav1.GetOptions{})
+		if err != nil {
+			return errors.Wrap(err, "error listing Cluster Machine Approver deployment")
+		}
+		log.Printf("at start of waitForWindowsNodes()... deployment %s/%s currently at %d pods, expected %d pods",
+			deployment.GetNamespace(), deployment.GetName(), *deployment.Spec.Replicas, 0)
 	}
 
 	var creationTime time.Duration
@@ -410,6 +434,15 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 	endTime := time.Now()
 	log.Printf("%v time is required to configure %v nodes", endTime.Sub(startTime), nodeCount)
 
+	if isBYOH {
+		deployment, err := tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Get(context.TODO(),
+			"machine-approver", metav1.GetOptions{})
+		if err != nil {
+			return errors.Wrap(err, "error listing Cluster Machine Approver deployment")
+		}
+		log.Printf("at end waitForWindowsNodes()... deployment %s/%s currently at %d pods, expected %d pods",
+			deployment.GetNamespace(), deployment.GetName(), *deployment.Spec.Replicas, 0)
+	}
 	return err
 }
 
@@ -449,6 +482,9 @@ func (tc *testContext) scaleMachineApproverDeployment(expectedPodCount *int32) e
 		return errors.Wrap(err, "error listing Cluster Machine Approver deployment")
 	}
 
+	log.Printf("scaling deployment %s/%s... currently at %d pods, scaling to %d pods",
+		deployment.GetNamespace(), deployment.GetName(), *deployment.Spec.Replicas, *expectedPodCount)
+
 	deployment.Spec.Replicas = expectedPodCount
 	_, err = tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Update(context.TODO(),
 		deployment, metav1.UpdateOptions{})
@@ -465,5 +501,7 @@ func (tc *testContext) scaleMachineApproverDeployment(expectedPodCount *int32) e
 	}); err != nil {
 		return errors.Wrap(err, "error waiting for Cluster Machine Approver deployment to be scaled")
 	}
+	log.Printf("done scaling deployment %s/%s... currently at %d pods, expected %d pods",
+		deployment.GetNamespace(), deployment.GetName(), *deployment.Spec.Replicas, *expectedPodCount)
 	return nil
 }
