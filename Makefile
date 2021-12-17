@@ -148,6 +148,20 @@ else
 OPM = $(shell which opm)
 endif
 endif
+
+.PHONY: osdk ## Download operator-sdk to /tmp/operator-sdk if it is not present on $PATH
+OSDK = /tmp/operator-sdk
+osdk:
+ifeq (,$(shell which operator-sdk 2>/dev/null))
+	@{ \
+	set -e ;\
+	wget --no-verbose -O $(OSDK) https://github.com/operator-framework/operator-sdk/releases/download/v1.15.0/operator-sdk_linux_amd64 -o operator-sdk;\
+	chmod +x $(OSDK);\
+	}
+else
+OSDK = $(shell which operator-sdk)
+endif
+
 BUNDLE_IMGS ?= $(BUNDLE_IMG)
 CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(WMCO_VERSION) ifneq ($(origin CATALOG_BASE_IMG), undefined) FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG) endif
 .PHONY: catalog-build
@@ -155,12 +169,12 @@ catalog-build: opm
 	$(OPM) index add --container-tool podman --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
 
 .PHONY: bundle ## Generate bundle manifests and metadata, then validate generated files. Requires operator-sdk on $PATH.
-bundle: manifests kustomize
-	operator-sdk generate kustomize manifests -q
+bundle: manifests kustomize osdk
+	$(OSDK) generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle --overwrite=false -q --version $(WMCO_VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build config/manifests | $(OSDK) generate bundle --overwrite=false -q --version $(WMCO_VERSION) $(BUNDLE_METADATA_OPTS)
 	sed -i 's/REPLACE_IMAGE:latest/REPLACE_IMAGE/g' bundle/manifests/windows-machine-config-operator.clusterserviceversion.yaml
-	operator-sdk bundle validate ./bundle
+	$(OSDK) bundle validate ./bundle
 	sed -i 's/windows-machine-config-operator\.v.\.0\.0/windows-machine-config-operator.v$(WMCO_VERSION)/g' ./bundle/windows-machine-config-operator.package.yaml
 
 .PHONY: bundle-build ## Build the bundle image.
@@ -168,8 +182,9 @@ bundle-build:
 	podman build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: lint
-lint:
+lint: osdk
 	hack/lint-gofmt.sh
+	hack/verify-bundle.sh
 	hack/verify-vendor.sh
 
 .PHONY: unit
