@@ -159,6 +159,7 @@ bundle: manifests kustomize
 	operator-sdk generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle --overwrite=false -q --version $(WMCO_VERSION) $(BUNDLE_METADATA_OPTS)
+	sed -i 's/REPLACE_IMAGE:latest/REPLACE_IMAGE/g' bundle/manifests/windows-machine-config-operator.clusterserviceversion.yaml
 	operator-sdk bundle validate ./bundle
 	sed -i 's/windows-machine-config-operator\.v.\.0\.0/windows-machine-config-operator.v$(WMCO_VERSION)/g' ./bundle/windows-machine-config-operator.package.yaml
 
