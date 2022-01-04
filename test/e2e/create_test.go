@@ -139,7 +139,7 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 
 	// Patch the CVO with overrides spec value for cluster-machine-approver deployment
 	// Doing so, stops CVO from creating/updating its deployment hereafter.
-	patchData := `[{"op":"add","path":"/spec/overrides","value":[{"kind":"Deployment","group":"apps/v1","name":"machine-approver","namespace":"openshift-cluster-machine-approver","unmanaged":true}]}]`
+	patchData := `[{"op":"add","path":"/spec/overrides","value":[{"kind":"Deployment","group":"apps","name":"machine-approver","namespace":"openshift-cluster-machine-approver","unmanaged":true}]}]`
 	_, err := tc.client.Config.ConfigV1().ClusterVersions().Patch(context.TODO(), "version", types.JSONPatchType, []byte(patchData), metav1.PatchOptions{})
 
 	// Scale the Cluster Machine Approver Deployment to 0
