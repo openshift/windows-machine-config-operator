@@ -167,3 +167,29 @@ transform_csv() {
   fi
   sed -i "s|"$1"|"$2"|g" $MANIFEST_LOC/manifests/windows-machine-config-operator.clusterserviceversion.yaml
 }
+
+# creates the `windows-instances` ConfigMap
+# Parameters:
+#  1: the ConfigMap data section
+createWindowsInstancesConfigMap() {
+  DATA=$1
+  if [[ -z "$DATA" ]]; then
+    error-exit "ConfigMap data cannot be empty"
+  fi
+  cat <<EOF | oc apply -f -
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: windows-instances
+  namespace: ${WMCO_DEPLOY_NAMESPACE}
+${DATA}
+EOF
+}
+
+# returns the number of instances from `windows-instances` ConfigMap
+getWindowsInstanceCountFromConfigMap() {
+ oc get configmaps \
+   windows-instances \
+   -n "${WMCO_DEPLOY_NAMESPACE}" \
+   -o json | jq '.data | length'
+}

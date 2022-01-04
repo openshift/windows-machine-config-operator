@@ -108,6 +108,23 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 	return nil
 }
 
+// validateWindowsInstanceConfigMap validates the windows-instance ConfigMap
+func (tc *testContext) validateWindowsInstanceConfigMap(expectedCount int) error {
+	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(),
+		wiparser.InstanceConfigMap, metav1.GetOptions{})
+	if err != nil {
+		return errors.Wrapf(err, "error retrieving ConfigMap: %s", wiparser.InstanceConfigMap)
+	}
+	// check instance count
+	actualCount := len(windowsInstances.Data)
+	if actualCount != expectedCount {
+		return errors.Wrapf(err, "invalid BYOH instance count: %v, expected: %v", actualCount, expectedCount)
+	}
+	// TODO: Validate windowsInstances.Data (See https://issues.redhat.com/browse/WINC-671)
+	// ConfigMap is valid, return no error
+	return nil
+}
+
 // testMachineConfiguration tests that the Windows Machine controller can properly configure Machines
 func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	if gc.numberOfMachineNodes == 0 {
@@ -139,14 +156,22 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 		t.Skip("BYOH testing disabled")
 	}
 
-	err := tc.disableClusterMachineApprover()
-	require.NoError(t, err, "failed to scale down Machine Approver pods")
-
-	err = tc.provisionBYOHConfigMapWithMachineSet()
-	require.NoError(t, err, "error provisioning BYOH ConfigMap with MachineSets")
-
+	// For platform-agnostic infrastructure just validate the BYOH ConfigMap
+	// TODO: See https://github.com/openshift/windows-machine-config-operator/pull/858#discussion_r780316359
+	if tc.CloudProvider.GetType() == config.NonePlatformType {
+		err := tc.validateWindowsInstanceConfigMap(int(gc.numberOfBYOHNodes))
+		require.NoError(t, err, "error validating windows-instances ConfigMap")
+		log.Printf("using %v BYOH instance(s) already provisioned", gc.numberOfBYOHNodes)
+	} else {
+		// Otherwise, provision BYOH instances with MachineSet
+		err := tc.disableClusterMachineApprover()
+		require.NoError(t, err, "failed to scale down Machine Approver pods")
+		err = tc.provisionBYOHConfigMapWithMachineSet()
+		require.NoError(t, err, "error provisioning BYOH ConfigMap with MachineSets")
+	}
+	// Wait for Windows worker node to become available
 	t.Run("VM is configured by ConfigMap controller", func(t *testing.T) {
-		err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+		err := tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
 		assert.NoError(t, err, "Windows node creation failed")
 	})
 }
