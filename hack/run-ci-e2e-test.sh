@@ -101,6 +101,25 @@ if ! [[ "$OPENSHIFT_CI" = "true" &&  "$TEST" = "upgrade" ]]; then
   done
 fi
 
+# WINDOWS_INSTANCES_DATA holds the windows-instances ConfigMap data section
+WINDOWS_INSTANCES_DATA=${WINDOWS_INSTANCES_DATA:-}
+# Check WINDOWS_INSTANCES_DATA and create the windows-instances ConfigMap, if
+# any. The ConfigMap creation must takes place after the operator's deployment
+# process is complete, because the namespace is removed as part of the cleanup
+# step (cleanup_WMCO) while retrying the deployment.
+if [[ -n "$WINDOWS_INSTANCES_DATA" ]]; then
+  createWindowsInstancesConfigMap "${WINDOWS_INSTANCES_DATA}" || {
+    error-exit "error creating windows-instances ConfigMap with ${WINDOWS_INSTANCES_DATA}"
+  }
+  # read BYOH from ConfigMap
+  BYOH_NODE_COUNT=$(getWindowsInstanceCountFromConfigMap) || {
+    error-exit "error getting windows-instances ConfigMap"
+  }
+  # update BYOH node count option or default to 0
+  BYOH_NODE_COUNT_OPTION="--byoh-node-count=${BYOH_NODE_COUNT:-0}"
+  echo "updated ${BYOH_NODE_COUNT_OPTION}"
+fi
+
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
 
