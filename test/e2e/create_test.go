@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -24,6 +25,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
@@ -139,8 +141,20 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 
 	// Patch the CVO with overrides spec value for cluster-machine-approver deployment
 	// Doing so, stops CVO from creating/updating its deployment hereafter.
-	patchData := `[{"op":"add","path":"/spec/overrides","value":[{"kind":"Deployment","group":"apps","name":"machine-approver","namespace":"openshift-cluster-machine-approver","unmanaged":true}]}]`
-	_, err := tc.client.Config.ConfigV1().ClusterVersions().Patch(context.TODO(), "version", types.JSONPatchType, []byte(patchData), metav1.PatchOptions{})
+	nodeCSRApproverOverride := config.ComponentOverride{
+		Kind:      "Deployment",
+		Group:     "apps",
+		Namespace: "openshift-cluster-machine-approver",
+		Name:      "machine-approver",
+		Unmanaged: true,
+	}
+	patchData, err := json.Marshal([]*patch.JSONPatch{
+		patch.NewJSONPatch("add", "/spec/overrides", []config.ComponentOverride{nodeCSRApproverOverride})})
+	require.NoErrorf(t, err, "unable to generate patch request body for CVO override: %v", nodeCSRApproverOverride)
+
+	_, err = tc.client.Config.ConfigV1().ClusterVersions().Patch(context.TODO(), "version", types.JSONPatchType,
+		patchData, metav1.PatchOptions{})
+	require.NoErrorf(t, err, "unable to apply patch %s to ClusterVersion", patchData)
 
 	// Scale the Cluster Machine Approver Deployment to 0
 	// This is required for testing BYOH CSR approval feature so that BYOH instances
