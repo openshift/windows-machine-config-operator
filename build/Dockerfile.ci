@@ -3,7 +3,7 @@
 # building the operator from the PR source without using the operator-sdk.
 
 # build stage for building binaries
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.16-openshift-4.8 as build
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10 as build
 LABEL stage=build
 WORKDIR /build/
 
@@ -118,7 +118,7 @@ RUN make build
 #├── windows_exporter.exe
 #└── wmcb.exe
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.16-openshift-4.8
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10
 LABEL stage=operator
 
 # Copy wmcb.exe
