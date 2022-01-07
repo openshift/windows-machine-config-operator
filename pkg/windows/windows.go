@@ -192,10 +192,13 @@ type windows struct {
 	defaultShellPowerShell bool
 	// platformType overrides default hostname in bootstrapper
 	platformType string
+	// dockerRuntime indicates if the container runtime used is docker or containerd
+	dockerRuntime bool
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer, platformType string) (Windows, error) {
+func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer,
+	platformType string, dockerRuntime bool) (Windows, error) {
 	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
@@ -212,6 +215,7 @@ func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *ins
 			log:                    log,
 			defaultShellPowerShell: defaultShellPowershell(conn),
 			platformType:           platformType,
+			dockerRuntime:          dockerRuntime,
 		},
 		nil
 }

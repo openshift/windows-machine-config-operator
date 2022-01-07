@@ -52,6 +52,8 @@ type instanceReconciler struct {
 	recorder record.EventRecorder
 	// platform indicates the cloud on which the cluster is running
 	platform config.PlatformType
+	// dockerRuntime indicates if the container runtime used is docker or containerd
+	dockerRuntime bool
 }
 
 // ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
@@ -71,7 +73,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instanceInfo, r.signer,
-		labelsToApply, annotationsToApply, r.platform)
+		labelsToApply, annotationsToApply, r.platform, r.dockerRuntime)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
@@ -139,7 +141,7 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
-		nil, nil, r.platform)
+		nil, nil, r.platform, r.dockerRuntime)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}

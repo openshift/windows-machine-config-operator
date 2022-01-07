@@ -68,7 +68,7 @@ type ConfigMapReconciler struct {
 }
 
 // NewConfigMapReconciler returns a pointer to a ConfigMapReconciler
-func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) (*ConfigMapReconciler, error) {
+func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string, dockerRuntime bool) (*ConfigMapReconciler, error) {
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating kubernetes clientset")
@@ -90,6 +90,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 			vxlanPort:            clusterConfig.Network().VXLANPort(),
 			prometheusNodeConfig: pc,
 			platform:             clusterConfig.Platform(),
+			dockerRuntime:        dockerRuntime,
 		},
 	}, nil
 }
