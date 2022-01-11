@@ -166,33 +166,14 @@ func testPodDNSResolution(t *testing.T) {
 	// PowerShell cmdlet Resolve-DnsName, but it is not present either.
 	// TODO: Use a compatible container image for the e2e test suite that includes the
 	//  PowerShell cmdlet Resolve-DnsName.
-	t.Run("Valid URL", testCtx.testPodDNSResolutionWithValidUrl)
-	t.Run("Invalid URL", testCtx.testPodDNSResolutionWithInvalidUrl)
-}
-
-// testPodDNSResolutionWithValidUrl verifies that a curl query succeed using a valid URL
-// with resolvable DNS record
-func (tc *testContext) testPodDNSResolutionWithValidUrl(t *testing.T) {
-	winJob, err := tc.createWindowsServerJob("win-dns-tester-valid-url",
+	winJob, err := testCtx.createWindowsServerJob("win-dns-tester",
 		// curl'ing with --head flag to fetch only the headers as a lightweight alternative
 		"curl.exe --head -k https://www.openshift.com",
 		nil)
 	require.NoError(t, err, "could not create Windows tester job")
-	defer tc.deleteJob(winJob.Name)
-	err = tc.waitUntilJobSucceeds(winJob.Name)
+	defer testCtx.deleteJob(winJob.Name)
+	err = testCtx.waitUntilJobSucceeds(winJob.Name)
 	assert.NoError(t, err, "Windows tester job failed")
-}
-
-// testPodDNSResolutionWithInvalidUrl verifies that a curl query fail using an invalid URL
-// with unresolvable DNS record
-func (tc *testContext) testPodDNSResolutionWithInvalidUrl(t *testing.T) {
-	winJob, err := tc.createWindowsServerJob("win-dns-tester-invalid-url",
-		"curl.exe http://www.invalid-url-with-unresolvable-dns-record.test",
-		nil)
-	require.NoError(t, err, "could not create Windows tester job")
-	defer tc.deleteJob(winJob.Name)
-	err = tc.waitUntilJobSucceeds(winJob.Name)
-	assert.Error(t, err, "Windows tester job expected to fail")
 }
 
 // collectDeploymentLogs collects logs of a deployment to the Artifacts directory
