@@ -17,25 +17,6 @@ get_WMCO_logs() {
   oc logs -l name=windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE --tail=-1 >> "$ARTIFACT_DIR"/wmco.log
 }
 
-# This function runs operator-sdk test with certain go test arguments
-# Parameters:
-# 1: path to the operator-sdk binary to use
-# 2: go test arguments
-OSDK_WMCO_test() {
-  if [ $# != 2 ]; then
-    echo incorrect parameter count for OSDK_WMCO_test
-    return 1
-  fi
-
-  local OSDK_PATH=$1
-  local TEST_FLAGS=$2
-
-  if ! $OSDK_PATH test local ./test/e2e --no-setup --debug --operator-namespace=$WMCO_DEPLOY_NAMESPACE --go-test-flags "$TEST_FLAGS"; then
-    get_WMCO_logs
-    return 1
-  fi
-}
-
 TEST="all"
 while getopts ":m:c:b:st:" opt; do
   case ${opt} in
