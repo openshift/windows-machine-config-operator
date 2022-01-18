@@ -38,6 +38,8 @@ const (
 	cniDir = k8sDir + "cni\\"
 	// cniConfDir is the directory for storing CNI configuration
 	cniConfDir = cniDir + "config\\"
+	// ContainerdDir is the directory for storing Containerd binary
+	ContainerdDir = k8sDir + "containerd\\"
 	// windowsExporterPath is the location of the windows_exporter.exe
 	windowsExporterPath = k8sDir + "windows_exporter.exe"
 	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
@@ -107,7 +109,7 @@ var (
 )
 
 // getFilesToTransfer returns the properly populated filesToTransfer map
-func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
+func getFilesToTransfer(dockerRuntime bool) (map[*payload.FileInfo]string, error) {
 	if filesToTransfer != nil {
 		return filesToTransfer, nil
 	}
@@ -123,6 +125,11 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		payload.KubeProxyPath:             k8sDir,
 		payload.KubeletPath:               k8sDir,
 		payload.AzureCloudNodeManagerPath: k8sDir,
+	}
+
+	if !dockerRuntime {
+		srcDestPairs[payload.ContainerdPath] = ContainerdDir
+		srcDestPairs[payload.HcsshimPath] = ContainerdDir
 	}
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
@@ -550,6 +557,9 @@ func (vm *windows) changeHostName() error {
 
 // createDirectories creates directories required for configuring the Windows node on the VM
 func (vm *windows) createDirectories() error {
+	if !vm.dockerRuntime {
+		RequiredDirectories = append(RequiredDirectories, ContainerdDir)
+	}
 	for _, dir := range RequiredDirectories {
 		if _, err := vm.Run(mkdirCmd(dir), false); err != nil {
 			return errors.Wrapf(err, "unable to create remote directory %s", dir)
@@ -572,7 +582,7 @@ func (vm *windows) removeDirectories() error {
 // transferFiles copies various files required for configuring the Windows node, to the VM.
 func (vm *windows) transferFiles() error {
 	vm.log.Info("transferring files")
-	filesToTransfer, err := getFilesToTransfer()
+	filesToTransfer, err := getFilesToTransfer(vm.dockerRuntime)
 	if err != nil {
 		return errors.Wrapf(err, "error getting list of files to transfer")
 	}

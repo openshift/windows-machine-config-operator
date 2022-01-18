@@ -20,6 +20,11 @@ const (
 	// KubeProxyPath contains the path of the kube-proxy binary. The container image should already have this binary
 	// mounted
 	KubeProxyPath = payloadDirectory + "/kube-node/kube-proxy.exe"
+	// ContainerdPath contains the path of the containerd binary. The container image should already have this binary
+	// mounted
+	ContainerdPath = payloadDirectory + "/containerd/containerd.exe"
+	//HcsshimPath contains the path of the hcsshim binary. The container image should already have this binary mounted
+	HcsshimPath = payloadDirectory + "/containerd/containerd-shim-runhcs-v1.exe"
 	// IgnoreWgetPowerShellPath contains the path of the powershell script which allows wget to ignore certs. The
 	// container image should already have this mounted
 	IgnoreWgetPowerShellPath = payloadDirectory + "/powershell/wget-ignore-cert.ps1"
