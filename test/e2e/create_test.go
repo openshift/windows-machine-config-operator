@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -18,22 +17,30 @@ import (
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
-	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
-// vmConfigurationTime is the maximum amount of time expected for a Windows VM to be fully configured and ready for WMCO
-// after the hardware is provisioned.
-const vmConfigurationTime = 10 * time.Minute
+const (
+	// vmConfigurationTime is the maximum amount of time expected for a Windows VM to be fully configured and ready for WMCO
+	// after the hardware is provisioned.
+	vmConfigurationTime = 10 * time.Minute
+
+	clusterVersionOperatorNamespace   = "openshift-cluster-version"
+	clusterVersionOperatorDeployment  = "cluster-version-operator"
+	clusterVersionOperatorPodSelector = "k8s-app=cluster-version-operator"
+
+	machineApproverNamespace   = "openshift-cluster-machine-approver"
+	machineApproverDeployment  = "machine-approver"
+	machineApproverPodSelector = "app=machine-approver"
+)
 
 func creationTestSuite(t *testing.T) {
 	// The order of tests here are important. Any node object related tests should be run only after
@@ -133,29 +140,19 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 		t.Skip("BYOH testing disabled")
 	}
 
-	// Patch the CVO with overrides spec value for cluster-machine-approver deployment
-	// Doing so, stops CVO from creating/updating its deployment hereafter.
-	nodeCSRApproverOverride := config.ComponentOverride{
-		Kind:      "Deployment",
-		Group:     "apps",
-		Namespace: "openshift-cluster-machine-approver",
-		Name:      "machine-approver",
-		Unmanaged: true,
-	}
-	patchData, err := json.Marshal([]*patch.JSONPatch{
-		patch.NewJSONPatch("add", "/spec/overrides", []config.ComponentOverride{nodeCSRApproverOverride})})
-	require.NoErrorf(t, err, "unable to generate patch request body for CVO override: %v", nodeCSRApproverOverride)
-
-	_, err = tc.client.Config.ConfigV1().ClusterVersions().Patch(context.TODO(), "version", types.JSONPatchType,
-		patchData, metav1.PatchOptions{})
-	require.NoErrorf(t, err, "unable to apply patch %s to ClusterVersion", patchData)
+	// Scale down the Cluster Version Operator deployment
+	// Doing so, stops CVO from creating/updating the cluster-machine-approver deployment hereafter.
+	expectedPodCount := int32(0)
+	err := tc.scaleDeployment(clusterVersionOperatorNamespace, clusterVersionOperatorDeployment,
+		clusterVersionOperatorPodSelector, &expectedPodCount)
+	require.NoError(t, err, "failed to scale down CVO pods")
 
 	// Scale the Cluster Machine Approver Deployment to 0
 	// This is required for testing BYOH CSR approval feature so that BYOH instances
 	// CSR's are not approved by Cluster Machine Approver
-	expectedPodCount := int32(0)
-	err = tc.scaleMachineApproverDeployment(&expectedPodCount)
-	require.NoError(t, err, "failed to scale Machine Approver pods")
+	err = tc.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
+		&expectedPodCount)
+	require.NoError(t, err, "failed to scale down Machine Approver pods")
 
 	_, err = tc.createWindowsMachineSet(gc.numberOfBYOHNodes, false)
 	require.NoError(t, err, "failed to create Windows MachineSet")
@@ -455,29 +452,30 @@ func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, 
 	return windowsNodes, nil
 }
 
-// scaleMachineApproverDeployment scales the Machine Approver deployment pods to the expectedPodCount
-func (tc *testContext) scaleMachineApproverDeployment(expectedPodCount *int32) error {
-	deployment, err := tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Get(context.TODO(),
-		"machine-approver", metav1.GetOptions{})
+// scaleDeployment scales the deployment associated with the given namespace and name to the expectedPodCount
+func (tc *testContext) scaleDeployment(namespace, name, selector string, expectedPodCount *int32) error {
+	deployment, err := tc.client.K8s.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrap(err, "error listing Cluster Machine Approver deployment")
+		return errors.Wrapf(err, "error getting deployment %s/%s", namespace, name)
 	}
 
 	deployment.Spec.Replicas = expectedPodCount
-	_, err = tc.client.K8s.AppsV1().Deployments("openshift-cluster-machine-approver").Update(context.TODO(),
-		deployment, metav1.UpdateOptions{})
+	_, err = tc.client.K8s.AppsV1().Deployments(namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
 	if err != nil {
-		return errors.Wrap(err, "error updating Cluster Machine Approver deployment")
+		return errors.Wrapf(err, "error updating deployment %s/%s", namespace, name)
 	}
-	retryInterval := retry.Interval
-	retryTimeout := retry.Timeout
-	if err = wait.Poll(retryInterval, retryTimeout, func() (bool, error) {
-		if deployment.Spec.Replicas == expectedPodCount {
-			return true, nil
+
+	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		// List the pods using the given selector and ensure there are the expected number
+		pods, err := tc.client.K8s.CoreV1().Pods(namespace).List(context.TODO(),
+			metav1.ListOptions{LabelSelector: selector})
+		if err != nil {
+			return false, errors.Wrapf(err, "error listing pods for deployment %s/%s", namespace, name)
 		}
-		return false, nil
-	}); err != nil {
-		return errors.Wrap(err, "error waiting for Cluster Machine Approver deployment to be scaled")
+		return len(pods.Items) == int(*expectedPodCount), nil
+	})
+	if err != nil {
+		return errors.Wrapf(err, "error waiting for deployment %s/%s to be scaled", namespace, name)
 	}
 	return nil
 }
