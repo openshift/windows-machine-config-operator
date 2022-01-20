@@ -471,11 +471,6 @@ func testCSRApproval(t *testing.T) {
 	err = testCtx.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
 		&expectedPodCount)
 	require.NoError(t, err, "failed to scale up Cluster Machine Approver pods")
-
-	// Scale the Cluster Version Operator deployment back to 1.
-	err = testCtx.scaleDeployment(clusterVersionOperatorNamespace, clusterVersionOperatorDeployment,
-		clusterVersionOperatorPodSelector, &expectedPodCount)
-	require.NoError(t, err, "failed to scale up CVO pods")
 }
 
 // findNodeCSRs returns the list of CSRs for the given node
