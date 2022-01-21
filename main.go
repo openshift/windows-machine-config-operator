@@ -49,7 +49,10 @@ func init() {
 
 func main() {
 	var debugLogging bool
+	var dockerRuntime bool
+
 	flag.BoolVar(&debugLogging, "debugLogging", false, "Log debug messages")
+	flag.BoolVar(&dockerRuntime, "dockerRuntime", true, "Container runtime to be used")
 
 	// Add flags registered by imported packages (e.g. glog and
 	// controller-runtime)
@@ -164,7 +167,7 @@ func main() {
 	}
 
 	// Setup all Controllers
-	winMachineReconciler, err := controllers.NewWindowsMachineReconciler(mgr, clusterConfig, watchNamespace)
+	winMachineReconciler, err := controllers.NewWindowsMachineReconciler(mgr, clusterConfig, watchNamespace, dockerRuntime)
 	if err != nil {
 		setupLog.Error(err, "unable to create Windows Machine reconciler")
 		os.Exit(1)
@@ -183,7 +186,7 @@ func main() {
 		setupLog.Error(err, "error removing invalid annotations from Linux nodes")
 	}
 
-	configMapReconciler, err := controllers.NewConfigMapReconciler(mgr, clusterConfig, watchNamespace)
+	configMapReconciler, err := controllers.NewConfigMapReconciler(mgr, clusterConfig, watchNamespace, dockerRuntime)
 	if err != nil {
 		setupLog.Error(err, "unable to create ConfigMap reconciler")
 		os.Exit(1)

@@ -38,6 +38,8 @@ const (
 	cniDir = k8sDir + "cni\\"
 	// cniConfDir is the directory for storing CNI configuration
 	cniConfDir = cniDir + "config\\"
+	// ContainerdDir is the directory for storing Containerd binary
+	ContainerdDir = k8sDir + "containerd\\"
 	// windowsExporterPath is the location of the windows_exporter.exe
 	windowsExporterPath = k8sDir + "windows_exporter.exe"
 	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
@@ -107,7 +109,7 @@ var (
 )
 
 // getFilesToTransfer returns the properly populated filesToTransfer map
-func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
+func getFilesToTransfer(dockerRuntime bool) (map[*payload.FileInfo]string, error) {
 	if filesToTransfer != nil {
 		return filesToTransfer, nil
 	}
@@ -123,6 +125,11 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		payload.KubeProxyPath:             k8sDir,
 		payload.KubeletPath:               k8sDir,
 		payload.AzureCloudNodeManagerPath: k8sDir,
+	}
+
+	if !dockerRuntime {
+		srcDestPairs[payload.ContainerdPath] = ContainerdDir
+		srcDestPairs[payload.HcsshimPath] = ContainerdDir
 	}
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
@@ -192,10 +199,13 @@ type windows struct {
 	defaultShellPowerShell bool
 	// platformType overrides default hostname in bootstrapper
 	platformType string
+	// dockerRuntime indicates if the container runtime used is docker or containerd
+	dockerRuntime bool
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer, platformType string) (Windows, error) {
+func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer,
+	platformType string, dockerRuntime bool) (Windows, error) {
 	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
@@ -212,6 +222,7 @@ func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *ins
 			log:                    log,
 			defaultShellPowerShell: defaultShellPowershell(conn),
 			platformType:           platformType,
+			dockerRuntime:          dockerRuntime,
 		},
 		nil
 }
@@ -546,6 +557,9 @@ func (vm *windows) changeHostName() error {
 
 // createDirectories creates directories required for configuring the Windows node on the VM
 func (vm *windows) createDirectories() error {
+	if !vm.dockerRuntime {
+		RequiredDirectories = append(RequiredDirectories, ContainerdDir)
+	}
 	for _, dir := range RequiredDirectories {
 		if _, err := vm.Run(mkdirCmd(dir), false); err != nil {
 			return errors.Wrapf(err, "unable to create remote directory %s", dir)
@@ -568,7 +582,7 @@ func (vm *windows) removeDirectories() error {
 // transferFiles copies various files required for configuring the Windows node, to the VM.
 func (vm *windows) transferFiles() error {
 	vm.log.Info("transferring files")
-	filesToTransfer, err := getFilesToTransfer()
+	filesToTransfer, err := getFilesToTransfer(vm.dockerRuntime)
 	if err != nil {
 		return errors.Wrapf(err, "error getting list of files to transfer")
 	}
