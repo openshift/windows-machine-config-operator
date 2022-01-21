@@ -139,6 +139,44 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 		t.Skip("BYOH testing disabled")
 	}
 
+	err := tc.disableClusterMachineApprover()
+	require.NoError(t, err, "failed to scale down Machine Approver pods")
+
+	err = tc.provisionBYOHConfigMapWithMachineSet()
+	require.NoError(t, err, "error provisioning BYOH ConfigMap with MachineSets")
+
+	t.Run("VM is configured by ConfigMap controller", func(t *testing.T) {
+		err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+		assert.NoError(t, err, "Windows node creation failed")
+	})
+}
+
+// provisionBYOHConfigMapWithMachineSet provisions BYOH instances using MachineSet and creates the `windows-instances`
+// ConfigMap.
+// The Cluster Machine Approver must be disabled to test BYOH CSR approval feature, so that BYOH instances CSR's are
+// not approved by Cluster Machine Approver
+func (tc *testContext) provisionBYOHConfigMapWithMachineSet() error {
+	_, err := tc.createWindowsMachineSet(gc.numberOfBYOHNodes, false)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Windows MachineSet")
+	}
+	machines, err := tc.waitForWindowsMachines(int(gc.numberOfBYOHNodes), "Provisioned", false)
+	if err != nil {
+		return errors.Wrap(err, "Machines did not reach expected state")
+	}
+	// Change the default shell to PowerShell for the first BYOH VM. We expect there to be BYOH VMs with either
+	// cmd or PowerShell as the default shell, so getting a mix of both, either between different BYOH VMs, or with the
+	// VMs spun up for the Machine testing is important.
+	err = tc.setPowerShellDefaultShell(&machines.Items[0])
+	if err != nil {
+		return errors.Wrapf(err, "unable to change default shell of machine %s", machines.Items[0].GetName())
+	}
+	return tc.createWindowsInstanceConfigMap(machines)
+}
+
+// disableClusterMachineApprover disables the Cluster Machine Approver.
+// This is a prerequisite to configure BYOH instances created using MachineSets
+func (tc *testContext) disableClusterMachineApprover() error {
 	// Patch the CVO with overrides spec value for cluster-machine-approver deployment
 	// Doing so, stops CVO from creating/updating its deployment hereafter.
 	nodeCSRApproverOverride := config.ComponentOverride{
@@ -150,38 +188,22 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 	}
 	patchData, err := json.Marshal([]*patch.JSONPatch{
 		patch.NewJSONPatch("add", "/spec/overrides", []config.ComponentOverride{nodeCSRApproverOverride})})
-	require.NoErrorf(t, err, "unable to generate patch request body for CVO override: %v", nodeCSRApproverOverride)
+	if err != nil {
+		return errors.Wrapf(err, "unable to generate patch request body for CVO override: %v", nodeCSRApproverOverride)
+	}
 
 	_, err = tc.client.Config.ConfigV1().ClusterVersions().Patch(context.TODO(), "version", types.JSONPatchType,
 		patchData, metav1.PatchOptions{})
-	require.NoErrorf(t, err, "unable to apply patch %s to ClusterVersion", patchData)
+	if err != nil {
+		return errors.Wrapf(err, "unable to apply patch %s to ClusterVersion", patchData)
+	}
 
 	// Scale the Cluster Machine Approver Deployment to 0
 	// This is required for testing BYOH CSR approval feature so that BYOH instances
 	// CSR's are not approved by Cluster Machine Approver
 	expectedPodCount := int32(0)
-	err = tc.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
+	return tc.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
 		&expectedPodCount)
-	require.NoError(t, err, "failed to scale down Machine Approver pods")
-
-	_, err = tc.createWindowsMachineSet(gc.numberOfBYOHNodes, false)
-	require.NoError(t, err, "failed to create Windows MachineSet")
-	machines, err := tc.waitForWindowsMachines(int(gc.numberOfBYOHNodes), "Provisioned", false)
-	require.NoError(t, err, "Machines did not reach expected state")
-
-	// Change the default shell to PowerShell for the first BYOH VM. We expect there to be BYOH VMs with either
-	// cmd or PowerShell as the default shell, so getting a mix of both, either between different BYOH VMs, or with the
-	// VMs spun up for the Machine testing is important.
-
-	err = tc.setPowerShellDefaultShell(&machines.Items[0])
-	require.NoErrorf(t, err, "unable to change default shell of machine %s", machines.Items[0].GetName())
-
-	t.Run("VM is configured by ConfigMap controller", func(t *testing.T) {
-		err = tc.createWindowsInstanceConfigMap(machines)
-		require.NoError(t, err, "error creating ConfigMap")
-		err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
-		assert.NoError(t, err, "Windows node creation failed")
-	})
 }
 
 // setPowerShellDefaultShell changes the instance backed by the given Machine to have a default SSH shell of PowerShell
