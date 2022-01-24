@@ -8,6 +8,7 @@ replace (
 )
 
 require (
+	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.27.0
 	github.com/go-logr/logr v0.4.0
 	github.com/openshift/api v0.0.0-20210521075222-e273a339932a
