@@ -22,7 +22,7 @@ these errors, only use the appropriate version according to the cloud provider i
 | -----------         | -----------                                                             |
 | AWS                 | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019  |
 | Azure               | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019  |
-| VMware vSphere      | Windows Server Semi-Annual Channel (SAC): Windows Server 2004, 20H2     |
+| VMware vSphere      | Windows Server Semi-Annual Channel (SAC): Windows Server 20H2|
 
 ## Supported Networking
 [OVNKubernetes hybrid networking](setup-hybrid-OVNKubernetes-cluster.md) is the only supported networking configuration.
@@ -40,7 +40,7 @@ Note: OpenShiftSDN networking is the default network for OpenShift clusters. It 
 | Hybrid OVNKubernetes      | Supported Windows Server version                                      |
 | -----------               | -----------                                                           |
 | Default VXLAN port        | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019|
-| Custom VXLAN port         | Windows Server Semi-Annual Channel (SAC): Windows Server 2004, 20H2   |
+| Custom VXLAN port         | Windows Server Semi-Annual Channel (SAC): Windows Server 20H2|
 
 ## Supported Installation method
 * Installer-Provisioned Infrastructure installation method is the only supported installation method. This is 
