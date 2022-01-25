@@ -136,8 +136,13 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 			"creating new node config")
 	}
 
+	clusterDNS, err := cluster.GetDNS(clusterServiceCIDR)
+	if err != nil {
+		return nil, errors.Wrapf(err, "error getting cluster DNS from service CIDR: %s", clusterServiceCIDR)
+	}
+
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
-	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, vxlanPort,
+	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, clusterDNS, vxlanPort,
 		instanceInfo, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
