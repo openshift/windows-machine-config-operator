@@ -25,6 +25,8 @@ const (
 	ContainerdPath = payloadDirectory + "/containerd/containerd.exe"
 	//HcsshimPath contains the path of the hcsshim binary. The container image should already have this binary mounted
 	HcsshimPath = payloadDirectory + "/containerd/containerd-shim-runhcs-v1.exe"
+	// ContainerdConfPath contains the path of the containerd config file.
+	ContainerdConfPath = payloadDirectory + "/containerd/containerd_conf.toml"
 	// IgnoreWgetPowerShellPath contains the path of the powershell script which allows wget to ignore certs. The
 	// container image should already have this mounted
 	IgnoreWgetPowerShellPath = payloadDirectory + "/powershell/wget-ignore-cert.ps1"

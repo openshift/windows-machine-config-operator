@@ -108,6 +108,7 @@ RUN make build
 #├── containerd
 #│   ├── containerd.exe
 #│   └── containerd-shim-runhcs-v1.exe
+#|   └── containerd_conf.toml
 #├── hybrid-overlay-node.exe
 #├── kube-node
 #│   ├── kubelet.exe
@@ -134,10 +135,11 @@ COPY --from=build /build/windows-machine-config-operator/windows_exporter/window
 # Copy azure-cloud-node-manager.exe
 COPY --from=build /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe .
 
-# Copy containerd.exe and containerd-shim-runhcs-v1.exe
+# Copy containerd.exe, containerd-shim-runhcs-v1.exe and containerd config containerd_conf.toml
 WORKDIR /payload/containerd/
 COPY --from=build /build/windows-machine-config-operator/containerd/bin/containerd.exe .
 COPY --from=build /build/windows-machine-config-operator/hcsshim/containerd-shim-runhcs-v1.exe .
+COPY --from=build /build/windows-machine-config-operator/pkg/internal/containerd_conf.toml .
 
 # Copy kubelet.exe and kube-proxy.exe
 WORKDIR /payload/kube-node/

@@ -53,7 +53,7 @@ version = 2
     max_container_log_line_size = 16384
     netns_mounts_under_state_dir = false
     restrict_oom_score_adj = false
-    sandbox_image = "k8s.gcr.io/pause:3.5"
+    sandbox_image = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
     selinux_category_range = 0
     stats_collect_period = 10
     stream_idle_timeout = "4h0m0s"
@@ -64,8 +64,8 @@ version = 2
     unset_seccomp_profile = ""
 
     [plugins."io.containerd.grpc.v1.cri".cni]
-      bin_dir = "C:\\Program Files\\containerd\\cni\\bin"
-      conf_dir = "C:\\Program Files\\containerd\\cni\\conf"
+      bin_dir = "C:\\k\\cni"
+      conf_dir = "C:\\k\\cni\\config"
       conf_template = ""
       max_conf_num = 1
 

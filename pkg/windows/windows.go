@@ -131,6 +131,7 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		payload.AzureCloudNodeManagerPath: k8sDir,
 		payload.ContainerdPath:            ContainerdDir,
 		payload.HcsshimPath:               ContainerdDir,
+		payload.ContainerdConfPath:        ContainerdDir,
 	}
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
