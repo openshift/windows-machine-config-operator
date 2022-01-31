@@ -37,12 +37,20 @@ const (
 	kubeProxyLogDir = logDir + "kube-proxy\\"
 	// hybridOverlayLogDir is the remote hybrid-overlay log directory
 	hybridOverlayLogDir = logDir + "hybrid-overlay\\"
+	// ContainerdLogDir is the remote containerd log directory
+	ContainerdLogDir = logDir + "containerd\\"
 	// cniDir is the directory for storing CNI binaries
 	cniDir = k8sDir + "cni\\"
 	// cniConfDir is the directory for storing CNI configuration
 	cniConfDir = cniDir + "config\\"
 	// ContainerdDir is the directory for storing Containerd binary
 	ContainerdDir = k8sDir + "containerd\\"
+	// containerdPath is the location of the containerd exe
+	containerdPath = ContainerdDir + "containerd.exe"
+	// containerdConfPath is the location of containerd config file
+	containerdConfPath = ContainerdDir + "containerd_conf.toml"
+	//containerdServiceName is containerd Windows service name
+	containerdServiceName = "containerd"
 	// windowsExporterPath is the location of the windows_exporter.exe
 	windowsExporterPath = k8sDir + "windows_exporter.exe"
 	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
@@ -99,7 +107,8 @@ var (
 		windowsExporterServiceName,
 		kubeProxyServiceName,
 		hybridOverlayServiceName,
-		kubeletServiceName}
+		kubeletServiceName,
+		containerdServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		k8sDir,
@@ -109,7 +118,8 @@ var (
 		logDir,
 		kubeProxyLogDir,
 		hybridOverlayLogDir,
-		ContainerdDir}
+		ContainerdDir,
+		ContainerdLogDir}
 )
 
 // getFilesToTransfer returns the properly populated filesToTransfer map
@@ -424,11 +434,41 @@ func (vm *windows) Configure() error {
 	if err := vm.transferFiles(); err != nil {
 		return errors.Wrap(err, "error transferring files to Windows VM")
 	}
+	if err := vm.configureContainerd(); err != nil {
+		return errors.Wrapf(err, "error configuring containerd")
+	}
 	if err := vm.ConfigureWindowsExporter(); err != nil {
 		return errors.Wrapf(err, "error configuring Windows exporter")
 	}
 
 	return vm.runBootstrapper()
+}
+
+// configureContainerd configures the Windows defender exclusion and starts the
+// Windows containerd service
+func (vm *windows) configureContainerd() error {
+	// set Windows defender exclusions for containerd
+	setExclusionCmd := "Add-MpPreference -ExclusionProcess " + containerdPath
+	out, err := vm.Run(setExclusionCmd, true)
+	if err != nil {
+		vm.log.V(1).Info("setting Windows defender exclusion failed", "command", setExclusionCmd,
+			"output", out)
+		return errors.Wrap(err, "setting Windows defender process exclusion failed")
+	}
+	containerdServiceArgs := "--config " + containerdConfPath + " --log-file " + ContainerdLogDir + "containerd.log" +
+		" --log-level info" + " --run-service"
+
+	containerdService, err := newService(containerdPath, containerdServiceName, containerdServiceArgs, nil)
+	if err != nil {
+		return errors.Wrapf(err, "error creating %s service object", containerdServiceName)
+	}
+
+	if err := vm.ensureServiceIsRunning(containerdService); err != nil {
+		return errors.Wrapf(err, "error ensuring %s Windows service has started running", containerdServiceName)
+	}
+
+	vm.log.Info("configured", "service", containerdServiceName, "args", containerdServiceArgs)
+	return nil
 }
 
 // ConfigureWindowsExporter starts Windows metrics exporter service, only if the file is present on the VM
