@@ -122,14 +122,14 @@ func getLatestWindowsAMI(ec2Client *ec2.EC2, hasCustomVXLANPort bool) (string, e
 	windowsAMIFilterName := "name"
 	windowsAMIFilterValue := ""
 	// This filter will grab all ami's that match the exact name. The '?' indicate any character will match.
-	// The ami's will have the name format: Windows_Server-2019-English-Full-ContainersLatest-2020.01.15
+	// The ami's will have the name format: Windows_Server-2022-English-Full-ContainersLatest-2022.01.19
 	// so the question marks will match the date of creation
 	// The image obtained by using windowsAMIFilterValue is compatible with the test container image -
-	// "mcr.microsoft.com/powershell:lts-nanoserver-2004" or "mcr.microsoft.com/powershell:lts-nanoserver-1809".
+	// "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022" or "mcr.microsoft.com/powershell:lts-nanoserver-1809".
 	// If the windowsAMIFilterValue changes, the test container image also needs to be changed.
-	// if hasCustomVXLANPort is set use 2004 image as it has the custom VXLAN port changes, if not use Windows Server 2019 image
+	// if hasCustomVXLANPort is set use 2022 image as it has the custom VXLAN port changes, if not use Windows Server 2019 image
 	if hasCustomVXLANPort {
-		windowsAMIFilterValue = "Windows_Server-2004-English-Core-ContainersLatest-????.??.??"
+		windowsAMIFilterValue = "Windows_Server-2022-English-Full-ContainersLatest-????.??.??"
 	} else {
 		windowsAMIFilterValue = "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
 	}
