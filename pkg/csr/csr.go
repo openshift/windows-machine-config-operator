@@ -96,7 +96,8 @@ func (a *Approver) Approve() error {
 
 	if _, err := a.k8sclientset.CertificatesV1().CertificateSigningRequests().UpdateApproval(context.Background(),
 		a.csr.Name, a.csr, meta.UpdateOptions{}); err != nil {
-		return errors.Wrapf(err, "could not update conditions for approval CSR: %s", a.csr.Name)
+		// have to return err itself here (not wrapped inside another error) so it can be identified as a conflict
+		return err
 	}
 	a.log.Info("CSR approved", "CSR", a.csr.Name)
 	return nil
