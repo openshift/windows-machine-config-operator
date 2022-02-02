@@ -158,6 +158,10 @@ func testEastWestNetworking(t *testing.T) {
 
 // testPodDNSResolution test the DNS resolution in a Windows pod
 func testPodDNSResolution(t *testing.T) {
+	// This test has 25% failure rate in CI.  WINC-743 has been created to address
+	// this issue. Until we address WINC-743, this test has been temporarily
+	// disabled.
+	t.Skip("Pod DNS resolution test is disabled, pending flake investigation")
 	// create context
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
