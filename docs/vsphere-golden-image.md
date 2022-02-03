@@ -16,6 +16,8 @@ the patch is not available.*
 
 To start with, create a new virtual machine in vSphere from the selected Windows Server distribution using the ISO image.
 See [vSphere documentation](https://docs.vmware.com/en/VMware-vSphere/index.html) for installation guidelines.
+Ensure that the [virtual hardware version](https://kb.vmware.com/s/article/1003746) meets the
+[OpenShift infrastructure requirements](https://docs.openshift.com/container-platform/latest/installing/installing_vsphere/preparing-to-install-on-vsphere.html#installation-vsphere-infrastructure_preparing-to-install-on-vsphere).
 
 ### Setup VMware Tools
 
