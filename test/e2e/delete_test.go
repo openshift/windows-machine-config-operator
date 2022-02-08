@@ -115,7 +115,10 @@ func testWindowsNodeDeletion(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
+	// set excepted node count to zero, since all Windows Nodes should be deleted in the test
+	expectedNodeCount := int32(0)
 	// Get all the Machines created by the e2e tests
+	// For platform=none, the resulting collection is empty
 	e2eMachineSets, err := testCtx.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).List(context.TODO(),
 		meta.ListOptions{LabelSelector: clusterinfo.MachineE2ELabel + "=true"})
 	require.NoError(t, err, "error listing MachineSets")
@@ -126,20 +129,18 @@ func testWindowsNodeDeletion(t *testing.T) {
 			break
 		}
 	}
+	// skip the scale down step if there is no MachineSet with Windows label
+	if windowsMachineSetWithLabel != nil {
+		// Scale the Windows MachineSet to 0
+		windowsMachineSetWithLabel.Spec.Replicas = &expectedNodeCount
+		_, err = testCtx.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Update(context.TODO(),
+			windowsMachineSetWithLabel, meta.UpdateOptions{})
+		require.NoError(t, err, "error updating Windows MachineSet")
 
-	require.NotNil(t, windowsMachineSetWithLabel, "could not find MachineSet with Windows label")
-
-	// Scale the Windows MachineSet to 0
-	expectedNodeCount := int32(0)
-	windowsMachineSetWithLabel.Spec.Replicas = &expectedNodeCount
-	_, err = testCtx.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Update(context.TODO(),
-		windowsMachineSetWithLabel, meta.UpdateOptions{})
-	require.NoError(t, err, "error updating Windows MachineSet")
-
-	// we are waiting 10 minutes for all windows machines to get deleted.
-	err = testCtx.waitForWindowsNodes(expectedNodeCount, true, false, false)
-	require.NoError(t, err, "Windows node deletion failed")
-
+		// we are waiting 10 minutes for all windows machines to get deleted.
+		err = testCtx.waitForWindowsNodes(expectedNodeCount, true, false, false)
+		require.NoError(t, err, "Windows node deletion failed")
+	}
 	t.Run("BYOH node removal", testCtx.testBYOHRemoval)
 
 	// Cleanup all the MachineSets created by us.
