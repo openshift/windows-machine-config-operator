@@ -44,6 +44,10 @@ Some important things to note:
 Any Windows instances that are to be attached to the cluster as a node must fulfill these [pre-requisites](docs/byoh-instance-pre-requisites.md).
 
 ### Adding instances
+Windows instances should be provisioned by the user for the sole purpose of becoming a worker node. Even when cleanly
+removed from a cluster, an instance may have unexpected state changes. If there are no plans to rejoin the instance
+to the cluster, it should be deprovisioned.
+
 A ConfigMap named `windows-instances` must be created in the WMCO namespace, describing the instances that should be
 joined to a cluster. The required information to configure an instance is:
 * An address to SSH into the instance with. This can be a DNS name or an ipv4 address.
@@ -67,8 +71,8 @@ data:
 
 #### Removing BYOH Windows instances
 BYOH instances that are attached to the cluster as a node can be removed by deleting the instance's entry in the
-ConfigMap. This process will revert instances back to the state they were in before, barring any logs and container
-runtime artifacts.
+ConfigMap. This process makes a best effort to revert instances back to the state they were in before, barring any logs
+and container runtime artifacts.
 
 In order for an instance to be cleanly removed, it must be accessible with the current private key provided
 to WMCO.
