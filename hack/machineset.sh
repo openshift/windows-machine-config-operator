@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
 
-# machineset.sh - create a Windows MachineSet for Windows Machine Config Operator
-# Creates a MachineSet.yaml file and apply/delete the MachineSet if optional action is provided
-#
-# USAGE
-#    machineset.sh
-# OPTIONS
-#    $1      Action       (Optional) apply/delete the MachineSet
-# PREREQUISITES
-#    oc                   to fetch cluster info and apply/delete MachineSets on the cluster(cluster should be logged in)
-#    aws                  to fetch Windows AMI id for AWS platform (only required for clusters running on AWS)
 set -euo pipefail
+
+function help() {
+    echo "USAGE: machineset.sh [OPTIONS]... (apply|delete)"
+    echo "Creates a Windows MachineSet.yaml file for Windows Machine Config Operator on an OpenShift cluster"
+    echo ""
+    echo "OPTIONS:"
+    echo "-v=        Windows Server version of VMs associated with the resulting MachineSet. Defaults to 2022"
+    echo "-a         create or apply changes to the MachineSet resource"
+    echo "-d         delete the MachineSet resource"
+    echo ""
+    echo "PREREQUISITES:"
+    echo "oc         to fetch cluster info and apply/delete MachineSets on the cluster(cluster should be logged in)"
+    echo "aws        to fetch Windows AMI id for AWS platform (only required for clusters running on AWS)"
+    echo ""
+    echo "Examples:"
+    echo "machineset.sh                 # create Windows Server 2022 MachineSet yaml"
+    echo "machineset.sh -a              # create Windows Server 2022 MachineSet yaml and apply changes to k8s resource"
+    echo "machineset.sh -v 2019 -a      # create Windows Server 2019 MachineSet yaml and apply changes to k8s resource"
+}
 
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
-
-ACTION=${1:-}
 
 # get_spec returns the template yaml common for all cloud providers
 get_spec() {
@@ -78,10 +85,28 @@ get_aws_ms() {
   local az=$3
   local provider=$4
 
+  # get proper Name for platform-compatible image
+  image_name=""
+  case "${WIN_SRV,,}" in
+    2022)
+      image_name="Windows_Server-2022*English*Full*Containers"
+    ;;
+    2019)
+      image_name="Windows_Server-2019*English*Full*Containers"
+    ;;
+    20h2)
+      echo "Note: Windows Server ${WIN_SRV} is not supported for platform ${provider}"
+      image_name="Windows_Server-20H2*English*Core*Containers"
+    ;;
+    *)
+      error-exit "Unsupported Windows Server version: ${WIN_SRV}"
+    ;;
+  esac
+
   # get the AMI id for the Windows VM
-  ami_id=$(aws ec2 describe-images --region ${region} --filters "Name=name,Values=Windows_Server-2019*English*Full*Containers*" "Name=is-public,Values=true" --query "reverse(sort_by(Images, &CreationDate))[*].{name: Name, id: ImageId}" --output json | jq -r '.[0].id')
+  ami_id=$(aws ec2 describe-images --region ${region} --filters "Name=name,Values=${image_name}*" "Name=is-public,Values=true" --query "reverse(sort_by(Images, &CreationDate))[*].{name: Name, id: ImageId}" --output json | jq -r '.[0].id')
   if [ -z "$ami_id" ]; then
-        error-exit "unable to find AMI ID for Windows Server 2019 1809"
+        error-exit "unable to find AMI ID for Windows Server ${WIN_SRV}"
   fi
 
   cat <<EOF
@@ -135,7 +160,26 @@ get_azure_ms() {
   local region=$2
   local az=$3
   local provider=$4
-
+  
+  # get proper SKU for platform-compatible image
+  sku=""
+  case "${WIN_SRV,,}" in
+    2022)
+      # has containers GA: https://docs.microsoft.com/en-us/windows-server/get-started/editions-comparison-windows-server-2022
+      sku="2022-datacenter-core"
+    ;;
+    2019)
+      sku="2019-Datacenter-with-Containers"
+    ;;
+    20h2)
+      echo "Note: Windows Server ${WIN_SRV} is not supported for platform ${provider}"
+      sku="datacenter-core-20h2-with-containers-smalldisk"
+    ;;
+    *)
+      error-exit "Unsupported Windows Server version: ${WIN_SRV}"
+    ;;
+  esac
+  
   cat <<EOF
 $(get_spec $infraID $az $provider)
       providerSpec:
@@ -148,7 +192,7 @@ $(get_spec $infraID $az $provider)
             offer: WindowsServer
             publisher: MicrosoftWindowsServer
             resourceID: ""
-            sku: 2019-Datacenter-with-Containers
+            sku: ${sku}
             version: latest
           kind: AzureMachineProviderSpec
           location: ${region}
@@ -184,8 +228,22 @@ get_vsphere_ms() {
   local provider=$2
 
   # set golden image template name
-  # TODO: read from parameter
-  template="windows-golden-images/windows-server-2004-template"
+  template=""
+  case "${WIN_SRV,,}" in
+    2022)
+      template="windows-golden-images/windows-server-2022-template"
+    ;;
+    2019)
+      echo "Note: Windows Server ${WIN_SRV} is not supported for platform ${provider}"
+      template="windows-golden-images/vm-winsrv-1909-golden-image"
+    ;;
+    20h2)
+      template="jvaldes/windows-server-20h2-template"
+    ;;
+    *)
+      error-exit "Unsupported Windows Server version: ${WIN_SRV}"
+    ;;
+  esac
 
   # TODO: Reduce the number of API calls, make just one call
   #       to `oc get machines` and pass the data around. This is the
@@ -237,6 +295,18 @@ $(get_spec $infraID "" $provider)
 EOF
 }
 
+WIN_SRV="2022"
+ACTION=""
+while getopts "v:adh" opt; do
+    case "$opt" in
+    v) WIN_SRV=$OPTARG;;
+    a) ACTION="apply";;
+    d) ACTION="delete";;
+    h) help; exit 0;;
+    ?) help; exit 1;;
+    esac
+done
+
 # Retrieves the Cloud Provider for the OpenShift Cluster
 provider="$(oc -n openshift-kube-apiserver get configmap config -o json | jq -r '.data."config.yaml"' | jq '.apiServerArguments."cloud-provider"' | jq -r '.[]')"
 
@@ -269,7 +339,7 @@ esac
 if [ -n "$ACTION" ]; then
   if [[ ! "$ACTION" =~ ^apply|delete$ ]]; then
       echo "$ms" > MachineSet.yaml
-      error-exit "Action (1st parameter) must be \"apply\" or \"delete\". Creating a yaml file"
+      error-exit "Action (2nd parameter) must be \"apply\" or \"delete\". Creating a yaml file"
   fi
   echo "$ms" | oc $ACTION -n openshift-machine-api -f -
 else
