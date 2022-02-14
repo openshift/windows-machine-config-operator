@@ -84,6 +84,9 @@ const (
 	cmdExitNoStatus = "command exited without exit status or exit signal"
 	// removeHNSCommand is the Windows command used to remove HNS network.
 	removeHNSCommand = "Remove-HnsNetwork"
+	// ManagedTag indicates that the service being described is managed by OpenShift. This ensures that all services
+	// created as part of Node configuration can be searched for by checking their description for this string
+	ManagedTag = "OpenShift managed"
 )
 
 var (
@@ -635,7 +638,8 @@ func (vm *windows) initializeBootstrapperFiles() error {
 	return nil
 }
 
-// ensureServiceIsRunning ensures a Windows service is running on the VM, creating and starting it if not already so
+// ensureServiceIsRunning ensures a Windows service is running on the VM, creating and starting it if not already so.
+// The service's description will be set as part of this.
 func (vm *windows) ensureServiceIsRunning(svc *service) error {
 	serviceExists, err := vm.serviceExists(svc.name)
 	if err != nil {
@@ -646,6 +650,9 @@ func (vm *windows) ensureServiceIsRunning(svc *service) error {
 		if err := vm.createService(svc); err != nil {
 			return errors.Wrapf(err, "error creating %s Windows service", svc.name)
 		}
+	}
+	if err := vm.setServiceDescription(svc.name); err != nil {
+		return errors.Wrapf(err, "error setting description of the %s Windows service", svc.name)
 	}
 	if err := vm.startService(svc); err != nil {
 		return errors.Wrapf(err, "error starting %s Windows service", svc.name)
@@ -668,6 +675,17 @@ func (vm *windows) createService(svc *service) error {
 	_, err := vm.Run(svcCreateCmd, false)
 	if err != nil {
 		return errors.Wrapf(err, "failed to create service %s", svc.name)
+	}
+	return nil
+}
+
+// setServiceDescription sets the given service's description to the expected value. This can only be done after service
+// creation.
+func (vm *windows) setServiceDescription(svcName string) error {
+	cmd := fmt.Sprintf("sc.exe description %s \"%s %s\"", svcName, ManagedTag, svcName)
+	out, err := vm.Run(cmd, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to set service description with stdout %s", out)
 	}
 	return nil
 }

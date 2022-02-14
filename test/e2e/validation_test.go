@@ -35,6 +35,12 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
+// winService contains information regarding a Windows service's current state
+type winService struct {
+	state       string
+	description string
+}
+
 // testNodeMetadata tests if all nodes have a worker label and kubelet version and are annotated with the version of
 // the currently deployed WMCO
 func testNodeMetadata(t *testing.T) {
@@ -373,33 +379,39 @@ func (tc *testContext) runJob(name string, command []string) (string, error) {
 	return logs, nil
 }
 
-// getWinServices returns a map of Windows services from the instance with the given address, the key:value format being
-// name:status
-func (tc *testContext) getWinServices(addr string) (map[string]string, error) {
-	// This command returns CR+newline separated quoted CSV entries consisting of service name and status. For example:
-	// "kubelet","Running"\r\n"VaultSvc","Stopped"
-	command := "Get-Service | Select-Object -Property Name,Status | ConvertTo-Csv -NoTypeInformation"
+// getWinServices returns a map of Windows services from the instance with the given address, the map key being the
+// service's name
+func (tc *testContext) getWinServices(addr string) (map[string]winService, error) {
+	// This command returns CR+newline separated quoted CSV entries consisting of service name, state and description.
+	// For example: "kubelet","Running","OpenShift managed kubelet"\r\n"VaultSvc","Stopped",
+	command := "Get-CimInstance -ClassName Win32_Service | Select-Object -Property Name,State,Description | " +
+		"ConvertTo-Csv -NoTypeInformation"
 	out, err := tc.runPowerShellSSHJob("get-windows-svc-list", command, addr)
 	if err != nil {
 		return nil, errors.Wrap(err, "error running SSH job")
 	}
 
 	// Remove the header and trailing whitespace from the command output
-	outSplit := strings.SplitAfterN(out, "\"Name\",\"Status\"\r\n", 2)
+	outSplit := strings.SplitAfterN(out, "\"Name\",\"State\",\"Description\"\r\n", 2)
 	if len(outSplit) != 2 {
 		return nil, errors.New("unexpected command output: " + out)
 	}
 	trimmedList := strings.TrimSpace(outSplit[1])
 
 	// Make a map from the services, removing the quotes around each entry
-	services := make(map[string]string)
+	services := make(map[string]winService)
 	lines := strings.Split(trimmedList, "\r\n")
 	for _, line := range lines {
-		fields := strings.Split(line, ",")
-		if len(fields) != 2 {
+		// Split into 3 substrings, Name, State, Description. The description can contain a comma, so SplitN is required
+		fields := strings.SplitN(line, ",", 3)
+		if len(fields) != 3 {
 			return nil, errors.New("expected comma separated values, found: " + line)
 		}
-		services[strings.Trim(fields[0], "\"")] = strings.Trim(fields[1], "\"")
+		name := strings.Trim(fields[0], "\"")
+		state := strings.Trim(fields[1], "\"")
+		description := strings.Trim(fields[2], "\"")
+
+		services[name] = winService{state: state, description: description}
 	}
 	return services, nil
 }
@@ -421,7 +433,8 @@ func testExpectedServicesRunning(t *testing.T) {
 			for _, svcName := range windows.RequiredServices {
 				t.Run(svcName, func(t *testing.T) {
 					require.Contains(t, svcs, svcName, "service not found")
-					assert.Equal(t, "Running", svcs[svcName])
+					assert.Equal(t, "Running", svcs[svcName].state)
+					assert.Contains(t, svcs[svcName].description, windows.ManagedTag)
 				})
 			}
 			// For Azure deployments with Cloud Controller Manager support with also need to check that
@@ -429,7 +442,7 @@ func testExpectedServicesRunning(t *testing.T) {
 			if ownedByCCM && tc.CloudProvider.GetType() == config.AzurePlatformType {
 				t.Run(windows.AzureCloudNodeManagerServiceName, func(t *testing.T) {
 					require.Contains(t, svcs, windows.AzureCloudNodeManagerServiceName, "service not found")
-					assert.Equal(t, "Running", svcs[windows.AzureCloudNodeManagerServiceName])
+					assert.Equal(t, "Running", svcs[windows.AzureCloudNodeManagerServiceName].state)
 				})
 			} else {
 				t.Run(windows.AzureCloudNodeManagerServiceName, func(t *testing.T) {
@@ -517,7 +530,7 @@ func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatu
 		return specCheck && statusCheck, nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to verify condition type %s has status %s", operators.Upgradeable, expected)
+		return errors.Wrapf(err, "failed to verify condition type %s has state %s", operators.Upgradeable, expected)
 	}
 	return nil
 }
