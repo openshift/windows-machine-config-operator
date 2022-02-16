@@ -451,8 +451,9 @@ func testCSRApproval(t *testing.T) {
 
 	// Scale the Cluster Machine Approver deployment back to 1.
 	expectedPodCount := int32(1)
-	err = testCtx.scaleMachineApproverDeployment(&expectedPodCount)
-	require.NoError(t, err, "failed to scale Cluster Machine Approver pods")
+	err = testCtx.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
+		&expectedPodCount)
+	require.NoError(t, err, "failed to scale up Cluster Machine Approver pods")
 }
 
 // findNodeCSRs returns the list of CSRs for the given node
