@@ -8,8 +8,7 @@ LABEL stage=build
 WORKDIR /build/
 
 # dos2unix is needed to build CNI plugins
-# jq is needed in e2e test script to count the number of data items in the windows-instances ConfigMap
-RUN yum install -y dos2unix jq
+RUN yum install -y dos2unix
 
 # Download client binaries
 # TODO: Remove this, see https://issues.redhat.com/browse/WINC-520 
