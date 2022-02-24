@@ -165,6 +165,9 @@ ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
 
 # Changes needed for our CI
 
+# jq is needed in e2e test script to count the number of data items in the windows-instances ConfigMap
+RUN yum install -y jq
+
 # Install client binaries
 COPY --from=build /build/oc /usr/bin/oc
 COPY --from=build /build/kubectl /usr/bin/kubectl
