@@ -22,8 +22,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-
-	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
 )
 
 // testNetwork runs all the cluster and node network tests
@@ -233,6 +231,12 @@ func testNorthSouthNetworking(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
+	// Ignore the application ingress load balancer test for None and vSphere platforms as it has to be created manually
+	// https://docs.openshift.com/container-platform/4.9/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html
+	if testCtx.CloudProvider.GetType() == config.VSpherePlatformType ||
+		testCtx.CloudProvider.GetType() == config.NonePlatformType {
+		t.Skipf("NorthSouthNetworking test is disabled for platform %s", testCtx.CloudProvider.GetType())
+	}
 	// Require at least one node to test
 	require.NotEmpty(t, gc.allNodes())
 
@@ -248,15 +252,9 @@ func testNorthSouthNetworking(t *testing.T) {
 	require.NoError(t, err, "could not create Windows Server deployment")
 	defer testCtx.deleteDeployment(winServerDeployment.GetName())
 	testCtx.collectDeploymentLogs(winServerDeployment)
-
-	// Ignore the LoadBalancer test for vSphere as it has to be created manually
-	// https://docs.openshift.com/container-platform/4.5/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html#nw-using-load-balancer-getting-traffic_configuring-ingress-cluster-traffic-load-balancer
-	_, ok := testCtx.CloudProvider.(*vsphere.Provider)
-	if !ok {
-		// Assert that we can successfully GET the webserver
-		err = testCtx.getThroughLoadBalancer(winServerDeployment)
-		assert.NoError(t, err, "unable to GET the webserver through a load balancer")
-	}
+	// Assert that we can successfully GET the webserver
+	err = testCtx.getThroughLoadBalancer(winServerDeployment)
+	assert.NoError(t, err, "unable to GET the webserver through a load balancer")
 }
 
 // getThroughLoadBalancer does a GET request to the given webserver through a load balancer service
