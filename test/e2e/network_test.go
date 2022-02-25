@@ -38,6 +38,7 @@ func testNetwork(t *testing.T) {
 
 	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
+	t.Run("Pod DNS Resolution", testPodDNSResolution)
 }
 
 var (
@@ -153,6 +154,45 @@ func testEastWestNetworking(t *testing.T) {
 			}
 		})
 	}
+}
+
+// testPodDNSResolution test the DNS resolution in a Windows pod
+func testPodDNSResolution(t *testing.T) {
+	// create context
+	testCtx, err := NewTestContext()
+	require.NoError(t, err)
+	// the following DNS resolution tests use curl.exe because nslookup tool is not present
+	// in the selected container image for the e2e tests. Ideally, we would use the native
+	// PowerShell cmdlet Resolve-DnsName, but it is not present either.
+	// TODO: Use a compatible container image for the e2e test suite that includes the
+	//  PowerShell cmdlet Resolve-DnsName.
+	t.Run("Valid URL", testCtx.testPodDNSResolutionWithValidUrl)
+	t.Run("Invalid URL", testCtx.testPodDNSResolutionWithInvalidUrl)
+}
+
+// testPodDNSResolutionWithValidUrl verifies that a curl query succeed using a valid URL
+// with resolvable DNS record
+func (tc *testContext) testPodDNSResolutionWithValidUrl(t *testing.T) {
+	winJob, err := tc.createWindowsServerJob("win-dns-tester-valid-url",
+		// curl'ing with --head flag to fetch only the headers as a lightweight alternative
+		"curl.exe --head -k https://www.openshift.com",
+		nil)
+	require.NoError(t, err, "could not create Windows tester job")
+	defer tc.deleteJob(winJob.Name)
+	err = tc.waitUntilJobSucceeds(winJob.Name)
+	assert.NoError(t, err, "Windows tester job failed")
+}
+
+// testPodDNSResolutionWithInvalidUrl verifies that a curl query fail using an invalid URL
+// with unresolvable DNS record
+func (tc *testContext) testPodDNSResolutionWithInvalidUrl(t *testing.T) {
+	winJob, err := tc.createWindowsServerJob("win-dns-tester-invalid-url",
+		"curl.exe http://www.invalid-url-with-unresolvable-dns-record.test",
+		nil)
+	require.NoError(t, err, "could not create Windows tester job")
+	defer tc.deleteJob(winJob.Name)
+	err = tc.waitUntilJobSucceeds(winJob.Name)
+	assert.Error(t, err, "Windows tester job expected to fail")
 }
 
 // collectDeploymentLogs collects logs of a deployment to the Artifacts directory
@@ -559,21 +599,21 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affin
 }
 
 // getWinCurlerCommand generates a command to curl a Windows server from the given IP address
-func (tc *testContext) getWinCurlerCommand(winServerIP string) []string {
+func (tc *testContext) getWinCurlerCommand(winServerIP string) string {
 	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
 	// takes some time to finish initial network setup.
-	winCurlerCommand := []string{powerShellExe, "-command", "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
+	return "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
 		"$response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP +
 		"; $code = $response.StatusCode; echo \"GET returned code $code\";" +
-		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"}
-	return winCurlerCommand
+		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"
 }
 
-// createWindowsServerJob creates a job which will run the provided command with a Windows Server image
-func (tc *testContext) createWindowsServerJob(name string, command []string, affinity *v1.Affinity) (*batchv1.Job, error) {
+// createWindowsServerJob creates a job which will run the provided PowerShell command with a Windows Server image
+func (tc *testContext) createWindowsServerJob(name, pwshCommand string, affinity *v1.Affinity) (*batchv1.Job, error) {
 	windowsNodeSelector := map[string]string{"kubernetes.io/os": "windows"}
 	windowsTolerations := []v1.Toleration{{Key: "os", Value: "Windows", Effect: v1.TaintEffectNoSchedule}}
 	windowsServerImage := tc.getWindowsServerContainerImage()
+	command := []string{powerShellExe, "-command", pwshCommand}
 	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations, affinity)
 }
 

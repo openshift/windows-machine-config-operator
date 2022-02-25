@@ -188,3 +188,50 @@ func TestGetVXLANPort(t *testing.T) {
 		})
 	}
 }
+
+// TestGetDNS tests the DNS server IP generation from a given subnet
+func TestGetDNS(t *testing.T) {
+	type args struct {
+		subnet string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "empty subnet",
+			args:    args{subnet: ""},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name:    "invalid subnet",
+			args:    args{subnet: "invalid"},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name:    "no IP in subnet",
+			args:    args{subnet: "172.30.0.0/32"},
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name:    "valid subnet",
+			args:    args{subnet: "172.30.0.0/16"},
+			want:    "172.30.0.10",
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := GetDNS(tt.args.subnet)
+			if (err != nil) != tt.wantErr {
+				assert.Errorf(t, err, "error = %v, wantErr %v", err, tt.wantErr)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
