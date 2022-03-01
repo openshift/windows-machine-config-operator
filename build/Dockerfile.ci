@@ -82,7 +82,7 @@ RUN ./build_windows.sh
 WORKDIR /build/windows-machine-config-operator
 # Copy files and directories needed to build the WMCO binary
 COPY build build
-COPY main.go .
+COPY cmd cmd
 COPY controllers controllers
 COPY bundle bundle
 COPY hack hack
