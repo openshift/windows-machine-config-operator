@@ -439,13 +439,14 @@ func testCSRApproval(t *testing.T) {
 		for _, csr := range csrs {
 			isWMCOApproved := func() bool {
 				for _, c := range csr.Status.Conditions {
-					if c.Type == certificates.CertificateApproved && c.Reason == "WMCOApproved" {
+					if c.Type == certificates.CertificateApproved && c.Reason == "WMCOApprove" {
 						return true
 					}
 				}
 				return false
 			}()
-			assert.Equal(t, isWMCOApproved, true, "expected BYOH node CSR to be approved by WMCO CSR approver: %s", node.GetName())
+			assert.Equal(t, isWMCOApproved, true, "expected BYOH node %s CSR %s to be approved by WMCO CSR approver",
+				node.GetName(), csr.GetName())
 		}
 	}
 
