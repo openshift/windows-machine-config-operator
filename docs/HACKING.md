@@ -117,6 +117,38 @@ hack/run-ci-e2e-test.sh -s -m 2 -c 1
 ```
 Please note that you do not need to run `hack/olm.sh run` before `hack/run-ci-e2e-test.sh`.
 
+#### Running e2e tests on platform-agnostic infrastructure
+
+To run the WMCO e2e tests on a bare metal or other platform-agnostic infrastructure (platform=none), where there
+is no cloud provider specification, the desired number of Windows instances must be provisioned beforehand, and the
+instance(s) information must be provided to the e2e test suite through the `WINDOWS_INSTANCES_DATA` environment
+variable.
+
+To deploy machines using the [infrastructure providers supported by WMCO](wmco-prerequisites.md#supported-cloud-providers-based-on-okdocp-version-and-wmco-version),
+refer to the specific provider documentation. See Windows instance [pre-requisites](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/byoh-instance-pre-requisites.md).
+
+The information you need to collect from each Windows instance is:
+- the internal IP address
+- the Windows administrator username
+
+Export `WINDOWS_INSTANCES_DATA` as an environment variable with the corresponding [windows-instances ConfigMap](https://github.com/openshift/windows-machine-config-operator#adding-instances)
+data section, and a new `windows-instances` ConfigMap will be created during the execution of the e2e test suite.
+
+For example:
+```shell
+export WINDOWS_INSTANCES_DATA='
+data:
+  10.1.42.1: |-
+    username=Administrator
+'
+```
+where `10.1.42.1` is the IP address and `Administrator` is the Windows' administrator username of the Windows instance.
+
+After the `WINDOWS_INSTANCES_DATA` environment variable is set and exported you can run:
+```shell
+hack/run-ci-e2e-test.sh
+```
+
 ## Bundling the Windows Machine Config Operator
 This directory contains resources related to installing the WMCO onto a cluster using OLM.
 

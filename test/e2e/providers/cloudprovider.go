@@ -10,6 +10,7 @@ import (
 	oc "github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	awsProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/aws"
 	azureProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/azure"
+	noneProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/none"
 	vSphereProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
 )
 
@@ -37,6 +38,8 @@ func NewCloudProvider(hasCustomVXLANPort bool) (CloudProvider, error) {
 		return azureProvider.New(openshift, hasCustomVXLANPort)
 	case config.VSpherePlatformType:
 		return vSphereProvider.New(openshift)
+	case config.NonePlatformType:
+		return noneProvider.New(openshift)
 	default:
 		return nil, fmt.Errorf("the '%v' cloud provider is not supported", provider)
 	}
