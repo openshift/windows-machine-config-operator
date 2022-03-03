@@ -23,6 +23,8 @@ import (
 	certificates "k8s.io/api/certificates/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -33,6 +35,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 const (
@@ -102,8 +105,34 @@ func (r *certificateSigningRequestsReconciler) Reconcile(ctx context.Context,
 	return ctrl.Result{}, r.reconcileCSR(certificateSigningRequest)
 }
 
-// reconcileCSR handles the CSR validation and approval
-func (r *certificateSigningRequestsReconciler) reconcileCSR(request *certificates.CertificateSigningRequest) error {
+// reconcileCSR kicks off CSR validation and approval. In case of update conflicts, the approval process is wrapped
+// with retry logic using the Update --> Get --> Retry Update pattern. Retry will occur until specified timeout
+func (r *certificateSigningRequestsReconciler) reconcileCSR(req *certificates.CertificateSigningRequest) error {
+	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+		err := r.validateAndApprove(req)
+		if err == nil {
+			return true, nil
+		}
+		if !k8sapierrors.IsConflict(err) {
+			// If the error is not an update conflict, return error immediately
+			return false, err
+		}
+
+		r.log.Info("Update conflict when attempting to approve CSR, retrying...", "name", req.Name,
+			"namespace", req.Namespace, "error", err.Error())
+		// Get a new object reference
+		err = r.client.Get(context.TODO(), types.NamespacedName{Namespace: req.Namespace, Name: req.Name}, req)
+		if err != nil {
+			return false, errors.Wrapf(err, "could not get CSR %s/%s", req.Name, req.Namespace)
+		}
+		// Retry CSR approval reconciliation with new object reference
+		return false, nil
+	})
+	return err
+}
+
+// validateAndApprove handles the CSR validation and approval
+func (r *certificateSigningRequestsReconciler) validateAndApprove(request *certificates.CertificateSigningRequest) error {
 	// If a CSR is approved/denied after being added to the queue, but before we reconcile it,
 	// trying to approve it again will result in an error and cause a loop.
 	// Return early if the CSR has been approved/denied externally.
