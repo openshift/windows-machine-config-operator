@@ -104,6 +104,14 @@ func (r *certificateSigningRequestsReconciler) Reconcile(ctx context.Context,
 
 // reconcileCSR handles the CSR validation and approval
 func (r *certificateSigningRequestsReconciler) reconcileCSR(request *certificates.CertificateSigningRequest) error {
+	// If a CSR is approved/denied after being added to the queue, but before we reconcile it,
+	// trying to approve it again will result in an error and cause a loop.
+	// Return early if the CSR has been approved/denied externally.
+	if !isPending(request) {
+		r.log.Info("CSR is already approved/denied", "Name", request.Name)
+		return nil
+	}
+
 	certificateSigningRequest, err := csr.NewApprover(r.client, r.k8sclientset, request, r.log, r.recorder, r.watchNamespace)
 	if err != nil {
 		return errors.Wrapf(err, "could not create WMCO CSR Approver")
