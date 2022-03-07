@@ -24,8 +24,8 @@ import (
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -35,7 +35,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
-	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 const (
@@ -90,66 +89,45 @@ func (r *certificateSigningRequestsReconciler) Reconcile(ctx context.Context,
 			result.Requeue, reconcileErr)
 	}()
 
+	return ctrl.Result{}, r.reconcileCSR(ctx, req.NamespacedName)
+}
+
+// reconcileCSR handles the CSR validation and approval. Process wrapped in retry logic case of update conflicts
+func (r *certificateSigningRequestsReconciler) reconcileCSR(ctx context.Context, namespacedName types.NamespacedName) error {
 	certificateSigningRequest := &certificates.CertificateSigningRequest{}
-	if err := r.client.Get(ctx, req.NamespacedName, certificateSigningRequest); err != nil {
-		if k8sapierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
-			return ctrl.Result{}, nil
-		}
-		// Error reading the object - requeue the request.
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{}, r.reconcileCSR(certificateSigningRequest)
-}
-
-// reconcileCSR kicks off CSR validation and approval. In case of update conflicts, the approval process is wrapped
-// with retry logic using the Update --> Get --> Retry Update pattern. Retry will occur until specified timeout
-func (r *certificateSigningRequestsReconciler) reconcileCSR(req *certificates.CertificateSigningRequest) error {
-	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
-		err := r.validateAndApprove(req)
-		if err == nil {
-			return true, nil
-		}
-		if !k8sapierrors.IsConflict(err) {
-			// If the error is not an update conflict, return error immediately
-			return false, err
+	err := k8sretry.RetryOnConflict(k8sretry.DefaultBackoff, func() error {
+		// Fetch object reference
+		if err := r.client.Get(ctx, namespacedName, certificateSigningRequest); err != nil {
+			if k8sapierrors.IsNotFound(err) {
+				// Request object not found, could have been deleted after reconcile request.
+				// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+				// Return and don't requeue
+				return nil
+			}
+			// Error reading the object - return error to requeue the request.
+			return err
 		}
 
-		r.log.Info("Update conflict when attempting to approve CSR, retrying...", "name", req.Name,
-			"namespace", req.Namespace, "error", err.Error())
-		// Get a new object reference
-		err = r.client.Get(context.TODO(), types.NamespacedName{Namespace: req.Namespace, Name: req.Name}, req)
+		// If a CSR is approved/denied after being added to the queue, but before we reconcile it,
+		// trying to approve it again will result in an error and cause a loop.
+		// Return early if the CSR has been approved/denied externally.
+		if !isPending(certificateSigningRequest) {
+			r.log.Info("CSR is already approved/denied", "Name", certificateSigningRequest.Name)
+			return nil
+		}
+
+		csrApprover, err := csr.NewApprover(r.client, r.k8sclientset, certificateSigningRequest, r.log, r.recorder,
+			r.watchNamespace)
 		if err != nil {
-			return false, errors.Wrapf(err, "could not get CSR %s/%s", req.Name, req.Namespace)
+			return errors.Wrapf(err, "could not create WMCO CSR Approver")
 		}
-		// Retry CSR approval reconciliation with new object reference
-		return false, nil
+
+		return csrApprover.Approve()
 	})
-	return err
-}
-
-// validateAndApprove handles the CSR validation and approval
-func (r *certificateSigningRequestsReconciler) validateAndApprove(request *certificates.CertificateSigningRequest) error {
-	// If a CSR is approved/denied after being added to the queue, but before we reconcile it,
-	// trying to approve it again will result in an error and cause a loop.
-	// Return early if the CSR has been approved/denied externally.
-	if !isPending(request) {
-		r.log.Info("CSR is already approved/denied", "Name", request.Name)
-		return nil
-	}
-
-	certificateSigningRequest, err := csr.NewApprover(r.client, r.k8sclientset, request, r.log, r.recorder, r.watchNamespace)
 	if err != nil {
-		return errors.Wrapf(err, "could not create WMCO CSR Approver")
+		// Max retries were hit, or unrelated issue like permissions or a network error
+		return errors.Wrapf(err, "WMCO CSR Approver could not approve CSR %s", certificateSigningRequest.Name)
 	}
-
-	if err := certificateSigningRequest.Approve(); err != nil {
-		return errors.Wrapf(err, "WMCO CSR Approver could not approve %s CSR", request.Name)
-	}
-
 	return nil
 }
 
