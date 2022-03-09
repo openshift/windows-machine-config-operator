@@ -73,7 +73,7 @@ COPY vendor vendor
 COPY .gitignore .gitignore
 COPY Makefile Makefile
 COPY build build
-COPY main.go .
+COPY cmd cmd
 COPY controllers controllers
 COPY hack hack
 COPY pkg pkg

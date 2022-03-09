@@ -30,7 +30,7 @@ if [[ -z "$OUTPUT_DIR" ]] || [[ -z "$WMCO_SEMVER" ]] ; then
     exit 1
 fi
 
-PACKAGE="github.com/openshift/windows-machine-config-operator"
+WMCO_CMD_DIR="github.com/openshift/windows-machine-config-operator/cmd/operator"
 BIN_NAME="windows-machine-config-operator"
 BIN_DIR="${OUTPUT_DIR}/bin"
 
@@ -43,4 +43,4 @@ mkdir -p "${BIN_DIR}"
 goflags=${GOFLAGS:-}
 
 
-CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build ${GOFLAGS} -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${PACKAGE}
+CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build ${GOFLAGS} -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${WMCO_CMD_DIR}

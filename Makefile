@@ -89,8 +89,12 @@ endif
 build: fmt vet
 	build/build.sh ${OUTPUT_DIR} ${WMCO_VERSION} ${GO_MOD_FLAGS}
 
+.PHONY: build-daemon
+build-daemon:
+	env GOOS=windows GOARCH=amd64 go build -o ${OUTPUT_DIR}/bin/windows-instance-config-daemon.exe cmd/daemon/main.go
+
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./main.go
+	go run cmd/operator/main.go
 
 ##@ Deployment
 
