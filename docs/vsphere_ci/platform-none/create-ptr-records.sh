@@ -49,7 +49,7 @@ EOF
         "TTL": 172800,
         "ResourceRecords": [
           {
-            "Value": "192.168.${third_octet}.${ip}"
+            "Value": "ip-192-168-${third_octet}-${ip}.${AWS_REGION}.compute.internal"
           }
         ]
       }
