@@ -16,7 +16,7 @@ var (
 	cleanupRetryInterval = time.Second * 1
 	cleanupTimeout       = time.Second * 5
 	// deploymentRetries is the amount of time to retry creating a Windows Server deployment, to compensate for the
-	// time it takes to download the Server2019 image to the node
+	// time it takes to download the Server image to the node
 	deploymentRetries = 10
 )
 

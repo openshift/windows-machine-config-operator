@@ -305,6 +305,13 @@ func (tc *testContext) sshSetup() error {
 // runPowerShellSSHJob creates and waits for a Kubernetes job to run. The command provided will be executed through
 // PowerShell, on the host specified by the provided IP.
 func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, error) {
+	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022.
+	// We only test Windows Server 2022 if a custom VXLAN port is used (i.e. vSphere)
+	powershellDefaultCommand := command
+	if tc.hasCustomVXLAN {
+		powershellDefaultCommand = strings.ReplaceAll(command, "\\\"", "\"")
+	}
+
 	keyMountDir := "/private-key"
 	sshCommand := []string{"bash", "-c",
 		fmt.Sprintf(
@@ -312,12 +319,16 @@ func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, er
 			// command. If it succeeds, then the host's default shell is PowerShell
 			"if ssh -o StrictHostKeyChecking=no -i %s %s@%s 'Get-Help';"+
 				"then CMD_PREFIX=\"\";CMD_SUFFIX=\"\";"+
-				// if PowerShell is not the default shell, explicitly run the command through PowerShell
+				// to respect quoting within the given command, wrap the command as a script block
+				"COMMAND='{"+powershellDefaultCommand+"}';"+
+				// if PowerShell is not the default shell, explicitly run the unmodified command through PowerShell
 				"else CMD_PREFIX=\""+remotePowerShellCmdPrefix+" \\\"\";CMD_SUFFIX=\"\\\"\";"+
+				"COMMAND='{"+command+"}';"+
 				"fi;"+
-				"ssh -o StrictHostKeyChecking=no -i %s %s@%s ${CMD_PREFIX}' %s '${CMD_SUFFIX}",
+				// execute the command as a script block via the PowerShell call operator `&`
+				"ssh -o StrictHostKeyChecking=no -i %s %s@%s ${CMD_PREFIX}\" & $COMMAND \"${CMD_SUFFIX}",
 			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip,
-			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip, command)}
+			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip)}
 
 	return tc.runJob(name, sshCommand)
 }
