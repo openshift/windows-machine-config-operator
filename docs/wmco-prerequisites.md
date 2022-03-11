@@ -29,7 +29,9 @@ these errors, only use the appropriate version according to the cloud provider i
 The following tables outline the type of networking configuration and Windows Server versions to be used based on your 
 cloud provider. The network configuration must be completed during the installation of the cluster.
   
-Note: OpenShiftSDN networking is the default network for OpenShift clusters. It is NOT supported by WMCO.
+Note: 
+* OpenShiftSDN networking is the default network for OpenShift clusters. It is NOT supported by WMCO.
+* Dual NIC is NOT supported by WMCO.
 
 | Cloud Provider | Supported networking                                                                           |
 |----------------|------------------------------------------------------------------------------------------------|
