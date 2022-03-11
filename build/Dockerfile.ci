@@ -15,7 +15,7 @@ RUN yum install -y dos2unix
 RUN curl -L -s https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.6.4/openshift-client-linux-4.6.4.tar.gz -o openshift-origin-client-tools.tar.gz \
     && echo "c1f39a966fc0dbd4f8f0bfec0196149d54e0330de523bf906bbe2728b10a860b openshift-origin-client-tools.tar.gz" | sha256sum -c \
     && tar -xzf openshift-origin-client-tools.tar.gz \
-    && rm -rf ./{openshift*,README.md}
+    && rm -rf ./{kubectl,openshift*,README.md}
 
 # The source here corresponds to the code in the PR and is placed here by the CI infrastructure.
 WORKDIR /build/windows-machine-config-operator/
@@ -169,7 +169,6 @@ RUN yum install -y jq
 
 # Install client binaries
 COPY --from=build /build/oc /usr/bin/oc
-COPY --from=build /build/kubectl /usr/bin/kubectl
 RUN oc version
 
 # Copy the source code to be used by our ci infra
