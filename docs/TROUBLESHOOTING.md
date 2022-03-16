@@ -64,6 +64,13 @@ the kubelet logs, you can execute:
 ```shell script
 $ oc adm node-logs -l kubernetes.io/os=windows --path=/kubelet/kubelet.log
 ```
+
+## How to collect containerd runtime logs
+`containerd` runtime logs are part of the Kubernetes node logs, and you collect them with the following command:
+```shell script
+$ oc adm node-logs -l kubernetes.io/os=windows --path=/containerd/containerd.log
+```
+
 ## How to collect Windows application event logs
 
 The Get-WinEvent shim on the kubelet logs endpoint can be used to collect application event logs from Windows machines.
