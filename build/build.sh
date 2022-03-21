@@ -3,12 +3,12 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-# returns the operator version in `Version+GitHash` format
+# returns the operator version in `Version-GitHash` format
 # Takes a semver as an argument. This should be the version present in the WMCO CSV
 add_git_data_to_version() {
   local WMCO_SEMVER=$1
   GIT_COMMIT=$(git rev-parse --short HEAD)
-  FULL_VERSION="${WMCO_SEMVER}+${GIT_COMMIT}"
+  FULL_VERSION="${WMCO_SEMVER}-${GIT_COMMIT}"
 
   # If any files that affect the building of the operator binary have been changed, append "-dirty" to the version.
   if [ -n "$(git status version tools.go go.mod go.sum vendor Makefile build main.go hack pkg controllers --porcelain)" ]; then

@@ -199,7 +199,7 @@ func getWMCOVersion() (string, error) {
 		return "", errors.Wrapf(err, "error running %s", cmd.String())
 	}
 	// out is formatted like:
-	// ./build/_output/bin/windows-machine-config-operator version: "0.0.1+4165dda-dirty", go version: "go1.13.7 linux/amd64"
+	// ./build/_output/bin/windows-machine-config-operator version: "0.0.1-4165dda-dirty", go version: "go1.13.7 linux/amd64"
 	versionSplit := strings.Split(string(out), "\"")
 	if len(versionSplit) < 3 {
 		return "", fmt.Errorf("unexpected version output")
