@@ -339,3 +339,45 @@ func (r *ConfigMapReconciler) createServicesConfigMap(ctx context.Context) (*cor
 	r.log.Info("Created", "ConfigMap", kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name})
 	return windowsServices, nil
 }
+
+// createServicesConfigMapOnBootup creates a valid ServicesConfigMap
+// ConfigMapReconciler.createServicesConfigMap() cannot be used in its stead as the cache has not been
+// populated yet, which is why the typed client is used here as it calls the API server directly.
+func (r *ConfigMapReconciler) createServicesConfigMapOnBootup() error {
+	windowsServices, err := servicescm.Generate(servicescm.Name, r.watchNamespace)
+	if err != nil {
+		return err
+	}
+	cm, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Create(context.TODO(), windowsServices,
+		meta.CreateOptions{})
+	if err != nil {
+		return err
+	}
+	r.log.Info("Created", "ConfigMap", kubeTypes.NamespacedName{Namespace: cm.Namespace, Name: cm.Name})
+	return nil
+}
+
+// EnsureServicesConfigMapExists ensures that the ServicesConfigMap is present and valid on operator bootup
+func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
+	windowsServices, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Get(context.TODO(), servicescm.Name,
+		meta.GetOptions{})
+	if err != nil {
+		if k8sapierrors.IsNotFound(err) {
+			// If ConfigMap is not found, create it and return
+			return r.createServicesConfigMapOnBootup()
+		}
+		return err
+	}
+
+	// If a ConfigMap with incorrect values is found, WMCO will delete and recreate it with the proper values
+	if _, err := servicescm.Parse(windowsServices.Data); err != nil {
+		if err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Delete(context.TODO(), windowsServices.Name,
+			meta.DeleteOptions{}); err != nil {
+			return err
+		}
+		r.log.Info("Deleted invalid resource", "ConfigMap",
+			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name}, "Error", err.Error())
+		return r.createServicesConfigMapOnBootup()
+	}
+	return nil
+}
