@@ -3,11 +3,14 @@ package servicescm
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"sort"
 
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/version"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -89,10 +92,13 @@ type data struct {
 	Files []FileInfo `json:"files"`
 }
 
-// newData returns a new 'data' object with the given services and files.
-func newData(services *[]Service, files *[]FileInfo) *data {
+// newData returns a new 'data' object with the given services and files. Validates given object contents on creation.
+func newData(services *[]Service, files *[]FileInfo) (*data, error) {
 	cmData := &data{*services, *files}
-	return cmData
+	if err := cmData.validate(); err != nil {
+		return nil, errors.Wrap(err, "unable to create services ConfigMap data object")
+	}
+	return cmData, nil
 }
 
 // Generate creates an immutable service ConfigMap which provides WICD with the specifications
@@ -108,7 +114,10 @@ func Generate(name, namespace string) (*core.ConfigMap, error) {
 		Data:      make(map[string]string),
 	}
 
-	cmData := newData(requiredServices, requiredFiles)
+	cmData, err := newData(requiredServices, requiredFiles)
+	if err != nil {
+		return nil, err
+	}
 
 	jsonServices, err := json.Marshal(cmData.Services)
 	if err != nil {
@@ -123,6 +132,152 @@ func Generate(name, namespace string) (*core.ConfigMap, error) {
 	servicesConfigMap.Data[filesKey] = string(jsonFiles)
 
 	return servicesConfigMap, nil
+}
+
+// Parse converts ConfigMap data into the objects representing a Windows services ConfigMap schema
+// Returns error if the given data is invalid in structure or contents.
+func Parse(dataFromCM map[string]string) (*data, error) {
+	if len(dataFromCM) != 2 {
+		return nil, errors.New("services ConfigMap should have exactly 2 keys")
+	}
+
+	value, ok := dataFromCM[servicesKey]
+	if !ok {
+		return nil, errors.Errorf("expected key %s does not exist", servicesKey)
+	}
+	services := &[]Service{}
+	if err := json.Unmarshal([]byte(value), services); err != nil {
+		return nil, err
+	}
+
+	value, ok = dataFromCM[filesKey]
+	if !ok {
+		return nil, errors.Errorf("expected key %s does not exist", filesKey)
+	}
+	files := &[]FileInfo{}
+	if err := json.Unmarshal([]byte(value), files); err != nil {
+		return nil, err
+	}
+
+	return newData(services, files)
+}
+
+// validate ensures the given object represents a valid services ConfigMap, made up of only required services and files.
+// The validation also ensures bootstrap services are defined to always start before controller services.
+func (cmData *data) validate() error {
+	if err := validateRequiredContent(cmData.Services, cmData.Files); err != nil {
+		return err
+	}
+	if err := validateDependencies(cmData.Services); err != nil {
+		return err
+	}
+	return validatePriorities(cmData.Services)
+}
+
+// validateRequiredContent ensures that the given slices are comprised of all the required services/files and only these
+func validateRequiredContent(services []Service, files []FileInfo) error {
+	// Validate services
+	if len(services) != len(*requiredServices) {
+		return errors.New("Unexpected number of services")
+	}
+	for _, requiredSvc := range *requiredServices {
+		if !requiredSvc.isPresentAndCorrect(services) {
+			return errors.Errorf("Required service %s is not present with expected configuration", requiredSvc.Name)
+		}
+	}
+	// Validate files
+	if len(files) != len(*requiredFiles) {
+		return errors.New("Unexpected number of files")
+	}
+	for _, requiredFile := range *requiredFiles {
+		if !requiredFile.isPresentAndCorrect(files) {
+			return errors.Errorf("Required file %s is not present as expected", requiredFile.Path)
+		}
+	}
+	return nil
+}
+
+// isPresentAndCorrect checks if the required service exists as expected within the given services slice
+func (s Service) isPresentAndCorrect(services []Service) bool {
+	for _, service := range services {
+		if reflect.DeepEqual(s, service) {
+			return true
+		}
+	}
+	return false
+}
+
+// isPresentAndCorrect checks if the required file exists as expected within the given files slice
+// TODO: When we move to go1.18, consolodate this helper with the above Service.isPresentAndCorrect using generics
+func (f FileInfo) isPresentAndCorrect(files []FileInfo) bool {
+	for _, file := range files {
+		if reflect.DeepEqual(f, file) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateDependencies ensures that no bootstrap service depends on a non-bootstrap service
+func validateDependencies(services []Service) error {
+	bootstrapServices := []Service{}
+	nonBootstrapServices := []Service{}
+	for _, svc := range services {
+		if svc.Bootstrap {
+			bootstrapServices = append(bootstrapServices, svc)
+		} else {
+			nonBootstrapServices = append(nonBootstrapServices, svc)
+		}
+	}
+
+	for _, bootstrapSvc := range bootstrapServices {
+		if bootstrapSvc.hasDependency(nonBootstrapServices) {
+			return errors.Errorf("bootstrap service %s cannot depend on non-bootstrap service", bootstrapSvc.Name)
+		}
+	}
+	return nil
+}
+
+// hasDependency checks if a service is dependent on any services in the given slice
+func (s *Service) hasDependency(possibleDependencies []Service) bool {
+	for _, dependency := range s.Dependencies {
+		for _, possibleDependency := range possibleDependencies {
+			if dependency == possibleDependency.Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// validatePriorities ensures that each service that has the bootstrap flag set as true has a higher priority than all
+// non-bootstrap services. There should be no overlap in the priorities of bootstrap services and controller services.
+func validatePriorities(services []Service) error {
+	// sort services in ascending priority, bootstrap services towards the front of slice
+	sort.Slice(services, func(i, j int) bool {
+		return services[i].Priority < services[j].Priority
+	})
+
+	// ensure no bootstrap service appears after a controller service in the ordered list
+	nonBootstrapSeen := false
+	lastBootstrapPriority := uint(0)
+	for _, svc := range services {
+		if svc.Bootstrap {
+			if nonBootstrapSeen {
+				return errors.Errorf("bootstrap service %s priority must be higher than all controller services",
+					svc.Name)
+			}
+			lastBootstrapPriority = svc.Priority
+		} else {
+			// corner case if two adjacent bootstrap and controller services have the same priority
+			if svc.Priority == lastBootstrapPriority {
+				return errors.Errorf("controller service %s priority must not overlap with any bootstrap service",
+					svc.Name)
+			}
+			nonBootstrapSeen = true
+		}
+	}
+	return nil
 }
 
 // getName returns the name of the ConfigMap, using the following naming convention:

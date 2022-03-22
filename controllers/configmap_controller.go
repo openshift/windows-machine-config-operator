@@ -156,6 +156,16 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 // reconcileServices uses the data within the services ConfigMap to ensure WMCO-managed Windows services on
 // Windows Nodes have the expected configuration and are in the expected state
 func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServices *core.ConfigMap) error {
+	// If a ConfigMap with invalid values is found, WMCO will delete and recreate it with proper values
+	if _, err := servicescm.Parse(windowsServices.Data); err != nil {
+		// Deleting will trigger an event for the configmap_controller, which will re-create a proper ConfigMap
+		if err = r.client.Delete(ctx, windowsServices); err != nil {
+			return err
+		}
+		r.log.Info("Deleted invalid resource", "ConfigMap",
+			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: windowsServices.Name}, "Error", err.Error())
+		return nil
+	}
 	// TODO: actually react to changes to the services ConfigMap
 	return nil
 }
