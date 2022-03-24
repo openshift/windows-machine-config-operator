@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
@@ -121,10 +122,10 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 	}
 
 	// Fetch the ConfigMap. The predicate will have filtered out any ConfigMaps that we should not reconcile
-	// so it is safe to assume that all ConfigMaps being reconciled describe hosts that need to be present in the
-	// cluster. This also handles the case when the reconciliation is kicked off by the InstanceConfigMap being deleted.
-	// In the deletion case, an empty InstanceConfigMap will be reconciled now resulting in all existing BYOH nodes
-	// being deleted.
+	// so it is safe to assume that all ConfigMaps being reconciled are one of:
+	// 1. windows-instances, describing hosts that need to be present in the cluster.
+	// 2. kube-apiserver-to-kubelet-client-ca, contains the CA for the kubelet to recognize the kube-apiserver
+	// client certificate
 	configMap := &core.ConfigMap{}
 	if err := r.client.Get(ctx, req.NamespacedName, configMap); err != nil {
 		if !k8sapierrors.IsNotFound(err) {
@@ -133,7 +134,18 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 		}
 	}
 
-	return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
+	r.log.V(1).Info("Reconciling", "ConfigMap", req.NamespacedName)
+	// At this point configMap will be set properly
+	switch req.NamespacedName.Name {
+	case wiparser.InstanceConfigMap:
+		return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
+	case certificates.KubeAPIServerServingCAConfigMapName:
+		return ctrl.Result{}, r.reconcileKubeletClientCA(ctx, configMap)
+	default:
+		// Unexpected configmap, log and return no error so we don't requeue
+		r.log.Error(errors.New("Unexpected resource triggered reconcile"), "ConfigMap", req.NamespacedName)
+	}
+	return ctrl.Result{}, nil
 }
 
 // reconcileNodes corrects the discrepancy between the "expected" instances, and the "actual" Node list
@@ -270,7 +282,8 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return r.isValidConfigMap(e.Object)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return r.isValidConfigMap(e.ObjectNew)
+			return r.isValidConfigMap(e.ObjectNew) ||
+				r.isKubeAPIServerServingCAConfigMap(e.ObjectNew)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return r.isValidConfigMap(e.Object)
@@ -289,4 +302,11 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // isValidConfigMap returns true if the ConfigMap object is the InstanceConfigMap
 func (r *ConfigMapReconciler) isValidConfigMap(o client.Object) bool {
 	return o.GetNamespace() == r.watchNamespace && o.GetName() == wiparser.InstanceConfigMap
+}
+
+// isKubeAPIServerServingCAConfigMap returns true if the provided object matches the ConfigMap that contains the
+// CA for the kubelet to recognize the kube-apiserver client certificate
+func (r *ConfigMapReconciler) isKubeAPIServerServingCAConfigMap(obj client.Object) bool {
+	return obj.GetNamespace() == certificates.KubeApiServerOperatorNamespace &&
+		obj.GetName() == certificates.KubeAPIServerServingCAConfigMapName
 }
