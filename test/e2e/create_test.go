@@ -49,6 +49,7 @@ func creationTestSuite(t *testing.T) {
 		return
 	}
 	t.Run("Node Metadata", testNodeMetadata)
+	t.Run("Services ConfigMap validation", testServicesConfigMap)
 	t.Run("Services running", testExpectedServicesRunning)
 	t.Run("NodeIP Arg", testNodeIPArg)
 	t.Run("NodeTaint validation", testNodeTaint)
