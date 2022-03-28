@@ -44,6 +44,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
@@ -121,19 +122,42 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 	}
 
 	// Fetch the ConfigMap. The predicate will have filtered out any ConfigMaps that we should not reconcile
-	// so it is safe to assume that all ConfigMaps being reconciled describe hosts that need to be present in the
-	// cluster. This also handles the case when the reconciliation is kicked off by the InstanceConfigMap being deleted.
-	// In the deletion case, an empty InstanceConfigMap will be reconciled now resulting in all existing BYOH nodes
-	// being deleted.
+	// so it is safe to assume that all ConfigMaps being reconciled are one of:
+	// 1. windows-instances, describing hosts that need to be present in the cluster.
+	// 2. windows-services, describing expected configuration of WMCO-managed services on all Windows instances
 	configMap := &core.ConfigMap{}
 	if err := r.client.Get(ctx, req.NamespacedName, configMap); err != nil {
 		if !k8sapierrors.IsNotFound(err) {
 			// Error reading the object - requeue the request.
 			return ctrl.Result{}, err
 		}
+		if req.NamespacedName.Name == servicescm.Name {
+			// Create and retrieve the services ConfigMap as it is not present
+			if configMap, err = r.createServicesConfigMap(ctx); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
-	return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
+	r.log.V(1).Info("Reconciling", "ConfigMap", req.NamespacedName)
+	// At this point configMap will be set properly
+	switch req.NamespacedName.Name {
+	case servicescm.Name:
+		return ctrl.Result{}, r.reconcileServices(ctx, configMap)
+	case wiparser.InstanceConfigMap:
+		return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
+	default:
+		// Unexpected configmap, log and return no error so we don't requeue
+		r.log.Error(errors.New("Unexpected resource triggered reconcile"), "ConfigMap", req.NamespacedName)
+	}
+	return ctrl.Result{}, nil
+}
+
+// reconcileServices uses the data within the services ConfigMap to ensure WMCO-managed Windows services on
+// Windows Nodes have the expected configuration and are in the expected state
+func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServices *core.ConfigMap) error {
+	// TODO: actually react to changes to the services ConfigMap
+	return nil
 }
 
 // reconcileNodes corrects the discrepancy between the "expected" instances, and the "actual" Node list
@@ -288,5 +312,20 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // isValidConfigMap returns true if the ConfigMap object is the InstanceConfigMap
 func (r *ConfigMapReconciler) isValidConfigMap(o client.Object) bool {
-	return o.GetNamespace() == r.watchNamespace && o.GetName() == wiparser.InstanceConfigMap
+	return o.GetNamespace() == r.watchNamespace &&
+		(o.GetName() == wiparser.InstanceConfigMap || o.GetName() == servicescm.Name)
+}
+
+// createServicesConfigMap creates a valid ServicesConfigMap and returns it
+func (r *ConfigMapReconciler) createServicesConfigMap(ctx context.Context) (*core.ConfigMap, error) {
+	windowsServices, err := servicescm.Generate(servicescm.Name, r.watchNamespace)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = r.client.Create(ctx, windowsServices); err != nil {
+		return nil, err
+	}
+	r.log.Info("Created", "ConfigMap", kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name})
+	return windowsServices, nil
 }

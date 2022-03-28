@@ -1,16 +1,33 @@
 package servicescm
 
 import (
+	"encoding/json"
 	"fmt"
+
+	core "k8s.io/api/core/v1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
-// NamePrefix is the prefix of all Windows services ConfigMap names
-const NamePrefix = "windows-services-"
+const (
+	// NamePrefix is the prefix of all Windows services ConfigMap names
+	NamePrefix = "windows-services-"
+	// servicesKey is a required key in the services ConfigMap. The value for this key is a Service object JSON array.
+	servicesKey = "services"
+	// filesKey is a required key in the services ConfigMap. The value for this key is a FileInfo object JSON array.
+	filesKey = "files"
+)
 
-// Name is the full name of the Windows services ConfigMap, detailing the service config for a specific WMCO version
-var Name string
+var (
+	// Name is the full name of the Windows services ConfigMap, detailing the service config for a specific WMCO version
+	Name string
+	//TODO: Fill in required content as services and files are added to the ConfigMap definition
+	// requiredServices is the source of truth for expected service configuration on a Windows Node
+	requiredServices = &[]Service{}
+	// requiredFiles is the source of truth for files that are expected to exist on a Windows Node
+	requiredFiles = &[]FileInfo{}
+)
 
 // init runs once, initializing global variables
 func init() {
@@ -61,6 +78,51 @@ type FileInfo struct {
 	Path string `json:"path"`
 	// Checksum is the checksum of the file specified at Path. It is used to validate that a file has not been changed
 	Checksum string `json:"checksum"`
+}
+
+// data represents the Data field of a `windows-services` ConfigMap resource, which is all the required information to
+// configure a Windows instance as a Node
+type data struct {
+	// Services contains information required to start all required Windows services with proper arguments and order
+	Services []Service `json:"services"`
+	// Files contains the path and checksum of all the files copied to a Windows VM by WMCO
+	Files []FileInfo `json:"files"`
+}
+
+// newData returns a new 'data' object with the given services and files.
+func newData(services *[]Service, files *[]FileInfo) *data {
+	cmData := &data{*services, *files}
+	return cmData
+}
+
+// Generate creates an immutable service ConfigMap which provides WICD with the specifications
+// for each Windows service that must be created on a Windows instance.
+func Generate(name, namespace string) (*core.ConfigMap, error) {
+	immutable := true
+	servicesConfigMap := &core.ConfigMap{
+		ObjectMeta: meta.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Immutable: &immutable,
+		Data:      make(map[string]string),
+	}
+
+	cmData := newData(requiredServices, requiredFiles)
+
+	jsonServices, err := json.Marshal(cmData.Services)
+	if err != nil {
+		return nil, err
+	}
+	servicesConfigMap.Data[servicesKey] = string(jsonServices)
+
+	jsonFiles, err := json.Marshal(cmData.Files)
+	if err != nil {
+		return nil, err
+	}
+	servicesConfigMap.Data[filesKey] = string(jsonFiles)
+
+	return servicesConfigMap, nil
 }
 
 // getName returns the name of the ConfigMap, using the following naming convention:
