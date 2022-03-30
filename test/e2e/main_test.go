@@ -136,7 +136,7 @@ func TestMain(m *testing.M) {
 	flag.IntVar(&numberOfMachineNodes, "machine-node-count", 1,
 		"number of nodes to be created for testing the Machine controller."+
 			"Setting this to 0 will result in some tests being skipped")
-	flag.StringVar(&wmcoPath, "wmco-path", "./build/_output/bin/windows-machine-config-operator",
+	flag.StringVar(&wmcoPath, "wmco-path", "./../../build/_output/bin/windows-machine-config-operator",
 		"Path to the WMCO binary, used for version validation")
 	flag.StringVar(&privateKeyPath, "private-key-path", "",
 		"path of the private key file used to configure the Windows node")
