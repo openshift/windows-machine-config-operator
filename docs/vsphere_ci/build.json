@@ -50,6 +50,7 @@
         "scripts/install-docker.ps1",
         "scripts/install-firewall-rules.ps1"
       ],
+      "vm_version": 15,
       "guest_os_type": "windows9Server64Guest",
       "insecure_connection": "true",
       "iso_paths": [
