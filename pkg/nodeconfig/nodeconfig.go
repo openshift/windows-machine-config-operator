@@ -414,8 +414,8 @@ func (nc *nodeConfig) configureCNI() error {
 	if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
 		return errors.Wrap(err, "error populating host subnet in node network")
 	}
-	// populate the CNI config file with the host subnet and the service network CIDR
-	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, payload.CNIConfigTemplatePath)
+	// populate the CNI config file with the host subnet, service network CIDR and IP address of the Windows VM
+	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, nc.GetIPv4Address(), payload.CNIConfigTemplatePath)
 	if err != nil {
 		return errors.Wrapf(err, "error populating CNI config file %s", configFile)
 	}
