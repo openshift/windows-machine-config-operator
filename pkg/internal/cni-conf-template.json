@@ -2,7 +2,9 @@
 	"CniVersion":"0.2.0",
 	"Name":"OVNKubernetesHybridOverlayNetwork",
 	"Type":"win-overlay",
+	"apiVersion": 2,
 	"Capabilities":{
+		"portMappings": true,
 		"Dns":true
 	},
 	"Ipam":{
@@ -11,23 +13,36 @@
 	},
 	"Policies":[
 		{
-			"Name":"EndpointPolicy",
-			"Value":{
-				"Type":"OutBoundNAT",
-				"ExceptionList":[
-					"service_network_cidr"
-				],
-				"DestinationPrefix":"",
-				"NeedEncap":false
+			"Name": "EndpointPolicy",
+			"Value": {
+				"Type": "OutBoundNAT",
+				"Settings": {
+					"ExceptionList": [
+						"service_network_cidr"
+					],
+					"DestinationPrefix": "",
+					"NeedEncap": false
+				}
 			}
 		},
 		{
-			"Name":"EndpointPolicy",
-			"Value":{
-				"Type":"ROUTE",
-				"ExceptionList":[],
-				"DestinationPrefix":"service_network_cidr",
-				"NeedEncap":true
+			"Name": "EndpointPolicy",
+			"Value": {
+				"Type": "SDNROUTE",
+				"Settings": {
+					"ExceptionList": [],
+					"DestinationPrefix": "service_network_cidr",
+					"NeedEncap": true
+				}
+			}
+		},
+		{
+			"Name": "EndpointPolicy",
+			"Value": {
+				"Type": "ProviderAddress",
+				"Settings": {
+					"ProviderAddress": "ip_host"
+				}
 			}
 		}
 	]
