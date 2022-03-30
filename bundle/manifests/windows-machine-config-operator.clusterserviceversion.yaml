@@ -12,6 +12,8 @@ metadata:
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     operators.operatorframework.io/builder: operator-sdk-v1.15.0+git
+    operators.openshift.io/valid-subscription: '["Red Hat OpenShift support for Windows
+      Containers"]'
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat

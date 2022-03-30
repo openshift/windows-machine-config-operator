@@ -11,6 +11,8 @@ metadata:
     olm.skipRange: '>=3.0.0 <4.0.0'
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
+    operators.openshift.io/valid-subscription: '["Red Hat OpenShift support for Windows
+      Containers"]'
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat
   name: windows-machine-config-operator.v0.0.0
