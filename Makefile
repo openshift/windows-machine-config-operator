@@ -179,6 +179,10 @@ lint:
 unit:
 	hack/unit.sh ${GO_MOD_FLAGS}
 
+.PHONY: wicd-unit
+wicd-unit:
+	hack/wicd-unit.sh
+
 .PHONY: run-ci-e2e-test
 run-ci-e2e-test:
 	hack/run-ci-e2e-test.sh -t basic
