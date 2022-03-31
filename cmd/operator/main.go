@@ -12,6 +12,7 @@ import (
 	"github.com/operator-framework/operator-lib/leader"
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -23,6 +24,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
+	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/version"
 	//+kubebuilder:scaffold:imports
 )
@@ -224,6 +226,13 @@ func main() {
 	// Configure the metric resources
 	if err := metricsConfig.Configure(ctx); err != nil {
 		setupLog.Error(err, "error setting up metrics")
+		os.Exit(1)
+	}
+
+	// Create the singleton Windows services ConfigMap
+	if err := configMapReconciler.EnsureServicesConfigMapExists(); err != nil {
+		setupLog.Error(err, "error ensuring object exists", "singleton", types.NamespacedName{Namespace: watchNamespace,
+			Name: servicescm.Name})
 		os.Exit(1)
 	}
 

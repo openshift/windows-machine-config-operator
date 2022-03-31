@@ -32,6 +32,7 @@ import (
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
@@ -190,7 +191,9 @@ func (tc *testContext) getClusterKubeVersion() (string, error) {
 	return strings.Join(versionSplit[0:2], "."), nil
 }
 
-// getWMCOVersion returns the version of the operator. This is sourced from the WMCO binary used to create the operator image.
+// getWMCOVersion returns the version of the operator. This is sourced from the WMCO binary used
+// to create the operator image. We cannot use version.Get() as there is no easy way to populate ldflags
+// when running e2e tests without having to maintain the WMCO version in another location.
 // This function will return an error if the binary is missing.
 func getWMCOVersion() (string, error) {
 	cmd := exec.Command(wmcoPath, "version")
@@ -199,7 +202,7 @@ func getWMCOVersion() (string, error) {
 		return "", errors.Wrapf(err, "error running %s", cmd.String())
 	}
 	// out is formatted like:
-	// ./build/_output/bin/windows-machine-config-operator version: "0.0.1+4165dda-dirty", go version: "go1.13.7 linux/amd64"
+	// windows-machine-config-operator version: "5.0.0-1b759bf1-dirty", go version: "go1.17.5 linux/amd64"
 	versionSplit := strings.Split(string(out), "\"")
 	if len(versionSplit) < 3 {
 		return "", fmt.Errorf("unexpected version output")
@@ -462,6 +465,103 @@ func testExpectedServicesRunning(t *testing.T) {
 			}
 		})
 	}
+}
+
+// testServicesConfigMap tests multiple aspects of expected functionality for the services ConfigMap
+// 1. It exists on operator startup 2. It is re-created when deleted 3. It is recreated if invalid contents are detected
+func testServicesConfigMap(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	operatorVersion, err := getWMCOVersion()
+	require.NoError(t, err)
+	servicesConfigMapName := servicescm.NamePrefix + operatorVersion
+
+	// Ensure the windows-services ConfigMap exists in the cluster
+	_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(),
+		servicesConfigMapName, meta.GetOptions{})
+	require.NoErrorf(t, err, "error retrieving ConfigMap: %s", servicesConfigMapName)
+
+	err = tc.testServicesCMRegeneration(servicesConfigMapName)
+	require.NoErrorf(t, err, "error ensuring ConfigMap %s is re-created when deleted", servicesConfigMapName)
+
+	err = tc.testInvalidServicesCM(servicesConfigMapName)
+	require.NoError(t, err, "error testing handling of invalid ConfigMap")
+}
+
+// testServicesCMRegeneration tests that if the services ConfigMap is deleted, a valid one is re-created in its place
+func (tc *testContext) testServicesCMRegeneration(cmName string) error {
+	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), cmName, meta.DeleteOptions{})
+	if err != nil {
+		return err
+	}
+	_, err = tc.waitForValidWindowsServicesConfigMap(cmName)
+	return err
+}
+
+// testInvalidServicesCM tests that an invalid services ConfigMap is deleted and a valid one is re-created in its place
+func (tc *testContext) testInvalidServicesCM(cmName string) error {
+	// Scale down the WMCO deployment to 0
+	if err := tc.scaleWMCODeployment(0); err != nil {
+		return err
+	}
+	// Delete existing services CM
+	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), cmName, meta.DeleteOptions{})
+	if err != nil {
+		return err
+	}
+
+	// Invalid as data is missing (services and files)
+	invalidServicesCM := &core.ConfigMap{
+		ObjectMeta: meta.ObjectMeta{
+			Name:      cmName,
+			Namespace: tc.namespace,
+		},
+		Data: make(map[string]string, 2),
+	}
+	if _, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Create(context.TODO(), invalidServicesCM,
+		meta.CreateOptions{}); err != nil {
+		return err
+	}
+
+	// Restart the operator pod
+	if err := tc.scaleWMCODeployment(1); err != nil {
+		return err
+	}
+	// Try to retreive newly created ConfigMap and validate its contents
+	windowsServices, err := tc.waitForValidWindowsServicesConfigMap(cmName)
+	if err != nil {
+		return errors.Wrapf(err, "error retreiving ConfigMap %s", cmName)
+	}
+	if _, err := servicescm.Parse(windowsServices.Data); err != nil {
+		return errors.Wrapf(err, "error ensuring ConfigMap %s is re-created validly", cmName)
+	}
+	return nil
+}
+
+// waitForValidWindowsServicesConfigMap returns a reference to the ConfigMap that matches the given name.
+// If a ConfigMap with valid contents is not found within the time limit, an error is returned.
+func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string) (*core.ConfigMap, error) {
+	configMap := &core.ConfigMap{}
+	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+		var err error
+		configMap, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), cmName, meta.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				// Retry if the Get() results in a IsNotFound error
+				return false, nil
+			}
+			return false, errors.Wrapf(err, "error retrieving ConfigMap: %s", cmName)
+		}
+		// Here, we've retreived a ConfigMap but still need to ensure it is valid.
+		// If it's not valid, retry in hopes that WMCO will replace it with a valid one as expected.
+		_, err = servicescm.Parse(configMap.Data)
+		return err == nil, nil
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "error waiting for ConfigMap %s/%s", tc.namespace, cmName)
+	}
+	return configMap, nil
 }
 
 // testCSRApproval tests if the BYOH CSR's have been approved by WMCO CSR approver

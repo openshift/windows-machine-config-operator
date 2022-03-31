@@ -8,6 +8,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
@@ -21,10 +22,20 @@ func TestIsValidConfigMap(t *testing.T) {
 		isValidConfigMap bool
 	}{
 		{
-			name: "valid ConfigMap",
+			name: "valid instances ConfigMap",
 			configMapObj: &core.ConfigMap{
 				ObjectMeta: meta.ObjectMeta{
 					Name:      wiparser.InstanceConfigMap,
+					Namespace: watchNamespace,
+				},
+			},
+			isValidConfigMap: true,
+		},
+		{
+			name: "valid services ConfigMap",
+			configMapObj: &core.ConfigMap{
+				ObjectMeta: meta.ObjectMeta{
+					Name:      servicescm.Name,
 					Namespace: watchNamespace,
 				},
 			},
@@ -46,10 +57,20 @@ func TestIsValidConfigMap(t *testing.T) {
 			isValidConfigMap: false,
 		},
 		{
-			name: "invalid namespace",
+			name: "invalid instances ConfigMap namespace",
 			configMapObj: &core.ConfigMap{
 				ObjectMeta: meta.ObjectMeta{
 					Name:      wiparser.InstanceConfigMap,
+					Namespace: "invalid",
+				},
+			},
+			isValidConfigMap: false,
+		},
+		{
+			name: "invalid services ConfigMap namespace",
+			configMapObj: &core.ConfigMap{
+				ObjectMeta: meta.ObjectMeta{
+					Name:      servicescm.Name,
 					Namespace: "invalid",
 				},
 			},
