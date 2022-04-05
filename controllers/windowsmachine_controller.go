@@ -28,6 +28,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
+	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
@@ -385,6 +386,16 @@ func (r *WindowsMachineReconciler) deleteMachine(machine *mapi.Machine) error {
 	return nil
 }
 
+// getDefaultUsername returns the default username for a Windows instance
+func (r *WindowsMachineReconciler) getDefaultUsername() string {
+	// TODO: This should be changed so that the "core" user is used on all platforms for SSH connections.
+	// https://issues.redhat.com/browse/WINC-430
+	if r.platform == oconfig.AzurePlatformType {
+		return "capi"
+	}
+	return "Administrator"
+}
+
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
 func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineName string) error {
 	// The name of the Machine must be the same as the hostname of the associated VM. This is currently not true in the
@@ -396,21 +407,24 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 	if r.platform == oconfig.VSpherePlatformType {
 		hostname = machineName
 	}
-	// TODO: This should be changed so that the "core" user is used on all platforms for SSH connections.
-	// https://issues.redhat.com/browse/WINC-430
-	var username string
-	if r.platform == oconfig.AzurePlatformType {
-		username = "capi"
-	} else {
-		username = "Administrator"
-	}
-
+	username := r.getDefaultUsername()
 	instanceInfo, err := instance.NewInfo(ipAddress, username, hostname, false, nil)
 	if err != nil {
 		return err
 	}
-	err = r.ensureInstanceIsUpToDate(instanceInfo, nil, nil)
+	// Get private key to encrypt instance usernames
+	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
+		return err
+	}
+	encryptedUsername, err := crypto.EncryptToJSONString(username, privateKeyBytes)
+	if err != nil {
+		return errors.Wrapf(err, "unable to encrypt username for instance %s", instanceInfo.Address)
+	}
+
+	if err := r.ensureInstanceIsUpToDate(instanceInfo, nil,
+		map[string]string{UsernameAnnotation: encryptedUsername}); err != nil {
 		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
 	}
 
