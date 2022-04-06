@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"net"
+	"strings"
 
 	config "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
@@ -47,6 +48,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
+	"github.com/openshift/windows-machine-config-operator/version"
 )
 
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -156,6 +158,10 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 // reconcileServices uses the data within the services ConfigMap to ensure WMCO-managed Windows services on
 // Windows Nodes have the expected configuration and are in the expected state
 func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServices *core.ConfigMap) error {
+	if err := r.removeOutdatedServicesConfigMaps(ctx); err != nil {
+		return err
+	}
+
 	// If a ConfigMap with invalid values is found, WMCO will delete and recreate it with proper values
 	if _, err := servicescm.Parse(windowsServices.Data); err != nil {
 		// Deleting will trigger an event for the configmap_controller, which will re-create a proper ConfigMap
@@ -168,6 +174,62 @@ func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServ
 	}
 	// TODO: actually react to changes to the services ConfigMap
 	return nil
+}
+
+// removeOutdatedServicesConfigMaps deletes any outdated services ConfigMaps, if all nodes have moved past that version
+func (r *ConfigMapReconciler) removeOutdatedServicesConfigMaps(ctx context.Context) error {
+	nodes := &core.NodeList{}
+	if err := r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
+		return err
+	}
+	versionAnnotations := getVersionAnnotations(nodes.Items)
+
+	servicesConfigMaps, err := r.listServiceConfigMaps(ctx)
+	if err != nil {
+		return errors.Wrapf(err, "unable to retrieve list of services ConfigMaps")
+	}
+	for _, cm := range servicesConfigMaps {
+		cmVersion := strings.TrimPrefix(cm.Name, servicescm.NamePrefix)
+		if isTiedToRelevantVersion(cmVersion, versionAnnotations) {
+			continue
+		}
+		// Remove any services ConfigMap tied to a WMCO version that no Windows nodes are at anymore
+		if err := r.client.Delete(ctx, &cm); err != nil {
+			return errors.Wrapf(err, "could not delete outdated services ConfigMap %s", cm.Name)
+		}
+		r.log.Info("Deleted outdated resource", "ConfigMap",
+			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: cm.Name})
+	}
+	return nil
+}
+
+// isTiedToRelevantVersion checks if the given version is the current WMCO version or is in the given map of versions
+func isTiedToRelevantVersion(v string, versions map[string]struct{}) bool {
+	if v == version.Get() {
+		// The current WMCO version is always considered relevant
+		return true
+	}
+	for version := range versions {
+		if v == version {
+			return true
+		}
+	}
+	return false
+}
+
+// listServiceConfigMaps returns a list of all windows-services ConfigMaps in the operator namespace
+func (r *ConfigMapReconciler) listServiceConfigMaps(ctx context.Context) ([]core.ConfigMap, error) {
+	watchNamespaceCMs := &core.ConfigMapList{}
+	if err := r.client.List(ctx, watchNamespaceCMs, &client.ListOptions{Namespace: r.watchNamespace}); err != nil {
+		return nil, err
+	}
+	servicesConfigMaps := []core.ConfigMap{}
+	for _, cm := range watchNamespaceCMs.Items {
+		if strings.HasPrefix(cm.Name, servicescm.NamePrefix) {
+			servicesConfigMaps = append(servicesConfigMaps, cm)
+		}
+	}
+	return servicesConfigMaps, nil
 }
 
 // reconcileNodes corrects the discrepancy between the "expected" instances, and the "actual" Node list

@@ -214,6 +214,17 @@ func outdatedWindowsNodePredicate(byoh bool) predicate.Funcs {
 
 }
 
+// getVersionAnnotations returns a map whose keys are the WMCO versions that have configured any Windows nodes
+func getVersionAnnotations(nodes []core.Node) map[string]struct{} {
+	versions := make(map[string]struct{})
+	for _, node := range nodes {
+		if versionAnnotation, present := node.Annotations[metadata.VersionAnnotation]; present {
+			versions[versionAnnotation] = struct{}{}
+		}
+	}
+	return versions
+}
+
 // isValidWindowsNode returns true if the node object has the Windows label and the BYOH
 // label present for only the BYOH nodes based on the value of the byoh boolean parameter.
 func isValidWindowsNode(o client.Object, byoh bool) bool {
