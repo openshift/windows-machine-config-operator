@@ -11,6 +11,8 @@ metadata:
     description: An operator that enables Windows container workloads on OCP
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
+    operators.openshift.io/valid-subscription: '["Red Hat OpenShift support for Windows
+      Containers"]'
     repository: https://github.com/openshift/windows-machine-config-operator
     support: "Red Hat"
     olm.skipRange: ">=1.0.0 <2.0.0"
