@@ -365,10 +365,7 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, wi
 // nodeCreationTime variable which is 20 minutes increasing the overall wait time in test suite
 func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVersion bool, isBYOH bool) error {
 	annotations := []string{nodeconfig.HybridOverlaySubnet, nodeconfig.HybridOverlayMac, metadata.VersionAnnotation,
-		nodeconfig.PubKeyHashAnnotation}
-	if isBYOH {
-		annotations = append(annotations, controllers.UsernameAnnotation)
-	}
+		nodeconfig.PubKeyHashAnnotation, controllers.UsernameAnnotation}
 
 	var creationTime time.Duration
 	startTime := time.Now()
@@ -446,8 +443,8 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 					node.Annotations[nodeconfig.PubKeyHashAnnotation], pubKeyAnnotation)
 				return false, nil
 			}
-			// For BYOH nodes, ensure username annotation is decipherable and correct. Skip if deconfiguring node
-			if isBYOH && !expectError {
+			// Ensure username annotation is decipherable and correct. Skip if deconfiguring node
+			if !expectError {
 				username, err := crypto.DecryptFromJSONString(node.Annotations[controllers.UsernameAnnotation], privKey)
 				if err != nil {
 					log.Printf("error decrypting username annotation for node %s: %s", node.Name, err)
