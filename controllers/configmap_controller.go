@@ -290,10 +290,17 @@ func hasAssociatedInstance(nodeAddresses []core.NodeAddress, instances []*instan
 	return false, nil
 }
 
-// mapToConfigMap fulfills the MapFn type, while always returning a request to the windows-instance ConfigMap
-func (r *ConfigMapReconciler) mapToConfigMap(_ client.Object) []reconcile.Request {
+// mapToInstancesConfigMap fulfills the MapFn type, while always returning a request to the windows-instance ConfigMap
+func (r *ConfigMapReconciler) mapToInstancesConfigMap(_ client.Object) []reconcile.Request {
 	return []reconcile.Request{{
 		NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: wiparser.InstanceConfigMap},
+	}}
+}
+
+// mapToServicesConfigMap fulfills the MapFn type, while always returning a request to the windows-services ConfigMap
+func (r *ConfigMapReconciler) mapToServicesConfigMap(_ client.Object) []reconcile.Request {
+	return []reconcile.Request{{
+		NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name},
 	}}
 }
 
@@ -315,8 +322,10 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.ConfigMap{}, builder.WithPredicates(configMapPredicate)).
-		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapToConfigMap),
+		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapToInstancesConfigMap),
 			builder.WithPredicates(outdatedWindowsNodePredicate(true))).
+		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
+			builder.WithPredicates(windowsNodeVersionChangePredicate())).
 		Complete(r)
 }
 

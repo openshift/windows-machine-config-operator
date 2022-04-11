@@ -155,6 +155,34 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	return nil
 }
 
+// windowsNodeVersionChangePredicate returns a predicate whose filter catches Windows nodes that indicate a version
+// change either through deletion away from an old version or creation/update to the latest WMCO version
+func windowsNodeVersionChangePredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			// catch Machine-backed Windows node upgrades as they are re-created
+			return e.Object.GetLabels()[core.LabelOSStable] == "windows" &&
+				e.Object.GetAnnotations()[metadata.VersionAnnotation] == version.Get()
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			// catch BYOH Windows node upgrades to the current WMCO version as they are re-configured in place
+			return e.ObjectNew.GetLabels()[core.LabelOSStable] == "windows" &&
+				(e.ObjectOld.GetAnnotations()[metadata.VersionAnnotation] !=
+					e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation]) &&
+				e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation] == version.Get()
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return e.Object.GetLabels()[core.LabelOSStable] == "windows" &&
+				e.Object.GetAnnotations()[metadata.VersionAnnotation] == version.Get()
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			// catch if a node stuck at an older WMCO version is deleted
+			return e.Object.GetLabels()[core.LabelOSStable] == "windows" &&
+				e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get()
+		},
+	}
+}
+
 // outdatedWindowsNodePredicate returns a predicate which filters out all node objects that are not up-to-date Windows
 // nodes. Up-to-date refers to the version annotation and public key hash annotations.
 // If BYOH is true, only BYOH nodes will be allowed through, else no BYOH nodes will be allowed.
