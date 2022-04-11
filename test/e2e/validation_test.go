@@ -549,7 +549,7 @@ func (tc *testContext) testInvalidServicesCM(cmName string) error {
 // If a ConfigMap with valid contents is not found within the time limit, an error is returned.
 func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string) (*core.ConfigMap, error) {
 	configMap := &core.ConfigMap{}
-	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+	err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
 		var err error
 		configMap, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), cmName, meta.GetOptions{})
 		if err != nil {
