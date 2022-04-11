@@ -570,6 +570,26 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string) (*cor
 	return configMap, nil
 }
 
+// waitForServicesConfigMapDeletion waits for a ConfigMap by the given name to deleted.
+// Returns an error if it is still present in the WMCO namespace at the time limit.
+func (tc *testContext) waitForServicesConfigMapDeletion(cmName string) error {
+	err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+		_, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), cmName, meta.GetOptions{})
+		if err == nil {
+			// Retry if the resource is found
+			return false, nil
+		}
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, errors.Wrapf(err, "error retrieving ConfigMap: %s", cmName)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "error waiting for ConfigMap deletion %s/%s", tc.namespace, cmName)
+	}
+	return nil
+}
+
 // testCSRApproval tests if the BYOH CSR's have been approved by WMCO CSR approver
 func testCSRApproval(t *testing.T) {
 	testCtx, err := NewTestContext()
