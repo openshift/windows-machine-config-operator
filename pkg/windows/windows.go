@@ -2,6 +2,7 @@ package windows
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -264,9 +265,17 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 			return nil
 		}
 	}
-
+	f, err := os.Open(file.Path)
+	if err != nil {
+		return errors.Wrapf(err, "error opening %s file to be transferred", file.Path)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			vm.log.Error(err, "error closing local file", "file", file.Path)
+		}
+	}()
 	vm.log.V(1).Info("copy", "local file", file.Path, "remote dir", remoteDir)
-	if err := vm.interact.transfer(file.Path, remoteDir); err != nil {
+	if err := vm.interact.transfer(f, filepath.Base(file.Path), remoteDir); err != nil {
 		return errors.Wrapf(err, "unable to transfer %s to remote dir %s", file.Path, remoteDir)
 	}
 	return nil
