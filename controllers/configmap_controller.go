@@ -316,7 +316,7 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.ConfigMap{}, builder.WithPredicates(configMapPredicate)).
 		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapToConfigMap),
-			builder.WithPredicates(windowsNodePredicate(true))).
+			builder.WithPredicates(outdatedWindowsNodePredicate(true))).
 		Complete(r)
 }
 

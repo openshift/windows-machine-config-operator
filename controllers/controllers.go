@@ -155,9 +155,10 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	return nil
 }
 
-// windowsNodePredicate returns a predicate which filters out all node objects that are not Windows nodes.
+// outdatedWindowsNodePredicate returns a predicate which filters out all node objects that are not up-to-date Windows
+// nodes. Up-to-date refers to the version annotation and public key hash annotations.
 // If BYOH is true, only BYOH nodes will be allowed through, else no BYOH nodes will be allowed.
-func windowsNodePredicate(byoh bool) predicate.Funcs {
+func outdatedWindowsNodePredicate(byoh bool) predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return isValidWindowsNode(e.Object, byoh) &&
