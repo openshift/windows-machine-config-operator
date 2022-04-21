@@ -83,9 +83,6 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 func (tc *testContext) checkDirsDoNotExist(address string) (bool, error) {
 	command := ""
 
-	// TODO: Remove appending containerd directory when we default to using runtime containerd
-	windows.RequiredDirectories = append(windows.RequiredDirectories, windows.ContainerdDir)
-
 	for _, dir := range windows.RequiredDirectories {
 		command += fmt.Sprintf("if ((Test-Path %s) -eq $true) { Write-Output %s exists}", dir, dir)
 	}
