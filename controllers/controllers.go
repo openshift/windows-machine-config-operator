@@ -53,8 +53,6 @@ type instanceReconciler struct {
 	recorder record.EventRecorder
 	// platform indicates the cloud on which the cluster is running
 	platform config.PlatformType
-	// dockerRuntime indicates if the container runtime used is docker or containerd
-	dockerRuntime bool
 }
 
 // ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
@@ -74,7 +72,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instanceInfo, r.signer,
-		labelsToApply, annotationsToApply, r.platform, r.dockerRuntime)
+		labelsToApply, annotationsToApply, r.platform)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
@@ -126,7 +124,7 @@ func (r *instanceReconciler) updateKubeletCA(node core.Node, contents []byte) er
 		return errors.Wrapf(err, "error creating instance for node %s", node.Name)
 	}
 	nodeConfig, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, winInstance,
-		r.signer, nil, nil, r.platform, r.dockerRuntime)
+		r.signer, nil, nil, r.platform)
 	if err != nil {
 		return errors.Wrapf(err, "error creating nodeConfig for instance %s", winInstance.Address)
 	}
@@ -186,7 +184,7 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
-		nil, nil, r.platform, r.dockerRuntime)
+		nil, nil, r.platform)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
