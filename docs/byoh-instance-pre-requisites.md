@@ -1,7 +1,6 @@
 # BYOH Instance Pre-requisites
 
 The following pre-requisites must be fulfilled in order to add a Windows BYOH node.
-* The Docker container runtime must be installed on the instance.
 * The instance must be on the same network as the Linux worker nodes in the cluster.
 * Port 22 must be open and running [an SSH server](https://docs.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse).
 * Port 10250 must be open in order for log collection to function.
