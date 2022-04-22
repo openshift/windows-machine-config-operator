@@ -3,8 +3,7 @@
 ## Introduction
 The Windows Machine Config Operator configures Windows instances into nodes, enabling Windows container workloads to
 be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/4.5/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
-or by specifying existing instances through a ConfigMap. Through either method, the Windows instance must have the
-Docker container runtime installed. The operator will do all the necessary steps to configure the instance so that it
+or by specifying existing instances through a ConfigMap. The operator will do all the necessary steps to configure the instance so that it
 can join the cluster as a worker node.
 
 More design details can be explored in the [WMCO enhancement](https://github.com/openshift/enhancements/blob/master/enhancements/windows-containers/windows-machine-config-operator.md).
@@ -213,6 +212,9 @@ Cluster autoscaling is supported for Windows instances.
 - Define and deploy a [ClusterAutoscaler](https://docs.openshift.com/container-platform/latest/machine_management/applying-autoscaling.html#configuring-clusterautoscaler).
 - Create a Windows node through a MachineSet (see spec in [Usage section](https://github.com/openshift/windows-machine-config-operator#usage)).
 - Define and deploy a [MachineAutoscaler](https://docs.openshift.com/container-platform/latest/machine_management/applying-autoscaling.html#configuring-machineautoscaler), referencing a Windows MachineSet.
+
+### Container Runtime
+Windows instances brought up with WMCO are set up with the containerd container runtime.
 
 ## Development
 
