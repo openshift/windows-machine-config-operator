@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
@@ -116,6 +117,50 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, 
 	}
 
 	return instance.NewInfo(addr, username, "", false, node)
+}
+
+// updateKubeletCA updates the kubelet CA in the node, by copying the kubelet CA file content to the Windows instance
+func (r *instanceReconciler) updateKubeletCA(node core.Node, contents []byte) error {
+	winInstance, err := r.instanceFromNode(&node)
+	if err != nil {
+		return errors.Wrapf(err, "error creating instance for node %s", node.Name)
+	}
+	nodeConfig, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, winInstance,
+		r.signer, nil, nil, r.platform, r.dockerRuntime)
+	if err != nil {
+		return errors.Wrapf(err, "error creating nodeConfig for instance %s", winInstance.Address)
+	}
+	r.log.Info("updating kubelet CA client certificates in", "node", node.Name)
+	return nodeConfig.UpdateKubeletClientCA(contents)
+}
+
+// reconcileKubeletClientCA reconciles the kube-apiserver certificate rotation by copying the bundle CA in the updated
+// ConfigMap to all Windows nodes. This is required by kubelet to recognize the kube-apiserver client. No drain or
+// restart required, the bundle CA file is loaded dynamically by the kubelet service running on the Windows Instance.
+func (r *instanceReconciler) reconcileKubeletClientCA(ctx context.Context, bundleCAConfigMap *core.ConfigMap) error {
+	// get the ConfigMap that contains the initial CA certificates
+	initialCAConfigMap, err := certificates.GetInitialCAConfigMap(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	// merge the initial and current CA ConfigMaps for the kube API Server signer, using the specific common-name that
+	// matches the signer subject.
+	kubeAPIServerServingCABytes, err := certificates.MergeCAsConfigMaps(initialCAConfigMap, bundleCAConfigMap,
+		"kube-apiserver-to-kubelet-signer")
+
+	// fetch all Windows nodes (Machine and BYOH instances)
+	winNodes := &core.NodeList{}
+	if err = r.client.List(ctx, winNodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
+		return errors.Wrap(err, "error listing Windows nodes")
+	}
+	r.log.V(1).Info("processing", "node count", len(winNodes.Items))
+	// loop Windows nodes and trigger kubelet CA update
+	for _, winNode := range winNodes.Items {
+		if err := r.updateKubeletCA(winNode, kubeAPIServerServingCABytes); err != nil {
+			return errors.Wrapf(err, "error updating kubelet CA certificate in node %s", winNode.Name)
+		}
+	}
+	return nil
 }
 
 // GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
