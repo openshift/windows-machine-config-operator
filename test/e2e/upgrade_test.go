@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
+	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
 const (
@@ -28,6 +30,8 @@ const (
 	resourceNamespace = "openshift-windows-machine-config-operator"
 	// windowsWorkloadTesterJob is the name of the job created to test Windows workloads
 	windowsWorkloadTesterJob = "windows-workload-tester"
+	// outdatedVersion is the 'previous' version in the simulated upgrade that the operator is being upgraded from
+	outdatedVersion = "old-version"
 )
 
 // generateLinuxWorkloadTesterCommand creates a Job to curl Windows webserver every 5 seconds.
@@ -84,6 +88,12 @@ func testUpgradeVersion(t *testing.T) {
 	// Test if prometheus is reconfigured with ip addresses of newly configured nodes
 	testPrometheus(t)
 
+	// Ensure outdated ConfigMap is not retrievable
+	t.Run("Outdated services ConfigMap removal", func(t *testing.T) {
+		err = testCtx.waitForServicesConfigMapDeletion(servicescm.NamePrefix + outdatedVersion)
+		assert.NoError(t, err, "failed to ensure outdated services ConfigMap is removed after operator upgrade")
+	})
+
 	// TODO: Fix matching label for jobs. See https://issues.redhat.com/browse/WINC-673
 	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
 	pods, err := testCtx.client.K8s.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(),
@@ -99,7 +109,8 @@ func testUpgradeVersion(t *testing.T) {
 // The steps include -
 // 1. Scale down the operator to 0.
 // 2. Change Windows node version annotation to an invalid value
-// 3. Scale up the operator to 1
+// 3. Create a services ConfigMap tied to an outdated operator version
+// 4. Scale up the operator to 1
 func (tc *testContext) configureUpgradeTest() error {
 	// Scale down the WMCO deployment to 0
 	if err := tc.scaleWMCODeployment(0); err != nil {
@@ -117,13 +128,26 @@ func (tc *testContext) configureUpgradeTest() error {
 	}
 
 	for _, node := range append(machineNodes, byohNodes...) {
-		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.VersionAnnotation, "badVersion")
-		_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
+		patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.VersionAnnotation, outdatedVersion)
+		node, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
 			[]byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			return err
 		}
 		log.Printf("Node Annotation changed to %v", node.Annotations[metadata.VersionAnnotation])
+	}
+
+	// Create outdated services ConfigMap
+	outdatedServicesCM := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      servicescm.NamePrefix + outdatedVersion,
+			Namespace: tc.namespace,
+		},
+		Data: map[string]string{"services": "[]", "files": "[]"},
+	}
+	if _, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Create(context.TODO(), outdatedServicesCM,
+		metav1.CreateOptions{}); err != nil {
+		return err
 	}
 
 	// Scale up the WMCO deployment to 1

@@ -478,15 +478,21 @@ func testServicesConfigMap(t *testing.T) {
 	servicesConfigMapName := servicescm.NamePrefix + operatorVersion
 
 	// Ensure the windows-services ConfigMap exists in the cluster
-	_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(),
-		servicesConfigMapName, meta.GetOptions{})
-	require.NoErrorf(t, err, "error retrieving ConfigMap: %s", servicesConfigMapName)
+	t.Run("Services ConfigMap existance", func(t *testing.T) {
+		_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), servicesConfigMapName,
+			meta.GetOptions{})
+		assert.NoErrorf(t, err, "error ensuring ConfigMap %s exists", servicesConfigMapName)
+	})
 
-	err = tc.testServicesCMRegeneration(servicesConfigMapName)
-	require.NoErrorf(t, err, "error ensuring ConfigMap %s is re-created when deleted", servicesConfigMapName)
+	t.Run("Services ConfigMap re-creation", func(t *testing.T) {
+		err = tc.testServicesCMRegeneration(servicesConfigMapName)
+		assert.NoErrorf(t, err, "error ensuring ConfigMap %s is re-created when deleted", servicesConfigMapName)
+	})
 
-	err = tc.testInvalidServicesCM(servicesConfigMapName)
-	require.NoError(t, err, "error testing handling of invalid ConfigMap")
+	t.Run("Invalid services ConfigMap deletion", func(t *testing.T) {
+		err = tc.testInvalidServicesCM(servicesConfigMapName)
+		assert.NoError(t, err, "error testing handling of invalid ConfigMap")
+	})
 }
 
 // testServicesCMRegeneration tests that if the services ConfigMap is deleted, a valid one is re-created in its place
@@ -543,7 +549,7 @@ func (tc *testContext) testInvalidServicesCM(cmName string) error {
 // If a ConfigMap with valid contents is not found within the time limit, an error is returned.
 func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string) (*core.ConfigMap, error) {
 	configMap := &core.ConfigMap{}
-	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+	err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
 		var err error
 		configMap, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), cmName, meta.GetOptions{})
 		if err != nil {
@@ -562,6 +568,26 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string) (*cor
 		return nil, errors.Wrapf(err, "error waiting for ConfigMap %s/%s", tc.namespace, cmName)
 	}
 	return configMap, nil
+}
+
+// waitForServicesConfigMapDeletion waits for a ConfigMap by the given name to deleted.
+// Returns an error if it is still present in the WMCO namespace at the time limit.
+func (tc *testContext) waitForServicesConfigMapDeletion(cmName string) error {
+	err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+		_, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), cmName, meta.GetOptions{})
+		if err == nil {
+			// Retry if the resource is found
+			return false, nil
+		}
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, errors.Wrapf(err, "error retrieving ConfigMap: %s", cmName)
+	})
+	if err != nil {
+		return errors.Wrapf(err, "error waiting for ConfigMap deletion %s/%s", tc.namespace, cmName)
+	}
+	return nil
 }
 
 // testCSRApproval tests if the BYOH CSR's have been approved by WMCO CSR approver

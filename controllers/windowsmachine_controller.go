@@ -129,7 +129,7 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&mapi.Machine{}, builder.WithPredicates(machinePredicate)).
 		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToMachine),
-			builder.WithPredicates(windowsNodePredicate(false))).
+			builder.WithPredicates(outdatedWindowsNodePredicate(false))).
 		Complete(r)
 }
 
