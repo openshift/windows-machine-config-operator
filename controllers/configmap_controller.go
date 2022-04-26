@@ -52,6 +52,7 @@ import (
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=configmaps/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=delete;get;list;patch;watch
 //+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
 
 const (
