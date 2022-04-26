@@ -40,7 +40,7 @@ import (
 
 //+kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch;delete
 //+kubebuilder:rbac:groups=machine.openshift.io,resources=machinesets,verbs=get;list;watch
-//+kubebuilder:rbac:groups="",resources=nodes,verbs=*
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;patch;watch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;
 //+kubebuilder:rbac:groups="",resources=events,verbs=*
 
