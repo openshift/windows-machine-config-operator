@@ -32,7 +32,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
-//+kubebuilder:rbac:groups="",resources=nodes,verbs=*
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=create;get;list;watch;update
 
 const (
