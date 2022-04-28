@@ -21,6 +21,7 @@ func testNodeLogs(t *testing.T) {
 		"kube-proxy/kube-proxy.exe.INFO",
 		"hybrid-overlay/hybrid-overlay.log",
 		"kubelet/kubelet.log",
+		"containerd/containerd.log",
 	}
 	optionalLogs := []string{
 		"kube-proxy/kube-proxy.exe.ERROR",

@@ -123,7 +123,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 // hostName having a value will result in the VM's hostname being changed to the given value.
 func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
-	additionalAnnotations map[string]string, platformType configv1.PlatformType, dockerRuntime bool) (*nodeConfig, error) {
+	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
 	var err error
 
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
@@ -152,7 +152,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
 	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, clusterDNS, vxlanPort,
-		instanceInfo, signer, string(platformType), dockerRuntime)
+		instanceInfo, signer, string(platformType))
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
@@ -414,8 +414,8 @@ func (nc *nodeConfig) configureCNI() error {
 	if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
 		return errors.Wrap(err, "error populating host subnet in node network")
 	}
-	// populate the CNI config file with the host subnet and the service network CIDR
-	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, payload.CNIConfigTemplatePath)
+	// populate the CNI config file with the host subnet, service network CIDR and IP address of the Windows VM
+	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, nc.GetIPv4Address(), payload.CNIConfigTemplatePath)
 	if err != nil {
 		return errors.Wrapf(err, "error populating CNI config file %s", configFile)
 	}

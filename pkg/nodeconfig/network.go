@@ -12,9 +12,13 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 )
 
+// numberOfPolicies are the required number of policies in CNI config
+const numberOfPolicies = 3
+
 // cniConf contains the structure of the CNI template
 type cniConf struct {
 	CNIVersion   string       `json:"cniVersion"`
+	ApiVersion   int          `json:"apiVersion"`
 	Name         string       `json:"name"`
 	Type         string       `json:"type"`
 	Capabilities capabilities `json:"capabilities"`
@@ -24,7 +28,8 @@ type cniConf struct {
 
 // nested structs required for creating cniConf struct
 type capabilities struct {
-	DNS bool `json:"dns"`
+	PortMappings bool `json:"portMappings"`
+	DNS          bool `json:"dns"`
 }
 
 type ipam struct {
@@ -38,10 +43,15 @@ type policies []struct {
 }
 
 type value struct {
-	Type              string   `json:"Type"`
+	Type     string   `json:"Type"`
+	Settings settings `json:"Settings,omitempty"`
+}
+
+type settings struct {
 	ExceptionList     []string `json:"ExceptionList,omitempty"`
 	DestinationPrefix string   `json:"DestinationPrefix,omitempty"`
 	NeedEncap         bool     `json:"NeedEncap"`
+	ProviderAddress   string   `json:"ProviderAddress,omitempty"`
 }
 
 // network struct contains the node network information
@@ -74,9 +84,10 @@ func (nw *network) cleanupTempConfig(configFile string) error {
 	return nil
 }
 
-// populateCniConfig populates the CNI config template with necessary information and
-// creates a new file in temp directory to store the modified template
-func (nw *network) populateCniConfig(serviceCIDR string, templatePath string) (string, error) {
+// populateCniConfig populates the CNI config template with the values for
+// serviceCIDR and IP address of the Windows VM. It creates a new file in
+// temp directory to store the modified template
+func (nw *network) populateCniConfig(serviceCIDR string, ipAddress string, templatePath string) (string, error) {
 	if nw.hostSubnet == "" {
 		return "", errors.New("can't populate CNI config with empty hostSubnet")
 	}
@@ -91,7 +102,7 @@ func (nw *network) populateCniConfig(serviceCIDR string, templatePath string) (s
 		return "", errors.Wrap(err, "error converting CNI template into cniCfg struct")
 	}
 
-	if err = populateCfgPolicies(&cniCfg.Policies, serviceCIDR); err != nil {
+	if err = populateCfgPolicies(&cniCfg.Policies, serviceCIDR, ipAddress); err != nil {
 		return "", errors.Wrap(err, "error populating config policies in cniConf struct")
 	}
 
@@ -123,12 +134,19 @@ func (nw *network) populateCniConfig(serviceCIDR string, templatePath string) (s
 	return cniConfigPath.Name(), nil
 }
 
-// populateCfgPolicies populates the policies in cniConf struct with serviceCIDR information
-func populateCfgPolicies(cniCfgPolicies *policies, serviceCIDR string) error {
-	if len(*cniCfgPolicies) < 2 || len((*cniCfgPolicies)[0].Value.ExceptionList) == 0 || (*cniCfgPolicies)[1].Value.DestinationPrefix == "" {
+// populateCfgPolicies populates the policies in cniConf struct with serviceCIDR and
+// the Windows host IP address information
+func populateCfgPolicies(cniCfgPolicies *policies, serviceCIDR string, ipAddress string) error {
+	if len(*cniCfgPolicies) < numberOfPolicies {
+		return errors.Errorf("number of policies cannot be less than %d", numberOfPolicies)
+	}
+	if len((*cniCfgPolicies)[0].Value.Settings.ExceptionList) == 0 ||
+		(*cniCfgPolicies)[1].Value.Settings.DestinationPrefix == "" ||
+		(*cniCfgPolicies)[2].Value.Settings.ProviderAddress == "" {
 		return errors.Errorf("invalid policy fields in cniConf struct")
 	}
-	(*cniCfgPolicies)[0].Value.ExceptionList[0] = serviceCIDR
-	(*cniCfgPolicies)[1].Value.DestinationPrefix = serviceCIDR
+	(*cniCfgPolicies)[0].Value.Settings.ExceptionList[0] = serviceCIDR
+	(*cniCfgPolicies)[1].Value.Settings.DestinationPrefix = serviceCIDR
+	(*cniCfgPolicies)[2].Value.Settings.ProviderAddress = ipAddress
 	return nil
 }
