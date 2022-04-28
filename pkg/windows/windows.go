@@ -1,7 +1,10 @@
 package windows
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -143,6 +146,11 @@ func getFilesToTransfer(dockerRuntime bool) (map[*payload.FileInfo]string, error
 	return filesToTransfer, nil
 }
 
+// GetK8sDir returns the location of the kubernetes executable directory
+func GetK8sDir() string {
+	return k8sDir
+}
+
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
 type Windows interface {
 	// GetIPv4Address returns the IPv4 address of the associated instance.
@@ -151,8 +159,13 @@ type Windows interface {
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
 	EnsureFile(*payload.FileInfo, string) error
-	// FileExists returns true if a specific file exists at the given path on the Windows VM
-	FileExists(string) (bool, error)
+	// EnsureFileContent ensures the given filename and content exists within the specified directory on the Windows VM.
+	// The content will be copied to the Windows VM if the file is not present or has incorrect contents. The remote
+	// directory is created if it does not exist.
+	EnsureFileContent([]byte, string, string) error
+	// FileExists returns true if a specific file exists at the given path and checksum on the Windows VM. Set an
+	// empty checksum (checksum == "") to disable checksum check.
+	FileExists(string, string) (bool, error)
 	// Run executes the given command remotely on the Windows VM over a ssh connection and returns the combined output
 	// of stdout and stderr. If the bool is set, it implies that the cmd is to be execute in PowerShell. This function
 	// should be used in scenarios where you want to execute a command that runs in the background. In these cases we
@@ -246,38 +259,75 @@ func (vm *windows) GetIPv4Address() string {
 	return vm.instance.IPv4Address
 }
 
-func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
-	// Only copy the file to the Windows VM if it does not already exist wth the desired content
-	remotePath := remoteDir + "\\" + filepath.Base(file.Path)
-	fileExists, err := vm.FileExists(remotePath)
+func (vm *windows) EnsureFileContent(contents []byte, filename string, remoteDir string) error {
+	// build remote path
+	remotePath := remoteDir + "\\" + filepath.Base(filename)
+	// calc checksum
+	checksum := fmt.Sprintf("%x", sha256.Sum256(contents))
+	// check if the file exist with the expected content
+	fileExists, err := vm.FileExists(remotePath, checksum)
 	if err != nil {
 		return errors.Wrapf(err, "error checking if file '%s' exists on the Windows VM", remotePath)
 	}
 	if fileExists {
-		remoteFile, err := vm.newFileInfo(remotePath)
-		if err != nil {
-			return errors.Wrapf(err, "error getting info on file '%s' on the Windows VM", remotePath)
-		}
-		if file.SHA256 == remoteFile.SHA256 {
-			// The file already exists with the expected content, do nothing
-			vm.log.V(1).Info("file already exists on VM with expected content", "file", file.Path)
-			return nil
-		}
+		// The file already exists with the expected content, do nothing
+		return nil
 	}
+	vm.log.V(1).Info("copy", "file content", filename, "remote dir", remoteDir)
+	if err := vm.interact.transfer(bytes.NewReader(contents), filename, remoteDir); err != nil {
+		return errors.Wrapf(err, "unable to copy %s content to remote dir %s", filename, remoteDir)
+	}
+	return nil
+}
 
+func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
+	// Only copy the file to the Windows VM if it does not already exist wth the desired content
+	remotePath := remoteDir + "\\" + filepath.Base(file.Path)
+	fileExists, err := vm.FileExists(remotePath, file.SHA256)
+	if err != nil {
+		return errors.Wrapf(err, "error checking if file '%s' exists on the Windows VM", remotePath)
+	}
+	if fileExists {
+		// The file already exists with the expected content, do nothing
+		return nil
+	}
+	f, err := os.Open(file.Path)
+	if err != nil {
+		return errors.Wrapf(err, "error opening %s file to be transferred", file.Path)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			vm.log.Error(err, "error closing local file", "file", file.Path)
+		}
+	}()
 	vm.log.V(1).Info("copy", "local file", file.Path, "remote dir", remoteDir)
-	if err := vm.interact.transfer(file.Path, remoteDir); err != nil {
+	if err := vm.interact.transfer(f, filepath.Base(file.Path), remoteDir); err != nil {
 		return errors.Wrapf(err, "unable to transfer %s to remote dir %s", file.Path, remoteDir)
 	}
 	return nil
 }
 
-func (vm *windows) FileExists(path string) (bool, error) {
+func (vm *windows) FileExists(path, checksum string) (bool, error) {
 	out, err := vm.Run("Test-Path "+path, true)
 	if err != nil {
 		return false, errors.Wrapf(err, "error checking if file %s exists", path)
 	}
-	return strings.TrimSpace(out) == "True", nil
+	found := strings.TrimSpace(out) == "True"
+	// avoid checksum validation if not found or in lack of reference checksum
+	if !found || checksum == "" {
+		return found, nil
+	}
+	// file exist, compare checksum
+	remoteFile, err := vm.newFileInfo(path)
+	if err != nil {
+		return false, errors.Wrapf(err, "error getting info on file '%s' on the Windows VM", path)
+	}
+	if remoteFile.SHA256 == checksum {
+		vm.log.V(1).Info("file already exists on VM with expected content", "file", path)
+		return true, nil
+	}
+	// file exist with diff content
+	return false, nil
 }
 
 func (vm *windows) Run(cmd string, psCmd bool) (string, error) {

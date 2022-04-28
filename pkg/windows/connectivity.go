@@ -3,8 +3,6 @@ package windows
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,8 +35,8 @@ func newAuthErr(err error) *AuthErr {
 type connectivity interface {
 	// run executes the given command on the remote system
 	run(cmd string) (string, error)
-	// transfer copies the file from the local disk to the remote VM directory, creating the remote directory if needed
-	transfer(filePath, remoteDir string) error
+	// transfer reads from reader and creates a file in the remote VM directory, creating the remote directory if needed
+	transfer(reader io.Reader, filename, remoteDir string) error
 	// init initialises the connectivity medium
 	init() error
 }
@@ -127,8 +125,8 @@ func (c *sshConnectivity) run(cmd string) (string, error) {
 	return string(out), err
 }
 
-// transfer uses FTP to copy the file from the local disk to the remote VM directory, creating the directory if needed
-func (c *sshConnectivity) transfer(filePath, remoteDir string) error {
+// transfer uses FTP to copy from reader to the remote VM directory, creating the directory if needed
+func (c *sshConnectivity) transfer(reader io.Reader, filename, remoteDir string) error {
 	if c.sshClient == nil {
 		return errors.New("transfer cannot be called with nil SSH client")
 	}
@@ -142,30 +140,19 @@ func (c *sshConnectivity) transfer(filePath, remoteDir string) error {
 			c.log.Error(err, "error closing FTP connection")
 		}
 	}()
-
-	f, err := os.Open(filePath)
-	if err != nil {
-		return errors.Wrapf(err, "error opening %s file to be transferred", filePath)
-	}
-	defer func() {
-		if err := f.Close(); err != nil {
-			c.log.Error(err, "error closing local file", "file", filePath)
-		}
-	}()
-
 	if err := ftp.MkdirAll(remoteDir); err != nil {
 		return errors.Wrapf(err, "error creating remote directory %s", remoteDir)
 	}
 
-	remoteFile := remoteDir + "\\" + filepath.Base(filePath)
+	remoteFile := remoteDir + "\\" + filename
 	dstFile, err := ftp.Create(remoteFile)
 	if err != nil {
 		return errors.Wrapf(err, "error initializing %s file on Windows VM", remoteFile)
 	}
 
-	_, err = io.Copy(dstFile, f)
+	_, err = io.Copy(dstFile, reader)
 	if err != nil {
-		return errors.Wrapf(err, "error copying %s to the Windows VM", filePath)
+		return errors.Wrapf(err, "error copying %s to the Windows VM", filename)
 	}
 
 	// Forcefully close the file so that we can execute it later in the case of binaries
