@@ -200,8 +200,11 @@ spec:
           resources:
           - nodes
           verbs:
-          - '*'
+          - delete
+          - get
           - list
+          - patch
+          - watch
         - apiGroups:
           - ""
           resources:
