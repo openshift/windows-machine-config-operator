@@ -45,6 +45,9 @@ const (
 	WorkerLabel = "node-role.kubernetes.io/worker"
 	// PubKeyHashAnnotation corresponds to the public key present on the VM
 	PubKeyHashAnnotation = "windowsmachineconfig.openshift.io/pub-key-hash"
+	// KubeletClientCAFilename is the name of the CA certificate file required by kubelet to interact
+	// with the kube-apiserver client
+	KubeletClientCAFilename = "kubelet-ca.crt"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
@@ -470,6 +473,22 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())
+	return nil
+}
+
+// UpdateKubeletClientCA updates the kubelet client CA certificate file in the Windows node. No service restart or
+// reboot required, kubelet detects the changes in the file system and use the new CA certificate. The file is replaced
+// if and only if it does not exist or there is a checksum mismatch.
+func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
+	// check CA bundle contents
+	if len(contents) == 0 {
+		// nothing do to, return
+		return nil
+	}
+	err := nc.Windows.EnsureFileContent(contents, KubeletClientCAFilename, windows.GetK8sDir())
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
