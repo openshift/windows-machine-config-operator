@@ -214,7 +214,8 @@ Cluster autoscaling is supported for Windows instances.
 - Define and deploy a [MachineAutoscaler](https://docs.openshift.com/container-platform/latest/machine_management/applying-autoscaling.html#configuring-machineautoscaler), referencing a Windows MachineSet.
 
 ### Container Runtime
-Windows instances brought up with WMCO are set up with the containerd container runtime.
+Windows instances brought up with WMCO are set up with the containerd container runtime. As WMCO installs and manages the container runtime,
+it is recommended not to preinstall containerd in MachineSet or BYOH Windows instances.
 
 ## Development
 
