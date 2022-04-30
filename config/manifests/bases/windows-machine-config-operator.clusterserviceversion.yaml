@@ -28,12 +28,13 @@ spec:
     Through either method, the Windows instance to be configured must have the Docker container runtime installed. The operator
     completes all the necessary steps to configure the underlying VM so that it can join the cluster as a worker node.
 
-    Usage of this operator requires a Red Hat OpenShift subscription. Users looking to deploy Windows containers workloads in
-    production clusters should acquire a subscription before attempting to install this operator. Users without a subscription
-    can try the community operator, a distribution which lacks official support.
+    Usage of this operator requires an OpenShift Container Platform for Windows Containers subscription. Users looking to
+    deploy Windows containers workloads in production clusters should acquire a subscription before attempting to
+    install this operator. Users without a subscription can try the community operator, a distribution which lacks
+    official support.
 
     ### Pre-requisites
-    * A Red Hat OpenShift subscription
+    * A Red Hat OpenShift Container Platform for Windows Containers subscription
     * OCP 4.9 cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
     * [WMCO prerequisites](https://docs.openshift.com/container-platform/4.9/windows_containers/understanding-windows-container-workloads.html#wmco-prerequisites__understanding-windows-container-workloads)
 
