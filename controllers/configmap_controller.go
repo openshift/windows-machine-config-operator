@@ -311,11 +311,7 @@ func (r *ConfigMapReconciler) deconfigureInstances(instances []*instance.Info, n
 		Namespace: r.watchNamespace}}
 	for _, node := range nodes.Items {
 		// Check for instances associated with this node
-		hasEntry, err := hasAssociatedInstance(node.Status.Addresses, instances)
-		if err != nil {
-			return errors.Wrapf(err, "unable to find instance associated with node %s", node.GetName())
-		}
-		if hasEntry {
+		if hasAssociatedInstance(node.Status.Addresses, instances) {
 			continue
 		}
 
@@ -331,30 +327,31 @@ func (r *ConfigMapReconciler) deconfigureInstances(instances []*instance.Info, n
 
 // hasAssociatedInstance returns true if any of the given addresses is associated with any instance in the given slice.
 // The instance's network address must be a valid IPv4 address or resolve to one.
-func hasAssociatedInstance(nodeAddresses []core.NodeAddress, instances []*instance.Info) (bool, error) {
+func hasAssociatedInstance(nodeAddresses []core.NodeAddress, instances []*instance.Info) bool {
 	for _, nodeAddress := range nodeAddresses {
 		for _, instanceInfo := range instances {
 			// Direct match node network address whether it is a DNS name or an IP address
 			if nodeAddress.Address == instanceInfo.Address || nodeAddress.Address == instanceInfo.IPv4Address {
-				return true, nil
+				return true
 			}
 		}
 		// Reverse lookup on node IP trying to find a match to an instance specified by DNS entry
 		if parseAddr := net.ParseIP(nodeAddress.Address); parseAddr != nil {
 			dnsAddresses, err := net.LookupAddr(nodeAddress.Address)
 			if err != nil {
-				return false, errors.Wrapf(err, "failed to lookup DNS for IP %s", nodeAddress.Address)
+				// skip node's address without reverse lookup records
+				continue
 			}
 			for _, dns := range dnsAddresses {
 				for _, instanceInfo := range instances {
 					if dns == instanceInfo.Address {
-						return true, nil
+						return true
 					}
 				}
 			}
 		}
 	}
-	return false, nil
+	return false
 }
 
 // mapToInstancesConfigMap fulfills the MapFn type, while always returning a request to the windows-instance ConfigMap
