@@ -91,7 +91,7 @@ build: fmt vet
 
 .PHONY: build-daemon
 build-daemon:
-	env GOOS=windows GOARCH=amd64 go build -o ${OUTPUT_DIR}/bin/windows-instance-config-daemon.exe cmd/daemon/main.go
+	env GOOS=windows GOARCH=amd64 go build -o ${OUTPUT_DIR}/bin/windows-instance-config-daemon.exe ./cmd/daemon
 
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run cmd/operator/main.go

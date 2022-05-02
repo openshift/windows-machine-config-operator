@@ -1,5 +1,5 @@
 /*
-Copyright 2021.
+Copyright 2022.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,24 +17,24 @@ limitations under the License.
 package main
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
 )
 
 var (
-	rootCmd = &cobra.Command{
-		Use:   "wicd.exe",
-		Short: "Windows Instance Config Daemon",
-		Long: "The Windows Instance Config Daemon performs multiple functions related to maintaining the expected " +
-			"state of a Windows Node.",
+	controllerCmd = &cobra.Command{
+		Use:   "controller",
+		Short: "Manages local Windows Services",
+		Long: "Manages the state of Windows Services, according to information given by Windows Service ConfigMaps " +
+			"present within the cluster",
+		Run: runControllerCmd,
 	}
 )
 
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		klog.Error(err)
-		os.Exit(1)
-	}
+func init() {
+	rootCmd.AddCommand(controllerCmd)
+}
+
+func runControllerCmd(cmd *cobra.Command, args []string) {
+	klog.Info("to be implemented")
 }
