@@ -115,6 +115,11 @@
                     <Description>Configure firewall rules</Description>
                     <CommandLine>cmd.exe /c powershell.exe -File a:\install-firewall-rules.ps1</CommandLine>
                 </SynchronousCommand>
+                <SynchronousCommand wcm:action="add">
+                    <Order>7</Order>
+                    <Description>Enable Windows Containers feature</Description>
+                    <CommandLine>cmd.exe /c powershell.exe -Command "Install-WindowsFeature -Name Containers"</CommandLine>
+                </SynchronousCommand>
             </FirstLogonCommands>
             <OOBE>
                 <HideEULAPage>true</HideEULAPage>
