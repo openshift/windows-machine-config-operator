@@ -35,7 +35,6 @@ bastion host and has the following files:
     - install-vm-tools.cmd
     - configure-vm-tools.ps1
     - install-openssh.ps1
-    - install-docker.ps1
     - install-firewall-rules.ps1
 
 The [authorized_keys](scripts/authorized_keys) file must contain a public key, where the private key 
@@ -48,7 +47,6 @@ The [autounattend.xml](scripts/autounattend.xml) file must be edited to update t
 - Runs `install-vm-tools.cmd` script which installs VMWare tools
 - Runs `configure-vm-tools.ps1` script which configures VMWare tools
 - Runs `install-openssh.ps1` script which installs and configures OpenSSH Server
-- Runs `install-docker.ps1` script which installs Docker
 - Runs `install-firewall-rules.ps1` script which configures the firewall rules
 
 The above [autounattend.xml](scripts/autounattend.xml) script is different from the [unattend.xml](../unattend.xml)

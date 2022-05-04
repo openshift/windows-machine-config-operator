@@ -115,11 +115,6 @@
                     <Description>Configure firewall rules</Description>
                     <CommandLine>cmd.exe /c powershell.exe -File a:\install-firewall-rules.ps1</CommandLine>
                 </SynchronousCommand>
-                <SynchronousCommand wcm:action="add">
-                    <Order>7</Order>
-                    <Description>Install Docker</Description>
-                    <CommandLine>cmd.exe /c powershell.exe -File a:\install-docker.ps1</CommandLine>
-                </SynchronousCommand>
             </FirstLogonCommands>
             <OOBE>
                 <HideEULAPage>true</HideEULAPage>
