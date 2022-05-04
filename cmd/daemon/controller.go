@@ -1,3 +1,5 @@
+//go:build windows
+
 /*
 Copyright 2022.
 
@@ -17,8 +19,12 @@ limitations under the License.
 package main
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
 )
 
 var (
@@ -29,12 +35,18 @@ var (
 			"present within the cluster",
 		Run: runControllerCmd,
 	}
+	kubeconfig string
 )
 
 func init() {
 	rootCmd.AddCommand(controllerCmd)
+	controllerCmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig")
 }
 
 func runControllerCmd(cmd *cobra.Command, args []string) {
-	klog.Info("to be implemented")
+	klog.Info("service controller running")
+	if err := controller.RunController(kubeconfig); err != nil {
+		klog.Error(err)
+		os.Exit(1)
+	}
 }
