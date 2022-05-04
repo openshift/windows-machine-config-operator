@@ -17,9 +17,16 @@ if [ -z "$KUBE_SSH_KEY_PATH" ]; then
 fi
 WICD_UNIT_EXE="wicd_unit.exe"
 # Build unit tests for Windows. Specifically targetting packages used by WICD.
-GOOS=windows GOFLAGS=-v go test -c ./pkg/daemon/winsvc/... -o $WICD_UNIT_EXE
+for dir in ./pkg/daemon/*/;do
+    package=$(basename $dir)
+    GOOS=windows GOFLAGS=-v go test -c $dir... -o ${package}_$WICD_UNIT_EXE
+done
 
 # Run the unit tests against the Windows host
-scp -o StrictHostKeyChecking=no -i $KUBE_SSH_KEY_PATH $WICD_UNIT_EXE $INSTANCE_USERNAME@$INSTANCE_ADDRESS:$WICD_UNIT_EXE
-ssh -o StrictHostKeyChecking=no -i $KUBE_SSH_KEY_PATH $INSTANCE_USERNAME@$INSTANCE_ADDRESS "$WICD_UNIT_EXE"
+for file in ./*_$WICD_UNIT_EXE; do
+    exe=$(basename $file)
+    echo running tests in $exe
+    scp -o StrictHostKeyChecking=no -i $KUBE_SSH_KEY_PATH $exe $INSTANCE_USERNAME@$INSTANCE_ADDRESS:$exe
+    ssh -o StrictHostKeyChecking=no -i $KUBE_SSH_KEY_PATH $INSTANCE_USERNAME@$INSTANCE_ADDRESS "$exe"
+done
 
