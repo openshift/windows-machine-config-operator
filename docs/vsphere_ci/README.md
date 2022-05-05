@@ -43,7 +43,8 @@ associated with this public key is what will be used by WMCO to configure VMs cr
 deploying WMCO, this private key will be provided by the user in the form of a Secret.
 
 The [autounattend.xml](scripts/autounattend.xml) file must be edited to update the value of 
-`WindowsPassword` with a user provided password. Then, it executes the following steps:
+`WindowsPassword` with a user provided password. The `ProductKey` must also be updated with a proper value.
+autounattend.xml specifies that the following steps should occur:
 
 - Runs `install-vm-tools.cmd` script which installs VMWare tools
 - Runs `configure-vm-tools.ps1` script which configures VMWare tools
@@ -98,6 +99,16 @@ To enable detailed logging:
 ```bash
   PACKER_LOG=1 packer build build.json
 ```
+
+### What to do during the Packer build
+
+During the golden image creation, it is highly recommended to establish access to the virtual machine by launching a
+Web Console through the vCenter web client. This can be done after the Packer build has powered on the VM (while it is
+*Waiting for IP...*).
+
+If the build halts and prompts for a product key during the Windows OS setup, manual intervention will be required.
+When accessing the vitual machine via Web Console, send a `Ctrl+Alt+Del` then tab over to `I don't have a product key`,
+and hit `Enter` on the keyboard. This should start the OS setup as intended.
 
 ## What actually happens during build
 

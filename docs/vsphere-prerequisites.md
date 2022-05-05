@@ -5,7 +5,7 @@ the following pre-requisites are required:
 
 * The vSphere cluster must be configured with [hybrid OVN Kubernetes networking with a custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vSphere)
   to work around the pod-to-pod connectivity between hosts [issue](https://docs.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems#pod-to-pod-connectivity-between-hosts-is-broken-on-my-kubernetes-cluster-running-on-vsphere)
-* Set up a [Windows Server Semi-Annual Channel (SAC): Windows Server 2004 VM golden image](vsphere-golden-image.md)
+* Set up a [VM golden image with a compatible Windows Server version](vsphere-golden-image.md#1-select-a-compatible-windows-server-version).
 * Add a [DNS entry](#adding-a-dns-entry-in-vsphere-environment) for the internal API endpoint in the vSphere environment
 
 Alternatively, a programmatic approach for the creation of the Windows VM golden image can be found [here.](vsphere_ci/README.md)
