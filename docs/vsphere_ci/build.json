@@ -18,7 +18,7 @@
   ],
   "provisioners": [
     {
-      "pause_before": "3m",
+      "pause_before": "10m",
       "inline": [
         "ipconfig"
       ],
@@ -47,7 +47,8 @@
         "scripts/install-vm-tools.cmd",
         "scripts/configure-vm-tools.ps1",
         "scripts/install-openssh.ps1",
-        "scripts/install-firewall-rules.ps1"
+        "scripts/install-firewall-rules.ps1",
+        "scripts/install-kb5012637.ps1"
       ],
       "vm_version": 15,
       "guest_os_type": "windows9Server64Guest",
