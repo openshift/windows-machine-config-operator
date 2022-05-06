@@ -67,9 +67,9 @@ $ oc adm node-logs -l kubernetes.io/os=windows --path=/kubelet/kubelet.log
 ## How to collect Windows application event logs
 
 The Get-WinEvent shim on the kubelet logs endpoint can be used to collect application event logs from Windows machines.
-E.g. for the docker runtime service:
+E.g. getting logs for any given service:
 ```shell script
-$ oc adm node-logs -l kubernetes.io/os=windows --path=journal -u docker
+$ oc adm node-logs -l kubernetes.io/os=windows --path=journal -u <LOG_NAME>
 ```
 The same command is executed when collecting logs with `oc adm must-gather`.
 
@@ -79,14 +79,14 @@ To view logs from all applications logging to the event logs on the Windows mach
 $ oc adm node-logs -l kubernetes.io/os=windows --path=journal
 ```
 
-Alternatively, the Docker event logs can be viewed using SSH with the following steps:
+Alternatively, any service event logs can be viewed using SSH with the following steps:
 * SSH into the Windows node and enter PowerShell:
   ```powershell
   <username>@<node-name> C:\Users\username> powershell
   ```
-* Now you can view the Docker logs by executing:
+* Now you can view any service logs by executing:
   ```powershell
-  PS C:\Users\username> Get-EventLog -LogName Application -Source Docker
+  PS C:\Users\username> Get-EventLog -LogName Application -Source ServiceName
   ```
 
 ## How to collect a packet trace on Windows nodes
@@ -104,5 +104,4 @@ Alternatively, the Docker event logs can be viewed using SSH with the following 
 ## External troubleshooting references
 * [Containers on Windows troubleshooting](https://docs.microsoft.com/en-us/virtualization/windowscontainers/troubleshooting)
 * [Troubleshoot host and container image mismatches](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/update-containers#troubleshoot-host-and-container-image-mismatches)
-* [Docker for Windows troubleshooting](https://docs.docker.com/docker-for-windows/troubleshoot/)
 * [Common Kubernetes problems wrt Windows](https://docs.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems)
