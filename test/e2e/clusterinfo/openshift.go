@@ -69,7 +69,10 @@ func GetOpenShift() (*OpenShift, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	c, err := client.New(rc, client.Options{})
+	if err != nil {
+		return nil, err
+	}
 	return &OpenShift{
 		Config:     cc,
 		Operator:   oc,
@@ -78,6 +81,7 @@ func GetOpenShift() (*OpenShift, error) {
 		Route:      routec,
 		K8s:        kc,
 		Images:     ic,
+		Cache:      c,
 	}, nil
 }
 
