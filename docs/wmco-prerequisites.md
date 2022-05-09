@@ -18,11 +18,13 @@ applicable cloud provider.
 Note: Any unlisted Windows Server version are NOT supported, and will cause errors. To prevent 
 these errors, only use the appropriate version according to the cloud provider in use. 
 
-| Cloud Provider | Supported Windows Server version                                       |
-|----------------|------------------------------------------------------------------------|
-| AWS            | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019 |
-| Azure          | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019 |
-| VMware vSphere | Windows Server Semi-Annual Channel (SAC): Windows Server 20H2          |
+| Cloud Provider | Supported Windows Server version                                                     |
+|----------------|--------------------------------------------------------------------------------------|
+| AWS            | Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)                 |
+| Azure          | Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)                 |
+| VMware vSphere | - Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 20H2 Semi-Annual Channel (SAC) |
+
+*Please note that the Windows Server 2022 image must contain the OS-level container networking patch [KB5012637](https://support.microsoft.com/en-us/topic/april-25-2022-kb5012637-os-build-20348-681-preview-2233d69c-d4a5-4be9-8c24-04a450861a8d).*
 
 ## Supported Networking
 [OVNKubernetes hybrid networking](setup-hybrid-OVNKubernetes-cluster.md) is the only supported networking configuration.
@@ -39,10 +41,10 @@ Note:
 | Azure          | Hybrid OVNKubernetes                                                                           |
 | VMware vSphere | Hybrid OVNKubernetes with a [Custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vsphere) |
 
-| Hybrid OVNKubernetes | Supported Windows Server version                                       |
-|----------------------|------------------------------------------------------------------------|
-| Default VXLAN port   | Windows Server Long-Term Servicing Channel (LTSC): Windows Server 2019 |
-| Custom VXLAN port    | Windows Server Semi-Annual Channel (SAC): Windows Server 20H2          |
+| Hybrid OVNKubernetes | Supported Windows Server version                                                     |
+|----------------------|--------------------------------------------------------------------------------------|
+| Default VXLAN port   | Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)                 |
+| Custom VXLAN port    | - Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 20H2 Semi-Annual Channel (SAC) |
 
 ## Supported Installation method
 * Installer-Provisioned Infrastructure installation method is the only supported installation method. This is 

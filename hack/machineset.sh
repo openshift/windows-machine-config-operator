@@ -185,7 +185,7 @@ get_vsphere_ms() {
 
   # set golden image template name
   # TODO: read from parameter
-  template="windows-golden-images/windows-server-2022-template-networkHotfix"
+  template="windows-golden-images/windows-server-2022-template"
 
   # TODO: Reduce the number of API calls, make just one call
   #       to `oc get machines` and pass the data around. This is the
