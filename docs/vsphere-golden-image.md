@@ -4,13 +4,12 @@ This guide describes the thought process of creating a Windows virtual machine b
 
 ## 1. Select a compatible Windows Server version
 
-Currently, the Windows Machine Config Operator (WMCO) stable version only supports Windows Server Semi-Annual
-Channel (SAC): Windows Server 2004, that includes the patch [KB4565351](https://support.microsoft.com/en-us/help/4565351/windows-10-update-kb4565351), 
-required by the operating system to allow using the [hybrid OVN Kubernetes networking with a 
-custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vSphere) feature.
+Currently, the Windows Machine Config Operator (WMCO) stable version supports:
+* Windows Server 2022 Long-Term Servicing Channel (must contain the OS-level container networking patch [KB5012637](https://support.microsoft.com/en-us/topic/april-25-2022-kb5012637-os-build-20348-681-preview-2233d69c-d4a5-4be9-8c24-04a450861a8d))
+* Windows Server 20H2 Semi-Annual Channel
 
-*Please note that Windows Server Long-Term Servicing Channel (LTSC): Windows Server 1809 cannot be used, since 
-the patch is not available.*
+*Please note that Windows Server 2019 is unsupported, as patch [KB4565351](https://support.microsoft.com/en-us/help/4565351/windows-10-update-kb4565351)
+is not included. This is a requirement of the [hybrid OVN Kubernetes networking with a custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vSphere) feature.*
 
 ## 2. Create the virtual machine
 
@@ -111,7 +110,20 @@ on TCP port `10250` by running the following PowerShell command:
     New-NetFirewallRule -DisplayName "ContainerLogsPort" -LocalPort 10250 -Enabled True -Direction Inbound -Protocol TCP -Action Allow -EdgeTraversalPolicy Allow
 ```
 
-## 6. Generalize the virtual machine installation
+## 6. Install OS-level container networking patch KB5012637 
+
+Download the patch files from the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com/Search.aspx?q=KB5012637).
+Then, install the patch. Windows Command Prompt example:
+* `wusa.exe C:\PATH-TO-UPDATE\windows10.0-kb5012637-x64.msu /quiet /norestart`
+
+Alternatively, you can use the PowerShell script [install-kb5012637.ps1](vsphere_ci/scripts/install-kb5012637.ps1) to 
+programmatically download and install the required patch:
+
+```powershell
+    ./install-kb5012637.ps1
+```
+
+## 7. Generalize the virtual machine installation
 
 To deploy the Windows VM as a reusable image, you have to first generalize the VM removing computer-specific information 
 such as installed drivers. Running the `sysprep` command with a *unattend* answer file generalizes the image and 
@@ -138,7 +150,7 @@ where `<path/to/unattend.xml>` is the path to the customized answer file.
 Note: There is [a limit](https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/sysprep--generalize--a-windows-installation#limits-on-how-many-times-you-can-run-sysprep)
 on how many times you can run the `sysprep` command.
 
-## 7. Set up the virtual machine template
+## 8. Set up the virtual machine template
 
 Once the `sysprep` command completes the Windows virtual machine will power off. 
 
@@ -150,7 +162,7 @@ Next, you need to convert this virtual machine, in Power-Off status, to a Templa
 |:---|
 |Figure 1. Steps to convert a VM to Template in vCenter|
 
-## 8. Using the virtual machine template
+## 9. Using the virtual machine template
 
 In order to use the recently created template, enter the template name in the [machineset](../README.md#configuring-windows-instances-provisioned-through-machinesets).
 
