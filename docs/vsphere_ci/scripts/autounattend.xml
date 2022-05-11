@@ -123,11 +123,6 @@
                     <Description>Install Windows Patch KB5012637</Description>
                     <CommandLine>cmd.exe /c powershell.exe -File a:\install-kb5012637.ps1</CommandLine>
                 </SynchronousCommand>
-                <SynchronousCommand wcm:action="add">
-                    <Order>8</Order>
-                    <Description>Enable Windows Containers feature</Description>
-                    <CommandLine>cmd.exe /c powershell.exe -Command "Install-WindowsFeature -Name Containers"</CommandLine>
-                </SynchronousCommand>
             </FirstLogonCommands>
             <OOBE>
                 <HideEULAPage>true</HideEULAPage>

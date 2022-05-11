@@ -94,16 +94,7 @@ In case no firewall rule exist, you must create it by running the following Powe
     New-NetFirewallRule -DisplayName 'OpenSSH Server (sshd)' -LocalPort 22 -Enabled True -Direction Inbound -Protocol TCP -Action Allow 
 ```
 
-## 4. Enable Containers feature on the Windows OS
-
-Explicitly enable the optional `Containers` feature on the Windows OS. This feature is not turned on by default on 
-Windows Server 2022. 
-
-```powershell
- Install-WindowsFeature -Name Containers
-```
-
-## 5. Set up incoming connection for container logs
+## 4. Set up incoming connection for container logs
 
 Create a new firewall rule in the Windows VM to allow incoming connections for container logs, usually 
 on TCP port `10250` by running the following PowerShell command:
@@ -112,7 +103,7 @@ on TCP port `10250` by running the following PowerShell command:
     New-NetFirewallRule -DisplayName "ContainerLogsPort" -LocalPort 10250 -Enabled True -Direction Inbound -Protocol TCP -Action Allow -EdgeTraversalPolicy Allow
 ```
 
-## 6. Install OS-level container networking patch KB5012637 
+## 5. Install OS-level container networking patch KB5012637 
 
 Download the patch files from the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com/Search.aspx?q=KB5012637).
 Then, install the patch. Windows Command Prompt example:
@@ -125,7 +116,7 @@ programmatically download and install the required patch:
     ./install-kb5012637.ps1
 ```
 
-## 7. Generalize the virtual machine installation
+## 6. Generalize the virtual machine installation
 
 To deploy the Windows VM as a reusable image, you have to first generalize the VM removing computer-specific information 
 such as installed drivers. Running the `sysprep` command with a *unattend* answer file generalizes the image and 
@@ -152,7 +143,7 @@ where `<path/to/unattend.xml>` is the path to the customized answer file.
 Note: There is [a limit](https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/sysprep--generalize--a-windows-installation#limits-on-how-many-times-you-can-run-sysprep)
 on how many times you can run the `sysprep` command.
 
-## 8. Set up the virtual machine template
+## 7. Set up the virtual machine template
 
 Once the `sysprep` command completes the Windows virtual machine will power off. 
 
@@ -164,7 +155,7 @@ Next, you need to convert this virtual machine, in Power-Off status, to a Templa
 |:---|
 |Figure 1. Steps to convert a VM to Template in vCenter|
 
-## 9. Using the virtual machine template
+## 8. Using the virtual machine template
 
 In order to use the recently created template, enter the template name in the [machineset](../README.md#configuring-windows-instances-provisioned-through-machinesets).
 
