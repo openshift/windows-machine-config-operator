@@ -3,10 +3,10 @@
 package winsvc
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 
+	"github.com/pkg/errors"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 )
@@ -156,6 +156,9 @@ func (f *FakeService) Close() error {
 }
 
 func (f *FakeService) Start(_ ...string) error {
+	if f.status.State == svc.Running {
+		return errors.New("service already running")
+	}
 	f.status.State = svc.Running
 	return nil
 }
@@ -167,6 +170,9 @@ func (f *FakeService) Config() (mgr.Config, error) {
 func (f *FakeService) Control(cmd svc.Cmd) (svc.Status, error) {
 	switch cmd {
 	case svc.Stop:
+		if f.status.State == svc.Stopped {
+			return svc.Status{}, errors.New("service already stopped")
+		}
 		f.status.State = svc.Stopped
 	}
 	return f.status, nil
@@ -207,4 +213,24 @@ func NewTestMgr(existingServices map[string]*FakeService) *testMgr {
 		}
 	}
 	return testMgr
+}
+
+// EnsureServiceState ensures the service is in the given state
+func EnsureServiceState(service Service, state svc.State) error {
+	status, err := service.Query()
+	if err != nil {
+		return errors.Wrap(err, "error querying service state")
+	}
+	if status.State == state {
+		return nil
+	}
+	switch state {
+	case svc.Running:
+		return service.Start()
+	case svc.Stopped:
+		_, err = service.Control(svc.Stop)
+		return err
+	default:
+		return errors.New("unexpected state request")
+	}
 }

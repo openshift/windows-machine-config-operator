@@ -194,8 +194,8 @@ func (sc *ServiceController) reconcileService(service winsvc.Service, expected s
 	}
 
 	if updateRequired {
-		// Always stop the service before updating its config, just to be safe
-		if _, err := service.Control(svc.Stop); err != nil {
+		// Always ensure the service isn't running before updating its config, just to be safe
+		if err := winsvc.EnsureServiceState(service, svc.Stopped); err != nil {
 			return err
 		}
 		err = service.UpdateConfig(config)
@@ -203,9 +203,8 @@ func (sc *ServiceController) reconcileService(service winsvc.Service, expected s
 			return errors.Wrap(err, "error updating service config")
 		}
 	}
-
 	// always ensure service is started
-	return service.Start()
+	return winsvc.EnsureServiceState(service, svc.Running)
 }
 
 // expectedServiceCommand returns the full command that the given service should run with
