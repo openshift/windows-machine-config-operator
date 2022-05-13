@@ -1050,9 +1050,10 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 
 // rebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
 func (vm *windows) rebootAndReinitialize() error {
-	if _, err := vm.Run("Restart-Computer -Force", true); err != nil {
+	if _, err := vm.Run("Restart-Computer", true); err != nil {
 		return errors.Wrapf(err, "error rebooting the Windows VM")
 	}
+
 	// Reinitialize the SSH connection after the VM reboot
 	if err := vm.Reinitialize(); err != nil {
 		return errors.Wrap(err, "error reinitializing SSH connection after VM reboot")
