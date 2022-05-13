@@ -11,3 +11,6 @@ The following pre-requisites must be fulfilled in order to add a Windows BYOH no
   * End with an alphanumeric character.
 * A PTR record must exist corresponding to the instance address which resolves to the instance hostname for successful reverse DNS lookups.
 * Containerd should not be installed. If it is installed already, it is recommended to uninstall as WMCO installs and manages containerd.
+* If the instance uses a static IP, and the instance is *not* running Windows Server 2022, deviceless NICs must be disabled
+  * This can be done by running the following in PowerShell:
+    `New-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Services\hns\State -Name DeviceLessNicDisabled -PropertyType DWORD -Value 1`
