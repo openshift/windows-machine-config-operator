@@ -35,21 +35,22 @@ bastion host and has the following files:
     - install-vm-tools.cmd
     - configure-vm-tools.ps1
     - install-openssh.ps1
-    - install-docker.ps1
     - install-firewall-rules.ps1
+    - install-kb5012637.ps1
 
 The [authorized_keys](scripts/authorized_keys) file must contain a public key, where the private key 
 associated with this public key is what will be used by WMCO to configure VMs created from Windows VM. After 
 deploying WMCO, this private key will be provided by the user in the form of a Secret.
 
 The [autounattend.xml](scripts/autounattend.xml) file must be edited to update the value of 
-`WindowsPassword` with a user provided password. Then, it executes the following steps:
+`WindowsPassword` with a user provided password. The `ProductKey` must also be updated with a proper value.
+autounattend.xml specifies that the following steps should occur:
 
 - Runs `install-vm-tools.cmd` script which installs VMWare tools
 - Runs `configure-vm-tools.ps1` script which configures VMWare tools
 - Runs `install-openssh.ps1` script which installs and configures OpenSSH Server
-- Runs `install-docker.ps1` script which installs Docker
 - Runs `install-firewall-rules.ps1` script which configures the firewall rules
+- Runs `install-kb5012637.ps1` script which installs a required Windows OS-level container networking patch
 
 The above [autounattend.xml](scripts/autounattend.xml) script is different from the [unattend.xml](../unattend.xml)
 as this script does Windows OS installation as well.
@@ -99,6 +100,16 @@ To enable detailed logging:
   PACKER_LOG=1 packer build build.json
 ```
 
+### What to do during the Packer build
+
+During the golden image creation, it is highly recommended to establish access to the virtual machine by launching a
+Web Console through the vCenter web client. This can be done after the Packer build has powered on the VM (while it is
+*Waiting for IP...*).
+
+If the build halts and prompts for a product key during the Windows OS setup, manual intervention will be required.
+When accessing the virtual machine via Web Console, send a `Ctrl+Alt+Del` then tab over to `I don't have a product key`,
+and hit `Enter` on the keyboard. This should start the OS setup as intended.
+
 ## What actually happens during build
 
 Packer mounts the Windows iso and starts the VM. 
@@ -111,7 +122,7 @@ VM starts. You can specify all the commands that needs to executed on first boot
 
 Once the Packer build completes successfully, a new VM template with name `<vm-template-name>` will be created in
 the folder `<vm-template-folder>` following the [Variables](#variables). The later VM template is ready to use as a
-golden image, as described in [the documentation](../vsphere-golden-image.md#8-using-the-virtual-machine-template).
+golden image, as described in [the documentation](../vsphere-golden-image.md#9-using-the-virtual-machine-template).
 
 ## References
 - [Sample autounattend](https://github.com/guillermo-musumeci/packer-vsphere-iso-windows/blob/master/win2019.base/win2019.base.json)
