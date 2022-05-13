@@ -95,6 +95,8 @@ const (
 	// ManagedTag indicates that the service being described is managed by OpenShift. This ensures that all services
 	// created as part of Node configuration can be searched for by checking their description for this string
 	ManagedTag = "OpenShift managed"
+	// containersFeatureName is the name of the Windows feature that is required to be enabled on the Windows instance.
+	containersFeatureName = "Containers"
 )
 
 var (
@@ -422,11 +424,8 @@ func (vm *windows) Configure() error {
 	if err := vm.EnsureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop all services")
 	}
-	// Set the hostName of the Windows VM if needed
-	if vm.instance.NewHostname != "" {
-		if err := vm.ensureHostName(); err != nil {
-			return err
-		}
+	if err := vm.ensureHostNameAndContainersFeature(); err != nil {
+		return err
 	}
 	if err := vm.createDirectories(); err != nil {
 		return errors.Wrap(err, "error creating directories on Windows VM")
@@ -602,17 +601,41 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 
 // Interface helper methods
 
-// ensureHostName ensures hostname of the Windows VM matches the expected name
-func (vm *windows) ensureHostName() error {
-	hostNameChangedNeeded, err := vm.isHostNameChangeNeeded()
+// ensureHostNameAndContainersFeature ensures hostname of the Windows VM matches the expected name
+// and the required Windows feature is enabled.
+func (vm *windows) ensureHostNameAndContainersFeature() error {
+	rebootNeeded := false
+	// Set the hostName of the Windows VM if needed
+	if vm.instance.NewHostname != "" {
+		hostNameChangedNeeded, err := vm.isHostNameChangeNeeded()
+		if err != nil {
+			return err
+		}
+		if hostNameChangedNeeded {
+			if err := vm.changeHostName(); err != nil {
+				return err
+			}
+			rebootNeeded = true
+		}
+	}
+	isContainersFeatureEnabled, err := vm.isContainersFeatureEnabled()
 	if err != nil {
 		return err
 	}
-	if hostNameChangedNeeded {
-		if err := vm.changeHostName(); err != nil {
-			return err
+	if !isContainersFeatureEnabled {
+		if err := vm.enableContainersWindowsFeature(); err != nil {
+			return errors.Wrapf(err, "error enabling Windows Containers feature")
+		}
+		rebootNeeded = true
+	}
+	// Changing the host name or enabling the Containers feature requires a VM restart for
+	// the change to take effect.
+	if rebootNeeded {
+		if err := vm.rebootAndReinitialize(); err != nil {
+			return errors.Wrapf(err, "error restarting the Windows instance and reinitializing SSH connection")
 		}
 	}
+
 	return nil
 }
 
@@ -627,15 +650,11 @@ func (vm *windows) isHostNameChangeNeeded() (bool, error) {
 
 // changeHostName changes the hostName of the Windows VM to match the expected value
 func (vm *windows) changeHostName() error {
-	changeHostNameCommand := "Rename-Computer -NewName " + vm.instance.NewHostname + " -Force -Restart"
+	changeHostNameCommand := "Rename-Computer -NewName " + vm.instance.NewHostname + " -Force"
 	out, err := vm.Run(changeHostNameCommand, true)
 	if err != nil {
 		vm.log.Info("changing host name failed", "command", changeHostNameCommand, "output", out)
 		return errors.Wrap(err, "changing host name failed")
-	}
-	// Reinitialize the SSH connection given changing the host name requires a VM restart
-	if err := vm.Reinitialize(); err != nil {
-		return errors.Wrap(err, "error reinitializing VM after changing hostname")
 	}
 	return nil
 }
@@ -1004,6 +1023,39 @@ func (vm *windows) removeHNSNetwork(networkName string) error {
 	// PowerShell returns error waiting without exit status or signal error when the OVNKubeOverlayNetwork is removed.
 	if out, err := vm.Run(cmd, true); err != nil && !(networkName == OVNKubeOverlayNetwork && strings.Contains(err.Error(), cmdExitNoStatus)) {
 		return errors.Wrapf(err, "failed to remove %s HNS network with output: %s", networkName, out)
+	}
+	return nil
+}
+
+// enableContainersWindowsFeature enables the required Windows Containers feature on the Windows instance.
+func (vm *windows) enableContainersWindowsFeature() error {
+	command := "Install-WindowsFeature -Name " + containersFeatureName
+	out, err := vm.Run(command, true)
+	if err != nil {
+		return errors.Wrapf(err, "failed to enable required Windows feature: %s with output: %s",
+			containersFeatureName, out)
+	}
+	return nil
+}
+
+// isContainersFeatureEnabled returns true if the required Containers Windows feature is enabled on the Windows instance
+func (vm *windows) isContainersFeatureEnabled() (bool, error) {
+	command := "Get-WindowsOptionalFeature -FeatureName " + containersFeatureName + " -Online"
+	out, err := vm.Run(command, true)
+	if err != nil {
+		return false, errors.Wrapf(err, "failed to get Windows feature: %s", containersFeatureName)
+	}
+	return strings.Contains(out, "Enabled"), nil
+}
+
+// rebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
+func (vm *windows) rebootAndReinitialize() error {
+	if _, err := vm.Run("Restart-Computer -Force", true); err != nil {
+		return errors.Wrapf(err, "error rebooting the Windows VM")
+	}
+	// Reinitialize the SSH connection after the VM reboot
+	if err := vm.Reinitialize(); err != nil {
+		return errors.Wrap(err, "error reinitializing SSH connection after VM reboot")
 	}
 	return nil
 }
