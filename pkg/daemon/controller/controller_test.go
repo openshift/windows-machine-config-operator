@@ -3,6 +3,8 @@
 package controller
 
 import (
+	"context"
+	"errors"
 	"net"
 	"testing"
 
@@ -12,6 +14,9 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
@@ -94,7 +99,7 @@ func TestResolveNodeVariables(t *testing.T) {
 					Labels:      test.nodeLabels,
 				},
 			}).Build()
-			c := NewServiceController(fakeClient, winsvc.NewTestMgr(nil), test.nodeName)
+			c := NewServiceController(context.TODO(), fakeClient, winsvc.NewTestMgr(nil), test.nodeName)
 			actual, err := c.resolveNodeVariables(test.service)
 			if test.expectErr {
 				require.Error(t, err)
@@ -201,7 +206,7 @@ func TestReconcileService(t *testing.T) {
 			}).Build()
 
 			winSvcMgr := winsvc.NewTestMgr(map[string]*winsvc.FakeService{"fakeservice": test.service})
-			c := NewServiceController(fakeClient, winSvcMgr, "node")
+			c := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "node")
 			err := c.reconcileService(test.service, test.expectedService)
 			if test.expectErr {
 				assert.Error(t, err)
@@ -217,6 +222,138 @@ func TestReconcileService(t *testing.T) {
 	}
 }
 
+func TestReconcile(t *testing.T) {
+	testIO := []struct {
+		name                         string
+		existingServices             map[string]*winsvc.FakeService
+		configMapServices            []servicescm.Service
+		expectedServicesNameCmdPairs map[string]string
+		expectErr                    bool
+	}{
+		{
+			name:                         "No services",
+			configMapServices:            []servicescm.Service{},
+			expectedServicesNameCmdPairs: map[string]string{},
+			expectErr:                    false,
+		},
+		{
+			name: "Single service",
+			configMapServices: []servicescm.Service{
+				{
+					Name:    "test1",
+					Command: "test1 --node-name=NODENAME",
+					NodeVariablesInCommand: []servicescm.NodeCmdArg{{
+						Name:               "NODENAME",
+						NodeObjectJsonPath: "{.metadata.name}",
+					}},
+					Dependencies: nil,
+					Bootstrap:    true,
+					Priority:     0,
+				},
+			},
+			expectedServicesNameCmdPairs: map[string]string{"test1": "test1 --node-name=node"},
+			expectErr:                    false,
+		},
+		{
+			name: "Single service that needs to be updated",
+			existingServices: map[string]*winsvc.FakeService{"test1": winsvc.NewFakeService("test1",
+				mgr.Config{BinaryPathName: "badvalue"}, svc.Status{State: svc.Running})},
+			configMapServices: []servicescm.Service{
+				{
+					Name:         "test1",
+					Command:      "test1 arg1",
+					Dependencies: nil,
+					Bootstrap:    true,
+					Priority:     0,
+				},
+			},
+			expectedServicesNameCmdPairs: map[string]string{"test1": "test1 arg1"},
+			expectErr:                    false,
+		},
+		{
+			name: "Multiple services",
+			configMapServices: []servicescm.Service{
+				{
+					Name:         "test1",
+					Command:      "test1 arg1",
+					Dependencies: nil,
+					Bootstrap:    true,
+					Priority:     0,
+				},
+				{
+					Name:         "test2",
+					Command:      "test2 arg1 arg2",
+					Dependencies: nil,
+					Bootstrap:    false,
+					Priority:     1,
+				},
+			},
+			expectedServicesNameCmdPairs: map[string]string{"test1": "test1 arg1", "test2": "test2 arg1 arg2"},
+			expectErr:                    false,
+		},
+	}
+	for _, test := range testIO {
+		t.Run(test.name, func(t *testing.T) {
+			desiredVersion := "testversion"
+			clusterObjs := []client.Object{
+				// This is the node object that will be used in these test cases
+				&core.Node{
+					ObjectMeta: meta.ObjectMeta{
+						Name:        "node",
+						Annotations: map[string]string{desiredVersionAnnotation: desiredVersion},
+					},
+				},
+			}
+			// This ConfigMap's name must match with the given Node object's desired-version annotation
+			cm, err := servicescm.GenerateWithData(servicescm.NamePrefix+desiredVersion, "openshift-windows-machine-config-operator", &test.configMapServices, &[]servicescm.FileInfo{})
+			require.NoError(t, err)
+			clusterObjs = append(clusterObjs, cm)
+			fakeClient := fake.NewClientBuilder().WithObjects(clusterObjs...).Build()
+
+			winSvcMgr := winsvc.NewTestMgr(test.existingServices)
+			c := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "node")
+			_, err = c.Reconcile(context.TODO(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "node"}})
+			if test.expectErr {
+				assert.Error(t, err)
+				return
+			}
+			createdServices, err := getAllFakeServices(winSvcMgr)
+			require.NoError(t, err)
+
+			// Specifically testing that the name/command is as expected
+			createdServiceNameCmdPairs := make(map[string]string)
+			for name, createdService := range createdServices {
+				config, err := createdService.Config()
+				require.NoError(t, err)
+				createdServiceNameCmdPairs[name] = config.BinaryPathName
+			}
+			assert.Equal(t, test.expectedServicesNameCmdPairs, createdServiceNameCmdPairs)
+		})
+	}
+}
+
+// getAllFakeServices accepts a mocked Windows service manager, and returns a map of copies of all existing Windows
+// services
+func getAllFakeServices(svcMgr winsvc.Mgr) (map[string]winsvc.FakeService, error) {
+	svcs, err := svcMgr.ListServices()
+	if err != nil {
+		return nil, err
+	}
+	fakeServices := make(map[string]winsvc.FakeService)
+	for _, winServiceName := range svcs {
+		winService, err := svcMgr.OpenService(winServiceName)
+		if err != nil {
+			return nil, err
+		}
+		fakeService, ok := winService.(*winsvc.FakeService)
+		if !ok {
+			return nil, errors.New("this function should only be ran against a fake service manager")
+		}
+		fakeServices[winServiceName] = *fakeService
+	}
+	return fakeServices, nil
+}
+
 type fakeAddress struct {
 	addr string
 }
@@ -228,7 +365,8 @@ func (a *fakeAddress) Network() string {
 	return "fake"
 
 }
-func TestCurrentNode(t *testing.T) {
+
+func TestFindNodeByAddress(t *testing.T) {
 	testIO := []struct {
 		name      string
 		nodes     *core.NodeList
@@ -312,7 +450,7 @@ func TestCurrentNode(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			actual, err := currentNode(test.nodes, test.addrs)
+			actual, err := findNodeByAddress(test.nodes, test.addrs)
 			if test.expectErr {
 				assert.Error(t, err)
 				return
