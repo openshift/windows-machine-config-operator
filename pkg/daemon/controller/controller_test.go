@@ -322,3 +322,50 @@ func TestCurrentNode(t *testing.T) {
 		})
 	}
 }
+
+func TestSlicesEquivalent(t *testing.T) {
+	testIO := []struct {
+		name     string
+		slice1   []string
+		slice2   []string
+		expected bool
+	}{
+		{
+			name:     "empty slices",
+			slice1:   []string{},
+			slice2:   []string{},
+			expected: true,
+		},
+		{
+			name:     "nil slices",
+			slice1:   nil,
+			slice2:   nil,
+			expected: true,
+		},
+		{
+			name:     "one empty and one nil slice",
+			slice1:   []string{},
+			slice2:   nil,
+			expected: true,
+		},
+		{
+			name:     "same contents",
+			slice1:   []string{"foo"},
+			slice2:   []string{"foo"},
+			expected: true,
+		},
+		{
+			name:     "different contents",
+			slice1:   []string{"foo"},
+			slice2:   nil,
+			expected: false,
+		},
+	}
+	for _, test := range testIO {
+		t.Run(test.name, func(t *testing.T) {
+			actual := slicesEquivalent(test.slice1, test.slice2)
+			assert.Equal(t, test.expected, actual)
+		})
+	}
+
+}

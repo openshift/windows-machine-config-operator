@@ -188,7 +188,7 @@ func (sc *ServiceController) reconcileService(service winsvc.Service, expected s
 		updateRequired = true
 	}
 
-	if !reflect.DeepEqual(config.Dependencies, expected.Dependencies) {
+	if !slicesEquivalent(config.Dependencies, expected.Dependencies) {
 		config.Dependencies = expected.Dependencies
 		updateRequired = true
 	}
@@ -307,4 +307,15 @@ func currentNode(nodes *core.NodeList, localAddrs []net.Addr) (*core.Node, error
 		}
 	}
 	return nil, errors.New("unable to find associated node")
+}
+
+// slicesEquivalent returns true if the slices have the same content, or if they both have no content
+func slicesEquivalent(s1, s2 []string) bool {
+	// reflect.DeepEqual considers a nil slice not equal to an empty slice, so we need to include an extra check
+	// to see if they both length zero, one being nil, and one being empty
+	if len(s1) == len(s2) && len(s1) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(s1, s2)
+
 }
