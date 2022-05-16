@@ -542,16 +542,7 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniConfDir)
 	}
 
-	cniConfigDest := cniConfDir + filepath.Base(configFile)
-	// run the configure-cni command on the Windows VM
-	configureCNICmd := k8sDir + "wmcb.exe configure-cni --cni-dir=" + cniDir + " --cni-config=" + cniConfigDest
-
-	out, err := vm.Run(configureCNICmd, true)
-	if err != nil {
-		return errors.Wrap(err, "CNI configuration failed")
-	}
-
-	vm.log.Info("configured kubelet for CNI", "cmd", configureCNICmd, "output", out)
+	vm.log.Info("CNI config file created and copied")
 	return nil
 }
 

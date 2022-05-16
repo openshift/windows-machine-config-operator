@@ -338,10 +338,11 @@ func (nc *nodeConfig) configureNetwork() error {
 			nc.node.GetName())
 	}
 
-	// Configure CNI in the Windows VM
+	// Populate CNI config file from template
 	if err := nc.configureCNI(); err != nil {
 		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
 	}
+
 	// Start the kube-proxy service
 	if err := nc.Windows.ConfigureKubeProxy(nc.node.GetName(), nc.node.Annotations[HybridOverlaySubnet]); err != nil {
 		return errors.Wrapf(err, "error starting kube-proxy for %s", nc.node.GetName())
@@ -419,7 +420,7 @@ func (nc *nodeConfig) configureCNI() error {
 	if err != nil {
 		return errors.Wrapf(err, "error populating CNI config file %s", configFile)
 	}
-	// configure CNI in the Windows VM
+	// Populate CNI config file
 	if err = nc.Windows.ConfigureCNI(configFile); err != nil {
 		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
 	}
