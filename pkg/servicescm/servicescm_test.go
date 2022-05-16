@@ -471,3 +471,17 @@ func TestValidatePriorities(t *testing.T) {
 		})
 	}
 }
+
+func TestEncodeDecode(t *testing.T) {
+	expectedData := &data{
+		Services: []Service{{Name: "test-service", Command: "test-command"}},
+		Files:    []FileInfo{{Path: "test/path", Checksum: "0"}},
+	}
+
+	encodedData, err := expectedData.MarshallAndEncode()
+	require.NoError(t, err)
+	decodedData, err := DecodeAndUnmarshall(encodedData)
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedData, decodedData)
+}

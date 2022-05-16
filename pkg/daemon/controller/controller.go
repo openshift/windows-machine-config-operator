@@ -29,12 +29,17 @@ import (
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 	core "k8s.io/api/core/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/jsonpath"
 	"k8s.io/klog/v2"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
@@ -42,19 +47,23 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
+const (
+	// desiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
+	desiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
+	// wmcoNamespace defines the namespace service ConfigMaps are expected to be in
+	wmcoNamespace = "openshift-windows-machine-config-operator"
+)
+
 type ServiceController struct {
 	winsvc.Mgr
-	client   client.Client
-	ctx      context.Context
-	nodeName string
+	client         client.Client
+	ctx            context.Context
+	nodeName       string
+	watchNamespace string
 }
 
 // RunController is the entry point of WICD's controller functionality
 func RunController(kubeconfigPath string) error {
-	// TODO: This is currently a barebones controller, which pulls only the desired version's ConfigMap,
-	//       and reconciles the VM to match the ConfigMap's specs. This barebones implementation will not watch the
-	//       ConfigMap or the VM for state changes.
-
 	svcMgr, err := winsvc.NewMgr()
 	if err != nil {
 		return err
@@ -64,21 +73,22 @@ func RunController(kubeconfigPath string) error {
 		return errors.Wrap(err, "error using kubeconfig to build config")
 	}
 
-	// TODO: This is a client that reads directly from the server, not a cached client like used in WMCO. This should
-	//       be replaced with the cache client received by mgr.GetClient()
 	clientScheme := runtime.NewScheme()
 	err = clientgoscheme.AddToScheme(clientScheme)
 	if err != nil {
 		return err
 	}
-	clientset, err := client.New(config, client.Options{Scheme: clientScheme})
+	// This is a client that reads directly from the server, not a cached client. This is required to be used here, as
+	// the cached client, created by ctrl.NewManager() will not be functional until the manager is started.
+	directClient, err := client.New(config, client.Options{Scheme: clientScheme})
 	if err != nil {
 		return err
 	}
 
 	// use the client to find the name of the node associated with the VM this is running on
+	ctx := ctrl.SetupSignalHandler()
 	var nodes core.NodeList
-	err = clientset.List(context.TODO(), &nodes)
+	err = directClient.List(ctx, &nodes)
 	if err != nil {
 		return err
 	}
@@ -86,36 +96,102 @@ func RunController(kubeconfigPath string) error {
 	if err != nil {
 		return err
 	}
-	node, err := currentNode(&nodes, addrs)
+	node, err := findNodeByAddress(&nodes, addrs)
 	if err != nil {
 		return err
 	}
 
-	desiredVersion, present := node.Annotations["windowsmachineconfig.openshift.io/desired-version"]
-	if !present {
-		return errors.New("node missing desired version annotation")
-	}
-	var cm core.ConfigMap
-	err = clientset.Get(context.TODO(), client.ObjectKey{
-		Namespace: "openshift-windows-machine-config-operator", Name: servicescm.NamePrefix + desiredVersion}, &cm)
+	ctrlMgr, err := ctrl.NewManager(config, ctrl.Options{
+		Namespace: wmcoNamespace,
+		Scheme:    clientScheme,
+	})
 	if err != nil {
+		return errors.Wrap(err, "unable to start manager")
+	}
+	sc := NewServiceController(ctx, ctrlMgr.GetClient(), svcMgr, node.Name)
+	if err = sc.SetupWithManager(ctrlMgr); err != nil {
 		return err
 	}
-	data, err := servicescm.Parse(cm.Data)
-	if err != nil {
+	klog.Info("Starting manager, awaiting events")
+	if err := ctrlMgr.Start(ctx); err != nil {
 		return err
 	}
-
-	sc := NewServiceController(clientset, svcMgr, node.Name)
-	// TODO: Instead of reconciling services only once, we need to watch managed Windows services for changes and
-	//       reconcile services if a change happens, as well as reconciling if any changes occur to the ConfigMap
-	//       or node object.
-	return sc.reconcileServices(data.Services)
+	return nil
 }
 
 // NewServiceController returns a pointer to a ServiceController object
-func NewServiceController(client client.Client, mgr winsvc.Mgr, nodeName string) *ServiceController {
-	return &ServiceController{client: client, Mgr: mgr, ctx: context.TODO(), nodeName: nodeName}
+func NewServiceController(ctx context.Context, client client.Client, mgr winsvc.Mgr, nodeName string) *ServiceController {
+	return &ServiceController{client: client, Mgr: mgr, ctx: ctx, nodeName: nodeName,
+		watchNamespace: wmcoNamespace}
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (sc *ServiceController) SetupWithManager(mgr ctrl.Manager) error {
+	nodePredicate := predicate.Funcs{
+		// A node's name will never change, so it is fine to use the name for node identification
+		// The node must have a desired-version annotation for it to be reconcilable
+		CreateFunc: func(e event.CreateEvent) bool {
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[desiredVersionAnnotation] != "" &&
+				e.Object.GetAnnotations()[servicescm.CMDataAnnotation] != ""
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			// Only process update events if the desired version has changed
+			return sc.nodeName == e.ObjectNew.GetName() &&
+				e.ObjectOld.GetAnnotations()[desiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[desiredVersionAnnotation] &&
+				e.ObjectNew.GetAnnotations()[servicescm.CMDataAnnotation] != ""
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[desiredVersionAnnotation] != "" &&
+				e.Object.GetAnnotations()[servicescm.CMDataAnnotation] != ""
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+	}
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&core.Node{}, builder.WithPredicates(nodePredicate)).
+		Complete(sc)
+}
+
+// Reconcile fulfills the Reconciler interface
+func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (result ctrl.Result, reconcileErr error) {
+	klog.Infof("reconciling %s", req.NamespacedName)
+	var node core.Node
+	err := sc.client.Get(sc.ctx, req.NamespacedName, &node)
+	if err != nil {
+		if k8sapierrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			klog.Errorf("node %s not found", req.Name)
+			return ctrl.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		return ctrl.Result{}, err
+	}
+
+	_, present := node.Annotations[desiredVersionAnnotation]
+	if !present {
+		// node missing desired version annotation, don't requeue
+		return ctrl.Result{}, nil
+	}
+
+	// TODO: When permission issues are resolved, retrieve ConfigMap itself, instead of using this annotation
+	encodedCMData, present := node.Annotations[servicescm.CMDataAnnotation]
+	if !present {
+		// node missing CMData annotation, don't requeue
+		return ctrl.Result{}, nil
+	}
+
+	cmData, err := servicescm.DecodeAndUnmarshall(encodedCMData)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "unable to decode ConfigMap data")
+	}
+
+	if err = sc.reconcileServices(cmData.Services); err != nil {
+		klog.Error(err)
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
+
 }
 
 // getExistingServices returns a map with the keys being all Windows services currently present on the VM
@@ -156,11 +232,12 @@ func (sc *ServiceController) reconcileServices(services []servicescm.Service) er
 			if err != nil {
 				return err
 			}
+			klog.Infof("reconciling existing service %s", service.Name)
 		}
 		if err := sc.reconcileService(winSvcObj, service); err != nil {
 			return err
 		}
-		klog.Infof("successfully reconciled service %s", service)
+		klog.Infof("successfully reconciled service %s", service.Name)
 	}
 	return nil
 }
@@ -194,6 +271,7 @@ func (sc *ServiceController) reconcileService(service winsvc.Service, expected s
 	}
 
 	if updateRequired {
+		klog.Infof("updating service %s", expected.Name)
 		// Always ensure the service isn't running before updating its config, just to be safe
 		if err := winsvc.EnsureServiceState(service, svc.Stopped); err != nil {
 			return err
@@ -290,8 +368,8 @@ func localInterfaceAddresses() ([]net.Addr, error) {
 	return addresses, nil
 }
 
-// currentNode returns the node associated with this VM
-func currentNode(nodes *core.NodeList, localAddrs []net.Addr) (*core.Node, error) {
+// findNodeByAddress returns the node associated with this VM
+func findNodeByAddress(nodes *core.NodeList, localAddrs []net.Addr) (*core.Node, error) {
 	for _, localAddr := range localAddrs {
 		ipAddr, ok := localAddr.(*net.IPNet)
 		if !ok {

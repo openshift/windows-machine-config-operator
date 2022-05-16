@@ -1,6 +1,7 @@
 package servicescm
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -16,6 +17,9 @@ import (
 const (
 	// NamePrefix is the prefix of all Windows services ConfigMap names
 	NamePrefix = "windows-services-"
+	// CMDataAnnotation is a Node annotation whose value is the base64 encoded data of current version's service CM
+	// TODO: Remove this when the WICD controller has permissions to watch ConfigMaps
+	CMDataAnnotation = "windowsmachineconfig.openshift.io/cmdata"
 	// servicesKey is a required key in the services ConfigMap. The value for this key is a Service object JSON array.
 	servicesKey = "services"
 	// filesKey is a required key in the services ConfigMap. The value for this key is a FileInfo object JSON array.
@@ -165,6 +169,28 @@ func Parse(dataFromCM map[string]string) (*data, error) {
 	}
 
 	return newData(services, files)
+}
+
+// MarshallAndEncode returns a base64 encoded JSON representation of the data
+// TODO: Remove this when the WICD controller has permissions to watch ConfigMaps
+func (cmData *data) MarshallAndEncode() (string, error) {
+	marshalled, err := json.Marshal(cmData)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(marshalled), nil
+}
+
+// DecodeAndUnmarshall takes in a JSON marshalled base64 encoded string and returns the decoded data
+// TODO: Remove this when the WICD controller has permissions to watch ConfigMaps
+func DecodeAndUnmarshall(base64Encoded string) (*data, error) {
+	marshalledData, err := base64.StdEncoding.DecodeString(base64Encoded)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to decode ConfigMap data")
+	}
+	data := data{}
+	err = json.Unmarshal(marshalledData, &data)
+	return &data, err
 }
 
 // validate ensures the given object represents a valid services ConfigMap, ensuring bootstrap services are defined to
