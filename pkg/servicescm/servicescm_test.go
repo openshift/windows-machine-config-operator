@@ -73,8 +73,9 @@ func TestGenerate(t *testing.T) {
 	configMap, err := Generate(Name, "testNamespace")
 	require.NoError(t, err)
 
-	_, err = Parse(configMap.Data)
+	data, err := Parse(configMap.Data)
 	require.NoError(t, err)
+	assert.NoError(t, data.ValidateRequiredContent())
 }
 
 func TestValidateDependencies(t *testing.T) {

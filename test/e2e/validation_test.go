@@ -517,13 +517,11 @@ func (tc *testContext) testInvalidServicesCM(cmName string) error {
 		return err
 	}
 
-	// Invalid as data is missing (services and files)
-	invalidServicesCM := &core.ConfigMap{
-		ObjectMeta: meta.ObjectMeta{
-			Name:      cmName,
-			Namespace: tc.namespace,
-		},
-		Data: make(map[string]string, 2),
+	// Generate and create a service CM with incorrect data
+	invalidServicesCM, err := servicescm.GenerateWithData(cmName, tc.namespace,
+		&[]servicescm.Service{{Name: "fakeservice", Bootstrap: true}}, &[]servicescm.FileInfo{})
+	if err != nil {
+		return err
 	}
 	if _, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Create(context.TODO(), invalidServicesCM,
 		meta.CreateOptions{}); err != nil {
@@ -534,12 +532,13 @@ func (tc *testContext) testInvalidServicesCM(cmName string) error {
 	if err := tc.scaleWMCODeployment(1); err != nil {
 		return err
 	}
-	// Try to retreive newly created ConfigMap and validate its contents
+	// Try to retrieve newly created ConfigMap and validate its contents
 	windowsServices, err := tc.waitForValidWindowsServicesConfigMap(cmName)
 	if err != nil {
-		return errors.Wrapf(err, "error retreiving ConfigMap %s", cmName)
+		return errors.Wrapf(err, "error retrieving ConfigMap %s", cmName)
 	}
-	if _, err := servicescm.Parse(windowsServices.Data); err != nil {
+	data, err := servicescm.Parse(windowsServices.Data)
+	if err != nil || data.ValidateRequiredContent() != nil {
 		return errors.Wrapf(err, "error ensuring ConfigMap %s is re-created validly", cmName)
 	}
 	return nil
@@ -561,8 +560,11 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string) (*cor
 		}
 		// Here, we've retreived a ConfigMap but still need to ensure it is valid.
 		// If it's not valid, retry in hopes that WMCO will replace it with a valid one as expected.
-		_, err = servicescm.Parse(configMap.Data)
-		return err == nil, nil
+		data, err := servicescm.Parse(configMap.Data)
+		if err != nil || data.ValidateRequiredContent() != nil {
+			return false, nil
+		}
+		return true, nil
 	})
 	if err != nil {
 		return nil, errors.Wrapf(err, "error waiting for ConfigMap %s/%s", tc.namespace, cmName)
