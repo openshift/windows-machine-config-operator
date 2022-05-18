@@ -101,9 +101,14 @@ func newData(services *[]Service, files *[]FileInfo) (*data, error) {
 	return cmData, nil
 }
 
-// Generate creates an immutable service ConfigMap which provides WICD with the specifications
-// for each Windows service that must be created on a Windows instance.
+// Generate returns the specifications for the Windows Service ConfigMap expected by WMCO
 func Generate(name, namespace string) (*core.ConfigMap, error) {
+	return GenerateWithData(name, namespace, requiredServices, requiredFiles)
+}
+
+// GenerateWithData creates an immutable service ConfigMap which provides WICD with the specifications
+// for each Windows service that must be created on a Windows instance.
+func GenerateWithData(name, namespace string, services *[]Service, files *[]FileInfo) (*core.ConfigMap, error) {
 	immutable := true
 	servicesConfigMap := &core.ConfigMap{
 		ObjectMeta: meta.ObjectMeta{
@@ -114,7 +119,7 @@ func Generate(name, namespace string) (*core.ConfigMap, error) {
 		Data:      make(map[string]string),
 	}
 
-	cmData, err := newData(requiredServices, requiredFiles)
+	cmData, err := newData(services, files)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +140,7 @@ func Generate(name, namespace string) (*core.ConfigMap, error) {
 }
 
 // Parse converts ConfigMap data into the objects representing a Windows services ConfigMap schema
-// Returns error if the given data is invalid in structure or contents.
+// Returns error if the given data is invalid in structure
 func Parse(dataFromCM map[string]string) (*data, error) {
 	if len(dataFromCM) != 2 {
 		return nil, errors.New("services ConfigMap should have exactly 2 keys")
@@ -162,35 +167,32 @@ func Parse(dataFromCM map[string]string) (*data, error) {
 	return newData(services, files)
 }
 
-// validate ensures the given object represents a valid services ConfigMap, made up of only required services and files.
-// The validation also ensures bootstrap services are defined to always start before controller services.
+// validate ensures the given object represents a valid services ConfigMap, ensuring bootstrap services are defined to
+// always start before controller services.
 func (cmData *data) validate() error {
-	if err := validateRequiredContent(cmData.Services, cmData.Files); err != nil {
-		return err
-	}
 	if err := validateDependencies(cmData.Services); err != nil {
 		return err
 	}
 	return validatePriorities(cmData.Services)
 }
 
-// validateRequiredContent ensures that the given slices are comprised of all the required services/files and only these
-func validateRequiredContent(services []Service, files []FileInfo) error {
+// ValidateRequiredContent ensures that the given slices are comprised of all the required services/files and only these
+func (cmData *data) ValidateRequiredContent() error {
 	// Validate services
-	if len(services) != len(*requiredServices) {
+	if len(cmData.Services) != len(*requiredServices) {
 		return errors.New("Unexpected number of services")
 	}
 	for _, requiredSvc := range *requiredServices {
-		if !requiredSvc.isPresentAndCorrect(services) {
+		if !requiredSvc.isPresentAndCorrect(cmData.Services) {
 			return errors.Errorf("Required service %s is not present with expected configuration", requiredSvc.Name)
 		}
 	}
 	// Validate files
-	if len(files) != len(*requiredFiles) {
+	if len(cmData.Files) != len(*requiredFiles) {
 		return errors.New("Unexpected number of files")
 	}
 	for _, requiredFile := range *requiredFiles {
-		if !requiredFile.isPresentAndCorrect(files) {
+		if !requiredFile.isPresentAndCorrect(cmData.Files) {
 			return errors.Errorf("Required file %s is not present as expected", requiredFile.Path)
 		}
 	}

@@ -168,7 +168,8 @@ func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServ
 	}
 
 	// If a ConfigMap with invalid values is found, WMCO will delete and recreate it with proper values
-	if _, err := servicescm.Parse(windowsServices.Data); err != nil {
+	data, err := servicescm.Parse(windowsServices.Data)
+	if err != nil || data.ValidateRequiredContent() != nil {
 		// Deleting will trigger an event for the configmap_controller, which will re-create a proper ConfigMap
 		if err = r.client.Delete(ctx, windowsServices); err != nil {
 			return err
@@ -444,7 +445,8 @@ func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
 	}
 
 	// If a ConfigMap with incorrect values is found, WMCO will delete and recreate it with the proper values
-	if _, err := servicescm.Parse(windowsServices.Data); err != nil {
+	data, err := servicescm.Parse(windowsServices.Data)
+	if err != nil || data.ValidateRequiredContent() != nil {
 		if err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Delete(context.TODO(), windowsServices.Name,
 			meta.DeleteOptions{}); err != nil {
 			return err
