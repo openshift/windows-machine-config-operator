@@ -419,9 +419,9 @@ func (nc *nodeConfig) configureCNI() error {
 	if err != nil {
 		return errors.Wrapf(err, "error populating CNI config file %s", configFile)
 	}
-	// configure CNI in the Windows VM
-	if err = nc.Windows.ConfigureCNI(configFile); err != nil {
-		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
+	// Copy CNI config file
+	if err = nc.Windows.EnsureCNIConfig(configFile); err != nil {
+		return errors.Wrapf(err, "error ensuring CNI config file for %s", nc.node.GetName())
 	}
 	if err = nc.network.cleanupTempConfig(configFile); err != nil {
 		nc.log.Error(err, " error deleting temp CNI config", "file",

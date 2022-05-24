@@ -186,8 +186,8 @@ type Windows interface {
 	Reinitialize() error
 	// Configure prepares the Windows VM for the bootstrapper and then runs it
 	Configure() error
-	// ConfigureCNI ensures that the CNI configuration in done on the node
-	ConfigureCNI(string) error
+	// EnsureCNIConfig ensures that the CNI config file is present on the node
+	EnsureCNIConfig(string) error
 	// ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
 	ConfigureHybridOverlay(string) error
 	// ConfigureWindowsExporter ensures that the Windows metrics exporter is running on the node
@@ -532,7 +532,7 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 	return nil
 }
 
-func (vm *windows) ConfigureCNI(configFile string) error {
+func (vm *windows) EnsureCNIConfig(configFile string) error {
 	// copy the CNI config file to the Windows VM
 	file, err := payload.NewFileInfo(configFile)
 	if err != nil {
@@ -541,17 +541,6 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 	if err := vm.EnsureFile(file, cniConfDir); err != nil {
 		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniConfDir)
 	}
-
-	cniConfigDest := cniConfDir + filepath.Base(configFile)
-	// run the configure-cni command on the Windows VM
-	configureCNICmd := k8sDir + "wmcb.exe configure-cni --cni-dir=" + cniDir + " --cni-config=" + cniConfigDest
-
-	out, err := vm.Run(configureCNICmd, true)
-	if err != nil {
-		return errors.Wrap(err, "CNI configuration failed")
-	}
-
-	vm.log.Info("configured kubelet for CNI", "cmd", configureCNICmd, "output", out)
 	return nil
 }
 
