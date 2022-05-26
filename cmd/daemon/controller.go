@@ -19,6 +19,7 @@ limitations under the License.
 package main
 
 import (
+	"flag"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -38,16 +39,26 @@ var (
 	}
 	kubeconfig     string
 	windowsService bool
+	logDir         string
 )
 
 func init() {
 	rootCmd.AddCommand(controllerCmd)
 	controllerCmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig")
+	controllerCmd.PersistentFlags().StringVar(&logDir, "log-dir", "", "Directory to write logs to, "+
+		"if not provided, the command will log to stdout/stderr")
 	controllerCmd.PersistentFlags().BoolVar(&windowsService, "windows-service", false,
 		"Enables running as a Windows service")
 }
 
 func runControllerCmd(cmd *cobra.Command, args []string) {
+	if logDir != "" {
+		var fs flag.FlagSet
+		klog.InitFlags(&fs)
+		// When the logtostderr flag is set to true, which is the default, the log_dir arg is ignored
+		fs.Set("logtostderr", "false")
+		fs.Set("log_dir", logDir)
+	}
 	ctx := ctrl.SetupSignalHandler()
 	if windowsService {
 		if err := initService(ctx); err != nil {

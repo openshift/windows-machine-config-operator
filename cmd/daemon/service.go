@@ -53,6 +53,7 @@ func initService(ctx context.Context) error {
 	return err
 }
 
+// Execute is a required function of the Handler interface, it will be called when there is a Windows service request
 func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.Status) (bool, uint32) {
 	// Set the status of the Windows service to start pending and allow initService() to return
 	s <- svc.Status{State: svc.StartPending}
@@ -65,6 +66,8 @@ func (h *handler) Execute(_ []string, r <-chan svc.ChangeRequest, s chan<- svc.S
 
 	// Handle any incoming requests from the service manager
 	ctx, cancel := context.WithCancel(h.ctx)
+
+	// break will only end the current select, include this label to break to, in order to break from the loop + select
 loop:
 	for {
 		select {
