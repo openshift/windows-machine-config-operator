@@ -23,6 +23,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/klog/v2"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
 )
@@ -35,17 +36,27 @@ var (
 			"present within the cluster",
 		Run: runControllerCmd,
 	}
-	kubeconfig string
+	kubeconfig     string
+	windowsService bool
 )
 
 func init() {
 	rootCmd.AddCommand(controllerCmd)
 	controllerCmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig")
+	controllerCmd.PersistentFlags().BoolVar(&windowsService, "windows-service", false,
+		"Enables running as a Windows service")
 }
 
 func runControllerCmd(cmd *cobra.Command, args []string) {
+	ctx := ctrl.SetupSignalHandler()
+	if windowsService {
+		if err := initService(ctx); err != nil {
+			klog.Error(err)
+			os.Exit(1)
+		}
+	}
 	klog.Info("service controller running")
-	if err := controller.RunController(kubeconfig); err != nil {
+	if err := controller.RunController(ctx, kubeconfig); err != nil {
 		klog.Error(err)
 		os.Exit(1)
 	}

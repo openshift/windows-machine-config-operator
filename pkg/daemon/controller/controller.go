@@ -63,7 +63,7 @@ type ServiceController struct {
 }
 
 // RunController is the entry point of WICD's controller functionality
-func RunController(kubeconfigPath string) error {
+func RunController(ctx context.Context, kubeconfigPath string) error {
 	svcMgr, err := winsvc.NewMgr()
 	if err != nil {
 		return err
@@ -86,7 +86,6 @@ func RunController(kubeconfigPath string) error {
 	}
 
 	// use the client to find the name of the node associated with the VM this is running on
-	ctx := ctrl.SetupSignalHandler()
 	var nodes core.NodeList
 	err = directClient.List(ctx, &nodes)
 	if err != nil {
