@@ -3,7 +3,7 @@
 # building the operator from the PR source without using the operator-sdk.
 
 # build stage for building binaries
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18-openshift-4.11 as build
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18.1-openshift-4.11 as build
 LABEL stage=build
 WORKDIR /build/
 
