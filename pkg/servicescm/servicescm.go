@@ -247,6 +247,7 @@ func (f FileInfo) isPresentAndCorrect(files []FileInfo) bool {
 }
 
 // validateDependencies ensures that no bootstrap service depends on a non-bootstrap service
+// and ensures there is no cyclical dependency chain
 func validateDependencies(services []Service) error {
 	bootstrapServices := []Service{}
 	nonBootstrapServices := []Service{}
@@ -263,7 +264,8 @@ func validateDependencies(services []Service) error {
 			return errors.Errorf("bootstrap service %s cannot depend on non-bootstrap service", bootstrapSvc.Name)
 		}
 	}
-	return nil
+
+	return validateCycles(services)
 }
 
 // hasDependency checks if a service is dependent on any services in the given slice
@@ -275,6 +277,50 @@ func (s *Service) hasDependency(possibleDependencies []Service) bool {
 			}
 		}
 	}
+	return false
+}
+
+// validateCycles detects cycles between any of the given services by traversing the resulting dependency graph.
+// Wrapper for Service.hasCycle to handle disconnected graphs
+func validateCycles(services []Service) error {
+	// Convert list to map for fast lookup of service object by its name
+	servicesMap := make(map[string]*Service)
+	for _, svc := range services {
+		servicesMap[svc.Name] = &svc
+	}
+
+	// state is a map that keeps track of whether a service's dependency chain has been explored for cycles:
+	// 1. if a service does not have an entry in the map, it has not been processed yet
+	// 2. if a service has an entry in the map with value "true", it is currently being processed
+	// 3. if a service has an entry in the map with value "false", it has already been fully processed in the past
+	state := make(map[string]bool)
+	for _, svc := range services {
+		// Check if helper has already been called on this service to prevent duplicate calls
+		if _, seen := state[svc.Name]; !seen {
+			if svc.hasCycle(servicesMap, state) {
+				return errors.Errorf("invalid cyclical chain in %s service's dependencies", svc.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// hasCycle uses depth-first traversal to check for cycles in the service dependency graph, using s as the source node
+func (s *Service) hasCycle(servicesMap map[string]*Service, state map[string]bool) bool {
+	// Mark this service as visited and in the current traversal path
+	state[s.Name] = true
+
+	for _, dependencyName := range s.Dependencies {
+		if inCurrentPath, seen := state[dependencyName]; seen && inCurrentPath {
+			// Cycle detected if service that is still being processed is seen again in the same dependency path
+			return true
+		}
+		if _, seen := state[dependencyName]; !seen {
+			return servicesMap[dependencyName].hasCycle(servicesMap, state)
+		}
+	}
+	// Backtracking step, remove this service from current traversal path by marking it as fully processed
+	state[s.Name] = false
 	return false
 }
 

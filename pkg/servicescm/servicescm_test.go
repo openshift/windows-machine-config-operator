@@ -153,7 +153,7 @@ func TestValidateDependencies(t *testing.T) {
 				{
 					Name:         "test-controller-service-2",
 					Command:      "C:\\test-controller-service-2",
-					Dependencies: []string{"test-controller-service-2"},
+					Dependencies: []string{"test-controller-service"},
 					Bootstrap:    false,
 					Priority:     2,
 				},
@@ -232,6 +232,73 @@ func TestValidateDependencies(t *testing.T) {
 					Name:         "test-controller-service-2",
 					Command:      "C:\\test-controller-service-2",
 					Dependencies: []string{"new-bootstrap-service"},
+					Bootstrap:    false,
+					Priority:     2,
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			name: "Service depends on itself",
+			input: []Service{
+				{
+					Name:         "test-service",
+					Command:      "C:\\test-service",
+					Dependencies: []string{"test-service"},
+					Bootstrap:    false,
+					Priority:     0,
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			name: "Cyclical dependency structure",
+			input: []Service{
+				{
+					Name:         "service-0",
+					Command:      "C:\\service-0",
+					Dependencies: []string{"service-1"},
+					Bootstrap:    false,
+					Priority:     0,
+				},
+				{
+					Name:         "service-1",
+					Command:      "C:\\service-1",
+					Dependencies: []string{"service-2"},
+					Bootstrap:    false,
+					Priority:     1,
+				},
+				{
+					Name:         "service-2",
+					Command:      "C:\\service-2",
+					Dependencies: []string{"service-0"},
+					Bootstrap:    false,
+					Priority:     2,
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			name: "Disconnected cyclical dependency structure",
+			input: []Service{
+				{
+					Name:         "service-0",
+					Command:      "C:\\service-0",
+					Dependencies: []string{},
+					Bootstrap:    false,
+					Priority:     0,
+				},
+				{
+					Name:         "service-1",
+					Command:      "C:\\service-1",
+					Dependencies: []string{"service-2"},
+					Bootstrap:    false,
+					Priority:     1,
+				},
+				{
+					Name:         "service-2",
+					Command:      "C:\\service-2",
+					Dependencies: []string{"service-1"},
 					Bootstrap:    false,
 					Priority:     2,
 				},
