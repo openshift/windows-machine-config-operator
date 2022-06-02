@@ -248,7 +248,7 @@ func TestReconcile(t *testing.T) {
 						NodeObjectJsonPath: "{.metadata.name}",
 					}},
 					Dependencies: nil,
-					Bootstrap:    true,
+					Bootstrap:    false,
 					Priority:     0,
 				},
 			},

@@ -94,13 +94,7 @@ func TestValidateDependencies(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -112,8 +106,14 @@ func TestValidateDependencies(t *testing.T) {
 					Priority:     0,
 				},
 				{
-					Name:         "test-controller-service",
-					Command:      "C:\\test-controller-service",
+					Name:    "test-controller-service",
+					Command: "C:\\test-controller-service --variable-arg1=NODE_NAME",
+					NodeVariablesInCommand: []NodeCmdArg{
+						{
+							Name:               "NODE_NAME",
+							NodeObjectJsonPath: "metadata.name",
+						},
+					},
 					Dependencies: []string{},
 					Bootstrap:    false,
 					Priority:     1,
@@ -126,13 +126,7 @@ func TestValidateDependencies(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -161,17 +155,37 @@ func TestValidateDependencies(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name: "bootstrap depends on all non-bootstrap services",
+			name: "bootstrap service requires node variable in command",
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
+					Command: "C:\\new-service --variable-arg1=NODE_NAME",
 					NodeVariablesInCommand: []NodeCmdArg{
 						{
 							Name:               "NODE_NAME",
 							NodeObjectJsonPath: "metadata.name",
 						},
 					},
+					Dependencies: []string{"test-controller-service", "test-controller-service-2"},
+					Bootstrap:    true,
+					Priority:     0,
+				},
+				{
+					Name:         "test-controller-service",
+					Command:      "C:\\test-controller-service",
+					Dependencies: []string{},
+					Bootstrap:    false,
+					Priority:     1,
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			name: "bootstrap depends on all non-bootstrap services",
+			input: []Service{
+				{
+					Name:    "new-bootstrap-service",
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -204,13 +218,7 @@ func TestValidateDependencies(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -335,13 +343,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -374,13 +376,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -413,13 +409,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -452,13 +442,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -491,13 +475,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
