@@ -119,7 +119,7 @@ RUN make build
 #├── windows_exporter.exe
 #└── wmcb.exe
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10
+FROM registry.ci.openshift.org/openshift/release:golang-1.18
 LABEL stage=operator
 
 # Copy wmcb.exe
