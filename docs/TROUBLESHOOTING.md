@@ -1,8 +1,7 @@
 # Troubleshooting guide
 
 ## WMCO does not go to running
-Please check if you are using an OKD/OCP 4.6 cluster running on Azure or AWS, configured with
-[hybrid OVN Kubernetes networking](setup-hybrid-OVNKubernetes-cluster.md).
+Please check if you are using an OKD/OCP cluster adhering to the [operator pre-requisites](wmco-prerequisites.md).
 
 ## Windows Machine does not become a worker node
 There could be various reasons as to why a Windows Machine does not become a worker node. Please collect the WMCO logs
@@ -22,7 +21,7 @@ not yet supported for Windows. Instead, a Windows node can be accessed using SSH
 [SSH bastion](https://github.com/eparis/ssh-bastion) needs to be setup for both methods. The following information is
 common across both methods:
 * The key used in the *cloud-private-key* [secret](../README.md#Usage) and the key used when creating the cluster should
-  be added to the [ssh-agent](https://docs.openshift.com/container-platform/4.6/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default).
+  be added to the [ssh-agent](https://docs.openshift.com/container-platform/latest/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default).
   For [security reasons](https://manpages.debian.org/buster/openssh-client/ssh.1.en.html#A) we suggest removing the keys
   from the ssh-agent after use.
 * *\<username\>* is *Administrator* (AWS) or *capi* (Azure)

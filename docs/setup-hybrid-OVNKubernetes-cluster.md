@@ -1,7 +1,7 @@
 # Setup hybrid OVNKubernetes cluster
 
 This guide assumes the user has installed current versions of the OpenShift installer (`openshift-install`) and client (`oc`) binaries.
-Please refer to the [official OpenShift Container Platform documentation](https://docs.openshift.com/container-platform/4.5/welcome/index.html) for details.
+Please refer to the [official OpenShift Container Platform documentation](https://docs.openshift.com/container-platform/latest/welcome/index.html) for details.
 
 ## Create install-config
 
