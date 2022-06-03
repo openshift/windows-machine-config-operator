@@ -16,7 +16,7 @@ metadata:
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat
   name: windows-machine-config-operator.v0.0.0
-  namespace: placeholder
+  namespace: openshift-windows-machine-config-operator
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions: {}
