@@ -1,7 +1,5 @@
 # Creating an AWS Windows MachineSet
 
-_\<windows_server_ami\>_ should be replaced with the AMI ID of a [supported version](wmco-prerequisites.md#supported-windows-server-versions) of Windows Server.
-
 _\<infrastructureID\>_ should be replaced with the output of:
 ```shell script
  oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
@@ -9,6 +7,16 @@ _\<infrastructureID\>_ should be replaced with the output of:
 _\<region\>_ should be replaced with a valid AWS region like `us-east-1`.
 
 _\<zone\>_ should be replaced with a valid AWS availability zone like `us-east-1a`.
+
+_\<windows_ami_id\>_ should be replaced with the AMI ID of a [supported version](wmco-prerequisites.md#supported-windows-server-versions)
+of Windows Server. For example, for Windows Server 2022 you can find the latest AMI ID with the following command:
+```shell script
+ aws ec2 describe-images --region ${region} \
+    --filters "Name=name,Values=Windows_Server-2022*English*Core*Base*" "Name=is-public,Values=true" \
+    --query "reverse(sort_by(Images,&CreationDate))[*].{name: Name, id: ImageId}" \
+    --output json | jq -r '.[0].id'
+```
+where `${region}` is the selected AWS Region.
 
 ```
 apiVersion: machine.openshift.io/v1beta1
@@ -39,7 +47,7 @@ spec:
       providerSpec:
         value:
           ami:
-            id: <windows_server_ami>
+            id: <windows_ami_id>
           apiVersion: awsproviderconfig.openshift.io/v1beta1
           blockDevices:
             - ebs:

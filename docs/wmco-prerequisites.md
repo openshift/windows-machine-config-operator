@@ -21,7 +21,7 @@ these errors, only use the appropriate version according to the cloud provider i
 
 | Cloud Provider | Supported Windows Server version                                                                                                  |
 |----------------|-----------------------------------------------------------------------------------------------------------------------------------|
-| AWS            | Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)                                                              |
+| AWS            | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)|
 | Azure          | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)|
 | GCP            | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                            |
 | VMware vSphere | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                            |
