@@ -1,16 +1,23 @@
 # Creating an AWS Windows MachineSet
 
-_\<windows_container_ami\>_ can be used as it is without any modification.
-You must use Windows Server 2019 with a version 10.0.17763.1457 or earlier to work
-around Windows containers behind a Kubernetes load balancer becoming unreachable
-[issue](https://github.com/microsoft/Windows-Containers/issues/78).
-                                                                           
 _\<infrastructureID\>_ should be replaced with the output of:
 ```shell script
  oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
 _\<region\>_ should be replaced with a valid AWS region like `us-east-1`.
+
 _\<zone\>_ should be replaced with a valid AWS availability zone like `us-east-1a`.
+
+_\<windows_ami_id\>_ should be replaced with the output of:
+```shell script
+ aws ec2 describe-images \
+    --region ${region} \
+    --filters "Name=name,Values=Windows_Server-2022*English*Full*Base*" "Name=is-public,Values=true" \
+    --query "reverse(sort_by(Images,&CreationDate))[*].{name: Name, id: ImageId}" \
+    --output json \
+    | jq -r '.[0].id'
+```
+where `${region}` is the selected AWS Region. Refer to the [supported Windows Server versions](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/wmco-prerequisites.md#supported-windows-server-versions).
 
 ```
 apiVersion: machine.openshift.io/v1beta1
@@ -41,7 +48,7 @@ spec:
       providerSpec:
         value:
           ami:
-            id: <windows_container_ami>
+            id: <windows_ami_id>
           apiVersion: awsproviderconfig.openshift.io/v1beta1
           blockDevices:
             - ebs:
