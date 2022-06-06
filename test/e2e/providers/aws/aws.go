@@ -120,6 +120,8 @@ func getLatestWindowsAMI(ec2Client *ec2.EC2, hasCustomVXLANPort bool) (string, e
 	windowsAMIOwner := "amazon"
 	windowsAMIFilterName := "name"
 	windowsAMIFilterValue := ""
+	winDateFilterName := "creation-date"
+	winDateFilterVal := "2022-05-11T*"
 	// This filter will grab all ami's that match the exact name. The '?' indicate any character will match.
 	// The ami's will have the name format: Windows_Server-2022-English-Full-ContainersLatest-2022.01.19
 	// so the question marks will match the date of creation
@@ -133,9 +135,10 @@ func getLatestWindowsAMI(ec2Client *ec2.EC2, hasCustomVXLANPort bool) (string, e
 		windowsAMIFilterValue = "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
 	}
 	searchFilter := ec2.Filter{Name: &windowsAMIFilterName, Values: []*string{&windowsAMIFilterValue}}
+	dateFilter := ec2.Filter{Name: &winDateFilterName, Values: []*string{&winDateFilterVal}}
 
 	describedImages, err := ec2Client.DescribeImages(&ec2.DescribeImagesInput{
-		Filters: []*ec2.Filter{&searchFilter},
+		Filters: []*ec2.Filter{&searchFilter, &dateFilter},
 		Owners:  []*string{&windowsAMIOwner},
 	})
 	if err != nil {
