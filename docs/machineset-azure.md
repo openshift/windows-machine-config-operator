@@ -9,17 +9,13 @@ oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 
 `<zone>` should be replaced with a valid Azure availability zone like `us-east-1a`.
 
-`<image>` should be a WindowsServer image offering that defines the 2019-Datacenter-with-Containers SKU with version
-          17763.1457.2009030514 or earlier. Run the following command to list Azure image info:
+Run the following command to list Azure WS2022 image info:
 ```shell script
   az vm image list --all --location <location> \
       --publisher MicrosoftWindowsServer \
       --offer WindowsServer \
-      --sku 2019-Datacenter-with-Containers \
-      --query "[?contains(version, '17763.1457.2009030514')]"
+      --sku 2022-datacenter
 ```
-This is to work around Windows containers behind a Kubernetes load balancer
-becoming unreachable [issue](https://github.com/microsoft/Windows-Containers/issues/78).
 
 Please note that on Azure, Windows Machine names cannot be more than 15 characters long.
 The MachineSet name can therefore not be more than 9 characters long, due to the way Machine names are generated from it.
@@ -59,7 +55,7 @@ spec:
             offer: WindowsServer
             publisher: MicrosoftWindowsServer
             resourceID: ""
-            sku: 2019-Datacenter-with-Containers
+            sku: 2022-datacenter
             version: latest
           kind: AzureMachineProviderSpec
           location: <location>
