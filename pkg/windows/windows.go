@@ -496,6 +496,13 @@ func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
 	hybridOverlayServiceArgs := "--node " + nodeName + customVxlanPortArg + " --k8s-kubeconfig c:\\k\\kubeconfig " +
 		"--windows-service " + "--logfile " + hybridOverlayLogDir + "hybrid-overlay.log"
 
+	// check log level and increase hybrid-overlay verbosity if needed
+	if vm.log.V(1).Enabled() {
+		// append loglevel param using 5 for debug (default: 4)
+		// See https://github.com/openshift/ovn-kubernetes/blob/master/go-controller/pkg/config/config.go#L736
+		hybridOverlayServiceArgs = hybridOverlayServiceArgs + " --loglevel 5"
+	}
+
 	vm.log.Info("configure", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
 
 	hybridOverlayService, err := newService(hybridOverlayPath, hybridOverlayServiceName, hybridOverlayServiceArgs,
