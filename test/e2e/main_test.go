@@ -79,6 +79,9 @@ type testContext struct {
 	// toolsImage is the image specified by the  openshift/tools ImageStream, and is the same image used by `oc debug`.
 	// This image is available on all OpenShift Clusters, and has SSH pre-installed.
 	toolsImage string
+	// windowsServerVersion is the Windows Server version used in the e2e test suite. See https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/base-image-lifecycle
+	// If unset or empty, a default machine and container image are loaded.
+	windowsServerVersion string
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -106,7 +109,8 @@ func NewTestContext() (*testContext, error) {
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
 		namespace: "openshift-windows-machine-config-operator", CloudProvider: cloudProvider,
-		workloadNamespace: "wmco-test", workloadNamespaceLabels: workloadNamespaceLabels, toolsImage: toolsImage}, nil
+		workloadNamespace: "wmco-test", workloadNamespaceLabels: workloadNamespaceLabels, toolsImage: toolsImage,
+		windowsServerVersion: os.Getenv("WINDOWS_SERVER_VERSION")}, nil
 }
 
 // vmUsername returns the name of the user which can be used to log into each Windows instance

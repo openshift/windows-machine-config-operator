@@ -96,18 +96,33 @@ func New(oc *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*
 	return awsProvider, nil
 }
 
+// getWindowsAMIFilter returns a ready to use EC2 AMI filter for the Windows Server image.
+// This filter will grab all AMI's that match the exact name. The '?' indicate any character will match.
+// For example, the AMI's will have the name format: Windows_Server-2022-English-Core-Base-2022.06.15
+// so the question marks will match the date of creation.
+func getWindowsAMIFilter() string {
+	// The Windows Server version can be provided as an environment variable. For example, from the CI job definition
+	// in the release step. The selected Windows Server version must be compatible with Windows container image.
+	// See https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/base-image-lifecycle
+	windowsServerVersion := os.Getenv("WINDOWS_SERVER_VERSION")
+	switch windowsServerVersion {
+	case "2019":
+		return "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+	default:
+		// return default filter targeting Windows Server 2022
+		return "Windows_Server-2022-English-Core-Base-????.??.??"
+	}
+}
+
 // getLatestWindowsAMI returns the imageid of the latest released "Windows Server with Containers" image
 func getLatestWindowsAMI(ec2Client *ec2.EC2) (string, error) {
 	// Have to create these variables, as the below functions require pointers to them
 	windowsAMIOwner := "amazon"
 	windowsAMIFilterName := "name"
-	// This filter will grab all ami's that match the exact name. The '?' indicate any character will match.
-	// The ami's will have the name format: Windows_Server-2019-English-Full-ContainersLatest-2022.01.19
-	// so the question marks will match the date of creation
-	// The image obtained by using windowsAMIFilterValue is compatible with the test container image -
-	// "mcr.microsoft.com/powershell:lts-nanoserver-1809".
-	// If the windowsAMIFilterValue changes, the test container image also needs to be changed.
-	windowsAMIFilterValue := "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+	// The image obtained by using windowsAMIFilterValue must is compatible with the test container image.
+	// For example, the container image "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022" must be selected for
+	// Windows Server 2022. If the windowsAMIFilterValue changes, the test container image must be adjusted accordingly.
+	windowsAMIFilterValue := getWindowsAMIFilter()
 	searchFilter := ec2.Filter{Name: &windowsAMIFilterName, Values: []*string{&windowsAMIFilterValue}}
 
 	describedImages, err := ec2Client.DescribeImages(&ec2.DescribeImagesInput{

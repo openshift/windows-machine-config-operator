@@ -292,10 +292,10 @@ func (tc *testContext) sshSetup() error {
 // runPowerShellSSHJob creates and waits for a Kubernetes job to run. The command provided will be executed through
 // PowerShell, on the host specified by the provided IP.
 func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, error) {
-	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022.
+	// For Windows Server 2019 use the command as is
 	powershellDefaultCommand := command
-	if tc.CloudProvider.GetType() == config.VSpherePlatformType ||
-		tc.CloudProvider.GetType() == config.GCPPlatformType || tc.CloudProvider.GetType() == config.AzurePlatformType {
+	// For others, do not escape the double-quotes when default shell is Powershell, i.e. Windows Server 2022
+	if tc.windowsServerVersion != "2019" {
 		powershellDefaultCommand = strings.ReplaceAll(command, "\\\"", "\"")
 	}
 
