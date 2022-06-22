@@ -440,19 +440,21 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	return podList.Items[0].Status.PodIP, nil
 }
 
-// getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
+// getWindowsServerContainerImage gets the appropriate WindowsServer image
 func (tc *testContext) getWindowsServerContainerImage() string {
 	if tc.CloudProvider.GetType() == config.NonePlatformType {
 		// TODO: On platform=none we have to use 2004 since the job points to the WS2004 golden image via release repo
 		// When the release repo is updated to use 2022, this clause should be squashed with the above to use 2022
 		return "mcr.microsoft.com/powershell:lts-nanoserver-2004"
 	}
-	if tc.CloudProvider.GetType() == config.AWSPlatformType {
-		// On AWS we are currently testing 2019
+	// Check the Windows Server version to set the correct container image
+	switch tc.windowsServerVersion {
+	case "2019":
 		return "mcr.microsoft.com/powershell:lts-nanoserver-1809"
+	default:
+		// the default container image must be compatible with Windows Server 2022
+		return "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 	}
-	// the default container image must be compatible with Windows Server 2022
-	return "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 }
 
 // createWindowsServerDeployment creates a deployment with a Windows Server container. If affinity is nil then the
