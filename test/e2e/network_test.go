@@ -471,6 +471,7 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 	}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	containerUserName := "ContainerAdministrator"
+	runAsNonRoot := false
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: name + "-deployment-",
@@ -506,6 +507,7 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 							// The default user for nanoserver image is ContainerUser.
 							// Change user to ContainerAdministrator to run HttpListener in admin mode.
 							SecurityContext: &v1.SecurityContext{
+								RunAsNonRoot: &runAsNonRoot,
 								WindowsOptions: &v1.WindowsSecurityContextOptions{
 									RunAsUserName: &containerUserName,
 								},
