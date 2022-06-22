@@ -309,9 +309,8 @@ func (tc *testContext) sshSetup() error {
 // PowerShell, on the host specified by the provided IP.
 func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, error) {
 	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022.
-	// We only test Windows Server 2022 if a custom VXLAN port is used (i.e. vSphere)
 	powershellDefaultCommand := command
-	if tc.hasCustomVXLAN {
+	if tc.CloudProvider.GetType() == config.VSpherePlatformType || tc.CloudProvider.GetType() == config.AzurePlatformType {
 		powershellDefaultCommand = strings.ReplaceAll(command, "\\\"", "\"")
 	}
 
