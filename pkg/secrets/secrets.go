@@ -56,7 +56,7 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 			$firewallRuleName = "ContainerLogsPort"
 			$containerLogsPort = "10250"
 			New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $containerLogsPort -EdgeTraversalPolicy Allow
-			Set-Service -Name sshd -StartupType ‘Automatic’
+			Set-Service -Name sshd -StartupType 'Automatic'
 			Start-Service sshd
 			$pubKeyConf = (Get-Content -path C:\ProgramData\ssh\sshd_config) -replace '#PubkeyAuthentication yes','PubkeyAuthentication yes'
 			$pubKeyConf | Set-Content -Path C:\ProgramData\ssh\sshd_config
