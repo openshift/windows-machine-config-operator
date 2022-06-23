@@ -442,6 +442,15 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 
 // getWindowsServerContainerImage gets the appropriate WindowsServer image
 func (tc *testContext) getWindowsServerContainerImage() string {
+	// First, look for the environment variable, this allows to externally configure the container image. For example
+	// from the CI job definition in the release step.
+	// The container image must be compatible with the selected Windows Server version
+	windowsContainerImageValue := os.Getenv("WINDOWS_CONTAINER_IMAGE")
+	if len(windowsContainerImageValue) > 0 {
+		log.Printf("Loaded Windows Container Image from environment with value: %s", windowsContainerImageValue)
+		return windowsContainerImageValue
+	}
+	// Alternatively, handle platform specific edge cases
 	if tc.CloudProvider.GetType() == config.NonePlatformType {
 		// TODO: On platform=none we have to use 2004 since the job points to the WS2004 golden image via release repo
 		// When the release repo is updated to use 2022, this clause should be squashed with the above to use 2022
