@@ -490,6 +490,9 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 				},
 				Spec: v1.PodSpec{
 					Affinity: affinity,
+					OS: &v1.PodOS{
+						Name: v1.Windows,
+					},
 					Tolerations: []v1.Toleration{
 						{
 							Key:    "os",
