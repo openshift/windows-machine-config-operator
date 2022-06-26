@@ -135,6 +135,7 @@ func (r *instanceReconciler) updateKubeletCA(node core.Node, contents []byte) er
 // reconcileKubeletClientCA reconciles the kube-apiserver certificate rotation by copying the bundle CA in the updated
 // ConfigMap to all Windows nodes. This is required by kubelet to recognize the kube-apiserver client. No drain or
 // restart required, the bundle CA file is loaded dynamically by the kubelet service running on the Windows Instance.
+//test 
 func (r *instanceReconciler) reconcileKubeletClientCA(ctx context.Context, bundleCAConfigMap *core.ConfigMap) error {
 	// get the ConfigMap that contains the initial CA certificates
 	initialCAConfigMap, err := certificates.GetInitialCAConfigMap(ctx, r.client)
