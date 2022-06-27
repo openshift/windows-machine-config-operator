@@ -20,9 +20,14 @@ COPY hack hack
 COPY pkg pkg
 COPY .git .git
 RUN make build
+RUN make build-daemon
 
 FROM wmco-base:latest
 LABEL stage=operator
+
+# Copy WICD to payload
+WORKDIR /payload/
+COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
 
 # Copy required powershell scripts
 WORKDIR /payload/powershell/
