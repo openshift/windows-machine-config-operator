@@ -79,9 +79,9 @@ get_aws_ms() {
   local provider=$4
 
   # get the AMI id for the Windows VM
-  ami_id=$(aws ec2 describe-images --region ${region} --filters "Name=name,Values=Windows_Server-2019*English*Full*Containers*" "Name=is-public,Values=true" --query "reverse(sort_by(Images, &CreationDate))[*].{name: Name, id: ImageId}" --output json | jq -r '.[0].id')
+  ami_id=$(aws ec2 describe-images --region ${region} --filters "Name=name,Values=Windows_Server-2022*English*Full*Base*" "Name=is-public,Values=true" --query "reverse(sort_by(Images,&CreationDate))[*].{name: Name, id: ImageId}" --output json | jq -r '.[0].id')
   if [ -z "$ami_id" ]; then
-        error-exit "unable to find AMI ID for Windows Server 2019 1809"
+        error-exit "unable to find AMI ID for Windows Server 2022"
   fi
 
   cat <<EOF
