@@ -299,20 +299,13 @@ func TestReconcile(t *testing.T) {
 			cm, err := servicescm.GenerateWithData(servicescm.NamePrefix+desiredVersion,
 				"openshift-windows-machine-config-operator", &test.configMapServices, &[]servicescm.FileInfo{})
 			require.NoError(t, err)
-			// TODO: When the controller is able to watch ConfigMaps, the CM data does not need to be added as a
-			//       Node annotation
-			data, err := servicescm.Parse(cm.Data)
-			require.NoError(t, err)
-			encodedData, err := data.MarshallAndEncode()
-			require.NoError(t, err)
 			clusterObjs := []client.Object{
 				// This is the node object that will be used in these test cases
 				&core.Node{
 					ObjectMeta: meta.ObjectMeta{
 						Name: "node",
 						Annotations: map[string]string{
-							desiredVersionAnnotation:    desiredVersion,
-							servicescm.CMDataAnnotation: encodedData,
+							desiredVersionAnnotation: desiredVersion,
 						},
 					},
 				},

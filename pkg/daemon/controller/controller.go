@@ -21,6 +21,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"reflect"
 	"strings"
@@ -31,15 +32,20 @@ import (
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
+	certutil "k8s.io/client-go/util/cert"
 	"k8s.io/client-go/util/jsonpath"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
@@ -63,14 +69,14 @@ type ServiceController struct {
 }
 
 // RunController is the entry point of WICD's controller functionality
-func RunController(ctx context.Context, kubeconfigPath string) error {
+func RunController(ctx context.Context, apiServerURL, saCA, saToken string) error {
 	svcMgr, err := winsvc.NewMgr()
 	if err != nil {
 		return err
 	}
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	config, err := configFromServiceAccount(apiServerURL, saCA, saToken)
 	if err != nil {
-		return errors.Wrap(err, "error using kubeconfig to build config")
+		return errors.Wrap(err, "error using service account to build config")
 	}
 
 	clientScheme := runtime.NewScheme()
@@ -118,6 +124,27 @@ func RunController(ctx context.Context, kubeconfigPath string) error {
 	return nil
 }
 
+// configFromServiceAccount uses credentials associated with a service account to authenticate with a cluster
+func configFromServiceAccount(apiServerURL, caFile, tokenFile string) (*rest.Config, error) {
+	token, err := ioutil.ReadFile(tokenFile)
+	if err != nil {
+		klog.Errorf("error reading token file: %v", err)
+		return nil, err
+	}
+	if _, err := certutil.NewPool(caFile); err != nil {
+		klog.Errorf("Expected to load CA config from %s, but got err: %v", caFile, err)
+		return nil, err
+	}
+	tlsClientConfig := rest.TLSClientConfig{CAFile: caFile}
+
+	return &rest.Config{
+		Host:            apiServerURL,
+		TLSClientConfig: tlsClientConfig,
+		BearerToken:     string(token),
+		BearerTokenFile: tokenFile,
+	}, nil
+}
+
 // NewServiceController returns a pointer to a ServiceController object
 func NewServiceController(ctx context.Context, client client.Client, mgr winsvc.Mgr, nodeName string) *ServiceController {
 	return &ServiceController{client: client, Mgr: mgr, ctx: ctx, nodeName: nodeName,
@@ -130,26 +157,33 @@ func (sc *ServiceController) SetupWithManager(mgr ctrl.Manager) error {
 		// A node's name will never change, so it is fine to use the name for node identification
 		// The node must have a desired-version annotation for it to be reconcilable
 		CreateFunc: func(e event.CreateEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[desiredVersionAnnotation] != "" &&
-				e.Object.GetAnnotations()[servicescm.CMDataAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[desiredVersionAnnotation] != ""
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			// Only process update events if the desired version has changed
 			return sc.nodeName == e.ObjectNew.GetName() &&
-				e.ObjectOld.GetAnnotations()[desiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[desiredVersionAnnotation] &&
-				e.ObjectNew.GetAnnotations()[servicescm.CMDataAnnotation] != ""
+				e.ObjectOld.GetAnnotations()[desiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[desiredVersionAnnotation]
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[desiredVersionAnnotation] != "" &&
-				e.Object.GetAnnotations()[servicescm.CMDataAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[desiredVersionAnnotation] != ""
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
 		},
 	}
+	cmPredicate := predicate.NewPredicateFuncs(func(object client.Object) bool {
+		return strings.HasPrefix(object.GetName(), servicescm.NamePrefix)
+	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.Node{}, builder.WithPredicates(nodePredicate)).
+		Watches(&source.Kind{Type: &core.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode),
+			builder.WithPredicates(cmPredicate)).
 		Complete(sc)
+}
+
+// mapToCurrentNode maps all events to the node associated with this Windows instance
+func (sc *ServiceController) mapToCurrentNode(_ client.Object) []reconcile.Request {
+	return []reconcile.Request{{types.NamespacedName{Name: sc.nodeName}}}
 }
 
 // Reconcile fulfills the Reconciler interface
@@ -167,30 +201,31 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 
-	_, present := node.Annotations[desiredVersionAnnotation]
+	desiredVersion, present := node.Annotations[desiredVersionAnnotation]
 	if !present {
 		// node missing desired version annotation, don't requeue
 		return ctrl.Result{}, nil
 	}
 
-	// TODO: When permission issues are resolved, retrieve ConfigMap itself, instead of using this annotation
-	encodedCMData, present := node.Annotations[servicescm.CMDataAnnotation]
-	if !present {
-		// node missing CMData annotation, don't requeue
-		return ctrl.Result{}, nil
+	// Fetch the CM of the desired version
+	var cm core.ConfigMap
+	if err := sc.client.Get(sc.ctx,
+		client.ObjectKey{Namespace: sc.watchNamespace, Name: servicescm.NamePrefix + desiredVersion}, &cm); err != nil {
+		klog.Error(err)
+		return ctrl.Result{}, err
 	}
-
-	cmData, err := servicescm.DecodeAndUnmarshall(encodedCMData)
+	cmData, err := servicescm.Parse(cm.Data)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "unable to decode ConfigMap data")
+		klog.Error(err)
+		return ctrl.Result{}, err
 	}
 
+	// Reconcile state of Windows services with the ConfigMap data
 	if err = sc.reconcileServices(cmData.Services); err != nil {
 		klog.Error(err)
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
-
 }
 
 // getExistingServices returns a map with the keys being all Windows services currently present on the VM
