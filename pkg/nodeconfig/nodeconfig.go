@@ -48,6 +48,8 @@ const (
 	// KubeletClientCAFilename is the name of the CA certificate file required by kubelet to interact
 	// with the kube-apiserver client
 	KubeletClientCAFilename = "kubelet-ca.crt"
+	// DesiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
+	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
@@ -242,6 +244,13 @@ func (nc *nodeConfig) Configure() error {
 			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
 				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
 			}
+		}
+		if err := nc.configureWICD(); err != nil {
+			return errors.Wrap(err, "configuring WICD failed")
+		}
+		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
+		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{DesiredVersionAnnotation: version.Get()}); err != nil {
+			return errors.Wrapf(err, "error updating desired version annotation on node %s", nc.node.GetName())
 		}
 
 		// Now that basic kubelet configuration is complete, configure networking in the node
@@ -490,6 +499,35 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 		return err
 	}
 	return nil
+}
+
+// configureWICD configures and ensures WICD is running
+func (nc *nodeConfig) configureWICD() error {
+	// TODO: This ideally would use a separate WICD SA, with only the necessary permissions
+	tokenSecretPrefix := "windows-machine-config-operator-token-"
+	secrets, err := nc.k8sclientset.CoreV1().Secrets("openshift-windows-machine-config-operator").
+		List(context.TODO(), meta.ListOptions{})
+	if err != nil {
+		return errors.Wrap(err, "error listing secrets")
+	}
+	var filteredSecrets []core.Secret
+	for _, secret := range secrets.Items {
+		if strings.HasPrefix(secret.Name, tokenSecretPrefix) {
+			filteredSecrets = append(filteredSecrets, secret)
+		}
+	}
+	if len(filteredSecrets) != 1 {
+		return fmt.Errorf("expected 1 secret with '%s' prefix, found %d", tokenSecretPrefix, len(filteredSecrets))
+	}
+	saCA := filteredSecrets[0].Data["ca.crt"]
+	if len(saCA) == 0 {
+		return errors.New("ServiceAccount ca.crt value empty")
+	}
+	saToken := filteredSecrets[0].Data["token"]
+	if len(saToken) == 0 {
+		return errors.New("ServiceAccount token value empty")
+	}
+	return nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, saCA, saToken)
 }
 
 // CreatePubKeyHashAnnotation returns a formatted string which can be used for a public key annotation on a node.

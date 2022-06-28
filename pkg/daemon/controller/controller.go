@@ -48,14 +48,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 const (
-	// desiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
-	desiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
 	// wmcoNamespace defines the namespace service ConfigMaps are expected to be in
 	wmcoNamespace = "openshift-windows-machine-config-operator"
 )
@@ -157,15 +156,15 @@ func (sc *ServiceController) SetupWithManager(mgr ctrl.Manager) error {
 		// A node's name will never change, so it is fine to use the name for node identification
 		// The node must have a desired-version annotation for it to be reconcilable
 		CreateFunc: func(e event.CreateEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[desiredVersionAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != ""
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			// Only process update events if the desired version has changed
 			return sc.nodeName == e.ObjectNew.GetName() &&
-				e.ObjectOld.GetAnnotations()[desiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[desiredVersionAnnotation]
+				e.ObjectOld.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[nodeconfig.DesiredVersionAnnotation]
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[desiredVersionAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != ""
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -201,7 +200,7 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 
-	desiredVersion, present := node.Annotations[desiredVersionAnnotation]
+	desiredVersion, present := node.Annotations[nodeconfig.DesiredVersionAnnotation]
 	if !present {
 		// node missing desired version annotation, don't requeue
 		return ctrl.Result{}, nil

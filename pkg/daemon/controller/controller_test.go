@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
@@ -305,7 +306,7 @@ func TestReconcile(t *testing.T) {
 					ObjectMeta: meta.ObjectMeta{
 						Name: "node",
 						Annotations: map[string]string{
-							desiredVersionAnnotation: desiredVersion,
+							nodeconfig.DesiredVersionAnnotation: desiredVersion,
 						},
 					},
 				},

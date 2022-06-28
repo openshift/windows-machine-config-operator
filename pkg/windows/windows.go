@@ -39,6 +39,8 @@ const (
 	hybridOverlayLogDir = logDir + "hybrid-overlay\\"
 	// ContainerdLogDir is the remote containerd log directory
 	ContainerdLogDir = logDir + "containerd\\"
+	// wicdLogDir is the remote wicd log directory
+	wicdLogDir = logDir + "wicd\\"
 	// cniDir is the directory for storing CNI binaries
 	cniDir = k8sDir + "cni\\"
 	// cniConfDir is the directory for storing CNI configuration
@@ -51,6 +53,8 @@ const (
 	containerdConfPath = ContainerdDir + "containerd_conf.toml"
 	//containerdServiceName is containerd Windows service name
 	containerdServiceName = "containerd"
+	// wicdServiceName is the Windows service name for WICD
+	wicdServiceName = "windows-instance-config-daemon"
 	// windowsExporterPath is the location of the windows_exporter.exe
 	windowsExporterPath = k8sDir + "windows_exporter.exe"
 	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
@@ -110,6 +114,7 @@ var (
 		kubeProxyServiceName,
 		hybridOverlayServiceName,
 		kubeletServiceName,
+		wicdServiceName,
 		containerdServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
@@ -119,6 +124,7 @@ var (
 		cniConfDir,
 		logDir,
 		kubeProxyLogDir,
+		wicdLogDir,
 		hybridOverlayLogDir,
 		ContainerdDir,
 		ContainerdLogDir}
@@ -132,6 +138,7 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 	srcDestPairs := map[string]string{
 		payload.IgnoreWgetPowerShellPath:  remoteDir,
 		payload.WmcbPath:                  k8sDir,
+		payload.WICDPath:                  k8sDir,
 		payload.HybridOverlayPath:         k8sDir,
 		payload.HNSPSModule:               remoteDir,
 		payload.WindowsExporterPath:       k8sDir,
@@ -190,6 +197,8 @@ type Windows interface {
 	EnsureCNIConfig(string) error
 	// ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
 	ConfigureHybridOverlay(string) error
+	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
+	ConfigureWICD(string, []byte, []byte) error
 	// ConfigureWindowsExporter ensures that the Windows metrics exporter is running on the node
 	ConfigureWindowsExporter() error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
@@ -484,6 +493,32 @@ func (vm *windows) ConfigureWindowsExporter() error {
 
 	vm.log.Info("configured", "service", windowsExporterServiceName, "args",
 		windowsExporterServiceArgs)
+	return nil
+}
+
+// ConfigureWICD starts the Windows Instance Config Daemon service
+func (vm *windows) ConfigureWICD(apiServerURL string, serviceAccountCA, serviceAccountToken []byte) error {
+	saCAFile := "sa-ca.crt"
+	saTokenFile := "sa-token"
+	err := vm.EnsureFileContent(serviceAccountCA, saCAFile, k8sDir)
+	if err != nil {
+		return err
+	}
+	err = vm.EnsureFileContent(serviceAccountToken, saTokenFile, k8sDir)
+	if err != nil {
+		return err
+	}
+	wicdPath := k8sDir + "windows-instance-config-daemon.exe"
+	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s%s --sa-token %s%s",
+		wicdLogDir, apiServerURL, k8sDir, saCAFile, k8sDir, saTokenFile)
+	wicdService, err := newService(wicdPath, wicdServiceName, wicdServiceArgs, nil)
+	if err != nil {
+		return errors.Wrapf(err, "error creating %s service object", wicdServiceName)
+	}
+	if err := vm.ensureServiceIsRunning(wicdService); err != nil {
+		return errors.Wrapf(err, "error ensuring %s Windows service has started running", wicdServiceName)
+	}
+	vm.log.Info("configured", "service", wicdServiceName, "args", wicdServiceArgs)
 	return nil
 }
 

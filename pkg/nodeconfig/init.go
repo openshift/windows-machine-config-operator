@@ -15,6 +15,8 @@ type cache struct {
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
 	// the OpenShift worker ignition file.
 	workerIgnitionEndPoint string
+	// apiServerEndpoint is the address which clients can interact with the API server through
+	apiServerEndpoint string
 }
 
 // cache has the information related to nodeConfig that should not be changed.
@@ -36,5 +38,6 @@ func init() {
 		return
 	}
 	// populate the cache
+	nodeConfigCache.apiServerEndpoint = kubeAPIServerEndpoint
 	nodeConfigCache.workerIgnitionEndPoint = "https://" + clusterAddress + ":22623/config/worker"
 }

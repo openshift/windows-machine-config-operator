@@ -15,6 +15,8 @@ const (
 	// WmcbPath contains the path of the Windows Machine Config Bootstrapper binary. The container image should already
 	// have this binary mounted
 	WmcbPath = payloadDirectory + "wmcb.exe"
+	// WICDPath is the path to the Windows Instance Config Daemon exe
+	WICDPath = payloadDirectory + "windows-instance-config-daemon.exe"
 	// KubeletPath contains the path of the kubelet binary. The container image should already have this binary mounted
 	KubeletPath = payloadDirectory + "/kube-node/kubelet.exe"
 	// KubeProxyPath contains the path of the kube-proxy binary. The container image should already have this binary
