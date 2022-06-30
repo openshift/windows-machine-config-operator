@@ -79,6 +79,8 @@ type testContext struct {
 	// toolsImage is the image specified by the  openshift/tools ImageStream, and is the same image used by `oc debug`.
 	// This image is available on all OpenShift Clusters, and has SSH pre-installed.
 	toolsImage string
+	// is this testContext for WindowsServer2022. Defaults to true.
+	isWindowsServer2022 bool
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -100,10 +102,16 @@ func NewTestContext() (*testContext, error) {
 		return nil, errors.Wrap(err, "error getting debug image")
 	}
 
+	// default OS version tested is Windows Server 2022. Override based on cloud provider here and on MachineSet create
+	isWindowsServer2022 := true
+	if cloudProvider.GetType() == config.NonePlatformType {
+		isWindowsServer2022 = false
+	}
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
 		namespace: "openshift-windows-machine-config-operator", CloudProvider: cloudProvider,
-		hasCustomVXLAN: hasCustomVXLANPort, workloadNamespace: "wmco-test", toolsImage: toolsImage}, nil
+		hasCustomVXLAN: hasCustomVXLANPort, workloadNamespace: "wmco-test", toolsImage: toolsImage,
+		isWindowsServer2022: isWindowsServer2022}, nil
 }
 
 // vmUsername returns the name of the user which can be used to log into each Windows instance

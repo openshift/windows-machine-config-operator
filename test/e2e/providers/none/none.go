@@ -21,8 +21,9 @@ func New(clientset *clusterinfo.OpenShift) (*Provider, error) {
 }
 
 // GenerateMachineSet is not supported for platform=none and throws an exception
-func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
-	return nil, errors.New("MachineSet generation not supported for platform=none")
+func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, bool, error) {
+	// false boolean return false indicated that platform=none does not test WindowsServer2022
+	return nil, false, errors.New("MachineSet generation not supported for platform=none")
 }
 
 // GetType returns the platform type for platform=none

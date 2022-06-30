@@ -15,7 +15,8 @@ import (
 )
 
 type CloudProvider interface {
-	GenerateMachineSet(bool, int32) (*mapi.MachineSet, error)
+	// GenerateMachineSet makes a machine set spec, and also returns a bool saying if the Windows Server version is 2022
+	GenerateMachineSet(bool, int32) (*mapi.MachineSet, bool, error)
 	// GetType returns the cloud provider type ex: AWS, Azure etc
 	GetType() config.PlatformType
 }

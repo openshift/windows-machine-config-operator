@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -259,10 +259,11 @@ func (tc *testContext) setPowerShellDefaultShell(machine *mapi.Machine) error {
 
 // createWindowsMachineSet creates given number of Windows Machines.
 func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool) (*mapi.MachineSet, error) {
-	machineSet, err := tc.CloudProvider.GenerateMachineSet(windowsLabel, replicas)
+	machineSet, isWindowsServer2022, err := tc.CloudProvider.GenerateMachineSet(windowsLabel, replicas)
 	if err != nil {
 		return nil, err
 	}
+	tc.isWindowsServer2022 = isWindowsServer2022
 	return tc.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Create(context.TODO(), machineSet, metav1.CreateOptions{})
 }
 

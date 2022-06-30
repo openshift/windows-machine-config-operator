@@ -117,21 +117,21 @@ func getNetwork() string {
 }
 
 // GenerateMachineSet generates the MachineSet object which is vSphere provider specific
-func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, bool, error) {
 	clusterID, err := p.oc.GetInfrastructureID()
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get cluster id")
+		return nil, true, errors.Wrap(err, "unable to get cluster id")
 	}
 
 	// create new machine provider spec for deploying Windows node
 	providerSpec, err := p.newVSphereMachineProviderSpec(clusterID)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create new vSphere machine provider spec")
+		return nil, true, errors.Wrap(err, "failed to create new vSphere machine provider spec")
 	}
 
 	rawProviderSpec, err := json.Marshal(providerSpec)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal vSphere machine provider spec")
+		return nil, true, errors.Wrap(err, "failed to marshal vSphere machine provider spec")
 	}
 
 	matchLabels := map[string]string{
@@ -190,7 +190,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 			},
 		},
 	}
-	return machineSet, nil
+	return machineSet, true, nil
 }
 
 func (p *Provider) GetType() config.PlatformType {

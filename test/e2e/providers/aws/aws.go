@@ -32,6 +32,7 @@ const (
 )
 
 type awsProvider struct {
+	isWindowsServer2022 bool
 	// imageID is the AMI image-id to be used for creating Virtual Machine
 	imageID string
 	// instanceType is the flavor of VM to be used
@@ -72,11 +73,11 @@ func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
 
 	iamClient := iam.New(session, aws.NewConfig())
 
-	imageID, err := getLatestWindowsAMI(ec2Client)
+	imageID, isWindowsServer2022, err := getLatestWindowsAMI(ec2Client)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get latest Windows AMI: %v", err)
 	}
-	return &awsProvider{imageID, instanceType,
+	return &awsProvider{isWindowsServer2022, imageID, instanceType,
 		iamClient,
 		ec2Client,
 		openShiftClient,
@@ -115,31 +116,31 @@ func (a *awsProvider) getInfraID() (string, error) {
 }
 
 // getWindowsAMIFilter returns a ready to use EC2 AMI filter for the Windows Server image
-func getWindowsAMIFilter() string {
+func getWindowsAMIFilter() (string, bool) {
 	// The AWS AMI filter for the Windows Server image can be provided as an environment variable, this allows to
 	// externally configure the filter. For example, from the CI job definition in the release step.
 	// The selected Windows Server version in the filter, must be compatible with Windows container image.
 	windowsAMIFilterValue := os.Getenv("WINDOWS_AWS_AMI_FILTER")
 	if len(windowsAMIFilterValue) > 0 {
 		log.Printf("Loaded AWS AMI filter from environment with value: %s", windowsAMIFilterValue)
-		return windowsAMIFilterValue
+		return windowsAMIFilterValue, false
 	}
 	// return default filter targeting Windows Server 2022. This filter will grab all ami's that match the exact name.
 	// The '?' indicate any character will match.
 	// For example, the AMI's will have the name format: Windows_Server-2022-English-Full-Base-2022.06.15
 	// so the question marks will match the date of creation.
-	return "Windows_Server-2022-English-Full-Base-????.??.??"
+	return "Windows_Server-2022-English-Full-Base-????.??.??", true
 }
 
 // getLatestWindowsAMI returns the imageid of the latest released "Windows Server with Containers" image
-func getLatestWindowsAMI(ec2Client *ec2.EC2) (string, error) {
+func getLatestWindowsAMI(ec2Client *ec2.EC2) (string, bool, error) {
 	// Have to create these variables, as the below functions require pointers to them
 	windowsAMIOwner := "amazon"
 	windowsAMIFilterName := "name"
 	// The image obtained by using windowsAMIFilterValue must is compatible with the test container image.
 	// For example, the container image "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022" must be selected for
 	// Windows Server 2022. If the windowsAMIFilterValue changes, the test container image must be adjusted accordingly.
-	windowsAMIFilterValue := getWindowsAMIFilter()
+	windowsAMIFilterValue, isWindowsServer2022 := getWindowsAMIFilter()
 	searchFilter := ec2.Filter{Name: &windowsAMIFilterName, Values: []*string{&windowsAMIFilterValue}}
 
 	describedImages, err := ec2Client.DescribeImages(&ec2.DescribeImagesInput{
@@ -147,29 +148,29 @@ func getLatestWindowsAMI(ec2Client *ec2.EC2) (string, error) {
 		Owners:  []*string{&windowsAMIOwner},
 	})
 	if err != nil {
-		return "", err
+		return "", isWindowsServer2022, err
 	}
 	if len(describedImages.Images) < 1 {
-		return "", fmt.Errorf("found zero images matching given filter: %v", searchFilter)
+		return "", isWindowsServer2022, fmt.Errorf("found zero images matching given filter: %v", searchFilter)
 	}
 
 	// Find the last created image
 	latestImage := describedImages.Images[0]
 	latestTime, err := time.Parse(time.RFC3339, *latestImage.CreationDate)
 	if err != nil {
-		return "", err
+		return "", isWindowsServer2022, err
 	}
 	for _, image := range describedImages.Images[1:] {
 		newTime, err := time.Parse(time.RFC3339, *image.CreationDate)
 		if err != nil {
-			return "", err
+			return "", isWindowsServer2022, err
 		}
 		if newTime.After(latestTime) {
 			latestImage = image
 			latestTime = newTime
 		}
 	}
-	return *latestImage.ImageId, nil
+	return *latestImage.ImageId, isWindowsServer2022, nil
 }
 
 // getSubnet tries to find a subnet under the VPC and returns subnet or an error.
@@ -311,25 +312,25 @@ func (a *awsProvider) getIAMWorkerRole(infraID string) (*ec2.IamInstanceProfileS
 }
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
-func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, bool, error) {
 	clusterName, err := a.getInfraID()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get infrastructure id %v", err)
+		return nil, a.isWindowsServer2022, fmt.Errorf("unable to get infrastructure id %v", err)
 	}
 
 	instanceProfile, err := a.getIAMWorkerRole(clusterName)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get instance profile %v", err)
+		return nil, a.isWindowsServer2022, fmt.Errorf("unable to get instance profile %v", err)
 	}
 
 	sgID, err := a.getClusterWorkerSGID(clusterName)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get security group id: %v", err)
+		return nil, a.isWindowsServer2022, fmt.Errorf("unable to get security group id: %v", err)
 	}
 
 	subnet, err := a.getSubnet(clusterName)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get subnet: %v", err)
+		return nil, a.isWindowsServer2022, fmt.Errorf("unable to get subnet: %v", err)
 	}
 	machineSetName := clusterinfo.WindowsMachineSetName(withWindowsLabel)
 	matchLabels := map[string]string{
@@ -380,7 +381,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 
 	rawBytes, err := json.Marshal(providerSpec)
 	if err != nil {
-		return nil, err
+		return nil, a.isWindowsServer2022, err
 	}
 
 	// Set up the test machineSet
@@ -411,7 +412,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 			},
 		},
 	}
-	return machineSet, nil
+	return machineSet, a.isWindowsServer2022, nil
 }
 
 func (a *awsProvider) GetType() config.PlatformType {

@@ -102,36 +102,36 @@ func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus
 }
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
-func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, bool, error) {
 	clusterID, err := p.oc.GetInfrastructureID()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get cluster id: %v", err)
+		return nil, true, fmt.Errorf("unable to get cluster id: %v", err)
 	}
 	platformStatus, err := p.oc.GetCloudProvider()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get azure platform status: %v", err)
+		return nil, true, fmt.Errorf("unable to get azure platform status: %v", err)
 	}
 
 	// Inspect master-0 to get Azure Location and Zone
 	machines, err := p.oc.Machine.Machines("openshift-machine-api").Get(context.TODO(), clusterID+"-master-0", meta.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)
+		return nil, true, fmt.Errorf("failed to get master-0 machine resource: %v", err)
 	}
 	masterProviderSpec := new(mapi.AzureMachineProviderSpec)
 	err = json.Unmarshal(machines.Spec.ProviderSpec.Value.Raw, masterProviderSpec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal master-0 azure machine provider spec: %v", err)
+		return nil, true, fmt.Errorf("failed to unmarshal master-0 azure machine provider spec: %v", err)
 	}
 
 	// create new machine provider spec for deploying Windows node in the same Location and Zone as master-0
 	providerSpec, err := newAzureMachineProviderSpec(clusterID, platformStatus, masterProviderSpec.Location, *masterProviderSpec.Zone, p.vmSize)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new azure machine provider spec: %v", err)
+		return nil, true, fmt.Errorf("failed to create new azure machine provider spec: %v", err)
 	}
 
 	rawProviderSpec, err := json.Marshal(providerSpec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal azure machine provider spec: %v", err)
+		return nil, true, fmt.Errorf("failed to marshal azure machine provider spec: %v", err)
 	}
 
 	matchLabels := map[string]string{
@@ -190,7 +190,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 			},
 		},
 	}
-	return machineSet, nil
+	return machineSet, true, nil
 }
 
 func (p *Provider) GetType() config.PlatformType {
