@@ -455,14 +455,17 @@ func (vm *windows) Configure() error {
 // configureContainerd configures the Windows defender exclusion and starts the
 // Windows containerd service
 func (vm *windows) configureContainerd() error {
-	// set Windows defender exclusions for containerd
-	setExclusionCmd := "Add-MpPreference -ExclusionProcess " + containerdPath
-	out, err := vm.Run(setExclusionCmd, true)
+	// if Windows Defender is installed on the instance, create an exclusion for containerd
+	exclusionNeeded, err := vm.isWindowsDefenderEnabled()
 	if err != nil {
-		vm.log.V(1).Info("setting Windows defender exclusion failed", "command", setExclusionCmd,
-			"output", out)
-		return errors.Wrap(err, "setting Windows defender process exclusion failed")
+		return err
 	}
+	if exclusionNeeded {
+		if err := vm.createWindowsDefenderExclusion(containerdPath); err != nil {
+			return err
+		}
+	}
+
 	containerdServiceArgs := "--config " + containerdConfPath + " --log-file " + ContainerdLogDir + "containerd.log" +
 		" --log-level info" + " --run-service"
 
@@ -1077,6 +1080,26 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 		return false, errors.Wrapf(err, "failed to get Windows feature: %s", containersFeatureName)
 	}
 	return strings.Contains(out, "Enabled"), nil
+}
+
+// isWindowsDefenderEnabled returns true if the Windows Defender antivirus/firewall is installed on the Windows instance
+func (vm *windows) isWindowsDefenderEnabled() (bool, error) {
+	command := "(Get-Service | where {$_.DisplayName -Like 'Windows Defender*'}).Count -gt 0"
+	out, err := vm.Run(command, true)
+	if err != nil {
+		return false, errors.Wrap(err, "error checking if Windows Defender is enabled")
+	}
+	return strings.TrimSpace(out) == "True", nil
+}
+
+// createWindowsDefenderExclusion sets a Windows Defender exclusion for the given file
+func (vm *windows) createWindowsDefenderExclusion(pathToFile string) error {
+	command := "Add-MpPreference -ExclusionProcess " + pathToFile
+	out, err := vm.Run(command, true)
+	if err != nil {
+		return errors.Wrapf(err, "setting Windows defender process exclusion failed with output: %s", out)
+	}
+	return nil
 }
 
 // rebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
