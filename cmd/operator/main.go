@@ -113,6 +113,7 @@ func main() {
 		payload.KubeProxyPath,
 		payload.IgnoreWgetPowerShellPath,
 		payload.WmcbPath,
+		payload.WICDPath,
 		payload.CNIConfigTemplatePath,
 		payload.HNSPSModule,
 		payload.WindowsExporterPath,

@@ -95,6 +95,7 @@ COPY Makefile Makefile
 COPY tools.go tools.go
 COPY .gitignore .gitignore
 RUN make build
+RUN make build-daemon
 
 # Build the operator image with following payload structure
 # /payload/
@@ -117,6 +118,7 @@ RUN make build
 #│   └── wget-ignore-cert.ps1
 #│   └── hns.psm1
 #├── windows_exporter.exe
+#├── windows-instance-config-daemon.exe
 #└── wmcb.exe
 
 FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10
@@ -125,6 +127,9 @@ LABEL stage=operator
 # Copy wmcb.exe
 WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-operator/windows-machine-config-bootstrapper/wmcb.exe .
+
+# Copy WICD
+COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
 
 # Copy hybrid-overlay-node.exe
 COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .

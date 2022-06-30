@@ -78,6 +78,7 @@ COPY controllers controllers
 COPY hack hack
 COPY pkg pkg
 RUN make build
+RUN make build-daemon
 
 # Build the operator image with following payload structure
 # /payload/
@@ -100,6 +101,7 @@ RUN make build
 #│   └── wget-ignore-cert.ps1
 #│   └── hns.psm1
 #├── windows_exporter.exe
+#├── windows-instance-config-daemon.exe
 #└── wmcb.exe
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
@@ -108,6 +110,9 @@ LABEL stage=operator
 # Copy wmcb.exe
 WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-operator/windows-machine-config-bootstrapper/wmcb.exe .
+
+# Copy WICD
+COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
 
 # Copy hybrid-overlay-node.exe
 COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
