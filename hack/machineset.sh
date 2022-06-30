@@ -148,7 +148,7 @@ $(get_spec $infraID $az $provider)
             offer: WindowsServer
             publisher: MicrosoftWindowsServer
             resourceID: ""
-            sku: 2019-Datacenter-with-Containers
+            sku: 2022-datacenter
             version: latest
           kind: AzureMachineProviderSpec
           location: ${region}
