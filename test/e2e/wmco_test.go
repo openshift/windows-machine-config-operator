@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	nodeCreationTime     = time.Minute * 30
+	nodeCreationTime     = time.Minute * 35
 	nodeRetryInterval    = time.Minute * 1
 	cleanupRetryInterval = time.Second * 1
 	cleanupTimeout       = time.Second * 5
