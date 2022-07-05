@@ -1,10 +1,9 @@
 reviewers:
   - sebsoto
-  - selansen
   - mansikulkarni96
-approvers:
-  - selansen
-  - sebsoto
-emeritus_approvers:
   - aravindhp
+approvers:
+  - sebsoto
+  - aravindhp
+emeritus_approvers:
   - ravisantoshgudimetla
