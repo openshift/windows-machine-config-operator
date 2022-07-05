@@ -223,6 +223,102 @@ func TestReconcileService(t *testing.T) {
 	}
 }
 
+func TestBootstrap(t *testing.T) {
+	// TODO: Once resolvePowershellVariables() is implemented, harden example services with Powershell vars to replace
+	testIO := []struct {
+		name                         string
+		configMapServices            []servicescm.Service
+		expectedServicesNameCmdPairs map[string]string
+	}{
+		{
+			name:                         "No services",
+			configMapServices:            []servicescm.Service{},
+			expectedServicesNameCmdPairs: map[string]string{},
+		},
+		{
+			name: "Single bootstrap service",
+			configMapServices: []servicescm.Service{
+				{
+					Name:         "test1",
+					Command:      "test1 --var=TEST",
+					Dependencies: nil,
+					Bootstrap:    true,
+					Priority:     0,
+				},
+			},
+			expectedServicesNameCmdPairs: map[string]string{"test1": "test1 --var=TEST"},
+		},
+		{
+			name: "No bootstrap services",
+			configMapServices: []servicescm.Service{
+				{
+					Name:         "test1",
+					Command:      "test1 arg1",
+					Dependencies: nil,
+					Bootstrap:    false,
+					Priority:     0,
+				},
+				{
+					Name:         "test2",
+					Command:      "test2 arg1 arg2",
+					Dependencies: nil,
+					Bootstrap:    false,
+					Priority:     1,
+				},
+			},
+			expectedServicesNameCmdPairs: map[string]string{},
+		},
+		{
+			name: "Multiple mixed services",
+			configMapServices: []servicescm.Service{
+				{
+					Name:         "test1",
+					Command:      "test1 arg1",
+					Dependencies: nil,
+					Bootstrap:    true,
+					Priority:     0,
+				},
+				{
+					Name:         "test2",
+					Command:      "test2",
+					Dependencies: nil,
+					Bootstrap:    true,
+					Priority:     1,
+				},
+				{
+					Name:         "test3",
+					Command:      "test3 arg1 arg2",
+					Dependencies: nil,
+					Bootstrap:    false,
+					Priority:     2,
+				},
+			},
+			expectedServicesNameCmdPairs: map[string]string{"test1": "test1 arg1", "test2": "test2"},
+		},
+	}
+	for _, test := range testIO {
+		t.Run(test.name, func(t *testing.T) {
+			desiredVersion := "testversion"
+			cm, err := servicescm.GenerateWithData(servicescm.NamePrefix+desiredVersion,
+				"openshift-windows-machine-config-operator", &test.configMapServices, &[]servicescm.FileInfo{})
+			require.NoError(t, err)
+			clusterObjs := []client.Object{cm}
+			fakeClient := fake.NewClientBuilder().WithObjects(clusterObjs...).Build()
+
+			winSvcMgr := winsvc.NewTestMgr(make(map[string]*winsvc.FakeService))
+			sc := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "")
+
+			err = sc.Bootstrap(desiredVersion)
+			assert.NoError(t, err)
+
+			createdServices, err := getAllFakeServices(winSvcMgr)
+			require.NoError(t, err)
+
+			testServicesCreatedAsExpected(t, createdServices, test.expectedServicesNameCmdPairs)
+		})
+	}
+}
+
 func TestReconcile(t *testing.T) {
 	testIO := []struct {
 		name                         string
@@ -324,16 +420,26 @@ func TestReconcile(t *testing.T) {
 			createdServices, err := getAllFakeServices(winSvcMgr)
 			require.NoError(t, err)
 
-			// Specifically testing that the name/command is as expected
-			createdServiceNameCmdPairs := make(map[string]string)
-			for name, createdService := range createdServices {
-				config, err := createdService.Config()
-				require.NoError(t, err)
-				createdServiceNameCmdPairs[name] = config.BinaryPathName
-			}
-			assert.Equal(t, test.expectedServicesNameCmdPairs, createdServiceNameCmdPairs)
+			testServicesCreatedAsExpected(t, createdServices, test.expectedServicesNameCmdPairs)
 		})
 	}
+}
+
+// testServicesCreatedAsExpected tests that the created services are running and configured as expected
+func testServicesCreatedAsExpected(t *testing.T, createdServices map[string]winsvc.FakeService,
+	expectedServicesNameCmdPairs map[string]string) {
+	createdServiceNameCmdPairs := make(map[string]string)
+	// Ensure each created service is running
+	for name, createdService := range createdServices {
+		serviceStatus, _ := createdService.Query()
+		assert.Equal(t, svc.Running, serviceStatus.State)
+
+		config, err := createdService.Config()
+		require.NoError(t, err)
+		createdServiceNameCmdPairs[name] = config.BinaryPathName
+	}
+	// Also ensure the correct number of expected services are created, all configured as intended
+	assert.Equal(t, expectedServicesNameCmdPairs, createdServiceNameCmdPairs)
 }
 
 // getAllFakeServices accepts a mocked Windows service manager, and returns a map of copies of all existing Windows

@@ -78,6 +78,82 @@ func TestGenerate(t *testing.T) {
 	assert.NoError(t, data.ValidateRequiredContent())
 }
 
+func TestGetBootstrapServices(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		input                    []Service
+		expectedNumBootstrapSvcs int
+	}{
+		{
+			name:                     "empty services list",
+			input:                    []Service{},
+			expectedNumBootstrapSvcs: 0,
+		},
+		{
+			name: "only bootstrap services",
+			input: []Service{
+				{
+					Name:      "new-bootstrap-service",
+					Bootstrap: true,
+					Priority:  0,
+				},
+				{
+					Name:      "new-bootstrap-service-2",
+					Bootstrap: true,
+					Priority:  1,
+				},
+			},
+			expectedNumBootstrapSvcs: 2,
+		},
+		{
+			name: "only controller services",
+			input: []Service{
+				{
+					Name:      "test-controller-service",
+					Bootstrap: false,
+					Priority:  1,
+				},
+				{
+					Name:      "test-controller-service-2",
+					Bootstrap: false,
+					Priority:  2,
+				},
+			},
+			expectedNumBootstrapSvcs: 0,
+		},
+		{
+			name: "unordered mix of bootstrap and controller services",
+			input: []Service{
+				{
+					Name:      "test-controller-service",
+					Bootstrap: false,
+					Priority:  1,
+				},
+				{
+					Name:      "new-bootstrap-service",
+					Bootstrap: true,
+					Priority:  0,
+				},
+				{
+					Name:      "test-controller-service-2",
+					Bootstrap: false,
+					Priority:  2,
+				},
+			},
+			expectedNumBootstrapSvcs: 1,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			cmData, err := newData(&test.input, &[]FileInfo{})
+			require.NoError(t, err)
+			bootstrapSvcs := cmData.GetBootstrapServices()
+			assert.Equal(t, test.expectedNumBootstrapSvcs, len(bootstrapSvcs))
+		})
+	}
+}
+
 func TestValidateDependencies(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -515,18 +591,4 @@ func TestValidatePriorities(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
-}
-
-func TestEncodeDecode(t *testing.T) {
-	expectedData := &data{
-		Services: []Service{{Name: "test-service", Command: "test-command"}},
-		Files:    []FileInfo{{Path: "test/path", Checksum: "0"}},
-	}
-
-	encodedData, err := expectedData.MarshallAndEncode()
-	require.NoError(t, err)
-	decodedData, err := DecodeAndUnmarshall(encodedData)
-	require.NoError(t, err)
-
-	assert.Equal(t, expectedData, decodedData)
 }

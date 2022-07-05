@@ -65,6 +65,21 @@ type ServiceController struct {
 	watchNamespace string
 }
 
+// Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
+func (sc *ServiceController) Bootstrap(desiredVersion string) error {
+	var cm core.ConfigMap
+	err := sc.client.Get(sc.ctx,
+		client.ObjectKey{Namespace: sc.watchNamespace, Name: servicescm.NamePrefix + desiredVersion}, &cm)
+	if err != nil {
+		return err
+	}
+	cmData, err := servicescm.Parse(cm.Data)
+	if err != nil {
+		return err
+	}
+	return sc.reconcileServices(cmData.GetBootstrapServices())
+}
+
 // RunController is the entry point of WICD's controller functionality
 func RunController(ctx context.Context, apiServerURL, saCA, saToken string) error {
 	svcMgr, err := winsvc.NewMgr()

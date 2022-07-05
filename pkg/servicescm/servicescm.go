@@ -1,7 +1,6 @@
 package servicescm
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -171,26 +170,17 @@ func Parse(dataFromCM map[string]string) (*data, error) {
 	return newData(services, files)
 }
 
-// MarshallAndEncode returns a base64 encoded JSON representation of the data
-// TODO: Remove this when the WICD controller has permissions to watch ConfigMaps
-func (cmData *data) MarshallAndEncode() (string, error) {
-	marshalled, err := json.Marshal(cmData)
-	if err != nil {
-		return "", err
+// GetBootstrapServices filters the cmData object's services list and returns only the bootstrap services
+func (cmData *data) GetBootstrapServices() []Service {
+	bootstrapSvcs := []Service{}
+	for _, svc := range cmData.Services {
+		if !svc.Bootstrap {
+			// services are pre-sorted by priority, with all bootstrap services ordered towards the front of the slice
+			break
+		}
+		bootstrapSvcs = append(bootstrapSvcs, svc)
 	}
-	return base64.StdEncoding.EncodeToString(marshalled), nil
-}
-
-// DecodeAndUnmarshall takes in a JSON marshalled base64 encoded string and returns the decoded data
-// TODO: Remove this when the WICD controller has permissions to watch ConfigMaps
-func DecodeAndUnmarshall(base64Encoded string) (*data, error) {
-	marshalledData, err := base64.StdEncoding.DecodeString(base64Encoded)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to decode ConfigMap data")
-	}
-	data := data{}
-	err = json.Unmarshal(marshalledData, &data)
-	return &data, err
+	return bootstrapSvcs
 }
 
 // validate ensures the given object represents a valid services ConfigMap, ensuring bootstrap services are defined to
