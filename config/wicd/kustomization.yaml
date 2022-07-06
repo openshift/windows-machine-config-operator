@@ -1,0 +1,6 @@
+resources:
+- windows-instance-config-daemon-role.yaml
+- windows-instance-config-daemon-role-binding.yaml
+- windows-instance-config-daemon-cluster-role.yaml
+- windows-instance-config-daemon-cluster-role-binding.yaml
+- windows-instance-config-daemon-service-account.yaml
