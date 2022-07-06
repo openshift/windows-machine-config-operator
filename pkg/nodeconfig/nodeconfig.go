@@ -503,8 +503,7 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 
 // configureWICD configures and ensures WICD is running
 func (nc *nodeConfig) configureWICD() error {
-	// TODO: This ideally would use a separate WICD SA, with only the necessary permissions
-	tokenSecretPrefix := "windows-machine-config-operator-token-"
+	tokenSecretPrefix := "windows-instance-config-daemon-token-"
 	secrets, err := nc.k8sclientset.CoreV1().Secrets("openshift-windows-machine-config-operator").
 		List(context.TODO(), meta.ListOptions{})
 	if err != nil {
