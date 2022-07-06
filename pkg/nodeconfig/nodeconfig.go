@@ -18,8 +18,6 @@ import (
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-	cloudproviderapi "k8s.io/cloud-provider/api"
-	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	"k8s.io/kubectl/pkg/drain"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -232,17 +230,6 @@ func (nc *nodeConfig) Configure() error {
 		if ownedByCCM && nc.platformType == configv1.AzurePlatformType {
 			if err := nc.Windows.ConfigureAzureCloudNodeManager(nc.node.GetName()); err != nil {
 				return errors.Wrap(err, "configuring azure cloud node manager failed")
-			}
-
-			// If we deploy on Azure with CCM support, we have to explicitly remove the cloud taint, because cloud node manager
-			// running on the node can't do it itself. The taint should be removed only when the related CSR
-			// has been approved.
-			cloudTaint := &core.Taint{
-				Key:    cloudproviderapi.TaintExternalCloudProvider,
-				Effect: core.TaintEffectNoSchedule,
-			}
-			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
-				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
 			}
 		}
 		if err := nc.configureWICD(); err != nil {
