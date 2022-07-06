@@ -25,6 +25,7 @@ func testNodeLogs(t *testing.T) {
 		"wicd/windows-instance-config-daemon.exe.INFO",
 	}
 	optionalLogs := []string{
+		"azure-cloud-node-manager/azure-cloud-node-manager.exe.INFO",
 		"kube-proxy/kube-proxy.exe.ERROR",
 		"kube-proxy/kube-proxy.exe.WARNING",
 	}

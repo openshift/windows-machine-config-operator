@@ -39,6 +39,8 @@ const (
 	hybridOverlayLogDir = logDir + "hybrid-overlay\\"
 	// ContainerdLogDir is the remote containerd log directory
 	ContainerdLogDir = logDir + "containerd\\"
+	// azureCloudNodeManagerLogDir is the remote azure cloud node manager log directory
+	azureCloudNodeManagerLogDir = logDir + "azure-cloud-node-manager\\"
 	// wicdLogDir is the remote wicd log directory
 	wicdLogDir = logDir + "wicd\\"
 	// cniDir is the directory for storing CNI binaries
@@ -126,6 +128,7 @@ var (
 		kubeProxyLogDir,
 		wicdLogDir,
 		hybridOverlayLogDir,
+		azureCloudNodeManagerLogDir,
 		ContainerdDir,
 		ContainerdLogDir}
 )
@@ -590,7 +593,8 @@ func (vm *windows) EnsureCNIConfig(configFile string) error {
 }
 
 func (vm *windows) ConfigureAzureCloudNodeManager(nodeName string) error {
-	azureCloudNodeManagerServiceArgs := "--windows-service --node-name=" + nodeName + " --wait-routes=false --kubeconfig c:\\k\\kubeconfig"
+	azureCloudNodeManagerServiceArgs := "--windows-service --node-name=" + nodeName + " --wait-routes=false " +
+		"--kubeconfig c:\\k\\kubeconfig --log_dir " + azureCloudNodeManagerLogDir + " --logtostderr false"
 
 	azureCloudNodeManagerService, err := newService(
 		azureCloudNodeManagerPath,
