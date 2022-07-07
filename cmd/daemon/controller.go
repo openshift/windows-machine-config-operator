@@ -37,21 +37,12 @@ var (
 			"present within the cluster",
 		Run: runControllerCmd,
 	}
-	saToken        string
-	saCA           string
-	apiServerURL   string
 	windowsService bool
 	logDir         string
 )
 
 func init() {
 	rootCmd.AddCommand(controllerCmd)
-	controllerCmd.PersistentFlags().StringVar(&saToken, "sa-token", "", "Path to service account token file")
-	controllerCmd.MarkPersistentFlagRequired("sa-token")
-	controllerCmd.PersistentFlags().StringVar(&saCA, "sa-ca", "", "Path to service account CA file")
-	controllerCmd.MarkPersistentFlagRequired("sa-ca")
-	controllerCmd.PersistentFlags().StringVar(&apiServerURL, "api-server", "", "URL of API server")
-	controllerCmd.MarkPersistentFlagRequired("api-server")
 	controllerCmd.PersistentFlags().StringVar(&logDir, "log-dir", "", "Directory to write logs to, "+
 		"if not provided, the command will log to stdout/stderr")
 	controllerCmd.PersistentFlags().BoolVar(&windowsService, "windows-service", false,

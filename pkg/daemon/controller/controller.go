@@ -21,7 +21,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"reflect"
 	"strings"
@@ -34,8 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
-	certutil "k8s.io/client-go/util/cert"
 	"k8s.io/client-go/util/jsonpath"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -47,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
@@ -67,14 +65,30 @@ type ServiceController struct {
 	watchNamespace string
 }
 
+// Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
+func (sc *ServiceController) Bootstrap(desiredVersion string) error {
+	var cm core.ConfigMap
+	err := sc.client.Get(sc.ctx,
+		client.ObjectKey{Namespace: sc.watchNamespace, Name: servicescm.NamePrefix + desiredVersion}, &cm)
+	if err != nil {
+		return err
+	}
+	cmData, err := servicescm.Parse(cm.Data)
+	if err != nil {
+		return err
+	}
+	return sc.reconcileServices(cmData.GetBootstrapServices())
+}
+
 // RunController is the entry point of WICD's controller functionality
 func RunController(ctx context.Context, apiServerURL, saCA, saToken string) error {
 	svcMgr, err := winsvc.NewMgr()
 	if err != nil {
 		return err
 	}
-	config, err := configFromServiceAccount(apiServerURL, saCA, saToken)
+	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
 	if err != nil {
+		klog.Error(err)
 		return errors.Wrap(err, "error using service account to build config")
 	}
 
@@ -85,7 +99,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 	}
 	// This is a client that reads directly from the server, not a cached client. This is required to be used here, as
 	// the cached client, created by ctrl.NewManager() will not be functional until the manager is started.
-	directClient, err := client.New(config, client.Options{Scheme: clientScheme})
+	directClient, err := client.New(cfg, client.Options{Scheme: clientScheme})
 	if err != nil {
 		return err
 	}
@@ -105,7 +119,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 		return err
 	}
 
-	ctrlMgr, err := ctrl.NewManager(config, ctrl.Options{
+	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Namespace: wmcoNamespace,
 		Scheme:    clientScheme,
 	})
@@ -121,27 +135,6 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 		return err
 	}
 	return nil
-}
-
-// configFromServiceAccount uses credentials associated with a service account to authenticate with a cluster
-func configFromServiceAccount(apiServerURL, caFile, tokenFile string) (*rest.Config, error) {
-	token, err := ioutil.ReadFile(tokenFile)
-	if err != nil {
-		klog.Errorf("error reading token file: %v", err)
-		return nil, err
-	}
-	if _, err := certutil.NewPool(caFile); err != nil {
-		klog.Errorf("Expected to load CA config from %s, but got err: %v", caFile, err)
-		return nil, err
-	}
-	tlsClientConfig := rest.TLSClientConfig{CAFile: caFile}
-
-	return &rest.Config{
-		Host:            apiServerURL,
-		TLSClientConfig: tlsClientConfig,
-		BearerToken:     string(token),
-		BearerTokenFile: tokenFile,
-	}, nil
 }
 
 // NewServiceController returns a pointer to a ServiceController object

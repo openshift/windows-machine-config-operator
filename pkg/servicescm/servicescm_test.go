@@ -78,6 +78,82 @@ func TestGenerate(t *testing.T) {
 	assert.NoError(t, data.ValidateRequiredContent())
 }
 
+func TestGetBootstrapServices(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		input                    []Service
+		expectedNumBootstrapSvcs int
+	}{
+		{
+			name:                     "empty services list",
+			input:                    []Service{},
+			expectedNumBootstrapSvcs: 0,
+		},
+		{
+			name: "only bootstrap services",
+			input: []Service{
+				{
+					Name:      "new-bootstrap-service",
+					Bootstrap: true,
+					Priority:  0,
+				},
+				{
+					Name:      "new-bootstrap-service-2",
+					Bootstrap: true,
+					Priority:  1,
+				},
+			},
+			expectedNumBootstrapSvcs: 2,
+		},
+		{
+			name: "only controller services",
+			input: []Service{
+				{
+					Name:      "test-controller-service",
+					Bootstrap: false,
+					Priority:  1,
+				},
+				{
+					Name:      "test-controller-service-2",
+					Bootstrap: false,
+					Priority:  2,
+				},
+			},
+			expectedNumBootstrapSvcs: 0,
+		},
+		{
+			name: "unordered mix of bootstrap and controller services",
+			input: []Service{
+				{
+					Name:      "test-controller-service",
+					Bootstrap: false,
+					Priority:  1,
+				},
+				{
+					Name:      "new-bootstrap-service",
+					Bootstrap: true,
+					Priority:  0,
+				},
+				{
+					Name:      "test-controller-service-2",
+					Bootstrap: false,
+					Priority:  2,
+				},
+			},
+			expectedNumBootstrapSvcs: 1,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			cmData, err := newData(&test.input, &[]FileInfo{})
+			require.NoError(t, err)
+			bootstrapSvcs := cmData.GetBootstrapServices()
+			assert.Equal(t, test.expectedNumBootstrapSvcs, len(bootstrapSvcs))
+		})
+	}
+}
+
 func TestValidateDependencies(t *testing.T) {
 	testCases := []struct {
 		name        string
@@ -94,13 +170,7 @@ func TestValidateDependencies(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -112,8 +182,14 @@ func TestValidateDependencies(t *testing.T) {
 					Priority:     0,
 				},
 				{
-					Name:         "test-controller-service",
-					Command:      "C:\\test-controller-service",
+					Name:    "test-controller-service",
+					Command: "C:\\test-controller-service --variable-arg1=NODE_NAME",
+					NodeVariablesInCommand: []NodeCmdArg{
+						{
+							Name:               "NODE_NAME",
+							NodeObjectJsonPath: "metadata.name",
+						},
+					},
 					Dependencies: []string{},
 					Bootstrap:    false,
 					Priority:     1,
@@ -126,13 +202,7 @@ func TestValidateDependencies(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -161,17 +231,37 @@ func TestValidateDependencies(t *testing.T) {
 			expectedErr: false,
 		},
 		{
-			name: "bootstrap depends on all non-bootstrap services",
+			name: "bootstrap service requires node variable in command",
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
+					Command: "C:\\new-service --variable-arg1=NODE_NAME",
 					NodeVariablesInCommand: []NodeCmdArg{
 						{
 							Name:               "NODE_NAME",
 							NodeObjectJsonPath: "metadata.name",
 						},
 					},
+					Dependencies: []string{"test-controller-service", "test-controller-service-2"},
+					Bootstrap:    true,
+					Priority:     0,
+				},
+				{
+					Name:         "test-controller-service",
+					Command:      "C:\\test-controller-service",
+					Dependencies: []string{},
+					Bootstrap:    false,
+					Priority:     1,
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			name: "bootstrap depends on all non-bootstrap services",
+			input: []Service{
+				{
+					Name:    "new-bootstrap-service",
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -204,13 +294,7 @@ func TestValidateDependencies(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -335,13 +419,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -374,13 +452,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -413,13 +485,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -452,13 +518,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -491,13 +551,7 @@ func TestValidatePriorities(t *testing.T) {
 			input: []Service{
 				{
 					Name:    "new-bootstrap-service",
-					Command: "C:\\new-service --variable-arg1=NODE_NAME --variable-arg2=NETWORK_IP",
-					NodeVariablesInCommand: []NodeCmdArg{
-						{
-							Name:               "NODE_NAME",
-							NodeObjectJsonPath: "metadata.name",
-						},
-					},
+					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
 					PowershellVariablesInCommand: []PowershellCmdArg{
 						{
 							Name: "NETWORK_IP",
@@ -537,18 +591,4 @@ func TestValidatePriorities(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
-}
-
-func TestEncodeDecode(t *testing.T) {
-	expectedData := &data{
-		Services: []Service{{Name: "test-service", Command: "test-command"}},
-		Files:    []FileInfo{{Path: "test/path", Checksum: "0"}},
-	}
-
-	encodedData, err := expectedData.MarshallAndEncode()
-	require.NoError(t, err)
-	decodedData, err := DecodeAndUnmarshall(encodedData)
-	require.NoError(t, err)
-
-	assert.Equal(t, expectedData, decodedData)
 }
