@@ -40,6 +40,9 @@ replace() {
     # Delete the subscription line
     yq eval --exit-status --inplace 'del(.metadata.annotations."operators.openshift.io/valid-subscription")' "${CO_CSV}"
 
+    # Delete the testing line
+    yq eval --exit-status --inplace 'del(.annotations."operators.operatorframework.io.test.config.v1")' "${CO_ANNOTATIONS}"
+
     # Replace annotations fields
     # TODO: use yq for the annotations.yaml replacement
     sed -i -e "s/"preview,stable"/$MATURITY/" -e "s/"stable"/$MATURITY/" "${CO_ANNOTATIONS}"

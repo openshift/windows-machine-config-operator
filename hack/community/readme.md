@@ -20,11 +20,11 @@ Before running generate.sh, please ensure the following has merged:
 ### From WMCO root, run:
 Parameter 3 can be grabbed from our [Quay repo](https://quay.io/repository/openshift-windows/community-windows-machine-config-operator?tab=tags).
 ```shell script
-bash ./hack/community/generate.sh <community_wmco_version> <community_ocp_version> <latest_community-4.x_tag-commit-hash> <path/to/community-operators-prod>
+bash ./hack/community/generate.sh <community_wmco_version> <community_ocp_version> <path/to/latest_community-4.x_tag> <path/to/community-operators-prod>
 ```
 Example: Cut community release v5.1.0 for community-4.10
 ```shell script
-bash ./hack/community/generate.sh 5.1.0 community-4.10 community-4.10-hash ../community-operators-prod
+bash ./hack/community/generate.sh 5.1.0 community-4.10 quay.io/openshift-windows/community-windows-machine-config-operator:community-4.10-hash ../community-operators-prod
 ```
 
 ### Review and test the operator
