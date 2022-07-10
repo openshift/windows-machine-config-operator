@@ -353,8 +353,8 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 	} else if !psCmd && vm.defaultShellPowerShell {
 		// When running cmd through powershell, double quotes can cause parsing issues, so replace with single quotes
 		// CMD doesn't treat ' as quotes when processing commands, so the quotes must be changed on a case by case basis
-		cmd = strings.ReplaceAll(cmd, "\"", "'")
-		cmd = "cmd /c " + cmd
+		// Use /S to modify the treatment of strings after /C. See cmd.exe /?
+		cmd = "cmd.exe /S /C " + cmd
 	}
 
 	out, err := vm.interact.run(cmd)
