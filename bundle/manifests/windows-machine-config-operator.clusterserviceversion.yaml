@@ -132,6 +132,11 @@ spec:
     - [AWS](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-aws.md)
     - [Azure](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-azure.md)
 
+    ### Limitations
+    #### DeploymentConfigs
+    Windows Nodes do not support workloads created via DeploymentConfigs. Please use a normal Deployment, or other method to
+    deploy workloads.
+
     ### Reporting issues
     Support for this distribution of WMCO requires a Red Hat OpenShfit subscription. Support should be requested through the Red Hat Customer Portal.
     Please read through the [troubleshooting document](https://docs.openshift.com/container-platform/4.6/support/troubleshooting/troubleshooting-windows-container-workload-issues.html)

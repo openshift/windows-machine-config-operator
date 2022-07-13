@@ -17,3 +17,7 @@ all the necessary steps to configure the instance so that it can join the cluste
 - [Cluster and OS pre-requisites](https://github.com/openshift/windows-machine-config-operator/blob/COMMUNITY_VERSION/docs/wmco-prerequisites.md)
 ### Usage
 Please see the usage section of [README.md](https://github.com/openshift/windows-machine-config-operator/blob/COMMUNITY_VERSION/README.md#usage).
+### Limitations
+#### DeploymentConfigs
+Windows Nodes do not support workloads created via DeploymentConfigs. Please use a normal Deployment, or other method to
+deploy workloads.
