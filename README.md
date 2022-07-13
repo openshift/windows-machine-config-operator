@@ -217,6 +217,12 @@ Cluster autoscaling is supported for Windows instances.
 Windows instances brought up with WMCO are set up with the containerd container runtime. As WMCO installs and manages the container runtime,
 it is recommended not to preinstall containerd in MachineSet or BYOH Windows instances.
 
+## Limitations
+
+### DeploymentConfigs
+Windows Nodes do not support workloads created via DeploymentConfigs. Please use a normal Deployment, or other method to
+deploy workloads.
+
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
