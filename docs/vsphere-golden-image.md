@@ -6,7 +6,6 @@ This guide describes the thought process of creating a Windows virtual machine b
 
 Currently, the Windows Machine Config Operator (WMCO) stable version supports:
 * Windows Server 2022 Long-Term Servicing Channel (must contain the OS-level container networking patch [KB5012637](https://support.microsoft.com/en-us/topic/april-25-2022-kb5012637-os-build-20348-681-preview-2233d69c-d4a5-4be9-8c24-04a450861a8d))
-* Windows Server 20H2 Semi-Annual Channel
 
 *Please note that Windows Server 2019 is unsupported, as patch [KB4565351](https://support.microsoft.com/en-us/help/4565351/windows-10-update-kb4565351)
 is not included. This is a requirement of the [hybrid OVN Kubernetes networking with a custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vSphere) feature.*
