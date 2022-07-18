@@ -73,7 +73,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		klog.Exitf("could not create service manager: %s", err.Error())
 	}
-	sc := controller.NewServiceController(context.TODO(), directClient, svcMgr, "")
+	sc := controller.NewServiceController(context.TODO(), directClient, svcMgr, nil, "")
 
 	klog.Info("bootstrapping node")
 	if err := sc.Bootstrap(desiredVersion); err != nil {

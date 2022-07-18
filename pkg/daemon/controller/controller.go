@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os/exec"
 	"reflect"
 	"strings"
 
@@ -57,12 +58,17 @@ const (
 	wmcoNamespace = "openshift-windows-machine-config-operator"
 )
 
+type PowershellCommandRunner interface {
+	Run(string) (string, error)
+}
+
 type ServiceController struct {
 	winsvc.Mgr
 	client         client.Client
 	ctx            context.Context
 	nodeName       string
 	watchNamespace string
+	psCmdRunner    PowershellCommandRunner
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
@@ -126,7 +132,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 	if err != nil {
 		return errors.Wrap(err, "unable to start manager")
 	}
-	sc := NewServiceController(ctx, ctrlMgr.GetClient(), svcMgr, node.Name)
+	sc := NewServiceController(ctx, ctrlMgr.GetClient(), svcMgr, nil, node.Name)
 	if err = sc.SetupWithManager(ctrlMgr); err != nil {
 		return err
 	}
@@ -138,9 +144,26 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 }
 
 // NewServiceController returns a pointer to a ServiceController object
-func NewServiceController(ctx context.Context, client client.Client, mgr winsvc.Mgr, nodeName string) *ServiceController {
-	return &ServiceController{client: client, Mgr: mgr, ctx: ctx, nodeName: nodeName,
-		watchNamespace: wmcoNamespace}
+// cmdRunner will be set to the default psCmdRunner if nil
+func NewServiceController(ctx context.Context, client client.Client, mgr winsvc.Mgr, cmdRunner PowershellCommandRunner,
+	nodeName string) *ServiceController {
+	if cmdRunner == nil {
+		cmdRunner = &psCmdRunner{}
+	}
+	return &ServiceController{client: client, Mgr: mgr, ctx: ctx, psCmdRunner: cmdRunner,
+		nodeName: nodeName, watchNamespace: wmcoNamespace}
+}
+
+// psCmdRunner implements the PowershellCommandRunner interface
+type psCmdRunner struct{}
+
+// Run runs the command with the PowerShell on PATH
+func (r *psCmdRunner) Run(cmd string) (string, error) {
+	out, err := exec.Command("powershell", "/c", cmd).CombinedOutput()
+	if err != nil {
+		return "", errors.Wrapf(err, "error running command with output %s", string(out))
+	}
+	return string(out), nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -370,11 +393,18 @@ func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[s
 	return vars, nil
 }
 
-// resolvePowershellVariables returns a map, with the keys being each variable, and the value being the string to replace the
-// variable with
+// resolvePowershellVariables returns a map, with the keys being each variable, and the value being the string to
+// replace the variable with
 func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) (map[string]string, error) {
-	// TODO: Implement this function
-	return make(map[string]string), nil
+	vars := make(map[string]string)
+	for _, psVar := range svc.PowershellVariablesInCommand {
+		out, err := sc.psCmdRunner.Run(psVar.Path)
+		if err != nil {
+			return nil, errors.Wrapf(err, "could not resolve PowerShell variable %s", psVar.Name)
+		}
+		vars[psVar.Name] = strings.TrimSpace(out)
+	}
+	return vars, nil
 }
 
 // localInterfaceAddresses returns a slice of all addresses associated with local network interfaces
