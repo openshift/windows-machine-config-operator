@@ -25,6 +25,18 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
+type fakePSCmdRunner struct {
+	results map[string]string
+}
+
+func (f *fakePSCmdRunner) Run(cmd string) (string, error) {
+	result, present := f.results[cmd]
+	if !present {
+		return "", errors.New("bad command")
+	}
+	return result, nil
+}
+
 func TestResolveNodeVariables(t *testing.T) {
 	testIO := []struct {
 		name            string
@@ -102,7 +114,8 @@ func TestResolveNodeVariables(t *testing.T) {
 						Labels:      test.nodeLabels,
 					},
 				}).Build(),
-				Mgr: fake.NewTestMgr(nil),
+				Mgr:       fake.NewTestMgr(nil),
+				cmdRunner: &fakePSCmdRunner{},
 			})
 			require.NoError(t, err)
 			actual, err := c.resolveNodeVariables(test.service)
@@ -201,6 +214,65 @@ func TestReconcileService(t *testing.T) {
 			},
 			expectErr: false,
 		},
+		{
+			name: "Service command powershell variable substitution",
+			service: fake.NewFakeService(
+				"fakeservice",
+				mgr.Config{
+					BinaryPathName: "bad",
+					Description:    "bad",
+				},
+				svc.Status{
+					State: svc.Running,
+				}),
+			expectedService: servicescm.Service{
+				Name:                   "fakeservice",
+				Command:                "fakeservice --ip_example=CMD_REPLACE -v",
+				NodeVariablesInCommand: nil,
+				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
+					Name: "CMD_REPLACE",
+					Path: "c:\\k\\script.ps1",
+				}},
+				Dependencies: nil,
+			},
+			expectedServiceConfig: mgr.Config{
+				BinaryPathName: "fakeservice --ip_example=127.0.0.1 -v",
+				Dependencies:   nil,
+				Description:    "OpenShift managed fakeservice",
+			},
+			expectErr: false,
+		},
+		{
+			name: "Service command node and powershell variable substitution",
+			service: fake.NewFakeService(
+				"fakeservice",
+				mgr.Config{
+					BinaryPathName: "bad",
+					Description:    "bad",
+				},
+				svc.Status{
+					State: svc.Running,
+				}),
+			expectedService: servicescm.Service{
+				Name:    "fakeservice",
+				Command: "fakeservice --node-name=NAME_REPLACE --ip_example=CMD_REPLACE -v",
+				NodeVariablesInCommand: []servicescm.NodeCmdArg{{
+					Name:               "NAME_REPLACE",
+					NodeObjectJsonPath: "{.metadata.name}",
+				}},
+				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
+					Name: "CMD_REPLACE",
+					Path: "c:\\k\\script.ps1",
+				}},
+				Dependencies: nil,
+			},
+			expectedServiceConfig: mgr.Config{
+				BinaryPathName: "fakeservice --node-name=node --ip_example=127.0.0.1 -v",
+				Dependencies:   nil,
+				Description:    "OpenShift managed fakeservice",
+			},
+			expectErr: false,
+		},
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
@@ -211,6 +283,11 @@ func TestReconcileService(t *testing.T) {
 					},
 				}).Build(),
 				Mgr: fake.NewTestMgr(map[string]*fake.FakeService{"fakeservice": test.service}),
+				cmdRunner: &fakePSCmdRunner{
+					map[string]string{
+						"c:\\k\\script.ps1": "127.0.0.1",
+					},
+				},
 			})
 			require.NoError(t, err)
 			err = c.reconcileService(test.service, test.expectedService)
@@ -229,7 +306,6 @@ func TestReconcileService(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
-	// TODO: Once resolvePowershellVariables() is implemented, harden example services with Powershell vars to replace
 	testIO := []struct {
 		name                         string
 		configMapServices            []servicescm.Service
@@ -312,8 +388,9 @@ func TestBootstrap(t *testing.T) {
 
 			winSvcMgr := fake.NewTestMgr(make(map[string]*fake.FakeService))
 			sc, err := NewServiceController(context.TODO(), "", Options{
-				Client: clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
-				Mgr:    winSvcMgr,
+				Client:    clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
+				Mgr:       winSvcMgr,
+				cmdRunner: &fakePSCmdRunner{},
 			})
 			require.NoError(t, err)
 
@@ -421,8 +498,9 @@ func TestReconcile(t *testing.T) {
 
 			winSvcMgr := fake.NewTestMgr(test.existingServices)
 			c, err := NewServiceController(context.TODO(), "node", Options{
-				Client: clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
-				Mgr:    winSvcMgr,
+				Client:    clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
+				Mgr:       winSvcMgr,
+				cmdRunner: &fakePSCmdRunner{},
 			})
 			_, err = c.Reconcile(context.TODO(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "node"}})
 			if test.expectErr {

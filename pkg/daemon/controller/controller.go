@@ -47,6 +47,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
@@ -61,9 +62,10 @@ const (
 
 // Options contains a list of options available when creating a new ServiceController
 type Options struct {
-	Config *rest.Config
-	Client client.Client
-	Mgr    manager.Manager
+	Config    *rest.Config
+	Client    client.Client
+	Mgr       manager.Manager
+	cmdRunner powershell.CommandRunner
 }
 
 // setDefaults returns an Options based on the received options, with all nil or empty fields filled in with reasonable
@@ -90,6 +92,9 @@ func setDefaults(o Options) (Options, error) {
 			return o, err
 		}
 	}
+	if o.cmdRunner == nil {
+		o.cmdRunner = powershell.NewCommandRunner()
+	}
 	return o, nil
 }
 
@@ -99,6 +104,7 @@ type ServiceController struct {
 	ctx            context.Context
 	nodeName       string
 	watchNamespace string
+	psCmdRunner    powershell.CommandRunner
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
@@ -166,7 +172,7 @@ func NewServiceController(ctx context.Context, nodeName string, options Options)
 	if err != nil {
 		return nil, err
 	}
-	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName,
+	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
 		watchNamespace: WMCONamespace}, nil
 }
 
@@ -381,11 +387,18 @@ func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[s
 	return vars, nil
 }
 
-// resolvePowershellVariables returns a map, with the keys being each variable, and the value being the string to replace the
-// variable with
+// resolvePowershellVariables returns a map, with the keys being each variable, and the value being the string to
+// replace the variable with
 func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) (map[string]string, error) {
-	// TODO: Implement this function
-	return make(map[string]string), nil
+	vars := make(map[string]string)
+	for _, psVar := range svc.PowershellVariablesInCommand {
+		out, err := sc.psCmdRunner.Run(psVar.Path)
+		if err != nil {
+			return nil, errors.Wrapf(err, "could not resolve PowerShell variable %s", psVar.Name)
+		}
+		vars[psVar.Name] = strings.TrimSpace(out)
+	}
+	return vars, nil
 }
 
 // NewDirectClient creates and returns an authenticated client that reads directly from the API server.
