@@ -443,8 +443,12 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 // getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
 func (tc *testContext) getWindowsServerContainerImage() string {
 	var windowsServerImage string
-	if tc.hasCustomVXLAN {
-		// If we're using a custom VXLANPort we need to use 2004
+	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
+		// If we're on vSphere we will use 2022
+		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
+	} else if tc.CloudProvider.GetType() == config.NonePlatformType {
+		// TODO: On platform=none we have to use 2004 since the job points to the WS2004 golden image via release repo
+		// When the release repo is updated to use 2022, this clause should be squashed with the above to use 2022
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-2004"
 	} else if tc.CloudProvider.GetType() == config.AzurePlatformType {
 		// On Azure we are testing 20H2
@@ -456,7 +460,7 @@ func (tc *testContext) getWindowsServerContainerImage() string {
 	return windowsServerImage
 }
 
-// createWindowsServerDeployment creates a deployment with a Windows Server 2019 container. If affinity is nil then the
+// createWindowsServerDeployment creates a deployment with a Windows Server container. If affinity is nil then the
 // number of replicas will be set to 3 to allow for network testing across nodes.
 func (tc *testContext) createWindowsServerDeployment(name string, command []string, affinity *v1.Affinity) (*appsv1.Deployment, error) {
 	deploymentsClient := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace)
