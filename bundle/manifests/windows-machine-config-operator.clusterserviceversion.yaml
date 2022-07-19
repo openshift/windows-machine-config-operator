@@ -315,14 +315,6 @@ spec:
           - list
           - watch
         - apiGroups:
-          - monitoring.coreos.com
-          resources:
-          - servicemonitors
-          verbs:
-          - delete
-          - get
-          - list
-        - apiGroups:
           - operators.coreos.com
           resources:
           - operatorconditions
