@@ -336,6 +336,19 @@ func TestValidateDependencies(t *testing.T) {
 			expectedErr: true,
 		},
 		{
+			name: "Service depends on a service not defined in the services ConfigMap",
+			input: []Service{
+				{
+					Name:         "test-service",
+					Command:      "C:\\test-service",
+					Dependencies: []string{"external-svc"},
+					Bootstrap:    false,
+					Priority:     0,
+				},
+			},
+			expectedErr: false,
+		},
+		{
 			name: "Cyclical dependency structure",
 			input: []Service{
 				{
