@@ -64,9 +64,6 @@ const (
 	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
 	windowsExporterServiceArgs = "--collectors.enabled " +
 		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info"
-	// remotePowerShellCmdPrefix holds the PowerShell prefix that needs to be prefixed  for every remote PowerShell
-	// command executed on the remote Windows VM
-	remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass "
 	// serviceQueryCmd is the Windows command used to query a service
 	serviceQueryCmd = "sc.exe qc "
 	// serviceNotFound is part of the error output returned when a service does not exist. 1060 is an error code
@@ -262,7 +259,7 @@ func (vm *windows) FileExists(path string) (bool, error) {
 
 func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 	if psCmd && !vm.defaultShellPowerShell {
-		cmd = remotePowerShellCmdPrefix + cmd
+		cmd = formatRemotePowerShellCommand(cmd)
 	} else if !psCmd && vm.defaultShellPowerShell {
 		// When running cmd through powershell, double quotes can cause parsing issues, so replace with single quotes
 		// CMD doesn't treat ' as quotes when processing commands, so the quotes must be changed on a case by case basis
@@ -439,8 +436,7 @@ func (vm *windows) ConfigureCNI(configFile string) error {
 
 	cniConfigDest := cniConfDir + filepath.Base(configFile)
 	// run the configure-cni command on the Windows VM
-	configureCNICmd := k8sDir + "wmcb.exe configure-cni --cni-dir=\"" +
-		cniDir + " --cni-config=\"" + cniConfigDest
+	configureCNICmd := k8sDir + "wmcb.exe configure-cni --cni-dir=" + cniDir + " --cni-config=" + cniConfigDest
 
 	out, err := vm.Run(configureCNICmd, true)
 	if err != nil {
@@ -797,12 +793,12 @@ func (vm *windows) waitForServiceToRun(serviceName string) error {
 // createHNSEndpoint makes a request to create a new HNS endpoint for the Hybrid Overlay network on the VM. On success,
 // the IP of the endpoint will be returned.
 func (vm *windows) createHNSEndpoint() (string, error) {
-	cmd := "\"Import-Module -DisableNameChecking " + hnsPSModule + "; " +
+	cmd := "Import-Module -DisableNameChecking " + hnsPSModule + "; " +
 		"$net = (Get-HnsNetwork | where { $_.Name -eq '" + OVNKubeOverlayNetwork + "' }); " +
 		"$endpoint = New-HnsEndpoint -NetworkId $net.ID -Name VIPEndpoint; " +
 		"Attach-HNSHostEndpoint -EndpointID $endpoint.ID -CompartmentID 1; " +
 		"(Get-NetIPConfiguration -AllCompartments -All -Detailed | " +
-		"where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()\""
+		"where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()"
 	out, err := vm.Run(cmd, true)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get source VIP")
@@ -859,7 +855,7 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 
 // removeHNSNetwork removes the given HNS network.
 func (vm *windows) removeHNSNetwork(networkName string) error {
-	cmd := getHNSNetworkCmd(networkName) + " | Remove-HnsNetwork;\""
+	cmd := getHNSNetworkCmd(networkName) + " | Remove-HnsNetwork;"
 	// PowerShell returns error waiting without exit status or signal error when the OVNKubeOverlayNetwork is removed.
 	if out, err := vm.Run(cmd, true); err != nil && !(networkName == OVNKubeOverlayNetwork && strings.Contains(err.Error(), cmdExitNoStatus)) {
 		return errors.Wrapf(err, "failed to remove %s HNS network with output: %s", networkName, out)
@@ -868,6 +864,13 @@ func (vm *windows) removeHNSNetwork(networkName string) error {
 }
 
 // Generic helper methods
+
+// formatRemotePowerShellCommand returns a formatted string, prepended with the required PowerShell prefix and
+// surrounding quotes needed to execute the given command on a remote Windows VM
+func formatRemotePowerShellCommand(command string) string {
+	remotePowerShellCmdPrefix := "powershell.exe -NonInteractive -ExecutionPolicy Bypass"
+	return fmt.Sprintf("%s \"%s\"", remotePowerShellCmdPrefix, command)
+}
 
 // mkdirCmd returns the Windows command to create a directory if it does not exists
 func mkdirCmd(dirName string) string {
@@ -882,5 +885,5 @@ func rmDirCmd(dirName string) string {
 
 // getHNSNetworkCmd returns the Windows command to get HNS network by name
 func getHNSNetworkCmd(networkName string) string {
-	return "\"Get-HnsNetwork | where { $_.Name -eq '" + networkName + "'}"
+	return "Get-HnsNetwork | where { $_.Name -eq '" + networkName + "'}"
 }
