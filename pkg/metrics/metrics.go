@@ -221,11 +221,20 @@ func (c *Config) Configure(ctx context.Context) error {
 	}
 	// In the case of an operator restart, a previous Endpoint object will be deleted and a new one will
 	// be created to ensure we have a correct spec.
-	err = c.CoreV1().Endpoints(c.namespace).Delete(ctx, WindowsMetricsResource, metav1.DeleteOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		return errors.Wrap(err, "error deleting existing metrics Endpoint")
+	var subsets []v1.EndpointSubset
+	existingEndpoint, err := c.CoreV1().Endpoints(c.namespace).Get(ctx, WindowsMetricsResource, metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return errors.Wrapf(err, "error retrieving %s endpoint", WindowsMetricsResource)
+		}
+	} else {
+		subsets = existingEndpoint.Subsets
+		err = c.CoreV1().Endpoints(c.namespace).Delete(ctx, WindowsMetricsResource, metav1.DeleteOptions{})
+		if err != nil {
+			return errors.Wrapf(err, "error deleting %s endpoint", WindowsMetricsResource)
+		}
 	}
-	if err := c.createEndpoint(); err != nil {
+	if err := c.createEndpoint(subsets); err != nil {
 		return errors.Wrap(err, "error creating metrics Endpoint")
 	}
 	return nil
@@ -253,7 +262,7 @@ func (c *Config) validate(ctx context.Context) (bool, error) {
 // object is created and WMCO needs to create the Endpoint object.
 // We cannot create endpoints as a part of manifests deployment as
 // Endpoints resources are not currently OLM-supported for bundle creation.
-func (c *Config) createEndpoint() error {
+func (c *Config) createEndpoint(subsets []v1.EndpointSubset) error {
 	// create new Endpoint
 	newEndpoint := &v1.Endpoints{
 		TypeMeta: metav1.TypeMeta{
@@ -264,7 +273,7 @@ func (c *Config) createEndpoint() error {
 			Namespace: c.namespace,
 			Labels:    map[string]string{"name": WindowsMetricsResource},
 		},
-		Subsets: nil,
+		Subsets: subsets,
 	}
 	_, err := c.CoreV1().Endpoints(c.namespace).Create(context.TODO(),
 		newEndpoint, metav1.CreateOptions{})
