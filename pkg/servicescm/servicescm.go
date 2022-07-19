@@ -28,11 +28,6 @@ const (
 var (
 	// Name is the full name of the Windows services ConfigMap, detailing the service config for a specific WMCO version
 	Name string
-	//TODO: Fill in required content as services and files are added to the ConfigMap definition
-	// requiredServices is the source of truth for expected service configuration on a Windows Node
-	requiredServices = &[]Service{}
-	// requiredFiles is the source of truth for files that are expected to exist on a Windows Node
-	requiredFiles = &[]FileInfo{}
 )
 
 // init runs once, initializing global variables
@@ -86,32 +81,27 @@ type FileInfo struct {
 	Checksum string `json:"checksum"`
 }
 
-// data represents the Data field of a `windows-services` ConfigMap resource, which is all the required information to
+// Data represents the Data field of a `windows-services` ConfigMap resource, which is all the required information to
 // configure a Windows instance as a Node
-type data struct {
+type Data struct {
 	// Services contains information required to start all required Windows services with proper arguments and order
 	Services []Service `json:"services"`
 	// Files contains the path and checksum of all the files copied to a Windows VM by WMCO
 	Files []FileInfo `json:"files"`
 }
 
-// newData returns a new 'data' object with the given services and files. Validates given object contents on creation.
-func newData(services *[]Service, files *[]FileInfo) (*data, error) {
-	cmData := &data{*services, *files}
+// NewData returns a new 'Data' object with the given services and files. Validates given object contents on creation.
+func NewData(services *[]Service, files *[]FileInfo) (*Data, error) {
+	cmData := &Data{*services, *files}
 	if err := cmData.validate(); err != nil {
 		return nil, errors.Wrap(err, "unable to create services ConfigMap data object")
 	}
 	return cmData, nil
 }
 
-// Generate returns the specifications for the Windows Service ConfigMap expected by WMCO
-func Generate(name, namespace string) (*core.ConfigMap, error) {
-	return GenerateWithData(name, namespace, requiredServices, requiredFiles)
-}
-
-// GenerateWithData creates an immutable service ConfigMap which provides WICD with the specifications
+// Generate creates an immutable service ConfigMap which provides WICD with the specifications
 // for each Windows service that must be created on a Windows instance.
-func GenerateWithData(name, namespace string, services *[]Service, files *[]FileInfo) (*core.ConfigMap, error) {
+func Generate(name, namespace string, data *Data) (*core.ConfigMap, error) {
 	immutable := true
 	servicesConfigMap := &core.ConfigMap{
 		ObjectMeta: meta.ObjectMeta{
@@ -122,18 +112,13 @@ func GenerateWithData(name, namespace string, services *[]Service, files *[]File
 		Data:      make(map[string]string),
 	}
 
-	cmData, err := newData(services, files)
-	if err != nil {
-		return nil, err
-	}
-
-	jsonServices, err := json.Marshal(cmData.Services)
+	jsonServices, err := json.Marshal(data.Services)
 	if err != nil {
 		return nil, err
 	}
 	servicesConfigMap.Data[servicesKey] = string(jsonServices)
 
-	jsonFiles, err := json.Marshal(cmData.Files)
+	jsonFiles, err := json.Marshal(data.Files)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +129,7 @@ func GenerateWithData(name, namespace string, services *[]Service, files *[]File
 
 // Parse converts ConfigMap data into the objects representing a Windows services ConfigMap schema
 // Returns error if the given data is invalid in structure
-func Parse(dataFromCM map[string]string) (*data, error) {
+func Parse(dataFromCM map[string]string) (*Data, error) {
 	if len(dataFromCM) != 2 {
 		return nil, errors.New("services ConfigMap should have exactly 2 keys")
 	}
@@ -167,11 +152,11 @@ func Parse(dataFromCM map[string]string) (*data, error) {
 		return nil, err
 	}
 
-	return newData(services, files)
+	return NewData(services, files)
 }
 
 // GetBootstrapServices filters the cmData object's services list and returns only the bootstrap services
-func (cmData *data) GetBootstrapServices() []Service {
+func (cmData *Data) GetBootstrapServices() []Service {
 	bootstrapSvcs := []Service{}
 	for _, svc := range cmData.Services {
 		if !svc.Bootstrap {
@@ -185,31 +170,31 @@ func (cmData *data) GetBootstrapServices() []Service {
 
 // validate ensures the given object represents a valid services ConfigMap, ensuring bootstrap services are defined to
 // always start before controller services.
-func (cmData *data) validate() error {
+func (cmData *Data) validate() error {
 	if err := validateDependencies(cmData.Services); err != nil {
 		return err
 	}
 	return validatePriorities(cmData.Services)
 }
 
-// ValidateRequiredContent ensures that the given slices are comprised of all the required services/files and only these
-func (cmData *data) ValidateRequiredContent() error {
+// ValidateExpectedContent ensures that the given slices are comprised of all the expected services/files and only these
+func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 	// Validate services
-	if len(cmData.Services) != len(*requiredServices) {
+	if len(cmData.Services) != len(expected.Services) {
 		return errors.New("Unexpected number of services")
 	}
-	for _, requiredSvc := range *requiredServices {
-		if !requiredSvc.isPresentAndCorrect(cmData.Services) {
-			return errors.Errorf("Required service %s is not present with expected configuration", requiredSvc.Name)
+	for _, expectedSvc := range expected.Services {
+		if !expectedSvc.isPresentAndCorrect(cmData.Services) {
+			return errors.Errorf("Required service %s is not present with expected configuration", expectedSvc.Name)
 		}
 	}
 	// Validate files
-	if len(cmData.Files) != len(*requiredFiles) {
+	if len(cmData.Files) != len(expected.Files) {
 		return errors.New("Unexpected number of files")
 	}
-	for _, requiredFile := range *requiredFiles {
-		if !requiredFile.isPresentAndCorrect(cmData.Files) {
-			return errors.Errorf("Required file %s is not present as expected", requiredFile.Path)
+	for _, expectedFile := range expected.Files {
+		if !expectedFile.isPresentAndCorrect(cmData.Files) {
+			return errors.Errorf("Required file %s is not present as expected", expectedFile.Path)
 		}
 	}
 	return nil

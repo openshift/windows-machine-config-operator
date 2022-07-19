@@ -69,13 +69,38 @@ func TestParse(t *testing.T) {
 }
 
 func TestGenerate(t *testing.T) {
-	// Ensure that the ConfigMap we generate internally as the source of truth passes our own validation functions
-	configMap, err := Generate(Name, "testNamespace")
+	testServices := []Service{
+		{
+			Name:    "test-service",
+			Command: "test-command test-arg",
+			NodeVariablesInCommand: []NodeCmdArg{{
+				Name:               "NAME_VAR",
+				NodeObjectJsonPath: "{.metadata.name}",
+			}},
+			PowershellVariablesInCommand: []PowershellCmdArg{{
+				Name: "PS_VAR",
+				Path: "C:\\k\\test-path.ps1",
+			}},
+			Dependencies: []string{"kubelet"},
+			Bootstrap:    false,
+			Priority:     0,
+		},
+	}
+	testFiles := []FileInfo{
+		{
+			Path:     "C:\\k\\test-path.ps1",
+			Checksum: "1",
+		},
+	}
+	// Ensure that the ConfigMap we generate passes our own validation functions
+	data, err := NewData(&testServices, &testFiles)
+	require.NoError(t, err)
+	configMap, err := Generate(Name, "testNamespace", data)
 	require.NoError(t, err)
 
-	data, err := Parse(configMap.Data)
+	parsed, err := Parse(configMap.Data)
 	require.NoError(t, err)
-	assert.NoError(t, data.ValidateRequiredContent())
+	assert.NoError(t, parsed.ValidateExpectedContent(data))
 }
 
 func TestGetBootstrapServices(t *testing.T) {
@@ -146,7 +171,7 @@ func TestGetBootstrapServices(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			cmData, err := newData(&test.input, &[]FileInfo{})
+			cmData, err := NewData(&test.input, &[]FileInfo{})
 			require.NoError(t, err)
 			bootstrapSvcs := cmData.GetBootstrapServices()
 			assert.Equal(t, test.expectedNumBootstrapSvcs, len(bootstrapSvcs))
