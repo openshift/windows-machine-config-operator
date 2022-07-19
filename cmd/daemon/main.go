@@ -32,7 +32,19 @@ var (
 		Long: "The Windows Instance Config Daemon performs multiple functions related to maintaining the expected " +
 			"state of a Windows Node.",
 	}
+	saToken      string
+	saCA         string
+	apiServerURL string
 )
+
+func init() {
+	rootCmd.PersistentFlags().StringVar(&saToken, "sa-token", "", "Path to service account token file")
+	rootCmd.MarkPersistentFlagRequired("sa-token")
+	rootCmd.PersistentFlags().StringVar(&saCA, "sa-ca", "", "Path to service account CA file")
+	rootCmd.MarkPersistentFlagRequired("sa-ca")
+	rootCmd.PersistentFlags().StringVar(&apiServerURL, "api-server", "", "URL of API server")
+	rootCmd.MarkPersistentFlagRequired("api-server")
+}
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
