@@ -11,10 +11,8 @@ import (
 )
 
 var (
-	nodeCreationTime     = time.Minute * 35
-	nodeRetryInterval    = time.Minute * 1
-	cleanupRetryInterval = time.Second * 1
-	cleanupTimeout       = time.Second * 5
+	nodeCreationTime  = time.Minute * 35
+	nodeRetryInterval = time.Minute * 1
 	// deploymentRetries is the amount of time to retry creating a Windows Server deployment, to compensate for the
 	// time it takes to download the Server image to the node
 	deploymentRetries = 10
