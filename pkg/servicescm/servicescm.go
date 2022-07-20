@@ -309,7 +309,10 @@ func (s *Service) hasCycle(servicesMap map[string]*Service, state map[string]boo
 			return true
 		}
 		if _, seen := state[dependencyName]; !seen {
-			return servicesMap[dependencyName].hasCycle(servicesMap, state)
+			// Only explore a dependency service if it's also managed by the services ConfigMap. Continue otherwise
+			if dependencyService, ok := servicesMap[dependencyName]; ok {
+				return dependencyService.hasCycle(servicesMap, state)
+			}
 		}
 	}
 	// Backtracking step, remove this service from current traversal path by marking it as fully processed
