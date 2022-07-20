@@ -379,6 +379,13 @@ func (vm *windows) Reinitialize() error {
 }
 
 func (vm *windows) EnsureRequiredServicesStopped() error {
+	// TODO: In this transitional period of migrating services to WICD's responsibility, WICD must be stopped first to
+	//       ensure it does not start any of these stopped services. This code should be removed as part of
+	//       https://issues.redhat.com/browse/WINC-733
+	svc := &service{name: wicdServiceName}
+	if err := vm.ensureServiceNotRunning(svc); err != nil {
+		return errors.Wrapf(err, "could not stop service %s", wicdServiceName)
+	}
 	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
 		svc := &service{name: svcName}
 		if err := vm.ensureServiceNotRunning(svc); err != nil {
@@ -390,6 +397,13 @@ func (vm *windows) EnsureRequiredServicesStopped() error {
 
 // ensureServicesAreRemoved ensures that all services installed by WMCO are removed from the instance
 func (vm *windows) ensureServicesAreRemoved() error {
+	// TODO: In this transitional period of migrating services to WICD's responsibility, WICD must be stopped first to
+	//       ensure it does not start any of these stopped services. This code should be removed as part of
+	//       https://issues.redhat.com/browse/WINC-733
+	svc := &service{name: wicdServiceName}
+	if err := vm.ensureServiceNotRunning(svc); err != nil {
+		return errors.Wrapf(err, "could not stop service %s", wicdServiceName)
+	}
 	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
 		svc := &service{name: svcName}
 
