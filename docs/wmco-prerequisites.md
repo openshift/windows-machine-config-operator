@@ -22,7 +22,7 @@ these errors, only use the appropriate version according to the cloud provider i
 |----------------|-----------------------------------------------------------------------------------------------------------------------------------|
 | AWS            | Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)                                                              |
 | Azure          | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)|
-| VMware vSphere | - Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 20H2 Semi-Annual Channel (SAC)                       |
+| VMware vSphere | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                            |
 
 *Please note that the Windows Server 2022 image must contain the OS-level container networking patch [KB5012637](https://support.microsoft.com/en-us/topic/april-25-2022-kb5012637-os-build-20348-681-preview-2233d69c-d4a5-4be9-8c24-04a450861a8d).*
 
@@ -44,7 +44,7 @@ Note:
 | Hybrid OVNKubernetes | Supported Windows Server version                                                     |
 |----------------------|--------------------------------------------------------------------------------------|
 | Default VXLAN port   | Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)                 |
-| Custom VXLAN port    | - Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 20H2 Semi-Annual Channel (SAC) |
+| Custom VXLAN port    | Windows Server 2022 Long-Term Servicing Channel (LTSC)                               |
 
 ## Supported Installation method
 * Installer-Provisioned Infrastructure installation method is the only supported installation method. This is 
