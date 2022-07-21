@@ -532,13 +532,9 @@ func (tc *testContext) testInvalidServicesCM(cmName string) error {
 		return err
 	}
 	// Try to retrieve newly created ConfigMap and validate its contents
-	windowsServices, err := tc.waitForValidWindowsServicesConfigMap(cmName)
+	_, err = tc.waitForValidWindowsServicesConfigMap(cmName)
 	if err != nil {
-		return errors.Wrapf(err, "error retrieving ConfigMap %s", cmName)
-	}
-	data, err := servicescm.Parse(windowsServices.Data)
-	if err != nil || data.ValidateRequiredContent() != nil {
-		return errors.Wrapf(err, "error ensuring ConfigMap %s is re-created validly", cmName)
+		return errors.Wrapf(err, "error waiting for valid ConfigMap %s", cmName)
 	}
 	return nil
 }
