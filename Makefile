@@ -179,6 +179,10 @@ lint:
 unit:
 	hack/unit.sh ${GO_MOD_FLAGS}
 
+.PHONY: community-bundle
+community-bundle:
+	hack/community/generate.sh ${WMCO_VERSION} ${ARTIFACT_DIR}
+
 .PHONY: wicd-unit
 wicd-unit:
 	hack/wicd-unit.sh
