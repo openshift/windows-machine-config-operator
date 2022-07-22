@@ -116,6 +116,8 @@ var (
 		kubeletServiceName,
 		wicdServiceName,
 		containerdServiceName}
+	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
+	RequiredServicesOwnedByWICD = []string{}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		k8sDir,

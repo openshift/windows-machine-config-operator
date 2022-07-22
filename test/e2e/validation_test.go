@@ -433,37 +433,46 @@ func (tc *testContext) getWinServices(addr string) (map[string]winService, error
 func testExpectedServicesRunning(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
-
-	ownedByCCM, err := cluster.IsCloudControllerOwnedByCCM(tc.client.Config)
+	expectedSvcs, err := tc.expectedWindowsServices(windows.RequiredServices)
 	require.NoError(t, err)
-
 	for _, node := range gc.allNodes() {
 		t.Run(node.GetName(), func(t *testing.T) {
 			addr, err := controllers.GetAddress(node.Status.Addresses)
 			require.NoError(t, err, "unable to get node address")
 			svcs, err := tc.getWinServices(addr)
 			require.NoError(t, err, "error getting service map")
-			for _, svcName := range windows.RequiredServices {
+			for svcName, shouldBeRunning := range expectedSvcs {
 				t.Run(svcName, func(t *testing.T) {
-					require.Contains(t, svcs, svcName, "service not found")
-					assert.Equal(t, "Running", svcs[svcName].state)
-					assert.Contains(t, svcs[svcName].description, windows.ManagedTag)
-				})
-			}
-			// For Azure deployments with Cloud Controller Manager support with also need to check that
-			// the cloud node manager service is running
-			if ownedByCCM && tc.CloudProvider.GetType() == config.AzurePlatformType {
-				t.Run(windows.AzureCloudNodeManagerServiceName, func(t *testing.T) {
-					require.Contains(t, svcs, windows.AzureCloudNodeManagerServiceName, "service not found")
-					assert.Equal(t, "Running", svcs[windows.AzureCloudNodeManagerServiceName].state)
-				})
-			} else {
-				t.Run(windows.AzureCloudNodeManagerServiceName, func(t *testing.T) {
-					require.NotContains(t, svcs, windows.AzureCloudNodeManagerServiceName, "service found")
+					if shouldBeRunning {
+						require.Contains(t, svcs, svcName, "service not found")
+						assert.Equal(t, "Running", svcs[svcName].state)
+						assert.Contains(t, svcs[svcName].description, windows.ManagedTag)
+					} else {
+						require.NotContains(t, svcs, svcName, "service exists when it shouldn't")
+					}
 				})
 			}
 		})
 	}
+}
+
+// expectedWindowsServices returns a map of the names of the WMCO owned Windows services, with a value indicating if it
+// should or should not be running on the instance.
+func (tc *testContext) expectedWindowsServices(alwaysRequiredSvcs []string) (map[string]bool, error) {
+	ownedByCCM, err := cluster.IsCloudControllerOwnedByCCM(tc.client.Config)
+	if err != nil {
+		return nil, err
+	}
+	serviceMap := make(map[string]bool)
+	for _, svc := range alwaysRequiredSvcs {
+		serviceMap[svc] = true
+	}
+	if ownedByCCM && tc.CloudProvider.GetType() == config.AzurePlatformType {
+		serviceMap[windows.AzureCloudNodeManagerServiceName] = true
+	} else {
+		serviceMap[windows.AzureCloudNodeManagerServiceName] = false
+	}
+	return serviceMap, nil
 }
 
 // testServicesConfigMap tests multiple aspects of expected functionality for the services ConfigMap
@@ -475,24 +484,47 @@ func testServicesConfigMap(t *testing.T) {
 	operatorVersion, err := getWMCOVersion()
 	require.NoError(t, err)
 	servicesConfigMapName := servicescm.NamePrefix + operatorVersion
-	expected := &servicescm.Data{}
 
 	// Ensure the windows-services ConfigMap exists in the cluster
-	t.Run("Services ConfigMap existence", func(t *testing.T) {
-		_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), servicesConfigMapName,
+	var cmData *servicescm.Data
+	t.Run("Services ConfigMap contents", func(t *testing.T) {
+		// Get CM and parse data
+		cm, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), servicesConfigMapName,
 			meta.GetOptions{})
-		assert.NoErrorf(t, err, "error ensuring ConfigMap %s exists", servicesConfigMapName)
+		require.NoErrorf(t, err, "error ensuring ConfigMap %s exists", servicesConfigMapName)
+		cmData, err = servicescm.Parse(cm.Data)
+		require.NoError(t, err, "unable to parse ConfigMap data")
+
+		// Check that the expected services are defined within the CM data
+		expectedSvcs, err := tc.expectedWindowsServices(windows.RequiredServicesOwnedByWICD)
+		require.NoError(t, err)
+		for svcName, shouldBeRunning := range expectedSvcs {
+			t.Run(svcName, func(t *testing.T) {
+				assert.Equalf(t, shouldBeRunning, containsService(svcName, cmData.Services),
+					"service existence should be %t", shouldBeRunning)
+			})
+		}
 	})
 
 	t.Run("Services ConfigMap re-creation", func(t *testing.T) {
-		err = tc.testServicesCMRegeneration(servicesConfigMapName, expected)
+		err = tc.testServicesCMRegeneration(servicesConfigMapName, cmData)
 		assert.NoErrorf(t, err, "error ensuring ConfigMap %s is re-created when deleted", servicesConfigMapName)
 	})
 
 	t.Run("Invalid services ConfigMap deletion", func(t *testing.T) {
-		err = tc.testInvalidServicesCM(servicesConfigMapName, expected)
+		err = tc.testInvalidServicesCM(servicesConfigMapName, cmData)
 		assert.NoError(t, err, "error testing handling of invalid ConfigMap")
 	})
+}
+
+// containsService returns true if the given service exists within the services list
+func containsService(name string, services []servicescm.Service) bool {
+	for _, svc := range services {
+		if svc.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // testServicesCMRegeneration tests that if the services ConfigMap is deleted, a valid one is re-created in its place
