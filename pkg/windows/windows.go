@@ -77,13 +77,13 @@ const (
 	kubeProxyServiceName = "kube-proxy"
 	// kubeletServiceName is the name of the kubelet Windows service
 	kubeletServiceName = "kubelet"
-	// windowsExporterServiceName is the name of the windows_exporter Windows service
-	windowsExporterServiceName = "windows_exporter"
+	// WindowsExporterServiceName is the name of the windows_exporter Windows service
+	WindowsExporterServiceName = "windows_exporter"
 	// AzureCloudNodeManagerServiceName is the name of the azure cloud node manager service
 	AzureCloudNodeManagerServiceName = "cloud-node-manager"
-	// windowsExporterServiceArgs specifies metrics for the windows_exporter service to collect
+	// WindowsExporterServiceCommand specifies metrics for the windows_exporter service to collect
 	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
-	windowsExporterServiceArgs = "--collectors.enabled " +
+	WindowsExporterServiceCommand = windowsExporterPath + " --collectors.enabled " +
 		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info"
 	// serviceQueryCmd is the Windows command used to query a service
 	serviceQueryCmd = "sc.exe qc "
@@ -110,14 +110,14 @@ var (
 	// The order of this slice matters due to service dependencies. If a service depends on another service, the
 	// dependent service should be placed before the service it depends on.
 	RequiredServices = []string{
-		windowsExporterServiceName,
+		WindowsExporterServiceName,
 		kubeProxyServiceName,
 		hybridOverlayServiceName,
 		kubeletServiceName,
 		wicdServiceName,
 		containerdServiceName}
 	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
-	RequiredServicesOwnedByWICD = []string{}
+	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		k8sDir,
@@ -201,8 +201,6 @@ type Windows interface {
 	ConfigureHybridOverlay(string) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, []byte, []byte) error
-	// ConfigureWindowsExporter ensures that the Windows metrics exporter is running on the node
-	ConfigureWindowsExporter() error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy(string, string) error
 	// ConfigureAzureCloudNodeManager ensures that the azure-cloud-node-manager service is running
@@ -461,9 +459,6 @@ func (vm *windows) Configure() error {
 	if err := vm.configureContainerd(); err != nil {
 		return errors.Wrapf(err, "error configuring containerd")
 	}
-	if err := vm.ConfigureWindowsExporter(); err != nil {
-		return errors.Wrapf(err, "error configuring Windows exporter")
-	}
 
 	return vm.runBootstrapper()
 }
@@ -495,23 +490,6 @@ func (vm *windows) configureContainerd() error {
 	}
 
 	vm.log.Info("configured", "service", containerdServiceName, "args", containerdServiceArgs)
-	return nil
-}
-
-// ConfigureWindowsExporter starts Windows metrics exporter service, only if the file is present on the VM
-func (vm *windows) ConfigureWindowsExporter() error {
-	windowsExporterService, err := newService(windowsExporterPath, windowsExporterServiceName,
-		windowsExporterServiceArgs, nil)
-	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", windowsExporterServiceName)
-	}
-
-	if err := vm.ensureServiceIsRunning(windowsExporterService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", windowsExporterServiceName)
-	}
-
-	vm.log.Info("configured", "service", windowsExporterServiceName, "args",
-		windowsExporterServiceArgs)
 	return nil
 }
 

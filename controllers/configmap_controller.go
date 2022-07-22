@@ -48,6 +48,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
@@ -85,9 +86,11 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to initialize Prometheus configuration")
 	}
-	svcData, err := servicescm.NewData(&[]servicescm.Service{}, &[]servicescm.FileInfo{})
+
+	// Get expected state of the Windows service ConfigMap
+	svcData, err := generateServicesManifest()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error generating expected Windows service state")
 	}
 
 	return &ConfigMapReconciler{
@@ -470,4 +473,20 @@ func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
 func (r *ConfigMapReconciler) isKubeAPIServerServingCAConfigMap(obj client.Object) bool {
 	return obj.GetNamespace() == certificates.KubeApiServerOperatorNamespace &&
 		obj.GetName() == certificates.KubeAPIServerServingCAConfigMapName
+}
+
+// generateServicesManifest returns the expected state of the Windows service configmap
+func generateServicesManifest() (*servicescm.Data, error) {
+	services := &[]servicescm.Service{{
+		Name:                         windows.WindowsExporterServiceName,
+		Command:                      windows.WindowsExporterServiceCommand,
+		NodeVariablesInCommand:       nil,
+		PowershellVariablesInCommand: nil,
+		Dependencies:                 nil,
+		Bootstrap:                    false,
+		Priority:                     1,
+	}}
+	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
+	files := &[]servicescm.FileInfo{}
+	return servicescm.NewData(services, files)
 }
