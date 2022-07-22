@@ -299,8 +299,9 @@ func TestBootstrap(t *testing.T) {
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
 			desiredVersion := "testversion"
-			cm, err := servicescm.GenerateWithData(servicescm.NamePrefix+desiredVersion,
-				"openshift-windows-machine-config-operator", &test.configMapServices, &[]servicescm.FileInfo{})
+			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
+				"openshift-windows-machine-config-operator", &servicescm.Data{test.configMapServices,
+					[]servicescm.FileInfo{}})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{cm}
 			fakeClient := fake.NewClientBuilder().WithObjects(clusterObjs...).Build()
@@ -393,8 +394,9 @@ func TestReconcile(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			desiredVersion := "testversion"
 			// This ConfigMap's name must match with the given Node object's desired-version annotation
-			cm, err := servicescm.GenerateWithData(servicescm.NamePrefix+desiredVersion,
-				"openshift-windows-machine-config-operator", &test.configMapServices, &[]servicescm.FileInfo{})
+			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
+				"openshift-windows-machine-config-operator", &servicescm.Data{test.configMapServices,
+					[]servicescm.FileInfo{}})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{
 				// This is the node object that will be used in these test cases

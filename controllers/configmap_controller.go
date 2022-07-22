@@ -70,6 +70,7 @@ const (
 // ConfigMapReconciler reconciles a ConfigMap object
 type ConfigMapReconciler struct {
 	instanceReconciler
+	servicesManifest *servicescm.Data
 }
 
 // NewConfigMapReconciler returns a pointer to a ConfigMapReconciler
@@ -84,6 +85,11 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to initialize Prometheus configuration")
 	}
+	svcData, err := servicescm.NewData(&[]servicescm.Service{}, &[]servicescm.FileInfo{})
+	if err != nil {
+		return nil, err
+	}
+
 	return &ConfigMapReconciler{
 		instanceReconciler: instanceReconciler{
 			client:               mgr.GetClient(),
@@ -96,6 +102,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 			prometheusNodeConfig: pc,
 			platform:             clusterConfig.Platform(),
 		},
+		servicesManifest: svcData,
 	}, nil
 }
 
@@ -169,7 +176,7 @@ func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServ
 
 	// If a ConfigMap with invalid values is found, WMCO will delete and recreate it with proper values
 	data, err := servicescm.Parse(windowsServices.Data)
-	if err != nil || data.ValidateRequiredContent() != nil {
+	if err != nil || data.ValidateExpectedContent(r.servicesManifest) != nil {
 		// Deleting will trigger an event for the configmap_controller, which will re-create a proper ConfigMap
 		if err = r.client.Delete(ctx, windowsServices); err != nil {
 			return err
@@ -403,7 +410,7 @@ func (r *ConfigMapReconciler) isValidConfigMap(o client.Object) bool {
 
 // createServicesConfigMap creates a valid ServicesConfigMap and returns it
 func (r *ConfigMapReconciler) createServicesConfigMap(ctx context.Context) (*core.ConfigMap, error) {
-	windowsServices, err := servicescm.Generate(servicescm.Name, r.watchNamespace)
+	windowsServices, err := servicescm.Generate(servicescm.Name, r.watchNamespace, r.servicesManifest)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +426,7 @@ func (r *ConfigMapReconciler) createServicesConfigMap(ctx context.Context) (*cor
 // ConfigMapReconciler.createServicesConfigMap() cannot be used in its stead as the cache has not been
 // populated yet, which is why the typed client is used here as it calls the API server directly.
 func (r *ConfigMapReconciler) createServicesConfigMapOnBootup() error {
-	windowsServices, err := servicescm.Generate(servicescm.Name, r.watchNamespace)
+	windowsServices, err := servicescm.Generate(servicescm.Name, r.watchNamespace, r.servicesManifest)
 	if err != nil {
 		return err
 	}
@@ -446,7 +453,7 @@ func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
 
 	// If a ConfigMap with incorrect values is found, WMCO will delete and recreate it with the proper values
 	data, err := servicescm.Parse(windowsServices.Data)
-	if err != nil || data.ValidateRequiredContent() != nil {
+	if err != nil || data.ValidateExpectedContent(r.servicesManifest) != nil {
 		if err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Delete(context.TODO(), windowsServices.Name,
 			meta.DeleteOptions{}); err != nil {
 			return err

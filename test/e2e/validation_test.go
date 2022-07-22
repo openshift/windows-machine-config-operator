@@ -475,37 +475,38 @@ func testServicesConfigMap(t *testing.T) {
 	operatorVersion, err := getWMCOVersion()
 	require.NoError(t, err)
 	servicesConfigMapName := servicescm.NamePrefix + operatorVersion
+	expected := &servicescm.Data{}
 
 	// Ensure the windows-services ConfigMap exists in the cluster
-	t.Run("Services ConfigMap existance", func(t *testing.T) {
+	t.Run("Services ConfigMap existence", func(t *testing.T) {
 		_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), servicesConfigMapName,
 			meta.GetOptions{})
 		assert.NoErrorf(t, err, "error ensuring ConfigMap %s exists", servicesConfigMapName)
 	})
 
 	t.Run("Services ConfigMap re-creation", func(t *testing.T) {
-		err = tc.testServicesCMRegeneration(servicesConfigMapName)
+		err = tc.testServicesCMRegeneration(servicesConfigMapName, expected)
 		assert.NoErrorf(t, err, "error ensuring ConfigMap %s is re-created when deleted", servicesConfigMapName)
 	})
 
 	t.Run("Invalid services ConfigMap deletion", func(t *testing.T) {
-		err = tc.testInvalidServicesCM(servicesConfigMapName)
+		err = tc.testInvalidServicesCM(servicesConfigMapName, expected)
 		assert.NoError(t, err, "error testing handling of invalid ConfigMap")
 	})
 }
 
 // testServicesCMRegeneration tests that if the services ConfigMap is deleted, a valid one is re-created in its place
-func (tc *testContext) testServicesCMRegeneration(cmName string) error {
+func (tc *testContext) testServicesCMRegeneration(cmName string, expected *servicescm.Data) error {
 	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), cmName, meta.DeleteOptions{})
 	if err != nil {
 		return err
 	}
-	_, err = tc.waitForValidWindowsServicesConfigMap(cmName)
+	_, err = tc.waitForValidWindowsServicesConfigMap(cmName, expected)
 	return err
 }
 
 // testInvalidServicesCM tests that an invalid services ConfigMap is deleted and a valid one is re-created in its place
-func (tc *testContext) testInvalidServicesCM(cmName string) error {
+func (tc *testContext) testInvalidServicesCM(cmName string, expected *servicescm.Data) error {
 	// Scale down the WMCO deployment to 0
 	if err := tc.scaleWMCODeployment(0); err != nil {
 		return err
@@ -517,8 +518,9 @@ func (tc *testContext) testInvalidServicesCM(cmName string) error {
 	}
 
 	// Generate and create a service CM with incorrect data
-	invalidServicesCM, err := servicescm.GenerateWithData(cmName, tc.namespace,
-		&[]servicescm.Service{{Name: "fakeservice", Bootstrap: true}}, &[]servicescm.FileInfo{})
+	invalidServicesCM, err := servicescm.Generate(cmName, tc.namespace,
+		&servicescm.Data{Services: []servicescm.Service{{Name: "fakeservice", Bootstrap: true}},
+			Files: []servicescm.FileInfo{}})
 	if err != nil {
 		return err
 	}
@@ -532,20 +534,17 @@ func (tc *testContext) testInvalidServicesCM(cmName string) error {
 		return err
 	}
 	// Try to retrieve newly created ConfigMap and validate its contents
-	windowsServices, err := tc.waitForValidWindowsServicesConfigMap(cmName)
+	_, err = tc.waitForValidWindowsServicesConfigMap(cmName, expected)
 	if err != nil {
-		return errors.Wrapf(err, "error retrieving ConfigMap %s", cmName)
-	}
-	data, err := servicescm.Parse(windowsServices.Data)
-	if err != nil || data.ValidateRequiredContent() != nil {
-		return errors.Wrapf(err, "error ensuring ConfigMap %s is re-created validly", cmName)
+		return errors.Wrapf(err, "error waiting for valid ConfigMap %s", cmName)
 	}
 	return nil
 }
 
 // waitForValidWindowsServicesConfigMap returns a reference to the ConfigMap that matches the given name.
 // If a ConfigMap with valid contents is not found within the time limit, an error is returned.
-func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string) (*core.ConfigMap, error) {
+func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
+	expected *servicescm.Data) (*core.ConfigMap, error) {
 	configMap := &core.ConfigMap{}
 	err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
 		var err error
@@ -560,7 +559,7 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string) (*cor
 		// Here, we've retreived a ConfigMap but still need to ensure it is valid.
 		// If it's not valid, retry in hopes that WMCO will replace it with a valid one as expected.
 		data, err := servicescm.Parse(configMap.Data)
-		if err != nil || data.ValidateRequiredContent() != nil {
+		if err != nil || data.ValidateExpectedContent(expected) != nil {
 			return false, nil
 		}
 		return true, nil
