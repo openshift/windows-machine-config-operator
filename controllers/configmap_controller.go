@@ -88,7 +88,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	}
 
 	// Get expected state of the Windows service ConfigMap
-	svcData, err := services.GenerateManifest()
+	svcData, err := services.GenerateManifest(clusterConfig.Network().VXLANPort(), ctrl.Log.V(1).Enabled())
 	if err != nil {
 		return nil, errors.Wrap(err, "error generating expected Windows service state")
 	}

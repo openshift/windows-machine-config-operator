@@ -31,12 +31,14 @@ const (
 	hnsPSModule = remoteDir + "hns.psm1"
 	// k8sDir is the remote kubernetes executable directory
 	k8sDir = "C:\\k\\"
+	//KubeconfigPath is the remote location of the kubelet's kubeconfig
+	KubeconfigPath = k8sDir + "kubeconfig"
 	// logDir is the remote kubernetes log directory
 	logDir = "C:\\var\\log\\"
 	// kubeProxyLogDir is the remote kube-proxy log directory
 	kubeProxyLogDir = logDir + "kube-proxy\\"
-	// hybridOverlayLogDir is the remote hybrid-overlay log directory
-	hybridOverlayLogDir = logDir + "hybrid-overlay\\"
+	// HybridOverlayLogDir is the remote hybrid-overlay log directory
+	HybridOverlayLogDir = logDir + "hybrid-overlay\\"
 	// ContainerdLogDir is the remote containerd log directory
 	ContainerdLogDir = logDir + "containerd\\"
 	// wicdLogDir is the remote wicd log directory
@@ -61,22 +63,18 @@ const (
 	azureCloudNodeManagerPath = k8sDir + payload.AzureCloudNodeManager
 	// kubeProxyPath is the location of the kube-proxy exe
 	kubeProxyPath = k8sDir + "kube-proxy.exe"
-	// hybridOverlayPath is the location of the hybrid-overlay-node exe
-	hybridOverlayPath = k8sDir + "hybrid-overlay-node.exe"
-
-	// hybridOverlayServiceName is the name of the hybrid-overlay-node Windows service
-	hybridOverlayServiceName = "hybrid-overlay-node"
-	// hybridOverlayConfigurationTime is the approximate time taken for the hybrid-overlay to complete reconfiguring
-	// the Windows VM's network
-	hybridOverlayConfigurationTime = 2 * time.Minute
+	// HybridOverlayPath is the location of the hybrid-overlay-node exe
+	HybridOverlayPath = k8sDir + "hybrid-overlay-node.exe"
+	// HybridOverlayServiceName is the name of the hybrid-overlay-node Windows service
+	HybridOverlayServiceName = "hybrid-overlay-node"
 	// BaseOVNKubeOverlayNetwork is the name of base OVN HNS Overlay network
 	BaseOVNKubeOverlayNetwork = "BaseOVNKubernetesHybridOverlayNetwork"
 	// OVNKubeOverlayNetwork is the name of the OVN HNS Overlay network
 	OVNKubeOverlayNetwork = "OVNKubernetesHybridOverlayNetwork"
 	// kubeProxyServiceName is the name of the kube-proxy Windows service
 	kubeProxyServiceName = "kube-proxy"
-	// kubeletServiceName is the name of the kubelet Windows service
-	kubeletServiceName = "kubelet"
+	// KubeletServiceName is the name of the kubelet Windows service
+	KubeletServiceName = "kubelet"
 	// WindowsExporterServiceName is the name of the windows_exporter Windows service
 	WindowsExporterServiceName = "windows_exporter"
 	// AzureCloudNodeManagerServiceName is the name of the azure cloud node manager service
@@ -112,12 +110,12 @@ var (
 	RequiredServices = []string{
 		WindowsExporterServiceName,
 		kubeProxyServiceName,
-		hybridOverlayServiceName,
-		kubeletServiceName,
+		HybridOverlayServiceName,
+		KubeletServiceName,
 		wicdServiceName,
 		containerdServiceName}
 	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
-	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName}
+	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		k8sDir,
@@ -127,7 +125,7 @@ var (
 		logDir,
 		kubeProxyLogDir,
 		wicdLogDir,
-		hybridOverlayLogDir,
+		HybridOverlayLogDir,
 		ContainerdDir,
 		ContainerdLogDir}
 )
@@ -197,8 +195,6 @@ type Windows interface {
 	Configure() error
 	// EnsureCNIConfig ensures that the CNI config file is present on the node
 	EnsureCNIConfig(string) error
-	// ConfigureHybridOverlay ensures that the hybrid overlay is running on the node
-	ConfigureHybridOverlay(string) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, []byte, []byte) error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
@@ -519,58 +515,6 @@ func (vm *windows) ConfigureWICD(apiServerURL string, serviceAccountCA, serviceA
 	return nil
 }
 
-func (vm *windows) ConfigureHybridOverlay(nodeName string) error {
-	var customVxlanPortArg = ""
-	if len(vm.vxlanPort) > 0 {
-		customVxlanPortArg = " --hybrid-overlay-vxlan-port=" + vm.vxlanPort
-	}
-
-	hybridOverlayServiceArgs := "--node " + nodeName + customVxlanPortArg + " --k8s-kubeconfig c:\\k\\kubeconfig " +
-		"--windows-service " + "--logfile " + hybridOverlayLogDir + "hybrid-overlay.log"
-
-	// check log level and increase hybrid-overlay verbosity if needed
-	if vm.log.V(1).Enabled() {
-		// append loglevel param using 5 for debug (default: 4)
-		// See https://github.com/openshift/ovn-kubernetes/blob/master/go-controller/pkg/config/config.go#L736
-		hybridOverlayServiceArgs = hybridOverlayServiceArgs + " --loglevel 5"
-	}
-
-	vm.log.Info("configure", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
-
-	hybridOverlayService, err := newService(hybridOverlayPath, hybridOverlayServiceName, hybridOverlayServiceArgs,
-		[]string{kubeletServiceName})
-	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", hybridOverlayServiceName)
-	}
-
-	if err := vm.ensureServiceIsRunning(hybridOverlayService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", hybridOverlayServiceName)
-	}
-
-	if err = vm.waitForServiceToRun(hybridOverlayServiceName); err != nil {
-		return errors.Wrapf(err, "error running %s Windows service", hybridOverlayServiceName)
-	}
-	// Wait for the hybrid-overlay to complete reconfiguring the network. The only way to detect that it has completed
-	// the reconfiguration is to check for the HNS networks but doing that without reinitializing the WinRM client
-	// results in 5+ minutes wait times for the vm.Run() call to complete. So the only alternative is to wait before
-	// proceeding.
-	time.Sleep(hybridOverlayConfigurationTime)
-
-	// Running the hybrid-overlay causes network reconfiguration in the Windows VM which results in the ssh connection
-	// being closed and the client is not smart enough to reconnect. We have observed that the WinRM connection does not
-	// get closed and does not need reinitialization.
-	if err = vm.Reinitialize(); err != nil {
-		return errors.Wrap(err, "error reinitializing VM after running hybrid-overlay")
-	}
-
-	if err = vm.waitForHNSNetworks(); err != nil {
-		return errors.Wrap(err, "error waiting for OVN HNS networks to be created")
-	}
-
-	vm.log.Info("configured", "service", hybridOverlayServiceName, "args", hybridOverlayServiceArgs)
-	return nil
-}
-
 func (vm *windows) EnsureCNIConfig(configFile string) error {
 	// copy the CNI config file to the Windows VM
 	file, err := payload.NewFileInfo(configFile)
@@ -615,7 +559,7 @@ func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
 		" --enable-dsr=false"
 
 	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs,
-		[]string{hybridOverlayServiceName})
+		[]string{HybridOverlayServiceName})
 	if err != nil {
 		return errors.Wrapf(err, "error creating %s service object", kubeProxyServiceName)
 	}
