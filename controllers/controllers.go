@@ -79,7 +79,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 
 	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
 	// configured again.
-	if instanceInfo.UpgradeRequired() {
+	if instanceInfo.UpgradeRequired() || instanceInfo.OutOfSync() {
 		// Instance requiring an upgrade indicates that node object is present with the version annotation
 		r.log.Info("instance requires upgrade", "node", instanceInfo.Node.GetName(), "version",
 			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation], "expected version", version.Get())

@@ -69,3 +69,13 @@ func (i *Info) UpgradeRequired() bool {
 	// fully deconfigured before being configured by the current version.
 	return true
 }
+
+// OutOfSync returns true if the instance has an associated node object (i.e. it has been previously configured by WMCO)
+// but does not have a version annotation
+func (i *Info) OutOfSync() bool {
+	if i.Node == nil {
+		return false
+	}
+	_, present := i.Node.GetAnnotations()[metadata.VersionAnnotation]
+	return !present
+}
