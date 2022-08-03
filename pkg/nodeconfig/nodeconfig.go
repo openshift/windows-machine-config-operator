@@ -332,19 +332,16 @@ func (nc *nodeConfig) configureNetwork() error {
 			nc.node.GetName())
 	}
 
-	// NOTE: Investigate if we need to introduce a interface wrt to the VM's networking configuration. This will
-	// become more clear with the outcome of https://issues.redhat.com/browse/WINC-343
-
-	// Configure the hybrid overlay in the Windows VM
-	if err := nc.Windows.ConfigureHybridOverlay(nc.node.GetName()); err != nil {
-		return errors.Wrapf(err, "error configuring hybrid overlay for %s", nc.node.GetName())
-	}
-
-	// Wait until the node object has the hybrid overlay MAC annotation. This is required for the CNI configuration to
-	// start.
+	// Wait until the node object has the hybrid overlay MAC annotation. This indicates that hybrid-overlay is running
+	// successfully, and is required for the CNI configuration to start.
 	if err := nc.waitForNodeAnnotation(HybridOverlayMac); err != nil {
 		return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlayMac,
 			nc.node.GetName())
+	}
+	// Running the hybrid-overlay causes network reconfiguration in the Windows VM which results in the ssh connection
+	// being closed, and the client is not smart enough to reconnect.
+	if err := nc.Windows.Reinitialize(); err != nil {
+		return errors.Wrap(err, "error reinitializing VM after running hybrid-overlay")
 	}
 
 	// Configure CNI in the Windows VM
