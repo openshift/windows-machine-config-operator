@@ -29,6 +29,10 @@ LABEL stage=operator
 WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
 
+# Created directory for generated files with open permissions, this allows WMCO to write to this directory
+RUN mkdir generated
+RUN chmod 0777 generated
+
 # Copy required powershell scripts
 WORKDIR /payload/powershell/
 COPY pkg/internal/wget-ignore-cert.ps1 .
