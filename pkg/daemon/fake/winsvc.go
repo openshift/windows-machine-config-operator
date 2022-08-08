@@ -17,10 +17,6 @@ type FakeService struct {
 	serviceList *fakeServiceList
 }
 
-func (f *FakeService) Delete() error {
-	return f.serviceList.remove(f.name)
-}
-
 func (f *FakeService) Close() error {
 	return nil
 }

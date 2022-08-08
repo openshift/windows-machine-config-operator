@@ -15,6 +15,8 @@ type Manager interface {
 	ListServices() ([]string, error)
 	// OpenService gets the Windows service of the given name if it exists, by which it can be queried or controlled
 	OpenService(string) (winsvc.Service, error)
+	// DeleteService marks a Windows service of the given name for deletion, or an error if it does not exist
+	DeleteService(string) error
 }
 
 // manager is defined as a way for us to redefine the function signatures of mgr.Mgr, so that they can fulfill
@@ -36,6 +38,14 @@ func (m *manager) ListServices() ([]string, error) {
 func (m *manager) OpenService(name string) (winsvc.Service, error) {
 	underlyingMgr := (*mgr.Mgr)(m)
 	return underlyingMgr.OpenService(name)
+}
+func (m *manager) DeleteService(name string) error {
+	underlyingMgr := (*mgr.Mgr)(m)
+	winSvc, err := underlyingMgr.OpenService(name)
+	if err != nil {
+		return err
+	}
+	return winSvc.Delete()
 }
 
 func New() (Manager, error) {

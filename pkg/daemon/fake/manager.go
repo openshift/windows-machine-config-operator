@@ -105,6 +105,15 @@ func (t *testMgr) OpenService(name string) (winsvc.Service, error) {
 	return service, nil
 }
 
+func (t *testMgr) DeleteService(name string) error {
+	_, exists := t.svcList.read(name)
+	if !exists {
+		// This is to mimic the behavior of the Windows OS. Trying to delete a nonexistant service results in an error.
+		return fmt.Errorf("service %s does not exist", name)
+	}
+	return t.svcList.remove(name)
+}
+
 func NewTestMgr(existingServices map[string]*FakeService) *testMgr {
 	testMgr := &testMgr{newFakeServiceList()}
 	if existingServices != nil {

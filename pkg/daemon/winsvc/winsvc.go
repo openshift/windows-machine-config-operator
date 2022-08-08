@@ -9,7 +9,6 @@ import (
 )
 
 type Service interface {
-	Delete() error
 	Close() error
 	Start(...string) error
 	Config() (mgr.Config, error)
