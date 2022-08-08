@@ -45,6 +45,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
@@ -58,7 +59,7 @@ const (
 )
 
 type ServiceController struct {
-	winsvc.Mgr
+	manager.Manager
 	client         client.Client
 	ctx            context.Context
 	nodeName       string
@@ -82,7 +83,7 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 
 // RunController is the entry point of WICD's controller functionality
 func RunController(ctx context.Context, apiServerURL, saCA, saToken string) error {
-	svcMgr, err := winsvc.NewMgr()
+	svcMgr, err := manager.New()
 	if err != nil {
 		return err
 	}
@@ -138,8 +139,8 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 }
 
 // NewServiceController returns a pointer to a ServiceController object
-func NewServiceController(ctx context.Context, client client.Client, mgr winsvc.Mgr, nodeName string) *ServiceController {
-	return &ServiceController{client: client, Mgr: mgr, ctx: ctx, nodeName: nodeName,
+func NewServiceController(ctx context.Context, client client.Client, mgr manager.Manager, nodeName string) *ServiceController {
+	return &ServiceController{client: client, Manager: mgr, ctx: ctx, nodeName: nodeName,
 		watchNamespace: wmcoNamespace}
 }
 
