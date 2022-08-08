@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/jsonpath"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -92,37 +93,25 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 		klog.Error(err)
 		return errors.Wrap(err, "error using service account to build config")
 	}
-
-	clientScheme := runtime.NewScheme()
-	err = clientgoscheme.AddToScheme(clientScheme)
-	if err != nil {
-		return err
-	}
 	// This is a client that reads directly from the server, not a cached client. This is required to be used here, as
 	// the cached client, created by ctrl.NewManager() will not be functional until the manager is started.
-	directClient, err := client.New(cfg, client.Options{Scheme: clientScheme})
+	directClient, err := NewDirectClient(cfg)
 	if err != nil {
 		return err
 	}
 
-	// use the client to find the name of the node associated with the VM this is running on
-	var nodes core.NodeList
-	err = directClient.List(ctx, &nodes)
-	if err != nil {
-		return err
-	}
 	addrs, err := localInterfaceAddresses()
 	if err != nil {
 		return err
 	}
-	node, err := findNodeByAddress(&nodes, addrs)
+	node, err := GetAssociatedNode(directClient, addrs)
 	if err != nil {
-		return err
+		errors.Wrap(err, "could not find node object associated with this instance")
 	}
 
 	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Namespace: wmcoNamespace,
-		Scheme:    clientScheme,
+		Scheme:    directClient.Scheme(),
 	})
 	if err != nil {
 		return errors.Wrap(err, "unable to start manager")
@@ -376,6 +365,35 @@ func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[s
 func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) (map[string]string, error) {
 	// TODO: Implement this function
 	return make(map[string]string), nil
+}
+
+// NewDirectClient creates and returns an authenticated client that reads directly from the API server.
+// It also returns the config and scheme used to created the client.
+func NewDirectClient(cfg *rest.Config) (client.Client, error) {
+	clientScheme := runtime.NewScheme()
+	err := clientgoscheme.AddToScheme(clientScheme)
+	if err = clientgoscheme.AddToScheme(clientScheme); err != nil {
+		return nil, err
+	}
+
+	directClient, err := client.New(cfg, client.Options{Scheme: clientScheme})
+	if err != nil {
+		return nil, err
+	}
+	return directClient, nil
+}
+
+// GetAssociatedNode uses the given client to find the name of the node associated with the VM this is running on
+func GetAssociatedNode(c client.Client, addrs []net.Addr) (*core.Node, error) {
+	var nodes core.NodeList
+	if err := c.List(context.TODO(), &nodes); err != nil {
+		return nil, err
+	}
+	node, err := findNodeByAddress(&nodes, addrs)
+	if err != nil {
+		return nil, err
+	}
+	return node, nil
 }
 
 // localInterfaceAddresses returns a slice of all addresses associated with local network interfaces

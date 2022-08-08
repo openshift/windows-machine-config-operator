@@ -22,10 +22,7 @@ import (
 	"context"
 
 	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
@@ -58,15 +55,10 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		klog.Exitf("error using service account to build config: %s", err.Error())
 	}
 
-	clientScheme := runtime.NewScheme()
-	err = clientgoscheme.AddToScheme(clientScheme)
-	if err = clientgoscheme.AddToScheme(clientScheme); err != nil {
-		klog.Exit(err.Error())
-	}
-	// Client reads directly from the server. Cannot use a cached client as no manager will be started to populate cache
-	directClient, err := client.New(cfg, client.Options{Scheme: clientScheme})
+	// Cannot use a cached client as no manager will be started to populate cache
+	directClient, err := controller.NewDirectClient(cfg)
 	if err != nil {
-		klog.Exit(err.Error())
+		klog.Exitf("could not create authenticated client from service account: %s", err.Error())
 	}
 
 	svcMgr, err := manager.New()
@@ -75,7 +67,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	}
 	sc := controller.NewServiceController(context.TODO(), directClient, svcMgr, "")
 
-	klog.Info("bootstrapping node")
+	klog.Info("bootstrapping Windows instance")
 	if err := sc.Bootstrap(desiredVersion); err != nil {
 		klog.Exit(err.Error())
 	}
