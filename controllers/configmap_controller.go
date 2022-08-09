@@ -454,18 +454,20 @@ func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
 		return err
 	}
 
-	// If a ConfigMap with incorrect values is found, WMCO will delete and recreate it with the proper values
 	data, err := servicescm.Parse(windowsServices.Data)
-	if err != nil || data.ValidateExpectedContent(r.servicesManifest) != nil {
-		if err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Delete(context.TODO(), windowsServices.Name,
-			meta.DeleteOptions{}); err != nil {
-			return err
-		}
-		r.log.Info("Deleted invalid resource", "ConfigMap",
-			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name})
-		return r.createServicesConfigMapOnBootup()
+	if err == nil && data.ValidateExpectedContent(r.servicesManifest) == nil {
+		// data exists in expected state, do nothing
+		return nil
 	}
-	return nil
+
+	// Delete and re-create the ConfigMap with the proper values
+	if err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Delete(context.TODO(), windowsServices.Name,
+		meta.DeleteOptions{}); err != nil {
+		return err
+	}
+	r.log.Info("Deleted invalid resource", "ConfigMap",
+		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name})
+	return r.createServicesConfigMapOnBootup()
 }
 
 // isKubeAPIServerServingCAConfigMap returns true if the provided object matches the ConfigMap that contains the
