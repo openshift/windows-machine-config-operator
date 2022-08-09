@@ -29,7 +29,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
-	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 )
 
 var (
@@ -69,7 +69,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 		klog.Exit(err.Error())
 	}
 
-	svcMgr, err := winsvc.NewMgr()
+	svcMgr, err := manager.New()
 	if err != nil {
 		klog.Exitf("could not create service manager: %s", err.Error())
 	}

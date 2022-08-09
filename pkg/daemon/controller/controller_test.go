@@ -17,9 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/fake"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
@@ -93,14 +94,14 @@ func TestResolveNodeVariables(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			fakeClient := fake.NewClientBuilder().WithObjects(&core.Node{
+			fakeClient := clientfake.NewClientBuilder().WithObjects(&core.Node{
 				ObjectMeta: meta.ObjectMeta{
 					Name:        "node",
 					Annotations: test.nodeAnnotations,
 					Labels:      test.nodeLabels,
 				},
 			}).Build()
-			c := NewServiceController(context.TODO(), fakeClient, winsvc.NewTestMgr(nil), test.nodeName)
+			c := NewServiceController(context.TODO(), fakeClient, fake.NewTestMgr(nil), test.nodeName)
 			actual, err := c.resolveNodeVariables(test.service)
 			if test.expectErr {
 				require.Error(t, err)
@@ -115,14 +116,14 @@ func TestResolveNodeVariables(t *testing.T) {
 func TestReconcileService(t *testing.T) {
 	testIO := []struct {
 		name                  string
-		service               *winsvc.FakeService
+		service               *fake.FakeService
 		expectedService       servicescm.Service
 		expectedServiceConfig mgr.Config
 		expectErr             bool
 	}{
 		{
 			name: "Service stub updated",
-			service: winsvc.NewFakeService(
+			service: fake.NewFakeService(
 				"fakeservice",
 				mgr.Config{
 					BinaryPathName: "",
@@ -146,7 +147,7 @@ func TestReconcileService(t *testing.T) {
 		},
 		{
 			name: "Service binarypathname and description corrected",
-			service: winsvc.NewFakeService(
+			service: fake.NewFakeService(
 				"fakeservice",
 				mgr.Config{
 					BinaryPathName: "bad",
@@ -171,7 +172,7 @@ func TestReconcileService(t *testing.T) {
 		},
 		{
 			name: "Service command node variable substitution",
-			service: winsvc.NewFakeService(
+			service: fake.NewFakeService(
 				"fakeservice",
 				mgr.Config{
 					BinaryPathName: "bad",
@@ -200,13 +201,13 @@ func TestReconcileService(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			fakeClient := fake.NewClientBuilder().WithObjects(&core.Node{
+			fakeClient := clientfake.NewClientBuilder().WithObjects(&core.Node{
 				ObjectMeta: meta.ObjectMeta{
 					Name: "node",
 				},
 			}).Build()
 
-			winSvcMgr := winsvc.NewTestMgr(map[string]*winsvc.FakeService{"fakeservice": test.service})
+			winSvcMgr := fake.NewTestMgr(map[string]*fake.FakeService{"fakeservice": test.service})
 			c := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "node")
 			err := c.reconcileService(test.service, test.expectedService)
 			if test.expectErr {
@@ -304,9 +305,9 @@ func TestBootstrap(t *testing.T) {
 					[]servicescm.FileInfo{}})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{cm}
-			fakeClient := fake.NewClientBuilder().WithObjects(clusterObjs...).Build()
+			fakeClient := clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build()
 
-			winSvcMgr := winsvc.NewTestMgr(make(map[string]*winsvc.FakeService))
+			winSvcMgr := fake.NewTestMgr(make(map[string]*fake.FakeService))
 			sc := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "")
 
 			err = sc.Bootstrap(desiredVersion)
@@ -323,7 +324,7 @@ func TestBootstrap(t *testing.T) {
 func TestReconcile(t *testing.T) {
 	testIO := []struct {
 		name                         string
-		existingServices             map[string]*winsvc.FakeService
+		existingServices             map[string]*fake.FakeService
 		configMapServices            []servicescm.Service
 		expectedServicesNameCmdPairs map[string]string
 		expectErr                    bool
@@ -354,7 +355,7 @@ func TestReconcile(t *testing.T) {
 		},
 		{
 			name: "Single service that needs to be updated",
-			existingServices: map[string]*winsvc.FakeService{"test1": winsvc.NewFakeService("test1",
+			existingServices: map[string]*fake.FakeService{"test1": fake.NewFakeService("test1",
 				mgr.Config{BinaryPathName: "badvalue"}, svc.Status{State: svc.Running})},
 			configMapServices: []servicescm.Service{
 				{
@@ -410,9 +411,9 @@ func TestReconcile(t *testing.T) {
 				},
 				cm,
 			}
-			fakeClient := fake.NewClientBuilder().WithObjects(clusterObjs...).Build()
+			fakeClient := clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build()
 
-			winSvcMgr := winsvc.NewTestMgr(test.existingServices)
+			winSvcMgr := fake.NewTestMgr(test.existingServices)
 			c := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "node")
 			_, err = c.Reconcile(context.TODO(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "node"}})
 			if test.expectErr {
@@ -428,7 +429,7 @@ func TestReconcile(t *testing.T) {
 }
 
 // testServicesCreatedAsExpected tests that the created services are running and configured as expected
-func testServicesCreatedAsExpected(t *testing.T, createdServices map[string]winsvc.FakeService,
+func testServicesCreatedAsExpected(t *testing.T, createdServices map[string]fake.FakeService,
 	expectedServicesNameCmdPairs map[string]string) {
 	createdServiceNameCmdPairs := make(map[string]string)
 	// Ensure each created service is running
@@ -446,18 +447,18 @@ func testServicesCreatedAsExpected(t *testing.T, createdServices map[string]wins
 
 // getAllFakeServices accepts a mocked Windows service manager, and returns a map of copies of all existing Windows
 // services
-func getAllFakeServices(svcMgr winsvc.Mgr) (map[string]winsvc.FakeService, error) {
+func getAllFakeServices(svcMgr manager.Manager) (map[string]fake.FakeService, error) {
 	svcs, err := svcMgr.ListServices()
 	if err != nil {
 		return nil, err
 	}
-	fakeServices := make(map[string]winsvc.FakeService)
+	fakeServices := make(map[string]fake.FakeService)
 	for _, winServiceName := range svcs {
 		winService, err := svcMgr.OpenService(winServiceName)
 		if err != nil {
 			return nil, err
 		}
-		fakeService, ok := winService.(*winsvc.FakeService)
+		fakeService, ok := winService.(*fake.FakeService)
 		if !ok {
 			return nil, errors.New("this function should only be ran against a fake service manager")
 		}
