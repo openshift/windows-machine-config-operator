@@ -462,7 +462,7 @@ func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
 			return err
 		}
 		r.log.Info("Deleted invalid resource", "ConfigMap",
-			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name}, "Error", err.Error())
+			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name})
 		return r.createServicesConfigMapOnBootup()
 	}
 	return nil
