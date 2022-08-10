@@ -1,15 +1,13 @@
 # Creating an AWS Windows MachineSet
 
-_\<windows_container_ami\>_ can be used as it is without any modification.
-You must use Windows Server 2019 with a version 10.0.17763.1457 or earlier to work
-around Windows containers behind a Kubernetes load balancer becoming unreachable
-[issue](https://github.com/microsoft/Windows-Containers/issues/78).
-                                                                           
+_\<windows_server_ami\>_ should be replaced with the AMI ID of a [supported version](wmco-prerequisites.md#supported-windows-server-versions) of Windows Server.
+
 _\<infrastructureID\>_ should be replaced with the output of:
 ```shell script
  oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
 _\<region\>_ should be replaced with a valid AWS region like `us-east-1`.
+
 _\<zone\>_ should be replaced with a valid AWS availability zone like `us-east-1a`.
 
 ```
@@ -41,7 +39,7 @@ spec:
       providerSpec:
         value:
           ami:
-            id: <windows_container_ami>
+            id: <windows_server_ami>
           apiVersion: awsproviderconfig.openshift.io/v1beta1
           blockDevices:
             - ebs:
