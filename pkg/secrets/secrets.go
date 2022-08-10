@@ -51,7 +51,7 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 			Namespace: UserDataNamespace,
 		},
 		Data: map[string][]byte{
-			"userData": []byte(`<powershell>
+			"userData": []byte(`
 			Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 			$firewallRuleName = "ContainerLogsPort"
 			$containerLogsPort = "10250"
@@ -73,8 +73,7 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 			$acl.SetAccessRule($systemRule)
 			$acl | Set-Acl
 			Restart-Service sshd
-			</powershell>
-			<persist>true</persist>`),
+			`),
 		},
 	}
 
