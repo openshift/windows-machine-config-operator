@@ -11,6 +11,7 @@ import (
 	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/operator-framework/operator-lib/leader"
 	"github.com/spf13/pflag"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -60,7 +61,7 @@ func main() {
 
 	pflag.Parse()
 
-	opts := zap.Options{Development: debugLogging}
+	opts := zap.Options{Development: debugLogging, TimeEncoder: zapcore.RFC3339TimeEncoder}
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// add version subcommand to query the operator version
