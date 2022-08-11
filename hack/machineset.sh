@@ -32,8 +32,8 @@ get_spec() {
   # the limit in the number of characters for VM name
   machineSetName="winworker"
   # check provider
-  if [ "$provider" = "aws" ]; then
-    # improve machineset name for aws provider
+  if [ "$provider" = "aws" ] || [ "$provider" = "gce" ]; then
+    # improve machineset name for aws/gcp provider
     machineSetName="$infraID"-"$machineSetName"-"$az"
   fi
 
@@ -173,6 +173,56 @@ $(get_spec $infraID $az $provider)
 EOF
 }
 
+# get_gcp_ms creates a MachineSet for Google Cloud Platform
+get_gcp_ms() {
+  if [ "$#" -lt 4 ]; then
+    error-exit incorrect parameter count for get_gcp_ms $#
+  fi
+
+  local infraID=$1
+  local region=$2
+  local az=$3
+  local provider=$4
+  # For GCP the zone field returns the region + zone, like: `us-central1-a`.
+  # Installer created MachineSets only append the `-a` portion, so we should do the same.
+  local az_suffix=$(echo $az |awk -F "-" '{print $NF}')
+  local projectID=$(gcloud config get-value project)
+  local imageName=$(gcloud compute images list --filter="family = windows-2022-core" --sort-by="~creationTimestamp" --standard-images --limit=1 --format="value(NAME)")
+
+  cat <<EOF
+$(get_spec $infraID $az_suffix $provider)
+      providerSpec:
+        value:
+          apiVersion: machine.openshift.io/v1beta1
+          canIPForward: false
+          credentialsSecret:
+            name: gcp-cloud-credentials
+          deletionProtection: false
+          disks:
+          - autoDelete: true
+            boot: true
+            image: projects/windows-cloud/global/images/${imageName}
+            sizeGb: 128
+            type: pd-ssd
+          kind: GCPMachineProviderSpec
+          machineType: n1-standard-4
+          networkInterfaces:
+          - network: ${infraID}-network
+            subnetwork: ${infraID}-worker-subnet
+          projectID: ${projectID}
+          region: ${region}
+          serviceAccounts:
+          - email: ${infraID}-w@${projectID}.iam.gserviceaccount.com
+            scopes:
+            - https://www.googleapis.com/auth/cloud-platform
+          tags:
+          - ${infraID}-worker
+          userDataSecret:
+            name: windows-user-data
+          zone: ${az}
+EOF
+}
+
 # get_vsphere_ms creates a MachineSet for vSphere Cloud Provider
 get_vsphere_ms() {
 
@@ -256,6 +306,9 @@ case "$provider" in
     ;;
     azure)
       ms=$(get_azure_ms $infraID $region $az $provider)
+    ;;
+    gce)
+      ms=$(get_gcp_ms $infraID $region $az $provider)
     ;;
     vsphere)
       ms=$(get_vsphere_ms $infraID $provider)
