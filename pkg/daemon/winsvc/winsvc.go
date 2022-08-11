@@ -9,7 +9,6 @@ import (
 )
 
 type Service interface {
-	Close() error
 	Start(...string) error
 	Config() (mgr.Config, error)
 	Control(svc.Cmd) (svc.Status, error)

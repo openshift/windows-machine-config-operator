@@ -105,6 +105,12 @@ func (t *testMgr) OpenService(name string) (winsvc.Service, error) {
 	return service, nil
 }
 
+func (t *testMgr) CloseService(name string) error {
+	// Closing a Windows service frees up OS-level resources.
+	// There is nothing to cleanup in our mock service objects.
+	return nil
+}
+
 func (t *testMgr) DeleteService(name string) error {
 	_, exists := t.svcList.read(name)
 	if !exists {
