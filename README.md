@@ -179,6 +179,7 @@ spec:
 Example MachineSet for other cloud providers:
 - [AWS](docs/machineset-aws.md)
 - [Azure](docs/machineset-azure.md)
+- [GCP](docs/machineset-gcp.md)
 
 Alternatively, the [hack/machineset.sh](hack/machineset.sh) script can be used to generate MachineSets for AWS and Azure platforms.
 The hack script will generate a `MachineSet.yaml` file which can be edited before using or can be used as it is.

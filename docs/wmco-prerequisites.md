@@ -7,6 +7,7 @@ may be relevant.
 |---------------------------|---------------------------|------------------------|
 | Amazon Web Services (AWS) | 4.6+                      | WMCO 1.0+              |
 | Azure                     | 4.6+                      | WMCO 1.0+              |
+| GCP                       | 4.12+                     | WMCO 7.0+              |
 | VMware vSphere            | 4.7+                      | WMCO 2.0+              |
 | Platform none (BYOH)      | 4.8+                      | WMCO 3.1.0+            |
 
@@ -22,6 +23,7 @@ these errors, only use the appropriate version according to the cloud provider i
 |----------------|-----------------------------------------------------------------------------------------------------------------------------------|
 | AWS            | Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)                                                              |
 | Azure          | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)|
+| GCP            | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                            |
 | VMware vSphere | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                            |
 
 *Please note that the Windows Server 2022 image must contain the OS-level container networking patch [KB5012637](https://support.microsoft.com/en-us/topic/april-25-2022-kb5012637-os-build-20348-681-preview-2233d69c-d4a5-4be9-8c24-04a450861a8d).*
@@ -39,6 +41,7 @@ Note:
 |----------------|------------------------------------------------------------------------------------------------|
 | AWS            | Hybrid OVNKubernetes                                                                           |
 | Azure          | Hybrid OVNKubernetes                                                                           |
+| GCP            | Hybrid OVNKubernetes                                                                           |
 | VMware vSphere | Hybrid OVNKubernetes with a [Custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vsphere) |
 
 | Hybrid OVNKubernetes | Supported Windows Server version                                                     |
