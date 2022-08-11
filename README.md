@@ -228,6 +228,10 @@ deploy workloads.
 ### Cluster-wide proxy 
 WMCO does not support adding Windows workloads using a [cluster-wide proxy](https://docs.openshift.com/container-platform/latest/networking/enable-cluster-wide-proxy.html) config for the OpenShift Container Platform. WMCO will not be able to automatically route proxy connections for Windows workloads.
 
+### Accessing secure registries
+Windows nodes managed by WMCO do not support pulling container images from secure private registries. 
+It is recommended to use images from public registries or pre-pull the images in the VM image.
+
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
