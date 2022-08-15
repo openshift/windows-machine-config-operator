@@ -214,6 +214,12 @@ Cluster autoscaling is supported for Windows instances.
 - Create a Windows node through a MachineSet (see spec in [Usage section](https://github.com/openshift/windows-machine-config-operator#usage)).
 - Define and deploy a [MachineAutoscaler](https://docs.openshift.com/container-platform/latest/machine_management/applying-autoscaling.html#configuring-machineautoscaler), referencing a Windows MachineSet.
 
+## Limitations
+
+### DeploymentConfigs
+Windows Nodes do not support workloads created via DeploymentConfigs. Please use a normal Deployment, or other method to
+deploy workloads.
+
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
