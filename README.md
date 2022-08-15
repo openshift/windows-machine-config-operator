@@ -149,6 +149,9 @@ administrator can provide an updated image by changing the image in the MachineS
 Windows Nodes do not support workloads created via DeploymentConfigs. Please use a normal Deployment, or other method to
 deploy workloads.
 
+### Cluster-wide proxy 
+WMCO does not support adding Windows workloads using a [cluster-wide proxy](https://docs.openshift.com/container-platform/latest/networking/enable-cluster-wide-proxy.html) config for the OpenShift Container Platform. WMCO will not be able to automatically route proxy connections for Windows workloads.
+
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
