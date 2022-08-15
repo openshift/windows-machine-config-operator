@@ -143,6 +143,12 @@ WMCO is not responsible for Windows operating system updates. The cluster admini
 creating the VMs and hence, the cluster administrator is responsible for providing an updated image. The cluster 
 administrator can provide an updated image by changing the image in the MachineSet spec.
 
+## Limitations
+
+### DeploymentConfigs
+Windows Nodes do not support workloads created via DeploymentConfigs. Please use a normal Deployment, or other method to
+deploy workloads.
+
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
