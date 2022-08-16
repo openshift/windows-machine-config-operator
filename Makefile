@@ -175,6 +175,10 @@ lint:
 unit:
 	hack/unit.sh ${GO_MOD_FLAGS}
 
+.PHONY: community-bundle
+community-bundle:
+	hack/community/generate.sh ${WMCO_VERSION} ${ARTIFACT_DIR}
+
 .PHONY: run-ci-e2e-test
 run-ci-e2e-test:
 	hack/run-ci-e2e-test.sh -t basic
