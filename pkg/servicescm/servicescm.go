@@ -1,13 +1,16 @@
 package servicescm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/version"
 	"github.com/pkg/errors"
@@ -97,6 +100,21 @@ func NewData(services *[]Service, files *[]FileInfo) (*Data, error) {
 		return nil, errors.Wrap(err, "unable to create services ConfigMap data object")
 	}
 	return cmData, nil
+}
+
+// List returns a list of all windows-services ConfigMaps in the given namespace
+func List(c client.Client, ctx context.Context, namespace string) ([]core.ConfigMap, error) {
+	watchNamespaceCMs := &core.ConfigMapList{}
+	if err := c.List(ctx, watchNamespaceCMs, &client.ListOptions{Namespace: namespace}); err != nil {
+		return nil, err
+	}
+	servicesConfigMaps := []core.ConfigMap{}
+	for _, cm := range watchNamespaceCMs.Items {
+		if strings.HasPrefix(cm.Name, NamePrefix) {
+			servicesConfigMaps = append(servicesConfigMaps, cm)
+		}
+	}
+	return servicesConfigMaps, nil
 }
 
 // Generate creates an immutable service ConfigMap which provides WICD with the specifications
