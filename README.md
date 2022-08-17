@@ -227,6 +227,9 @@ WMCO does not support adding Windows workloads using a [cluster-wide proxy](http
 config for the OpenShift Container Platform. WMCO will not be able to automatically route proxy connections for Windows
 workloads.
 
+### Storage
+At this time, only in-tree storage is supported in all cloud providers.
+
 ### Other limitations
 WMCO / Windows nodes does not work with the following products:
 * [odo](https://docs.openshift.com/container-platform/latest/cli_reference/developer_cli_odo/understanding-odo.html)
