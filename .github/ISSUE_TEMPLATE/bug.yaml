@@ -1,0 +1,116 @@
+name: Bug Report
+description: File a bug report
+title: "[Bug]: "
+labels: ["bug", "triage"]
+assignees: @openshift/openshift-team-windows-containers 
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Before filling out this form,
+        please review the (Cluster and OS Pre-Requisites)[https://github.com/openshift/windows-machine-config-operator/blob/master/docs/wmco-prerequisites.md],
+        as well as the (BYOH Instance Pre-requisites)[BYOH Instance Pre-requisites].
+  - type: checkboxes
+    id: community-check
+    attributes:
+      label: Community Issue
+      description: |
+        Github issues are for those using the community distribution of WMCO.
+        Support for users with a subscription should be requested through the Red Hat Customer Portal.
+      options:
+        - label: I am using the community version of WMCO
+          required: true
+  - type: dropdown
+    id: cluster-type
+    attributes:
+      label: Version
+      description: Are you using an OKD or OCP cluster?
+      options:
+        - OKD
+        - OCP
+    validations:
+      required: true
+  - type: input
+    id: cluster-version
+    attributes:
+      label: Cluster Version
+      description: What is the version of your cluster?
+      placeholder: "4.11"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: What platform is your cluster running on?
+      options:
+        - AWS
+        - Azure
+        - Platform agnostic (type=none)
+        - vSphere
+    validations:
+      required: true
+  - type: dropdown
+    id: proxy
+    attributes:
+      label: Proxy
+      description: (Are you using a cluster-wide proxy?)[https://docs.okd.io/latest/networking/enable-cluster-wide-proxy.html]
+      options:
+        - Yes, without HTTPS
+        - Yes, with HTTPS
+        - No
+    validations:
+      required: true
+  - type: input
+    id: wmco-version
+    attributes:
+      label: WMCO Version
+      description: What version of WMCO are you using?
+      placeholder: 6.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: windows-version
+    attributes:
+      label: Windows version
+      description: What Windows Server version is the problem occuring with?
+      options:
+        - 2019
+        - 2022
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to reproduce the issue
+      description: Is this consistently reproducable? If not how often does it occur?
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Do you have a workaround for this issue?
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: |
+        Please attach any logs and relevant screenshots in a comment.
+        At minimum, please include the output of the following
+        * oc get network.operator cluster -o yaml
+        * oc logs deployment/windows-machine-config-operator -n openshift-windows-machine-config-operator
+        * If using Windows MachineSets: oc get machineset <windows_machineset_name> -n openshift-machine-api -o yaml
+        * If using BYOH : oc get configmap windows-instances -n openshift-windows-machine-config-operator -o yaml
+
