@@ -1,0 +1,25 @@
+name: Feature Request
+description: Request for Feature Enhancement
+title: "[RFE]: "
+labels: ["feature", "triage"]
+assignees: @openshift/openshift-team-windows-containers 
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is for requesting a change in expected behavior for WMCO.
+  - type: input
+    id: problem-statement
+    attributes:
+      label: Problem Statement
+      description: A short description of the core problem that needs to be solved
+      placeholder: I want to be able to use private container registries 
+    validations:
+      required: true
+  - type: textarea
+    id: full-request
+    attributes:
+      label: Feature description
+      description: Describe the functionality you are requesting. Why is it important for a user?
+    validations:
+      required: true
