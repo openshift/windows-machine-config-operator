@@ -55,8 +55,8 @@ import (
 )
 
 const (
-	// wmcoNamespace defines the namespace service ConfigMaps are expected to be in
-	wmcoNamespace = "openshift-windows-machine-config-operator"
+	// WMCONamespace defines the namespace service ConfigMaps are expected to be in
+	WMCONamespace = "openshift-windows-machine-config-operator"
 )
 
 type ServiceController struct {
@@ -100,7 +100,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 		return err
 	}
 
-	addrs, err := localInterfaceAddresses()
+	addrs, err := LocalInterfaceAddresses()
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 	}
 
 	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Namespace: wmcoNamespace,
+		Namespace: WMCONamespace,
 		Scheme:    directClient.Scheme(),
 	})
 	if err != nil {
@@ -130,7 +130,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 // NewServiceController returns a pointer to a ServiceController object
 func NewServiceController(ctx context.Context, client client.Client, mgr manager.Manager, nodeName string) *ServiceController {
 	return &ServiceController{client: client, Manager: mgr, ctx: ctx, nodeName: nodeName,
-		watchNamespace: wmcoNamespace}
+		watchNamespace: WMCONamespace}
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -380,8 +380,8 @@ func GetAssociatedNode(c client.Client, addrs []net.Addr) (*core.Node, error) {
 	return node, nil
 }
 
-// localInterfaceAddresses returns a slice of all addresses associated with local network interfaces
-func localInterfaceAddresses() ([]net.Addr, error) {
+// LocalInterfaceAddresses returns a slice of all addresses associated with local network interfaces
+func LocalInterfaceAddresses() ([]net.Addr, error) {
 	var addresses []net.Addr
 	netIfs, err := net.Interfaces()
 	if err != nil {
