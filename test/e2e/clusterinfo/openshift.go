@@ -85,50 +85,11 @@ func GetOpenShift() (*OpenShift, error) {
 	}, nil
 }
 
-// GetInfrastructureID returns the infrastructure ID of the OpenShift cluster or an error.
-func (o *OpenShift) GetInfrastructureID() (string, error) {
-	infra, err := o.getInfrastructure()
-	if err != nil {
-		return "", err
-	}
-	if infra.Status == (config.InfrastructureStatus{}) {
-		return "", fmt.Errorf("infrastructure status is nil")
-	}
-	return infra.Status.InfrastructureName, nil
-}
-
-// GetCloudProvider returns the Provider details of a given OpenShift client including provider type and region or
-// an error.
-func (o *OpenShift) GetCloudProvider() (*config.PlatformStatus, error) {
-	infra, err := o.getInfrastructure()
-	if err != nil {
-		return nil, err
-	}
-	if infra.Status == (config.InfrastructureStatus{}) || infra.Status.PlatformStatus == nil {
-		return nil, fmt.Errorf("error getting infrastructure status")
-	}
-	return infra.Status.PlatformStatus, nil
-}
-
-// getInfrastructure returns the information of current Infrastructure referred by the OpenShift client or an error.
-func (o *OpenShift) getInfrastructure() (*config.Infrastructure, error) {
+// GetInfrastructure returns the information of current Infrastructure referred by the OpenShift client or an error.
+func (o *OpenShift) GetInfrastructure() (*config.Infrastructure, error) {
 	infra, err := o.Config.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return infra, nil
-}
-
-// HasCustomVXLANPort tells if the custom VXLAN port is set or not in the cluster
-func (o *OpenShift) HasCustomVXLANPort() (bool, error) {
-	networkCR, err := o.Operator.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
-	if err != nil {
-		return false, err
-	}
-	if networkCR.Spec.DefaultNetwork.OVNKubernetesConfig != nil &&
-		networkCR.Spec.DefaultNetwork.OVNKubernetesConfig.HybridOverlayConfig != nil &&
-		networkCR.Spec.DefaultNetwork.OVNKubernetesConfig.HybridOverlayConfig.HybridOverlayVXLANPort != nil {
-		return true, nil
-	}
-	return false, nil
 }

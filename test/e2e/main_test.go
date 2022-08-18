@@ -72,8 +72,6 @@ type testContext struct {
 	timeout time.Duration
 	// CloudProvider to talk to various cloud providers
 	providers.CloudProvider
-	// hasCustomVXLAN tells if the cluster is using a custom VXLAN port for communication
-	hasCustomVXLAN bool
 	// workloadNamespace is the namespace to deploy our test pods on
 	workloadNamespace string
 	// toolsImage is the image specified by the  openshift/tools ImageStream, and is the same image used by `oc debug`.
@@ -87,11 +85,7 @@ func NewTestContext() (*testContext, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize OpenShift client")
 	}
-	hasCustomVXLANPort, err := oc.HasCustomVXLANPort()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to determine if cluster is using custom VXLAN port")
-	}
-	cloudProvider, err := providers.NewCloudProvider(hasCustomVXLANPort)
+	cloudProvider, err := providers.NewCloudProvider()
 	if err != nil {
 		return nil, errors.Wrap(err, "cloud provider creation failed")
 	}
@@ -103,7 +97,7 @@ func NewTestContext() (*testContext, error) {
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
 		namespace: "openshift-windows-machine-config-operator", CloudProvider: cloudProvider,
-		hasCustomVXLAN: hasCustomVXLANPort, workloadNamespace: "wmco-test", toolsImage: toolsImage}, nil
+		workloadNamespace: "wmco-test", toolsImage: toolsImage}, nil
 }
 
 // vmUsername returns the name of the user which can be used to log into each Windows instance
