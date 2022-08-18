@@ -12,9 +12,9 @@ import (
 	mapi "github.com/openshift/api/machine/v1beta1"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
 )
 
 const defaultCredentialsSecretName = "vsphere-cloud-credentials"
@@ -125,63 +125,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 		return nil, errors.Wrap(err, "failed to marshal vSphere machine provider spec")
 	}
 
-	matchLabels := map[string]string{
-		mapi.MachineClusterIDLabel:  p.InfrastructureName,
-		clusterinfo.MachineE2ELabel: "true",
-	}
-
-	// On vSphere the Machine name for Windows VMs cannot be more than 15 characters long
-	// The machine-api-operator derives the name from the MachineSet name,
-	// adding '"-" + rand.String(5)'.
-	// This leaves a max. 9 characters for the MachineSet name
-	machineSetName := clusterinfo.WindowsMachineSetName(withWindowsLabel)
-	if withWindowsLabel {
-		matchLabels[clusterinfo.MachineOSIDLabel] = "Windows"
-	}
-	matchLabels[clusterinfo.MachineSetLabel] = machineSetName
-
-	machineLabels := map[string]string{
-		clusterinfo.MachineRoleLabel: "worker",
-		clusterinfo.MachineTypeLabel: "worker",
-	}
-	// append matchlabels to machinelabels
-	for k, v := range matchLabels {
-		machineLabels[k] = v
-	}
-
-	// Set up the test machineSet
-	machineSet := &mapi.MachineSet{
-		ObjectMeta: meta.ObjectMeta{
-			Name:      machineSetName,
-			Namespace: clusterinfo.MachineAPINamespace,
-			Labels: map[string]string{
-				mapi.MachineClusterIDLabel:  p.InfrastructureName,
-				clusterinfo.MachineE2ELabel: "true",
-			},
-		},
-		Spec: mapi.MachineSetSpec{
-			Selector: meta.LabelSelector{
-				MatchLabels: matchLabels,
-			},
-			Replicas: &replicas,
-			Template: mapi.MachineTemplateSpec{
-				ObjectMeta: mapi.ObjectMeta{Labels: machineLabels},
-				Spec: mapi.MachineSpec{
-					ObjectMeta: mapi.ObjectMeta{
-						Labels: map[string]string{
-							"node-role.kubernetes.io/worker": "",
-						},
-					},
-					ProviderSpec: mapi.ProviderSpec{
-						Value: &runtime.RawExtension{
-							Raw: rawProviderSpec,
-						},
-					},
-				},
-			},
-		},
-	}
-	return machineSet, nil
+	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withWindowsLabel), nil
 }
 
 func (p *Provider) GetType() config.PlatformType {

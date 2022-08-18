@@ -17,10 +17,9 @@ import (
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	core "k8s.io/api/core/v1"
-	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
 )
 
 const (
@@ -295,26 +294,6 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 	if err != nil {
 		return nil, fmt.Errorf("unable to get subnet: %v", err)
 	}
-	machineSetName := clusterinfo.WindowsMachineSetName(withWindowsLabel)
-	matchLabels := map[string]string{
-		mapi.MachineClusterIDLabel:  a.InfrastructureName,
-		clusterinfo.MachineE2ELabel: "true",
-	}
-
-	if withWindowsLabel {
-		matchLabels[clusterinfo.MachineOSIDLabel] = "Windows"
-	}
-	matchLabels[clusterinfo.MachineSetLabel] = machineSetName + *subnet.AvailabilityZone
-
-	machineLabels := map[string]string{
-		clusterinfo.MachineRoleLabel: "worker",
-		clusterinfo.MachineTypeLabel: "worker",
-	}
-	// append matchlabels to machinelabels
-	for k, v := range matchLabels {
-		machineLabels[k] = v
-	}
-
 	providerSpec := &mapi.AWSMachineProviderConfig{
 		AMI: mapi.AWSResourceReference{
 			ID: &a.imageID,
@@ -347,35 +326,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 		return nil, err
 	}
 
-	// Set up the test machineSet
-	machineSet := &mapi.MachineSet{
-		ObjectMeta: meta.ObjectMeta{
-			Name:      machineSetName,
-			Namespace: "openshift-machine-api",
-			Labels: map[string]string{
-				mapi.MachineClusterIDLabel:  a.InfrastructureName,
-				clusterinfo.MachineE2ELabel: "true",
-			},
-		},
-		Spec: mapi.MachineSetSpec{
-			Selector: meta.LabelSelector{
-				MatchLabels: matchLabels,
-			},
-			Replicas: &replicas,
-			Template: mapi.MachineTemplateSpec{
-				ObjectMeta: mapi.ObjectMeta{Labels: machineLabels},
-				Spec: mapi.MachineSpec{
-					ObjectMeta: mapi.ObjectMeta{Labels: map[string]string{"node-role.kubernetes.io/worker": ""}},
-					ProviderSpec: mapi.ProviderSpec{
-						Value: &runtime.RawExtension{
-							Raw: rawBytes,
-						},
-					},
-				},
-			},
-		},
-	}
-	return machineSet, nil
+	return machineset.New(rawBytes, a.InfrastructureName, replicas, withWindowsLabel), nil
 }
 
 func (a *awsProvider) GetType() config.PlatformType {
