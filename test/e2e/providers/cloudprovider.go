@@ -21,23 +21,22 @@ type CloudProvider interface {
 }
 
 // NewCloudProvider returns a CloudProvider interface or an error
-func NewCloudProvider(hasCustomVXLANPort bool) (CloudProvider, error) {
+func NewCloudProvider() (CloudProvider, error) {
 	openshift, err := oc.GetOpenShift()
 	if err != nil {
 		return nil, errors.Wrap(err, "Getting OpenShift client failed")
 	}
-	platformStatus, err := openshift.GetCloudProvider()
+	infra, err := openshift.GetInfrastructure()
 	if err != nil {
 		return nil, errors.Wrap(err, "Getting cloud provider type")
 	}
-	switch provider := platformStatus.Type; provider {
+	switch provider := infra.Status.PlatformStatus.Type; provider {
 	case config.AWSPlatformType:
-		// 	Setup the AWS cloud provider in the same region where the cluster is running
-		return awsProvider.SetupAWSCloudProvider(platformStatus.AWS.Region)
+		return awsProvider.New(openshift, &infra.Status)
 	case config.AzurePlatformType:
-		return azureProvider.New(openshift, hasCustomVXLANPort)
+		return azureProvider.New(openshift, &infra.Status), nil
 	case config.VSpherePlatformType:
-		return vSphereProvider.New(openshift)
+		return vSphereProvider.New(openshift, &infra.Status)
 	case config.NonePlatformType:
 		return noneProvider.New(openshift)
 	default:

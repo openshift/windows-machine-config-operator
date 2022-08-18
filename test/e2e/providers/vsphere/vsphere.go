@@ -3,7 +3,6 @@ package vsphere
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 
@@ -23,21 +22,20 @@ const defaultCredentialsSecretName = "vsphere-cloud-credentials"
 // Provider is a provider struct for testing vSphere
 type Provider struct {
 	oc *clusterinfo.OpenShift
+	*config.InfrastructureStatus
 }
 
 // New returns a new vSphere provider struct with the given client set and ssh key pair
-func New(clientset *clusterinfo.OpenShift) (*Provider, error) {
+func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*Provider, error) {
 	return &Provider{
-		oc: clientset,
+		oc:                   clientset,
+		InfrastructureStatus: infraStatus,
 	}, nil
 }
 
 // newVSphereMachineProviderSpec returns a vSphereMachineProviderSpec generated from the inputs, or an error
-func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*mapi.VSphereMachineProviderSpec, error) {
-	if clusterID == "" {
-		return nil, fmt.Errorf("clusterID is empty")
-	}
-	workspace, err := p.getWorkspaceFromExistingMachineSet(clusterID)
+func (p *Provider) newVSphereMachineProviderSpec() (*mapi.VSphereMachineProviderSpec, error) {
+	workspace, err := p.getWorkspaceFromExistingMachineSet()
 	if err != nil {
 		return nil, err
 	}
@@ -73,11 +71,9 @@ func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*mapi.VSpher
 }
 
 // getWorkspaceFromExistingMachineSet returns Workspace from a machineset provisioned during installation
-func (p *Provider) getWorkspaceFromExistingMachineSet(clusterID string) (*mapi.Workspace, error) {
-	if clusterID == "" {
-		return nil, fmt.Errorf("clusterID is empty")
-	}
-	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-cluster=" + clusterID}
+func (p *Provider) getWorkspaceFromExistingMachineSet() (*mapi.Workspace, error) {
+	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-cluster=" +
+		p.InfrastructureName}
 	machineSets, err := p.oc.Machine.MachineSets("openshift-machine-api").List(context.TODO(), listOptions)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get machinesets")
@@ -118,13 +114,8 @@ func getNetwork() string {
 
 // GenerateMachineSet generates the MachineSet object which is vSphere provider specific
 func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
-	clusterID, err := p.oc.GetInfrastructureID()
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to get cluster id")
-	}
-
 	// create new machine provider spec for deploying Windows node
-	providerSpec, err := p.newVSphereMachineProviderSpec(clusterID)
+	providerSpec, err := p.newVSphereMachineProviderSpec()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create new vSphere machine provider spec")
 	}
@@ -135,7 +126,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 	}
 
 	matchLabels := map[string]string{
-		mapi.MachineClusterIDLabel:  clusterID,
+		mapi.MachineClusterIDLabel:  p.InfrastructureName,
 		clusterinfo.MachineE2ELabel: "true",
 	}
 
@@ -164,7 +155,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 			Name:      machineSetName,
 			Namespace: clusterinfo.MachineAPINamespace,
 			Labels: map[string]string{
-				mapi.MachineClusterIDLabel:  clusterID,
+				mapi.MachineClusterIDLabel:  p.InfrastructureName,
 				clusterinfo.MachineE2ELabel: "true",
 			},
 		},

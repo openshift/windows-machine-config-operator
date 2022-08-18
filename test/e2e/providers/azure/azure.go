@@ -30,39 +30,22 @@ const (
 
 // Provider is a provider struct for testing Azure
 type Provider struct {
-	oc     *clusterinfo.OpenShift
+	oc *clusterinfo.OpenShift
+	*config.InfrastructureStatus
 	vmSize string
 }
 
 // New returns a new Azure provider struct with the give client set and ssh key pair
-func New(clientset *clusterinfo.OpenShift, hasCustomVXLANPort bool) (*Provider, error) {
-	if hasCustomVXLANPort == true {
-		return nil, fmt.Errorf("custom VXLAN port is not supported on current Azure image")
-	}
-
+func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) *Provider {
 	return &Provider{
-		oc:     clientset,
-		vmSize: defaultVMSize,
-	}, nil
+		oc:                   clientset,
+		InfrastructureStatus: infraStatus,
+		vmSize:               defaultVMSize,
+	}
 }
 
 // newAzureMachineProviderSpec returns an AzureMachineProviderSpec generated from the inputs, or an error
-func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus, location, zone, vmSize string) (*mapi.AzureMachineProviderSpec, error) {
-	if clusterID == "" {
-		return nil, fmt.Errorf("clusterID is empty")
-	}
-	if status == nil || status == (&config.PlatformStatus{}) {
-		return nil, fmt.Errorf("platform status is nil")
-	}
-	if status.Azure == nil || status.Azure == (&config.AzurePlatformStatus{}) {
-		return nil, fmt.Errorf("azure platform status is nil")
-	}
-	if status.Azure.NetworkResourceGroupName == "" {
-		return nil, fmt.Errorf("azure network resource group name is empty")
-	}
-	rg := status.Azure.ResourceGroupName
-	netrg := status.Azure.NetworkResourceGroupName
-
+func (p *Provider) newAzureMachineProviderSpec(location, zone string) (*mapi.AzureMachineProviderSpec, error) {
 	return &mapi.AzureMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
 			APIVersion: "azureproviderconfig.openshift.io/v1beta1",
@@ -78,7 +61,7 @@ func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus
 		},
 		Location: location,
 		Zone:     &zone,
-		VMSize:   vmSize,
+		VMSize:   p.vmSize,
 		Image: mapi.Image{
 			Publisher: defaultImagePublisher,
 			Offer:     defaultImageOffer,
@@ -93,27 +76,19 @@ func newAzureMachineProviderSpec(clusterID string, status *config.PlatformStatus
 			},
 		},
 		PublicIP:             false,
-		Subnet:               fmt.Sprintf("%s-worker-subnet", clusterID),
-		ManagedIdentity:      fmt.Sprintf("%s-identity", clusterID),
-		Vnet:                 fmt.Sprintf("%s-vnet", clusterID),
-		ResourceGroup:        rg,
-		NetworkResourceGroup: netrg,
+		Subnet:               fmt.Sprintf("%s-worker-subnet", p.InfrastructureName),
+		ManagedIdentity:      fmt.Sprintf("%s-identity", p.InfrastructureName),
+		Vnet:                 fmt.Sprintf("%s-vnet", p.InfrastructureName),
+		ResourceGroup:        p.PlatformStatus.Azure.ResourceGroupName,
+		NetworkResourceGroup: p.PlatformStatus.Azure.NetworkResourceGroupName,
 	}, nil
 }
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
 func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
-	clusterID, err := p.oc.GetInfrastructureID()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get cluster id: %v", err)
-	}
-	platformStatus, err := p.oc.GetCloudProvider()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get azure platform status: %v", err)
-	}
-
 	// Inspect master-0 to get Azure Location and Zone
-	machines, err := p.oc.Machine.Machines("openshift-machine-api").Get(context.TODO(), clusterID+"-master-0", meta.GetOptions{})
+	machines, err := p.oc.Machine.Machines("openshift-machine-api").Get(context.TODO(),
+		p.InfrastructureName+"-master-0", meta.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)
 	}
@@ -124,7 +99,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 	}
 
 	// create new machine provider spec for deploying Windows node in the same Location and Zone as master-0
-	providerSpec, err := newAzureMachineProviderSpec(clusterID, platformStatus, masterProviderSpec.Location, *masterProviderSpec.Zone, p.vmSize)
+	providerSpec, err := p.newAzureMachineProviderSpec(masterProviderSpec.Location, *masterProviderSpec.Zone)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new azure machine provider spec: %v", err)
 	}
@@ -135,7 +110,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 	}
 
 	matchLabels := map[string]string{
-		mapi.MachineClusterIDLabel:  clusterID,
+		mapi.MachineClusterIDLabel:  p.InfrastructureName,
 		clusterinfo.MachineE2ELabel: "true",
 	}
 
@@ -164,7 +139,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 			Name:      machineSetName,
 			Namespace: clusterinfo.MachineAPINamespace,
 			Labels: map[string]string{
-				mapi.MachineClusterIDLabel:  clusterID,
+				mapi.MachineClusterIDLabel:  p.InfrastructureName,
 				clusterinfo.MachineE2ELabel: "true",
 			},
 		},

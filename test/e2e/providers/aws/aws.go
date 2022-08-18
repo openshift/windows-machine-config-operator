@@ -32,6 +32,7 @@ const (
 )
 
 type awsProvider struct {
+	*config.InfrastructureStatus
 	// imageID is the AMI image-id to be used for creating Virtual Machine
 	imageID string
 	// instanceType is the flavor of VM to be used
@@ -42,8 +43,6 @@ type awsProvider struct {
 	ec2 ec2iface.EC2API
 	// openShiftClient is the client of the existing OpenShift cluster.
 	openShiftClient *clusterinfo.OpenShift
-	// region in which the Machine needs to be created
-	region string
 }
 
 // newSession uses AWS credentials to create and returns a session for interacting with EC2.
@@ -61,9 +60,9 @@ func newSession(credentialPath, credentialAccountID, region string) (*awssession
 // credentialPath is the file path the AWS credentials file.
 // credentialAccountID is the account name the user uses to create VM instance.
 // The credentialAccountID should exist in the AWS credentials file pointing at one specific credential.
-func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
-	credentialAccountID, instanceType, region string) (*awsProvider, error) {
-	session, err := newSession(credentialPath, credentialAccountID, region)
+func newAWSProvider(openShiftClient *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus, credentialPath,
+	credentialAccountID, instanceType string) (*awsProvider, error) {
+	session, err := newSession(credentialPath, credentialAccountID, infraStatus.PlatformStatus.AWS.Region)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new AWS session: %v", err)
 	}
@@ -76,42 +75,26 @@ func newAWSProvider(openShiftClient *clusterinfo.OpenShift, credentialPath,
 	if err != nil {
 		return nil, fmt.Errorf("unable to get latest Windows AMI: %v", err)
 	}
-	return &awsProvider{imageID, instanceType,
+	return &awsProvider{infraStatus, imageID, instanceType,
 		iamClient,
 		ec2Client,
 		openShiftClient,
-		region,
 	}, nil
 }
 
-// SetupAWSCloudProvider creates AWS provider using the give OpenShift client
-// This is the first step of the e2e test and fails the test upon error.
-func SetupAWSCloudProvider(region string) (*awsProvider, error) {
-	oc, err := clusterinfo.GetOpenShift()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize OpenShift client with error: %v", err)
-	}
+// New returns a new awsProvider
+func New(oc *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*awsProvider, error) {
 	// awsCredentials is set by OpenShift CI
 	awsCredentials := os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
 	if len(awsCredentials) == 0 {
 		return nil, fmt.Errorf("AWS_SHARED_CREDENTIALS_FILE env var is empty")
 	}
-	awsProvider, err := newAWSProvider(oc, awsCredentials, "default", instanceType, region)
+	awsProvider, err := newAWSProvider(oc, infraStatus, awsCredentials, "default", instanceType)
 	if err != nil {
 		return nil, fmt.Errorf("error obtaining aws interface object: %v", err)
 	}
 
 	return awsProvider, nil
-}
-
-// getInfraID returns the infrastructure ID associated with the OpenShift cluster. This is public for
-// testing purposes as of now.
-func (a *awsProvider) getInfraID() (string, error) {
-	infraID, err := a.openShiftClient.GetInfrastructureID()
-	if err != nil {
-		return "", fmt.Errorf("erroring getting OpenShift infrastructure ID associated with the cluster")
-	}
-	return infraID, nil
 }
 
 // getLatestWindowsAMI returns the imageid of the latest released "Windows Server with Containers" image
@@ -160,8 +143,8 @@ func getLatestWindowsAMI(ec2Client *ec2.EC2) (string, error) {
 
 // getSubnet tries to find a subnet under the VPC and returns subnet or an error.
 // These subnets belongs to the OpenShift cluster.
-func (a *awsProvider) getSubnet(infraID string) (*ec2.Subnet, error) {
-	vpc, err := a.getVPCByInfrastructure(infraID)
+func (a *awsProvider) getSubnet() (*ec2.Subnet, error) {
+	vpc, err := a.getVPCByInfrastructure()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get the VPC %v", err)
 	}
@@ -207,7 +190,7 @@ func (a *awsProvider) getSubnet(infraID string) (*ec2.Subnet, error) {
 	for _, subnet := range subnets.Subnets {
 		for _, tag := range subnet.Tags {
 			// TODO: find required subnet by checking igw gateway in routing.
-			if *tag.Key == "Name" && strings.Contains(*tag.Value, infraID+requiredSubnet) {
+			if *tag.Key == "Name" && strings.Contains(*tag.Value, a.InfrastructureName+requiredSubnet) {
 				foundSubnet = true
 				// Ensure that the instance type we want is supported in the zone that the subnet is in
 				for _, instanceOffering := range offerings.ReservedInstancesOfferings {
@@ -232,15 +215,15 @@ func (a *awsProvider) getSubnet(infraID string) (*ec2.Subnet, error) {
 
 // getClusterWorkerSGID gets worker security group id from the existing cluster or returns an error.
 // This function is exposed for testing purpose.
-func (a *awsProvider) getClusterWorkerSGID(infraID string) (string, error) {
+func (a *awsProvider) getClusterWorkerSGID() (string, error) {
 	sg, err := a.ec2.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
 		Filters: []*ec2.Filter{
 			{
 				Name:   aws.String("tag:Name"),
-				Values: aws.StringSlice([]string{fmt.Sprintf("%s-worker-sg", infraID)}),
+				Values: aws.StringSlice([]string{fmt.Sprintf("%s-worker-sg", a.InfrastructureName)}),
 			},
 			{
-				Name:   aws.String("tag:" + infraIDTagKeyPrefix + infraID),
+				Name:   aws.String("tag:" + infraIDTagKeyPrefix + a.InfrastructureName),
 				Values: aws.StringSlice([]string{infraIDTagValue}),
 			},
 		},
@@ -255,11 +238,11 @@ func (a *awsProvider) getClusterWorkerSGID(infraID string) (string, error) {
 }
 
 // GetVPCByInfrastructure finds the VPC of an infrastructure and returns the VPC struct or an error.
-func (a *awsProvider) getVPCByInfrastructure(infraID string) (*ec2.Vpc, error) {
+func (a *awsProvider) getVPCByInfrastructure() (*ec2.Vpc, error) {
 	res, err := a.ec2.DescribeVpcs(&ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
 			{
-				Name:   aws.String("tag:" + infraIDTagKeyPrefix + infraID),
+				Name:   aws.String("tag:" + infraIDTagKeyPrefix + a.InfrastructureName),
 				Values: aws.StringSlice([]string{infraIDTagValue}),
 			},
 			{
@@ -281,9 +264,9 @@ func (a *awsProvider) getVPCByInfrastructure(infraID string) (*ec2.Vpc, error) {
 
 // getIAMWorkerRole gets worker IAM information from the existing cluster including IAM arn or an error.
 // This function is exposed for testing purpose.
-func (a *awsProvider) getIAMWorkerRole(infraID string) (*ec2.IamInstanceProfileSpecification, error) {
+func (a *awsProvider) getIAMWorkerRole() (*ec2.IamInstanceProfileSpecification, error) {
 	iamspc, err := a.iam.GetInstanceProfile(&iam.GetInstanceProfileInput{
-		InstanceProfileName: aws.String(fmt.Sprintf("%s-worker-profile", infraID)),
+		InstanceProfileName: aws.String(fmt.Sprintf("%s-worker-profile", a.InfrastructureName)),
 	})
 	if err != nil {
 		return nil, err
@@ -298,28 +281,23 @@ func (a *awsProvider) getIAMWorkerRole(infraID string) (*ec2.IamInstanceProfileS
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
 func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
-	clusterName, err := a.getInfraID()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get infrastructure id %v", err)
-	}
-
-	instanceProfile, err := a.getIAMWorkerRole(clusterName)
+	instanceProfile, err := a.getIAMWorkerRole()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get instance profile %v", err)
 	}
 
-	sgID, err := a.getClusterWorkerSGID(clusterName)
+	sgID, err := a.getClusterWorkerSGID()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get security group id: %v", err)
 	}
 
-	subnet, err := a.getSubnet(clusterName)
+	subnet, err := a.getSubnet()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get subnet: %v", err)
 	}
 	machineSetName := clusterinfo.WindowsMachineSetName(withWindowsLabel)
 	matchLabels := map[string]string{
-		mapi.MachineClusterIDLabel:  clusterName,
+		mapi.MachineClusterIDLabel:  a.InfrastructureName,
 		clusterinfo.MachineE2ELabel: "true",
 	}
 
@@ -358,7 +336,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 		},
 		// query placement
 		Placement: mapi.Placement{
-			Region:           a.region,
+			Region:           a.PlatformStatus.AWS.Region,
 			AvailabilityZone: *subnet.AvailabilityZone,
 		},
 		UserDataSecret: &core.LocalObjectReference{Name: "windows-user-data"},
@@ -375,7 +353,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 			Name:      machineSetName,
 			Namespace: "openshift-machine-api",
 			Labels: map[string]string{
-				mapi.MachineClusterIDLabel:  clusterName,
+				mapi.MachineClusterIDLabel:  a.InfrastructureName,
 				clusterinfo.MachineE2ELabel: "true",
 			},
 		},
