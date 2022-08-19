@@ -210,26 +210,10 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	return ctrl.Result{}, nil
 }
 
-// getExistingServices returns a map with the keys being all Windows services currently present on the VM
-func (sc *ServiceController) getExistingServices() (map[string]struct{}, error) {
-	// The most reliable way to determine if a service exists or not is to do a 'list' API call. It is possible to
-	// remove this call, and parse the error messages of a service 'open' API call, but I find that relying on human
-	// readable errors could cause issues when providing compatibility across different versions of Windows.
-	svcList, err := sc.ListServices()
-	if err != nil {
-		return nil, err
-	}
-	svcs := make(map[string]struct{})
-	for _, service := range svcList {
-		svcs[service] = struct{}{}
-	}
-	return svcs, nil
-}
-
 // reconcileServices ensures that all the services passed in via the services slice are created, configured properly
 // and started
 func (sc *ServiceController) reconcileServices(services []servicescm.Service) error {
-	existingSvcs, err := sc.getExistingServices()
+	existingSvcs, err := sc.GetServices()
 	if err != nil {
 		return errors.Wrap(err, "could not determine existing Windows services")
 	}

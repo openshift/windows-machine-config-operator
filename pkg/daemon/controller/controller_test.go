@@ -448,12 +448,12 @@ func testServicesCreatedAsExpected(t *testing.T, createdServices map[string]fake
 // getAllFakeServices accepts a mocked Windows service manager, and returns a map of copies of all existing Windows
 // services
 func getAllFakeServices(svcMgr manager.Manager) (map[string]fake.FakeService, error) {
-	svcs, err := svcMgr.ListServices()
+	svcs, err := svcMgr.GetServices()
 	if err != nil {
 		return nil, err
 	}
 	fakeServices := make(map[string]fake.FakeService)
-	for _, winServiceName := range svcs {
+	for winServiceName := range svcs {
 		winService, err := svcMgr.OpenService(winServiceName)
 		if err != nil {
 			return nil, err

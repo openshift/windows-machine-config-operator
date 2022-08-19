@@ -93,8 +93,13 @@ func (t *testMgr) CreateService(name, exepath string, config mgr.Config, args ..
 	return &service, nil
 }
 
-func (t *testMgr) ListServices() ([]string, error) {
-	return t.svcList.listServiceNames(), nil
+func (t *testMgr) GetServices() (map[string]struct{}, error) {
+	svcsList := t.svcList.listServiceNames()
+	svcsMap := make(map[string]struct{})
+	for _, svc := range svcsList {
+		svcsMap[svc] = struct{}{}
+	}
+	return svcsMap, nil
 }
 
 func (t *testMgr) OpenService(name string) (winsvc.Service, error) {
