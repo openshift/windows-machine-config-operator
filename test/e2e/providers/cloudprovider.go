@@ -10,6 +10,7 @@ import (
 	oc "github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	awsProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/aws"
 	azureProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/azure"
+	gcpProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/gcp"
 	noneProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/none"
 	vSphereProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
 )
@@ -35,6 +36,8 @@ func NewCloudProvider() (CloudProvider, error) {
 		return awsProvider.New(openshift, &infra.Status)
 	case config.AzurePlatformType:
 		return azureProvider.New(openshift, &infra.Status), nil
+	case config.GCPPlatformType:
+		return gcpProvider.New(openshift, &infra.Status), nil
 	case config.VSpherePlatformType:
 		return vSphereProvider.New(openshift, &infra.Status)
 	case config.NonePlatformType:
