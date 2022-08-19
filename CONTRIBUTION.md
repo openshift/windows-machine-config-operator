@@ -32,13 +32,14 @@ Thanks for contributing!
 ### Format of the pull request (PR)
 
 - The PR header for a feature should be prefixed with the Jira issue. Example: `WINC-123:`
-- The PR header for a bug should be prefixed with the Bugzilla number. Example: `Bug 123:`
-- Correctly prefixing the PR header will automatically associate the PR with the Jira issue or Bugzilla bug.
-  - In the case of bug fix PRs, this will also automatically transition the associated Bugzilla bug.
+- The PR header for a bug should be prefixed with the Jira Bug identifier. Example: `OCPBUGS-123:`
+- Correctly prefixing the PR header will automatically associate the PR with the Jira issue or bug.
+  - In the case of bug fix PRs, this will also automatically transition the associated Jira bug.
     - Opening the PR: `ASSIGNED` --> `POST`
     - PR merges: `POST` --> `MODIFIED`
     - `MODIFIED` to the `ON_QA` transition will have to be done manually by the PR author.
-- The individual commit messages should not be prefixed 
+    - PR closes without merging, the Jira bug transitions back to NEW status.
+- The individual commit messages should not be prefixed.
 
 ### Format of the commit message
 
@@ -68,7 +69,7 @@ The first line is the subject and should be no longer than 50 characters, the se
 lines should be wrapped at 80 characters. This allows the message to be easier to read on GitHub as well as in various
 git tools.
 
-If it is a bug fix commit, the bug number should be mentioned in the commit message as `fixes BZ#123` in a separate
+If it is a bug fix commit, the bug identifier should be mentioned in the commit message as `Fixes OCPBUGS-123` in a separate
 line.
 
 ### PR workflow
