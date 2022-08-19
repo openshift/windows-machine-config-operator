@@ -3,6 +3,8 @@
 package manager
 
 import (
+	"github.com/pkg/errors"
+	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
@@ -16,7 +18,7 @@ type Manager interface {
 	GetServices() (map[string]struct{}, error)
 	// OpenService gets the Windows service of the given name if it exists, by which it can be queried or controlled
 	OpenService(string) (winsvc.Service, error)
-	// DeleteService marks a Windows service of the given name for deletion, or an error if it does not exist
+	// DeleteService marks a Windows service of the given name for deletion. No-op if the service already doesn't exist
 	DeleteService(string) error
 }
 
@@ -55,12 +57,29 @@ func (m *manager) OpenService(name string) (winsvc.Service, error) {
 }
 
 func (m *manager) DeleteService(name string) error {
-	underlyingMgr := (*mgr.Mgr)(m)
-	winSvc, err := underlyingMgr.OpenService(name)
+	existingSvcs, err := m.GetServices()
 	if err != nil {
 		return err
 	}
-	return winSvc.Delete()
+	// Nothing to do if it already does not exist
+	if _, present := existingSvcs[name]; !present {
+		return nil
+	}
+
+	manager := (*mgr.Mgr)(m)
+	service, err := manager.OpenService(name)
+	if err != nil {
+		return errors.Wrapf(err, "failed to open service %q", name)
+	}
+	defer service.Close()
+	// Ensure service is stopped before deleting
+	if err = winsvc.EnsureServiceState(service, svc.Stopped); err != nil {
+		return errors.Wrapf(err, "failed to stop service %q", name)
+	}
+	if err = service.Delete(); err != nil {
+		return errors.Wrapf(err, "failed to delete service %q", name)
+	}
+	return nil
 }
 
 func New() (Manager, error) {

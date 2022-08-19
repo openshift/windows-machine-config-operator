@@ -144,29 +144,22 @@ func TestDeleteService(t *testing.T) {
 		name         string
 		svcName      string
 		existingSvcs map[string]*FakeService
-		expectErr    bool
 	}{
 		{
 			name:         "service exists",
 			svcName:      "svc-one",
 			existingSvcs: map[string]*FakeService{"svc-one": {name: "svc-one", config: mgr.Config{Description: "testsvc"}}},
-			expectErr:    false,
 		},
 		{
 			name:         "delete non-existant service",
 			svcName:      "svc-one",
 			existingSvcs: map[string]*FakeService{},
-			expectErr:    true,
 		},
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
 			testMgr := NewTestMgr(test.existingSvcs)
 			err := testMgr.DeleteService(test.svcName)
-			if test.expectErr {
-				assert.Error(t, err)
-				return
-			}
 			require.NoError(t, err)
 			// Check that the service is no longer present
 			svcs, err := testMgr.GetServices()
