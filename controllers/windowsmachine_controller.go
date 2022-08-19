@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 
 	oconfig "github.com/openshift/api/config/v1"
@@ -202,7 +201,7 @@ func (r *WindowsMachineReconciler) isValidMachine(obj client.Object) bool {
 		return false
 	}
 
-	_, err := getInternalIPAddress(machine.Status.Addresses)
+	_, err := GetAddress(machine.Status.Addresses)
 	if err != nil {
 		r.log.V(1).Info("invalid Machine", "name", machine.Name, "error", err)
 		return false
@@ -323,8 +322,8 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, errors.Wrapf(err, "error validating userData secret")
 	}
 
-	// Get the IP address associated with the Windows machine, if not error out to requeue again
-	ipAddress, err := getInternalIPAddress(machine.Status.Addresses)
+	// Get an address to connect to the instance with, if not error out to requeue again
+	address, err := GetAddress(machine.Status.Addresses)
 	if err != nil {
 		return ctrl.Result{}, errors.Wrapf(err, "invalid machine %s", machine.Name)
 	}
@@ -342,9 +341,9 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, errors.Errorf("unable to get instance ID from provider ID for machine %s", machine.Name)
 	}
 
-	log.Info("processing", "address", ipAddress)
+	log.Info("processing", "address", address)
 	// Make the Machine a Windows Worker node
-	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name); err != nil {
+	if err := r.addWorkerNode(address, instanceID, machine.Name); err != nil {
 		var authErr *windows.AuthErr
 		if errors.As(err, &authErr) {
 			// SSH authentication errors with the Machine are non recoverable, stemming from a mismatch with the
@@ -396,7 +395,7 @@ func (r *WindowsMachineReconciler) getDefaultUsername() string {
 }
 
 // addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
-func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineName string) error {
+func (r *WindowsMachineReconciler) addWorkerNode(address, instanceID, machineName string) error {
 	// The name of the Machine must be the same as the hostname of the associated VM. This is currently not true in the
 	// case of vSphere VMs provisioned by MAPI. In case of Linux, ignition was handling it. As we don't have an
 	// equivalent of ignition in Windows, WMCO must correct this by changing the VM's hostname.
@@ -407,7 +406,7 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		hostname = machineName
 	}
 	username := r.getDefaultUsername()
-	instanceInfo, err := instance.NewInfo(ipAddress, username, hostname, false, nil)
+	instanceInfo, err := instance.NewInfo(address, username, hostname, false, nil)
 	if err != nil {
 		return err
 	}
@@ -521,19 +520,4 @@ func (r *WindowsMachineReconciler) isWindowsMachineHealthy(machine *mapi.Machine
 	}
 
 	return true
-}
-
-// getInternalIPAddress returns the internal IP address of the Machine
-func getInternalIPAddress(addresses []core.NodeAddress) (string, error) {
-	// Get the IP address associated with the Windows machine, if not error out to requeue again
-	if len(addresses) == 0 {
-		return "", errors.New("no IP addresses defined")
-	}
-	for _, address := range addresses {
-		// Only return the IPv4 address
-		if address.Type == core.NodeInternalIP && net.ParseIP(address.Address).To4() != nil {
-			return address.Address, nil
-		}
-	}
-	return "", errors.New("no internal IP address associated")
 }

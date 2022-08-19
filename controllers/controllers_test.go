@@ -12,31 +12,31 @@ func TestGetAddress(t *testing.T) {
 	testCases := []struct {
 		name        string
 		input       []core.NodeAddress
-		expectedOut []string
+		expectedOut string
 		expectedErr bool
 	}{
 		{
 			name:        "no addresses",
 			input:       []core.NodeAddress{{}},
-			expectedOut: []string{""},
+			expectedOut: "",
 			expectedErr: true,
 		},
 		{
 			name:        "ipv6",
 			input:       []core.NodeAddress{{Type: core.NodeInternalIP, Address: "::1"}},
-			expectedOut: []string{""},
+			expectedOut: "",
 			expectedErr: true,
 		},
 		{
 			name:        "ipv4",
 			input:       []core.NodeAddress{{Type: core.NodeInternalIP, Address: "127.0.0.1"}},
-			expectedOut: []string{"127.0.0.1"},
+			expectedOut: "127.0.0.1",
 			expectedErr: false,
 		},
 		{
 			name:        "dns",
 			input:       []core.NodeAddress{{Type: core.NodeInternalDNS, Address: "localhost"}},
-			expectedOut: []string{"localhost"},
+			expectedOut: "localhost",
 			expectedErr: false,
 		},
 		{
@@ -44,7 +44,7 @@ func TestGetAddress(t *testing.T) {
 			input: []core.NodeAddress{
 				{Type: core.NodeInternalDNS, Address: "localhost"},
 				{Type: core.NodeInternalIP, Address: "127.0.0.1"}},
-			expectedOut: []string{"localhost", "127.0.0.1"},
+			expectedOut: "localhost",
 			expectedErr: false,
 		},
 	}
@@ -58,7 +58,7 @@ func TestGetAddress(t *testing.T) {
 			require.NoError(t, err)
 			// The output can be any valid address in the expected list, so check that the output is one of the possible
 			// correct ones
-			assert.Contains(t, test.expectedOut, out)
+			assert.Equal(t, test.expectedOut, out)
 		})
 	}
 }

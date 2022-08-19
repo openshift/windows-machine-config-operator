@@ -162,10 +162,15 @@ func (r *instanceReconciler) reconcileKubeletClientCA(ctx context.Context, bundl
 }
 
 // GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
-// or dns address.
+// or dns address. DNS will be preferred, if available.
 func GetAddress(addresses []core.NodeAddress) (string, error) {
 	for _, addr := range addresses {
-		if addr.Type == core.NodeInternalIP || addr.Type == core.NodeInternalDNS {
+		if addr.Type == core.NodeInternalDNS {
+			return addr.Address, nil
+		}
+	}
+	for _, addr := range addresses {
+		if addr.Type == core.NodeInternalIP {
 			// filter out ipv6
 			if net.ParseIP(addr.Address) != nil && net.ParseIP(addr.Address).To4() == nil {
 				continue
