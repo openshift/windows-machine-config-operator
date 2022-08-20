@@ -249,3 +249,8 @@ git submodule update --recursive
 # To update a specific submodule
 git submodule update --remote <path_to_submodule>
 ```
+
+## Preventing Windows Machines from being configured by WMCO
+
+If the Machine spec has the label `windowsmachineconfig.openshift.io/ignore=true`, the Machine will be ignored by WMCO,
+and will not be configured into a Windows node. This can be helpful when debugging userdata changes.

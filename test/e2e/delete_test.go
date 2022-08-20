@@ -119,19 +119,19 @@ func testWindowsNodeDeletion(t *testing.T) {
 	e2eMachineSets, err := testCtx.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).List(context.TODO(),
 		meta.ListOptions{LabelSelector: clusterinfo.MachineE2ELabel + "=true"})
 	require.NoError(t, err, "error listing MachineSets")
-	var windowsMachineSetWithLabel *mapi.MachineSet
+	var machineControllerMachineSet *mapi.MachineSet
 	for _, machineSet := range e2eMachineSets.Items {
-		if machineSet.Spec.Selector.MatchLabels[clusterinfo.MachineOSIDLabel] == "Windows" {
-			windowsMachineSetWithLabel = &machineSet
+		if machineSet.Spec.Selector.MatchLabels[controllers.IgnoreLabel] != "true" {
+			machineControllerMachineSet = &machineSet
 			break
 		}
 	}
-	// skip the scale down step if there is no MachineSet with Windows label
-	if windowsMachineSetWithLabel != nil {
+	// skip the scale down step if there is no MachineSet for the Windows Machine controller
+	if machineControllerMachineSet != nil {
 		// Scale the Windows MachineSet to 0
-		windowsMachineSetWithLabel.Spec.Replicas = &expectedNodeCount
+		machineControllerMachineSet.Spec.Replicas = &expectedNodeCount
 		_, err = testCtx.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Update(context.TODO(),
-			windowsMachineSetWithLabel, meta.UpdateOptions{})
+			machineControllerMachineSet, meta.UpdateOptions{})
 		require.NoError(t, err, "error updating Windows MachineSet")
 
 		// we are waiting 10 minutes for all windows machines to get deleted.
@@ -145,13 +145,13 @@ func testWindowsNodeDeletion(t *testing.T) {
 		assert.NoError(t, testCtx.deleteMachineSet(&machineSet), "error deleting MachineSet")
 	}
 	// Phase is ignored during deletion, in this case we are just waiting for Machines to be deleted.
-	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", true)
+	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", false)
 	require.NoError(t, err, "Machine controller Windows machine deletion failed")
 
 	// TODO: Currently on vSphere it is impossible to delete a Machine after its node has been deleted.
 	//       This special casing should be removed as part of https://issues.redhat.com/browse/WINC-635
 	if testCtx.GetType() != config.VSpherePlatformType {
-		_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", false)
+		_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", true)
 		require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
 	}
 
