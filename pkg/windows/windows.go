@@ -683,6 +683,11 @@ func (vm *windows) runBootstrapper() error {
 	}
 	wmcbInitializeCmd += " --platform-type=" + vm.platformType
 
+	// check log level and increase kubelet verbosity accordingly
+	if vm.log.V(1).Enabled() {
+		// set value to 5 for trace level verbosity
+		wmcbInitializeCmd = wmcbInitializeCmd + " --kubelet-verbosity 5"
+	}
 	out, err := vm.Run(wmcbInitializeCmd, true)
 	vm.log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
 	if err != nil {
