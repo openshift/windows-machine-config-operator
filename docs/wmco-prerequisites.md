@@ -41,10 +41,10 @@ Note:
 | Azure          | Hybrid OVNKubernetes                                                                           |
 | VMware vSphere | Hybrid OVNKubernetes with a [Custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vsphere) |
 
-| Hybrid OVNKubernetes | Supported Windows Server version                                                     |
-|----------------------|--------------------------------------------------------------------------------------|
-| Default VXLAN port   | Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)                 |
-| Custom VXLAN port    | Windows Server 2022 Long-Term Servicing Channel (LTSC)                               |
+| Hybrid OVNKubernetes | Supported Windows Server version                                                                                                  |
+|----------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| Default VXLAN port   | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)|
+| Custom VXLAN port    | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                            |
 
 ## Supported Installation method
 * Installer-Provisioned Infrastructure installation method is the only supported installation method. This is 
