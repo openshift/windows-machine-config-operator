@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/jsonpath"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,8 +55,8 @@ import (
 )
 
 const (
-	// wmcoNamespace defines the namespace service ConfigMaps are expected to be in
-	wmcoNamespace = "openshift-windows-machine-config-operator"
+	// WMCONamespace defines the namespace service ConfigMaps are expected to be in
+	WMCONamespace = "openshift-windows-machine-config-operator"
 )
 
 type ServiceController struct {
@@ -92,37 +93,25 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 		klog.Error(err)
 		return errors.Wrap(err, "error using service account to build config")
 	}
-
-	clientScheme := runtime.NewScheme()
-	err = clientgoscheme.AddToScheme(clientScheme)
-	if err != nil {
-		return err
-	}
 	// This is a client that reads directly from the server, not a cached client. This is required to be used here, as
 	// the cached client, created by ctrl.NewManager() will not be functional until the manager is started.
-	directClient, err := client.New(cfg, client.Options{Scheme: clientScheme})
+	directClient, err := NewDirectClient(cfg)
 	if err != nil {
 		return err
 	}
 
-	// use the client to find the name of the node associated with the VM this is running on
-	var nodes core.NodeList
-	err = directClient.List(ctx, &nodes)
+	addrs, err := LocalInterfaceAddresses()
 	if err != nil {
 		return err
 	}
-	addrs, err := localInterfaceAddresses()
+	node, err := GetAssociatedNode(directClient, addrs)
 	if err != nil {
-		return err
-	}
-	node, err := findNodeByAddress(&nodes, addrs)
-	if err != nil {
-		return err
+		errors.Wrap(err, "could not find node object associated with this instance")
 	}
 
 	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Namespace: wmcoNamespace,
-		Scheme:    clientScheme,
+		Namespace: WMCONamespace,
+		Scheme:    directClient.Scheme(),
 	})
 	if err != nil {
 		return errors.Wrap(err, "unable to start manager")
@@ -141,7 +130,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 // NewServiceController returns a pointer to a ServiceController object
 func NewServiceController(ctx context.Context, client client.Client, mgr manager.Manager, nodeName string) *ServiceController {
 	return &ServiceController{client: client, Manager: mgr, ctx: ctx, nodeName: nodeName,
-		watchNamespace: wmcoNamespace}
+		watchNamespace: WMCONamespace}
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -221,26 +210,10 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	return ctrl.Result{}, nil
 }
 
-// getExistingServices returns a map with the keys being all Windows services currently present on the VM
-func (sc *ServiceController) getExistingServices() (map[string]struct{}, error) {
-	// The most reliable way to determine if a service exists or not is to do a 'list' API call. It is possible to
-	// remove this call, and parse the error messages of a service 'open' API call, but I find that relying on human
-	// readable errors could cause issues when providing compatibility across different versions of Windows.
-	svcList, err := sc.ListServices()
-	if err != nil {
-		return nil, err
-	}
-	svcs := make(map[string]struct{})
-	for _, service := range svcList {
-		svcs[service] = struct{}{}
-	}
-	return svcs, nil
-}
-
 // reconcileServices ensures that all the services passed in via the services slice are created, configured properly
 // and started
 func (sc *ServiceController) reconcileServices(services []servicescm.Service) error {
-	existingSvcs, err := sc.getExistingServices()
+	existingSvcs, err := sc.GetServices()
 	if err != nil {
 		return errors.Wrap(err, "could not determine existing Windows services")
 	}
@@ -378,8 +351,37 @@ func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) 
 	return make(map[string]string), nil
 }
 
-// localInterfaceAddresses returns a slice of all addresses associated with local network interfaces
-func localInterfaceAddresses() ([]net.Addr, error) {
+// NewDirectClient creates and returns an authenticated client that reads directly from the API server.
+// It also returns the config and scheme used to created the client.
+func NewDirectClient(cfg *rest.Config) (client.Client, error) {
+	clientScheme := runtime.NewScheme()
+	err := clientgoscheme.AddToScheme(clientScheme)
+	if err = clientgoscheme.AddToScheme(clientScheme); err != nil {
+		return nil, err
+	}
+
+	directClient, err := client.New(cfg, client.Options{Scheme: clientScheme})
+	if err != nil {
+		return nil, err
+	}
+	return directClient, nil
+}
+
+// GetAssociatedNode uses the given client to find the name of the node associated with the VM this is running on
+func GetAssociatedNode(c client.Client, addrs []net.Addr) (*core.Node, error) {
+	var nodes core.NodeList
+	if err := c.List(context.TODO(), &nodes); err != nil {
+		return nil, err
+	}
+	node, err := findNodeByAddress(&nodes, addrs)
+	if err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
+// LocalInterfaceAddresses returns a slice of all addresses associated with local network interfaces
+func LocalInterfaceAddresses() ([]net.Addr, error) {
 	var addresses []net.Addr
 	netIfs, err := net.Interfaces()
 	if err != nil {

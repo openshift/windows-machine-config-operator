@@ -200,7 +200,7 @@ func (r *ConfigMapReconciler) removeOutdatedServicesConfigMaps(ctx context.Conte
 	}
 	versionAnnotations := getVersionAnnotations(nodes.Items)
 
-	servicesConfigMaps, err := r.listServiceConfigMaps(ctx)
+	servicesConfigMaps, err := servicescm.List(r.client, ctx, r.watchNamespace)
 	if err != nil {
 		return errors.Wrapf(err, "unable to retrieve list of services ConfigMaps")
 	}
@@ -231,21 +231,6 @@ func isTiedToRelevantVersion(v string, versions map[string]struct{}) bool {
 		}
 	}
 	return false
-}
-
-// listServiceConfigMaps returns a list of all windows-services ConfigMaps in the operator namespace
-func (r *ConfigMapReconciler) listServiceConfigMaps(ctx context.Context) ([]core.ConfigMap, error) {
-	watchNamespaceCMs := &core.ConfigMapList{}
-	if err := r.client.List(ctx, watchNamespaceCMs, &client.ListOptions{Namespace: r.watchNamespace}); err != nil {
-		return nil, err
-	}
-	servicesConfigMaps := []core.ConfigMap{}
-	for _, cm := range watchNamespaceCMs.Items {
-		if strings.HasPrefix(cm.Name, servicescm.NamePrefix) {
-			servicesConfigMaps = append(servicesConfigMaps, cm)
-		}
-	}
-	return servicesConfigMaps, nil
 }
 
 // reconcileNodes corrects the discrepancy between the "expected" instances, and the "actual" Node list

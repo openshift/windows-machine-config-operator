@@ -3,6 +3,8 @@
 package manager
 
 import (
+	"github.com/pkg/errors"
+	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
@@ -11,11 +13,12 @@ import (
 type Manager interface {
 	// CreateService creates a Windows service with the given configuration parameters
 	CreateService(string, string, mgr.Config, ...string) (winsvc.Service, error)
-	// ListServices enumerates all the Windows services that exist on an instance
-	ListServices() ([]string, error)
+	// GetServices returns a map of all the Windows services that exist on an instance.
+	// The keys are service names and values are empty structs, used as 0 byte placeholders.
+	GetServices() (map[string]struct{}, error)
 	// OpenService gets the Windows service of the given name if it exists, by which it can be queried or controlled
 	OpenService(string) (winsvc.Service, error)
-	// DeleteService marks a Windows service of the given name for deletion, or an error if it does not exist
+	// DeleteService marks a Windows service of the given name for deletion. No-op if the service already doesn't exist
 	DeleteService(string) error
 }
 
@@ -31,21 +34,52 @@ func (m *manager) CreateService(name, exepath string, config mgr.Config, args ..
 	service, err := underlyingMgr.CreateService(name, exepath, config, args...)
 	return winsvc.Service(service), err
 }
-func (m *manager) ListServices() ([]string, error) {
-	underlyingMgr := (*mgr.Mgr)(m)
-	return underlyingMgr.ListServices()
+
+func (m *manager) GetServices() (map[string]struct{}, error) {
+	// The most reliable way to determine if a service exists or not is to do a 'list' API call. It is possible to
+	// remove this call, and parse the error messages of a service 'open' API call, but I find that relying on human
+	// readable errors could cause issues when providing compatibility across different versions of Windows.
+	manager := (*mgr.Mgr)(m)
+	svcList, err := manager.ListServices()
+	if err != nil {
+		return nil, err
+	}
+	svcs := make(map[string]struct{})
+	for _, service := range svcList {
+		svcs[service] = struct{}{}
+	}
+	return svcs, nil
 }
+
 func (m *manager) OpenService(name string) (winsvc.Service, error) {
 	underlyingMgr := (*mgr.Mgr)(m)
 	return underlyingMgr.OpenService(name)
 }
+
 func (m *manager) DeleteService(name string) error {
-	underlyingMgr := (*mgr.Mgr)(m)
-	winSvc, err := underlyingMgr.OpenService(name)
+	existingSvcs, err := m.GetServices()
 	if err != nil {
 		return err
 	}
-	return winSvc.Delete()
+	// Nothing to do if it already does not exist
+	if _, present := existingSvcs[name]; !present {
+		return nil
+	}
+
+	manager := (*mgr.Mgr)(m)
+	service, err := manager.OpenService(name)
+	if err != nil {
+		return errors.Wrapf(err, "failed to open service %q", name)
+	}
+	defer service.Close()
+	// Ensure service is stopped before deleting
+	if err = winsvc.EnsureServiceState(service, svc.Stopped); err != nil {
+		return errors.Wrapf(err, "failed to stop service %q", name)
+	}
+	if err = service.Delete(); err != nil {
+		return errors.Wrapf(err, "failed to delete service %q", name)
+	}
+	return nil
 }
 
 func New() (Manager, error) {

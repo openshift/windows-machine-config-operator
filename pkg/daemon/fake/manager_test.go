@@ -77,29 +77,29 @@ func TestCreateService(t *testing.T) {
 	}
 }
 
-func TestListServices(t *testing.T) {
+func TestGetServices(t *testing.T) {
 	testIO := []struct {
 		name         string
 		existingSvcs map[string]*FakeService
-		expected     []string
+		expected     map[string]struct{}
 	}{
 		{
 			name:         "no services",
 			existingSvcs: map[string]*FakeService{},
-			expected:     []string{},
+			expected:     map[string]struct{}{},
 		},
 		{
 			name:         "some services",
 			existingSvcs: map[string]*FakeService{"svc-one": {}, "svc-two": {}},
-			expected:     []string{"svc-one", "svc-two"},
+			expected:     map[string]struct{}{"svc-one": {}, "svc-two": {}},
 		},
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
 			testMgr := NewTestMgr(test.existingSvcs)
-			list, err := testMgr.ListServices()
+			svcs, err := testMgr.GetServices()
 			require.NoError(t, err)
-			assert.ElementsMatch(t, test.expected, list)
+			assert.Equal(t, test.expected, svcs)
 		})
 	}
 }
@@ -144,34 +144,27 @@ func TestDeleteService(t *testing.T) {
 		name         string
 		svcName      string
 		existingSvcs map[string]*FakeService
-		expectErr    bool
 	}{
 		{
 			name:         "service exists",
 			svcName:      "svc-one",
 			existingSvcs: map[string]*FakeService{"svc-one": {name: "svc-one", config: mgr.Config{Description: "testsvc"}}},
-			expectErr:    false,
 		},
 		{
 			name:         "delete non-existant service",
 			svcName:      "svc-one",
 			existingSvcs: map[string]*FakeService{},
-			expectErr:    true,
 		},
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
 			testMgr := NewTestMgr(test.existingSvcs)
 			err := testMgr.DeleteService(test.svcName)
-			if test.expectErr {
-				assert.Error(t, err)
-				return
-			}
 			require.NoError(t, err)
-			// Check that the service is no longer present in the service list
-			list, err := testMgr.ListServices()
+			// Check that the service is no longer present
+			svcs, err := testMgr.GetServices()
 			require.NoError(t, err)
-			assert.NotContains(t, list, test.svcName)
+			assert.NotContains(t, svcs, test.svcName)
 		})
 	}
 }

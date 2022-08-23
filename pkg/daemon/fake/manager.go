@@ -93,8 +93,13 @@ func (t *testMgr) CreateService(name, exepath string, config mgr.Config, args ..
 	return &service, nil
 }
 
-func (t *testMgr) ListServices() ([]string, error) {
-	return t.svcList.listServiceNames(), nil
+func (t *testMgr) GetServices() (map[string]struct{}, error) {
+	svcsList := t.svcList.listServiceNames()
+	svcsMap := make(map[string]struct{})
+	for _, svc := range svcsList {
+		svcsMap[svc] = struct{}{}
+	}
+	return svcsMap, nil
 }
 
 func (t *testMgr) OpenService(name string) (winsvc.Service, error) {
@@ -106,10 +111,14 @@ func (t *testMgr) OpenService(name string) (winsvc.Service, error) {
 }
 
 func (t *testMgr) DeleteService(name string) error {
-	_, exists := t.svcList.read(name)
+	winSvc, exists := t.svcList.read(name)
 	if !exists {
-		// This is to mimic the behavior of the Windows OS. Trying to delete a nonexistant service results in an error.
-		return fmt.Errorf("service %s does not exist", name)
+		// Nothing to do if it already does not exist
+		return nil
+	}
+	// Ensure service is stopped before deleting
+	if err := winsvc.EnsureServiceState(winSvc, svc.Stopped); err != nil {
+		return errors.Wrapf(err, "failed to stop service %q", name)
 	}
 	return t.svcList.remove(name)
 }
