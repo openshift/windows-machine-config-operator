@@ -5,6 +5,8 @@ import "time"
 const (
 	// Count is the number of times we will retry an API call
 	Count = 20
+	// WindowsAPIInterval is the wait time between calls to the Windows OS API in case of failure
+	WindowsAPIInterval = 5 * time.Second
 	// Interval is the wait time between API calls on a failure
 	Interval = 15 * time.Second
 	// Timeout is the total time we will wait for an event to occur.
