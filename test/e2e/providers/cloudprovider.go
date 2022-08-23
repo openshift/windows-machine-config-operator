@@ -33,7 +33,7 @@ func NewCloudProvider(hasCustomVXLANPort bool) (CloudProvider, error) {
 	switch provider := platformStatus.Type; provider {
 	case config.AWSPlatformType:
 		// 	Setup the AWS cloud provider in the same region where the cluster is running
-		return awsProvider.SetupAWSCloudProvider(platformStatus.AWS.Region, hasCustomVXLANPort)
+		return awsProvider.SetupAWSCloudProvider(platformStatus.AWS.Region)
 	case config.AzurePlatformType:
 		return azureProvider.New(openshift, hasCustomVXLANPort)
 	case config.VSpherePlatformType:
