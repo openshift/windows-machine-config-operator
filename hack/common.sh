@@ -1,7 +1,13 @@
 #!/bin/bash
 
+# Default is false unless test is running in COMMUNITY branch
+COMMUNITY=${COMMUNITY:-false}
+
 # Location of the manifests file
 MANIFEST_LOC=bundle/
+if [ "$COMMUNITY" = "true" ]; then
+  MANIFEST_LOC="$ARTIFACT_DIR"
+fi
 
 # define namespace
 declare -r WMCO_DEPLOY_NAMESPACE=openshift-windows-machine-config-operator
@@ -52,7 +58,7 @@ OSDK_WMCO_management() {
 
   if [[ "$COMMAND" = "run" ]]; then
     local version=$(get_packagemanifests_version)
-    $OSDK_PATH run packagemanifests bundle \
+    $OSDK_PATH run packagemanifests $MANIFEST_LOC \
       --namespace $WMCO_DEPLOY_NAMESPACE \
       --install-mode=OwnNamespace \
       --version $version \
