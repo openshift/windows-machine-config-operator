@@ -61,7 +61,7 @@ generate_manifests() {
   local OUTPUT_DIR=$3
 
   echo "Update operator manifests"
-  cp -r "${BUNDLE_DIR}/manifests" "${BUNDLE_DIR}/metadata" "${OUTPUT_DIR}"
+  cp -r "${BUNDLE_DIR}/manifests" "${BUNDLE_DIR}/metadata" "${BUNDLE_DIR}/windows-machine-config-operator.package.yaml" "${OUTPUT_DIR}"
   local CO_CSV="${OUTPUT_DIR}/manifests/windows-machine-config-operator.clusterserviceversion.yaml"
   local CO_ANNOTATIONS="${OUTPUT_DIR}/metadata/annotations.yaml"
 
