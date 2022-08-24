@@ -3,6 +3,14 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+# If ARTIFACT_DIR is not set, create a temp directory for artifacts
+ARTIFACT_DIR=${ARTIFACT_DIR:-}
+if [ -z "$ARTIFACT_DIR" ]; then
+  ARTIFACT_DIR=`mktemp -d`
+  echo "ARTIFACT_DIR is not set. Artifacts will be stored in: $ARTIFACT_DIR"
+  export ARTIFACT_DIR=$ARTIFACT_DIR
+fi
+
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
 
@@ -63,14 +71,6 @@ if ! [[ "$OPENSHIFT_CI" == "true" &&  "$TEST" = "upgrade" ]]; then
 fi
 
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"false"}
-
-# If ARTIFACT_DIR is not set, create a temp directory for artifacts
-ARTIFACT_DIR=${ARTIFACT_DIR:-}
-if [ -z "$ARTIFACT_DIR" ]; then
-  ARTIFACT_DIR=`mktemp -d`
-  echo "ARTIFACT_DIR is not set. Artifacts will be stored in: $ARTIFACT_DIR"
-  export ARTIFACT_DIR=$ARTIFACT_DIR
-fi
 
 # OPERATOR_IMAGE defines where the WMCO image to test with is located. If $OPERATOR_IMAGE is already set, use its value.
 # Setting $OPERATOR_IMAGE is required for local testing.
