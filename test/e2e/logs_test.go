@@ -3,6 +3,7 @@ package e2e
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"k8s.io/apimachinery/pkg/util/wait"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 // testNodeLogs ensures that all required log files were created, and copies them to the test's artifact directory
@@ -35,12 +39,28 @@ func testNodeLogs(t *testing.T) {
 		for _, file := range mandatoryLogs {
 			// A subtest is useful here to attempt to get all the logs and not bail on the first error
 			t.Run(node.Name+"/"+file, func(t *testing.T) {
-				assert.NoError(t, retrieveLog(node.Name, file, nodeDir))
+				err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+					err := retrieveLog(node.GetName(), file, nodeDir)
+					if err != nil {
+						log.Printf("unable to retrieve log %s from node %s: %s", file, node.GetName(), err)
+						return false, nil
+					}
+					return true, nil
+				})
+				assert.NoError(t, err)
 			})
 		}
 		// Grab the optional logs for debugging purposes
 		for _, file := range optionalLogs {
-			_ = retrieveLog(node.Name, file, nodeDir)
+			// These logs aren't guaranteed to exist, so its better to ignore any error
+			_ = wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+				err := retrieveLog(node.GetName(), file, nodeDir)
+				if err != nil {
+					log.Printf("unable to retrieve log %s from node %s: %s", file, node.GetName(), err)
+					return false, nil
+				}
+				return true, nil
+			})
 		}
 	}
 }
@@ -51,7 +71,7 @@ func retrieveLog(nodeName, srcPath, destDir string) error {
 	cmd := exec.Command("oc", "adm", "node-logs", "--path="+srcPath, nodeName)
 	out, err := cmd.Output()
 	if err != nil {
-		return errors.Wrap(err, "unable to use oc adm to get log")
+		return errors.Wrapf(err, "oc adm node-logs failed with output: %s", string(out))
 	}
 	// Save log files to the artifact directory
 	splitPath := strings.Split(srcPath, "/")
