@@ -2,7 +2,8 @@ name: Feature Request
 description: Request for Feature Enhancement
 title: "[RFE]: "
 labels: ["feature", "triage"]
-assignees: @openshift/openshift-team-windows-containers 
+assignees:
+  - "@openshift/openshift-team-windows-containers"
 body:
   - type: markdown
     attributes:
