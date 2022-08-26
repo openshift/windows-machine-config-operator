@@ -2,18 +2,19 @@ name: Bug Report
 description: File a bug report
 title: "[Bug]: "
 labels: ["bug", "triage"]
-assignees: @openshift/openshift-team-windows-containers 
+assignees:
+  - "@openshift/openshift-team-windows-containers"
 body:
   - type: markdown
     attributes:
       value: |
         Thanks for taking the time to fill out this bug report! Before filling out this form,
-        please review the (Cluster and OS Pre-Requisites)[https://github.com/openshift/windows-machine-config-operator/blob/master/docs/wmco-prerequisites.md],
-        as well as the (BYOH Instance Pre-requisites)[BYOH Instance Pre-requisites].
+        please review the [Cluster and OS Pre-Requisites](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/wmco-prerequisites.md),
+        as well as the [BYOH Instance Pre-requisites](BYOH Instance Pre-requisites).
   - type: checkboxes
     id: community-check
     attributes:
-      label: Community Issue
+      label: Attention
       description: |
         Github issues are for those using the community distribution of WMCO.
         Support for users with a subscription should be requested through the Red Hat Customer Portal.
@@ -54,11 +55,11 @@ body:
     id: proxy
     attributes:
       label: Proxy
-      description: (Are you using a cluster-wide proxy?)[https://docs.okd.io/latest/networking/enable-cluster-wide-proxy.html]
+      description: Are you using a [cluster-wide proxy?](https://docs.okd.io/latest/networking/enable-cluster-wide-proxy.html)
       options:
         - Yes, without HTTPS
         - Yes, with HTTPS
-        - No
+        - "No"
     validations:
       required: true
   - type: input
