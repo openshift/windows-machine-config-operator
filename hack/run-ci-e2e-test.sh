@@ -22,7 +22,13 @@ WMCO_PATH_OPTION=""
 export CGO_ENABLED=0
 
 get_WMCO_logs() {
-  oc logs -l name=windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE --tail=-1 >> "$ARTIFACT_DIR"/wmco.log
+  retries=0
+  until [ $retries -gt 4 ] || oc logs -l name=windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE --tail=-1 >> "$ARTIFACT_DIR"/wmco.log
+  do
+    let retries+=1
+    echo "failed to get WMCO logs"
+    sleep 5
+  done
 }
 
 TEST="all"
