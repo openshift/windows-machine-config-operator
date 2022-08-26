@@ -342,7 +342,7 @@ func (nc *nodeConfig) configureNetwork() error {
 	}
 
 	// Start the kube-proxy service
-	if err := nc.Windows.ConfigureKubeProxy(nc.node.GetName(), nc.node.Annotations[HybridOverlaySubnet]); err != nil {
+	if err := nc.Windows.ConfigureKubeProxy(); err != nil {
 		return errors.Wrapf(err, "error starting kube-proxy for %s", nc.node.GetName())
 	}
 	return nil

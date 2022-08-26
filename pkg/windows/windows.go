@@ -35,8 +35,8 @@ const (
 	KubeconfigPath = k8sDir + "kubeconfig"
 	// logDir is the remote kubernetes log directory
 	logDir = "C:\\var\\log\\"
-	// kubeProxyLogDir is the remote kube-proxy log directory
-	kubeProxyLogDir = logDir + "kube-proxy\\"
+	// KubeProxyLogDir is the remote kube-proxy log directory
+	KubeProxyLogDir = logDir + "kube-proxy\\"
 	// HybridOverlayLogDir is the remote hybrid-overlay log directory
 	HybridOverlayLogDir = logDir + "hybrid-overlay\\"
 	// ContainerdLogDir is the remote containerd log directory
@@ -73,8 +73,8 @@ const (
 	BaseOVNKubeOverlayNetwork = "BaseOVNKubernetesHybridOverlayNetwork"
 	// OVNKubeOverlayNetwork is the name of the OVN HNS Overlay network
 	OVNKubeOverlayNetwork = "OVNKubernetesHybridOverlayNetwork"
-	// kubeProxyServiceName is the name of the kube-proxy Windows service
-	kubeProxyServiceName = "kube-proxy"
+	// KubeProxyServiceName is the name of the kube-proxy Windows service
+	KubeProxyServiceName = "kube-proxy"
 	// KubeletServiceName is the name of the kubelet Windows service
 	KubeletServiceName = "kubelet"
 	// WindowsExporterServiceName is the name of the windows_exporter Windows service
@@ -111,13 +111,13 @@ var (
 	// dependent service should be placed before the service it depends on.
 	RequiredServices = []string{
 		WindowsExporterServiceName,
-		kubeProxyServiceName,
+		KubeProxyServiceName,
 		HybridOverlayServiceName,
 		KubeletServiceName,
 		wicdServiceName,
 		containerdServiceName}
 	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
-	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName}
+	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName, KubeProxyServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		k8sDir,
@@ -125,7 +125,7 @@ var (
 		cniDir,
 		CniConfDir,
 		logDir,
-		kubeProxyLogDir,
+		KubeProxyLogDir,
 		wicdLogDir,
 		HybridOverlayLogDir,
 		ContainerdDir,
@@ -199,7 +199,7 @@ type Windows interface {
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, []byte, []byte) error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
-	ConfigureKubeProxy(string, string) error
+	ConfigureKubeProxy() error
 	// ConfigureAzureCloudNodeManager ensures that the azure-cloud-node-manager service is running
 	ConfigureAzureCloudNodeManager(string) error
 	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
@@ -535,28 +535,15 @@ func (vm *windows) ConfigureAzureCloudNodeManager(nodeName string) error {
 	return nil
 }
 
-func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
-	endpointIP, err := vm.Run(NetworkConfScriptPath, true)
-	if err != nil {
-		return errors.Wrap(err, "error creating HNS endpoint")
+func (vm *windows) ConfigureKubeProxy() error {
+	// TODO: Currently this function, and waiting for kube-proxy to be running, is required. kube-proxy is the final
+	//       Windows Service. WMCO still has to perform post-configuration steps such as applying the version
+	//       annotation, which indicates the the Node has been full configured. This function should be removed as part
+	//       of https://issues.redhat.com/browse/WINC-741, where WICD will take care of those steps.
+	vm.log.V(1).Info("waiting for kube-proxy to start running")
+	if err := vm.waitForServiceToRun(KubeProxyServiceName); err != nil {
+		return errors.Wrapf(err, "error waiting for %s Windows service to start running", KubeProxyServiceName)
 	}
-
-	kubeProxyServiceArgs := "--windows-service --v=4 --proxy-mode=kernelspace --feature-gates=WinOverlay=true " +
-		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
-		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
-		"--network-name=" + OVNKubeOverlayNetwork + " --source-vip=" + strings.TrimSpace(endpointIP) +
-		" --enable-dsr=false"
-
-	kubeProxyService, err := newService(KubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs,
-		[]string{HybridOverlayServiceName})
-	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", kubeProxyServiceName)
-	}
-
-	if err := vm.ensureServiceIsRunning(kubeProxyService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", kubeProxyServiceName)
-	}
-	vm.log.Info("configured", "service", kubeProxyServiceName, "args", kubeProxyServiceArgs)
 	return nil
 }
 

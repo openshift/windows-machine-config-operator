@@ -2,7 +2,9 @@ package services
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
@@ -20,6 +22,7 @@ func GenerateManifest(vxlanPort string, debug bool) (*servicescm.Data, error) {
 		Priority:                     1,
 	},
 		hybridOverlayConfiguration(vxlanPort, debug),
+		kubeProxyConfiguration(debug),
 	}
 	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
 	files := &[]servicescm.FileInfo{}
@@ -54,5 +57,42 @@ func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service
 		Dependencies:                 []string{windows.KubeletServiceName},
 		Bootstrap:                    false,
 		Priority:                     1,
+	}
+}
+
+// kubeProxyConfiguration returns the Service definition for kube-proxy
+func kubeProxyConfiguration(debug bool) servicescm.Service {
+	sanitizedSubnetAnnotation := strings.ReplaceAll(nodeconfig.HybridOverlaySubnet, ".", "\\.")
+	cmd := fmt.Sprintf("%s --windows-service --proxy-mode=kernelspace --feature-gates=WinOverlay=true "+
+		"--hostname-override=NODE_NAME --kubeconfig=%s --cluster-cidr=NODE_SUBNET --log-dir=%s --logtostderr=false "+
+		"--network-name=%s --source-vip=ENDPOINT_IP --enable-dsr=false", windows.KubeProxyPath, windows.KubeconfigPath,
+		windows.KubeProxyLogDir, windows.OVNKubeOverlayNetwork)
+	// Set log level. See doc link for explanation of log levels:
+	// https://docs.openshift.com/container-platform/latest/rest_api/editing-kubelet-log-level-verbosity.html#log-verbosity-descriptions_editing-kubelet-log-level-verbosity
+	if debug {
+		cmd = fmt.Sprintf("%s --v=4", cmd)
+	} else {
+		cmd = fmt.Sprintf("%s --v=2", cmd)
+	}
+	return servicescm.Service{
+		Name:    windows.KubeProxyServiceName,
+		Command: cmd,
+		NodeVariablesInCommand: []servicescm.NodeCmdArg{
+			{
+				Name:               "NODE_NAME",
+				NodeObjectJsonPath: "{.metadata.name}",
+			},
+			{
+				Name:               "NODE_SUBNET",
+				NodeObjectJsonPath: fmt.Sprintf("{.metadata.annotations.%s}", sanitizedSubnetAnnotation),
+			},
+		},
+		PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
+			Name: "ENDPOINT_IP",
+			Path: windows.NetworkConfScriptPath,
+		}},
+		Dependencies: []string{windows.HybridOverlayServiceName},
+		Bootstrap:    false,
+		Priority:     2,
 	}
 }
