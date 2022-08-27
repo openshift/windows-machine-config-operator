@@ -279,7 +279,7 @@ func (a *awsProvider) getIAMWorkerRole() (*ec2.IamInstanceProfileSpecification, 
 }
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
-func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (a *awsProvider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*mapi.MachineSet, error) {
 	instanceProfile, err := a.getIAMWorkerRole()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get instance profile %v", err)
@@ -326,7 +326,7 @@ func (a *awsProvider) GenerateMachineSet(withWindowsLabel bool, replicas int32) 
 		return nil, err
 	}
 
-	return machineset.New(rawBytes, a.InfrastructureName, replicas, withWindowsLabel), nil
+	return machineset.New(rawBytes, a.InfrastructureName, replicas, withIgnoreLabel), nil
 }
 
 func (a *awsProvider) GetType() config.PlatformType {

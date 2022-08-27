@@ -52,6 +52,23 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 		},
 		Data: map[string][]byte{
 			"userData": []byte(`<powershell>
+			function Get-RandomPassword {
+				Add-Type -AssemblyName 'System.Web'
+				return [System.Web.Security.Membership]::GeneratePassword(16, 2)
+			}
+
+			# Check if the capi user exists, this will be the case on Azure, and will be used instead of Administrator
+			if((Get-LocalUser | Where-Object {$_.Name -eq "capi"}) -eq $null) {
+				# The capi user doesn't exist, ensure the Administrator account is enabled if it exists
+				# If neither users exist, an error will be written to the console, but the script will still continue
+				$UserAccount = Get-LocalUser -Name "Administrator"
+				if( ($UserAccount -ne $null) -and (!$UserAccount.Enabled) ) {
+					$password = ConvertTo-SecureString Get-RandomPassword -asplaintext -force
+					$UserAccount | Set-LocalUser -Password $password
+					$UserAccount | Enable-LocalUser
+				}
+			}
+
 			Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 			$firewallRuleName = "ContainerLogsPort"
 			$containerLogsPort = "10250"

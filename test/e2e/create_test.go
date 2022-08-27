@@ -132,7 +132,7 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	if gc.numberOfMachineNodes == 0 {
 		t.Skip("Machine Controller testing disabled")
 	}
-	_, err := tc.createWindowsMachineSet(gc.numberOfMachineNodes, true)
+	_, err := tc.createWindowsMachineSet(gc.numberOfMachineNodes, false)
 	require.NoError(t, err, "failed to create Windows MachineSet")
 	// We need to cover the case where a user changes the private key secret before the WMCO has a chance to
 	// configure the Machine. In order to simulate that case we need to wait for the MachineSet to be fully
@@ -141,7 +141,7 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	// Depending on timing and configuration flakes this will either cause all Machines, or all Machines after
 	// the first configured Machines to hit this scenario. This is a platform agonistic test so we run it only on
 	// Azure.
-	_, err = tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", true)
+	_, err = tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
 	if tc.CloudProvider.GetType() == config.AzurePlatformType {
 		// Replace the known private key with a randomly generated one.
@@ -183,11 +183,11 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 // The Cluster Machine Approver must be disabled to test BYOH CSR approval feature, so that BYOH instances CSR's are
 // not approved by Cluster Machine Approver
 func (tc *testContext) provisionBYOHConfigMapWithMachineSet() error {
-	_, err := tc.createWindowsMachineSet(gc.numberOfBYOHNodes, false)
+	_, err := tc.createWindowsMachineSet(gc.numberOfBYOHNodes, true)
 	if err != nil {
 		return errors.Wrap(err, "failed to create Windows MachineSet")
 	}
-	machines, err := tc.waitForWindowsMachines(int(gc.numberOfBYOHNodes), "Provisioned", false)
+	machines, err := tc.waitForWindowsMachines(int(gc.numberOfBYOHNodes), "Provisioned", true)
 	if err != nil {
 		return errors.Wrap(err, "Machines did not reach expected state")
 	}
@@ -250,7 +250,7 @@ func (tc *testContext) setPowerShellDefaultShell(machine *mapi.Machine) error {
 		}
 		_, err = tc.runPowerShellSSHJob("change-default-shell", command, addr)
 		if err != nil {
-			log.Printf("failed to change %s default shell to Powershell, retrying...", machine.GetName())
+			log.Printf("failed to change %s default shell to Powershell", machine.GetName())
 			return false, nil
 		}
 		return true, nil
@@ -258,8 +258,8 @@ func (tc *testContext) setPowerShellDefaultShell(machine *mapi.Machine) error {
 }
 
 // createWindowsMachineSet creates given number of Windows Machines.
-func (tc *testContext) createWindowsMachineSet(replicas int32, windowsLabel bool) (*mapi.MachineSet, error) {
-	machineSet, err := tc.CloudProvider.GenerateMachineSet(windowsLabel, replicas)
+func (tc *testContext) createWindowsMachineSet(replicas int32, ignoreLabel bool) (*mapi.MachineSet, error) {
+	machineSet, err := tc.CloudProvider.GenerateMachineSet(ignoreLabel, replicas)
 	if err != nil {
 		return nil, err
 	}
@@ -274,9 +274,9 @@ func (tc *testContext) deleteMachineSet(ms *mapi.MachineSet) error {
 
 // waitForWindowsMachines waits for a certain amount of Windows Machines to reach a certain phase
 // if machineCount = 0, it implies we are only waiting for Machines to be deleted and the phase is
-// ignored in this case. Returns the set of Machines that matched the provided windowsLabel criteria.
+// ignored in this case. Returns the set of Machines that matched the provided ignoreLabel criteria.
 // TODO: Have this function take in a list of Windows Machines to wait for https://issues.redhat.com/browse/WINC-620
-func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, windowsLabel bool) (*mapi.MachineList, error) {
+func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, ignoreLabel bool) (*mapi.MachineList, error) {
 	if machineCount == 0 && phase != "" {
 		return nil, errors.New("expected phase to be to be an empty string if machineCount is 0")
 	}
@@ -295,10 +295,10 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, wi
 	}
 
 	listOptions := metav1.ListOptions{LabelSelector: clusterinfo.MachineE2ELabel + "=true"}
-	if windowsLabel {
-		listOptions.LabelSelector += "," + controllers.MachineOSLabel + "=Windows"
+	if ignoreLabel {
+		listOptions.LabelSelector += "," + controllers.IgnoreLabel + "=true"
 	} else {
-		listOptions.LabelSelector += "," + controllers.MachineOSLabel + "!=Windows"
+		listOptions.LabelSelector += "," + controllers.IgnoreLabel + "!=true"
 	}
 	err := wait.Poll(retryInterval, machineStateTimeLimit, func() (done bool, err error) {
 		machines, err = tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
@@ -349,10 +349,10 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, wi
 
 	// Log the time elapsed while waiting for creation of the Machines
 	var machineType string
-	if windowsLabel {
-		machineType = "with the Windows label"
+	if ignoreLabel {
+		machineType = "with the ignore label"
 	} else {
-		machineType = "without the Windows label"
+		machineType = "without the ignore label"
 	}
 	endTime := time.Now()
 	log.Printf("%v time is required for %d Machines %s to reach phase %s", endTime.Sub(startTime),
@@ -374,7 +374,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 		if nodeCount == 0 {
 			creationTime = time.Minute * 10
 		} else {
-			// The time we expect to wait, if the windowsLabel is
+			// The time we expect to wait, if the ignore label is
 			// not used while creating nodes.
 			creationTime = time.Minute * 5
 		}
@@ -390,7 +390,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 
 	// We are waiting 20 minutes for each windows VM to be shown up in the cluster. The value comes from
 	// nodeCreationTime variable.  If we are testing a scale down from n nodes to 0, then we should
-	// not take the number of nodes into account. If we are testing node creation without applying Windows label, we
+	// not take the number of nodes into account. If we are testing node creation without applying the ignore label, we
 	// should throw error within 5 mins.
 	err = wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*creationTime, func() (done bool, err error) {
 		nodes, err := tc.listFullyConfiguredWindowsNodes(isBYOH)

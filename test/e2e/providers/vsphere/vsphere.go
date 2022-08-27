@@ -113,7 +113,7 @@ func getNetwork() string {
 }
 
 // GenerateMachineSet generates the MachineSet object which is vSphere provider specific
-func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*mapi.MachineSet, error) {
 	// create new machine provider spec for deploying Windows node
 	providerSpec, err := p.newVSphereMachineProviderSpec()
 	if err != nil {
@@ -125,7 +125,7 @@ func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*m
 		return nil, errors.Wrap(err, "failed to marshal vSphere machine provider spec")
 	}
 
-	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withWindowsLabel), nil
+	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withIgnoreLabel), nil
 }
 
 func (p *Provider) GetType() config.PlatformType {

@@ -54,6 +54,8 @@ const (
 	MachineOSLabel = "machine.openshift.io/os-id"
 	// WindowsMachineController is the name of this controller in logs and other outputs.
 	WindowsMachineController = "windowsmachine"
+	// IgnoreLabel is a label that will cause machines to be ignored by the Windows Machine controller
+	IgnoreLabel = "windowsmachineconfig.openshift.io/ignore"
 )
 
 // WindowsMachineReconciler is used to create a controller which manages Windows Machine objects
@@ -146,7 +148,7 @@ func (r *WindowsMachineReconciler) mapNodeToMachine(object client.Object) []reco
 
 	// Map the Node to the associated Machine through the Node's UID
 	machines, err := r.machineClient.Machines(machineAPINamespace).List(context.TODO(),
-		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows"})
+		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows," + IgnoreLabel + "!=true"})
 	if err != nil {
 		r.log.Error(err, "could not get a list of machines")
 	}
@@ -183,6 +185,9 @@ func isWindowsMachine(labels map[string]string) bool {
 
 // isValidMachine returns true if the Machine given object is a Machine with a properly populated status
 func (r *WindowsMachineReconciler) isValidMachine(obj client.Object) bool {
+	if value := obj.GetLabels()[IgnoreLabel]; value == "true" {
+		return false
+	}
 	machine := &mapi.Machine{}
 
 	// If this function is called on an object that equals nil, return false

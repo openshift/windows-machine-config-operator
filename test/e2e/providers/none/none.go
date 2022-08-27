@@ -21,7 +21,7 @@ func New(clientset *clusterinfo.OpenShift) (*Provider, error) {
 }
 
 // GenerateMachineSet is not supported for platform=none and throws an exception
-func (p *Provider) GenerateMachineSet(withWindowsLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (p *Provider) GenerateMachineSet(_ bool, replicas int32) (*mapi.MachineSet, error) {
 	return nil, errors.New("MachineSet generation not supported for platform=none")
 }
 
