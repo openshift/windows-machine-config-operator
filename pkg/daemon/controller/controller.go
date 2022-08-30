@@ -59,6 +59,40 @@ const (
 	WMCONamespace = "openshift-windows-machine-config-operator"
 )
 
+// Options contains a list of options available when creating a new ServiceController
+type Options struct {
+	Config *rest.Config
+	Client client.Client
+	Mgr    manager.Manager
+}
+
+// setDefaults returns an Options based on the received options, with all nil or empty fields filled in with reasonable
+// defaults.
+func setDefaults(o Options) (Options, error) {
+	var err error
+	if o.Client == nil {
+		if o.Config == nil {
+			// This instantiates an in-cluster config with all required types present in the scheme
+			o.Config, err = rest.InClusterConfig()
+			if err != nil {
+				return o, err
+			}
+		}
+		// Use a non-caching client
+		o.Client, err = NewDirectClient(o.Config)
+		if err != nil {
+			return o, err
+		}
+	}
+	if o.Mgr == nil {
+		o.Mgr, err = manager.New()
+		if err != nil {
+			return o, err
+		}
+	}
+	return o, nil
+}
+
 type ServiceController struct {
 	manager.Manager
 	client         client.Client
@@ -84,10 +118,6 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 
 // RunController is the entry point of WICD's controller functionality
 func RunController(ctx context.Context, apiServerURL, saCA, saToken string) error {
-	svcMgr, err := manager.New()
-	if err != nil {
-		return err
-	}
 	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
 	if err != nil {
 		klog.Error(err)
@@ -116,7 +146,10 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 	if err != nil {
 		return errors.Wrap(err, "unable to start manager")
 	}
-	sc := NewServiceController(ctx, ctrlMgr.GetClient(), svcMgr, node.Name)
+	sc, err := NewServiceController(ctx, node.Name, Options{Client: ctrlMgr.GetClient()})
+	if err != nil {
+		return err
+	}
 	if err = sc.SetupWithManager(ctrlMgr); err != nil {
 		return err
 	}
@@ -128,9 +161,13 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 }
 
 // NewServiceController returns a pointer to a ServiceController object
-func NewServiceController(ctx context.Context, client client.Client, mgr manager.Manager, nodeName string) *ServiceController {
-	return &ServiceController{client: client, Manager: mgr, ctx: ctx, nodeName: nodeName,
-		watchNamespace: WMCONamespace}
+func NewServiceController(ctx context.Context, nodeName string, options Options) (*ServiceController, error) {
+	o, err := setDefaults(options)
+	if err != nil {
+		return nil, err
+	}
+	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName,
+		watchNamespace: WMCONamespace}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

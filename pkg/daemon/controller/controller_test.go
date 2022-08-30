@@ -94,14 +94,17 @@ func TestResolveNodeVariables(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			fakeClient := clientfake.NewClientBuilder().WithObjects(&core.Node{
-				ObjectMeta: meta.ObjectMeta{
-					Name:        "node",
-					Annotations: test.nodeAnnotations,
-					Labels:      test.nodeLabels,
-				},
-			}).Build()
-			c := NewServiceController(context.TODO(), fakeClient, fake.NewTestMgr(nil), test.nodeName)
+			c, err := NewServiceController(context.TODO(), test.nodeName, Options{
+				Client: clientfake.NewClientBuilder().WithObjects(&core.Node{
+					ObjectMeta: meta.ObjectMeta{
+						Name:        "node",
+						Annotations: test.nodeAnnotations,
+						Labels:      test.nodeLabels,
+					},
+				}).Build(),
+				Mgr: fake.NewTestMgr(nil),
+			})
+			require.NoError(t, err)
 			actual, err := c.resolveNodeVariables(test.service)
 			if test.expectErr {
 				require.Error(t, err)
@@ -201,15 +204,16 @@ func TestReconcileService(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			fakeClient := clientfake.NewClientBuilder().WithObjects(&core.Node{
-				ObjectMeta: meta.ObjectMeta{
-					Name: "node",
-				},
-			}).Build()
-
-			winSvcMgr := fake.NewTestMgr(map[string]*fake.FakeService{"fakeservice": test.service})
-			c := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "node")
-			err := c.reconcileService(test.service, test.expectedService)
+			c, err := NewServiceController(context.TODO(), "node", Options{
+				Client: clientfake.NewClientBuilder().WithObjects(&core.Node{
+					ObjectMeta: meta.ObjectMeta{
+						Name: "node",
+					},
+				}).Build(),
+				Mgr: fake.NewTestMgr(map[string]*fake.FakeService{"fakeservice": test.service}),
+			})
+			require.NoError(t, err)
+			err = c.reconcileService(test.service, test.expectedService)
 			if test.expectErr {
 				assert.Error(t, err)
 				return
@@ -305,10 +309,13 @@ func TestBootstrap(t *testing.T) {
 					[]servicescm.FileInfo{}})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{cm}
-			fakeClient := clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build()
 
 			winSvcMgr := fake.NewTestMgr(make(map[string]*fake.FakeService))
-			sc := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "")
+			sc, err := NewServiceController(context.TODO(), "", Options{
+				Client: clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
+				Mgr:    winSvcMgr,
+			})
+			require.NoError(t, err)
 
 			err = sc.Bootstrap(desiredVersion)
 			assert.NoError(t, err)
@@ -411,10 +418,12 @@ func TestReconcile(t *testing.T) {
 				},
 				cm,
 			}
-			fakeClient := clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build()
 
 			winSvcMgr := fake.NewTestMgr(test.existingServices)
-			c := NewServiceController(context.TODO(), fakeClient, winSvcMgr, "node")
+			c, err := NewServiceController(context.TODO(), "node", Options{
+				Client: clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
+				Mgr:    winSvcMgr,
+			})
 			_, err = c.Reconcile(context.TODO(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "node"}})
 			if test.expectErr {
 				assert.Error(t, err)

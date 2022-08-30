@@ -26,7 +26,6 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
-	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 )
 
 var (
@@ -50,23 +49,15 @@ func init() {
 
 // runBootstrapCmd runs WICD's one-shot bootstrap operation, starting services as per the desired services ConfigMap
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
+	// This command will not run in a pod, authenticate using the provided Service Account creds instead
 	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
 	if err != nil {
 		klog.Exitf("error using service account to build config: %s", err.Error())
 	}
-
-	// Cannot use a cached client as no manager will be started to populate cache
-	directClient, err := controller.NewDirectClient(cfg)
+	sc, err := controller.NewServiceController(context.TODO(), "", controller.Options{Config: cfg})
 	if err != nil {
-		klog.Exitf("could not create authenticated client from service account: %s", err.Error())
+		klog.Exitf("error creating Service Controller: %s", err.Error())
 	}
-
-	svcMgr, err := manager.New()
-	if err != nil {
-		klog.Exitf("could not create service manager: %s", err.Error())
-	}
-	sc := controller.NewServiceController(context.TODO(), directClient, svcMgr, "")
-
 	klog.Info("bootstrapping Windows instance")
 	if err := sc.Bootstrap(desiredVersion); err != nil {
 		klog.Exit(err.Error())
