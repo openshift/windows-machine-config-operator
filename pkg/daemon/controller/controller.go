@@ -136,7 +136,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 	}
 	node, err := GetAssociatedNode(directClient, addrs)
 	if err != nil {
-		errors.Wrap(err, "could not find node object associated with this instance")
+		return errors.Wrap(err, "could not find node object associated with this instance")
 	}
 
 	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
