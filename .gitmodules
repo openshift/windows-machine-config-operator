@@ -1,15 +1,15 @@
 [submodule "windows-machine-config-bootstrapper"]
 	path = windows-machine-config-bootstrapper
 	url = https://github.com/openshift/windows-machine-config-bootstrapper
-	branch = release-4.12
+	branch = community-4.11
 [submodule "ovn-kubernetes"]
 	path = ovn-kubernetes
 	url = https://github.com/openshift/ovn-kubernetes
-	branch = release-4.12
+	branch = release-4.11
 [submodule "containernetworking-plugins"]
 	path = containernetworking-plugins
 	url = https://github.com/openshift/containernetworking-plugins
-	branch = release-4.12
+	branch = release-4.11
 [submodule "promu"]
 	path = promu
 	url = https://github.com/openshift/prometheus-promu
@@ -19,7 +19,7 @@
 [submodule "kubelet"]
 	path = kubelet
 	url = https://github.com/openshift/kubernetes
-	branch = release-4.12
+	branch = release-4.11
 [submodule "kube-proxy"]
 	path = kube-proxy
 	url = https://github.com/openshift/kubernetes
@@ -35,4 +35,4 @@
 [submodule "cloud-provider-azure"]
 	path = cloud-provider-azure
 	url = https://github.com/openshift/cloud-provider-azure
-	branch = release-4.12
+	branch = release-4.11
