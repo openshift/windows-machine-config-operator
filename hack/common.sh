@@ -122,9 +122,18 @@ run_WMCO() {
       fi
   fi
 
-  # Add the "openshift.io/cluster-monitoring:"true"" label to the operator namespace to enable monitoring
-  if ! oc label ns $WMCO_DEPLOY_NAMESPACE openshift.io/cluster-monitoring=true --overwrite; then
-      return 1
+  # required labels for WMCO namespace
+  declare -a NS_LABELS=(
+    # enable monitoring
+    "openshift.io/cluster-monitoring=true"
+    # turn on the automatic label synchronization required for PodSecurity admission
+    "security.openshift.io/scc.podSecurityLabelSync=true"
+    # set pods security profile to privileged. See https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels
+    "pod-security.kubernetes.io/enforce=privileged"
+  )
+  # apply required labels to WMCO namespace
+  if ! oc label ns "${WMCO_DEPLOY_NAMESPACE}" "${NS_LABELS[@]}" --overwrite; then
+    error-exit "error setting labels ${NS_LABELS[@]} in namespace ${WMCO_DEPLOY_NAMESPACE}"
   fi
 
   if [ -n "$PRIVATE_KEY" ]; then
