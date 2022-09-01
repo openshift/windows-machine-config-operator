@@ -2,6 +2,8 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
+    security.openshift.io/scc.podSecurityLabelSync: "true"
+    pod-security.kubernetes.io/enforce: "privileged"
     openshift.io/cluster-monitoring: "true"
     name: windows-machine-config-operator
   name: system
