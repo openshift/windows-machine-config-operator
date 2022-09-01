@@ -74,6 +74,8 @@ type testContext struct {
 	providers.CloudProvider
 	// workloadNamespace is the namespace to deploy our test pods on
 	workloadNamespace string
+	// workloadNamespaceLabels contains the required labels for the test pods' namespace
+	workloadNamespaceLabels map[string]string
 	// toolsImage is the image specified by the  openshift/tools ImageStream, and is the same image used by `oc debug`.
 	// This image is available on all OpenShift Clusters, and has SSH pre-installed.
 	toolsImage string
@@ -94,10 +96,17 @@ func NewTestContext() (*testContext, error) {
 		return nil, errors.Wrap(err, "error getting debug image")
 	}
 
+	workloadNamespaceLabels := map[string]string{
+		// turn off the automatic label synchronization required for PodSecurity admission
+		"security.openshift.io/scc.podSecurityLabelSync": "false",
+		// set pods security profile to privileged. See https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels
+		"pod-security.kubernetes.io/enforce": "privileged",
+	}
+
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
 		namespace: "openshift-windows-machine-config-operator", CloudProvider: cloudProvider,
-		workloadNamespace: "wmco-test", toolsImage: toolsImage}, nil
+		workloadNamespace: "wmco-test", workloadNamespaceLabels: workloadNamespaceLabels, toolsImage: toolsImage}, nil
 }
 
 // vmUsername returns the name of the user which can be used to log into each Windows instance
