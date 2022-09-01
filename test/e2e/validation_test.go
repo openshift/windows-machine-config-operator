@@ -665,6 +665,13 @@ func (tc *testContext) findNodeCSRs(nodeName string) ([]certificates.Certificate
 		return nil, errors.Wrap(err, "unable to get CSR list")
 	}
 	for _, c := range csrs.Items {
+		// In some cases, a CSR is left in pending state when a new CSR is created
+		// for a node too quickly before updating the status of the existing one.
+		// Such a CSR cannot be approved but it does not affect node configuration
+		// and is safe to be ignored.
+		if c.Status.Conditions == nil || len(c.Status.Conditions) == 0 {
+			continue
+		}
 		parsedCSR, err := csr.ParseCSR(c.Spec.Request)
 		if err != nil {
 			return nil, err
