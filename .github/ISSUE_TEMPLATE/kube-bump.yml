@@ -1,0 +1,44 @@
+name: Track Kubernetes bump
+description: Issue to track Kubernetes bump dependencies
+assignees:
+  - "@openshift/openshift-team-windows-containers"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Issue for tracking Kubernetes bump**
+        
+        In order to bump Windows Machine Config Operator to support Kubernetes upgraded version there are a few dependencies we rely on making the bump first.
+        This issue is meant to help track all dependencies and the status of their bumps.
+        
+        **Order of dependency bumps:**
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Step 1 - Upgrade go version to match rest of the OpenShift and Kubernetes upgraded components.
+      options:
+        - label: Go version is upgraded for WMCO and WMCB branches
+  - type: checkboxes
+    attributes:
+      label: Step 2 - Upgrade Kubernetes client and controller-runtime dependencies
+            (can be done in parallel with step 3)
+      options:
+        - label: Kubernetes client and controller-runtime dependencies are upgraded
+  - type: checkboxes
+    attributes:
+      label: Step 3 - Upgrade OpenShift client and API dependencies 
+      options:
+        - label: OpenShift client and API dependencies are upgraded
+  - type: checkboxes
+    attributes:
+      label: Step 4 - Update kubelet and kube-proxy submodules in WMCO repository
+      options:
+        - label: kubelet and kube-proxy submodules are updated pointing to the latest commits including the rebase
+  - type: checkboxes
+    attributes:
+      label: Step 5 - Make sure SDN branch has to be created for kube-proxy submodule
+            (can be done in parallel with above steps)
+      options:
+        - label: sdn-<OCP_version>-kubernetes-<K8s_version> branch has been created from downstream [openshift/kubernetes](https://github.com/openshift/kubernetes) 
+                 and the kube-proxy submodule has been pointed to it.
+
