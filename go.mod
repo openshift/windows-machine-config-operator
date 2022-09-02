@@ -5,18 +5,23 @@ go 1.18
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.38.23
+	github.com/aws/aws-sdk-go-v2/config v1.17.2
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.13
+	github.com/coreos/ignition/v2 v2.14.0
 	github.com/go-logr/logr v1.2.0
 	github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
 	github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
 	github.com/openshift/library-go v0.0.0-20210811133500-5e31383de2a7
+	github.com/openshift/machine-config-operator v0.0.1-0.20200913004441-7eba765c69c9
 	github.com/operator-framework/api v0.10.5
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.45.0
 	github.com/spf13/cobra v1.4.0
-	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.7.0
+	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
+	github.com/stretchr/testify v1.8.0
+	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/crypto v0.0.0-20220817201139-bc19a97f63c8
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
@@ -42,12 +47,26 @@ require (
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.16.12 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.12.15 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.19 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.13 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.20 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.13 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.11.18 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.13.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.16.14 // indirect
+	github.com/aws/smithy-go v1.13.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/chai2010/gettext-go v0.0.0-20160711120539-c6fed771bfd5 // indirect
+	github.com/coreos/go-json v0.0.0-20211020211907-c63f628265de // indirect
+	github.com/coreos/go-semver v0.3.0 // indirect
+	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
+	github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/emicklei/go-restful v2.9.5+incompatible // indirect
+	github.com/emicklei/go-restful v2.10.0+incompatible // indirect
 	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/form3tech-oss/jwt-go v3.2.3+incompatible // indirect
@@ -62,7 +81,7 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/gnostic v0.5.7-v3refs // indirect
-	github.com/google/go-cmp v0.5.6 // indirect
+	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.1.2 // indirect
@@ -105,7 +124,7 @@ require (
 	google.golang.org/protobuf v1.27.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.24.0 // indirect
 	k8s.io/cli-runtime v0.24.1 // indirect
 	k8s.io/component-base v0.24.1 // indirect
