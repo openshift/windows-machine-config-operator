@@ -36,7 +36,7 @@ spec:
 
     ### Pre-requisites
     * A Red Hat OpenShift Container Platform for Windows Containers [subscription](https://access.redhat.com/support/policy/updates/openshift#windows)
-    * OCP 4.12 cluster running on Azure, AWS or vSphere configured with hybrid OVN Kubernetes networking
+    * OCP 4.12 cluster running on Azure, AWS, GCP or vSphere configured with hybrid OVN Kubernetes networking
     * [WMCO prerequisites](https://docs.openshift.com/container-platform/4.12/windows_containers/understanding-windows-container-workloads.html#wmco-prerequisites__understanding-windows-container-workloads)
 
     ### Usage
@@ -134,6 +134,7 @@ spec:
     Example MachineSet for other cloud providers:
     - [AWS](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-aws.md)
     - [Azure](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-azure.md)
+    - [GCP](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-gcp.md)
 
     ### Limitations
     #### DeploymentConfigs
