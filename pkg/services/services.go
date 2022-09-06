@@ -22,6 +22,7 @@ const (
 	// ec2HostnameVar is a variable that should be replaced with the value of `local-hostname` in the ec2 instance
 	// metadata
 	ec2HostnameVar = "EC2_HOSTNAME"
+	NodeIPVar      = "NODE_IP"
 )
 
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
@@ -131,6 +132,10 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 	kubeletServiceCmd := windows.KubeletPath
 	for _, arg := range kubeletArgs {
 		kubeletServiceCmd += fmt.Sprintf(" %s", arg)
+	}
+	if platform == string(config.NonePlatformType) {
+		// special case substitution handled in WICD itself
+		kubeletServiceCmd = fmt.Sprintf("%s --node-ip=%s", kubeletServiceCmd, NodeIPVar)
 	}
 	return servicescm.Service{
 		Name:                         windows.KubeletServiceName,
