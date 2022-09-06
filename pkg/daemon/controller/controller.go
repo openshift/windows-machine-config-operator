@@ -50,8 +50,10 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
+	"github.com/openshift/windows-machine-config-operator/pkg/services"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
+	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
 const (
@@ -308,6 +310,29 @@ func (sc *ServiceController) expectedServiceCommand(expected servicescm.Service)
 	}
 	for key, value := range psVars {
 		expectedCmd = strings.ReplaceAll(expectedCmd, key, value)
+	}
+	if strings.Contains(expectedCmd, services.NodeIPVar) {
+		// Set NodeIP to IPv4 value by matching this instance's addresses to those in the Windows instances ConfigMap
+		instances, err := wiparser.GetInstances(sc.client, sc.watchNamespace)
+		if err != nil {
+			return "", err
+		}
+		addrs, err := LocalInterfaceAddresses()
+		if err != nil {
+			return "", err
+		}
+		nodeIPValue := ""
+		for _, addr := range addrs {
+			for _, instance := range instances {
+				if instance.Address == addr.String() || instance.IPv4Address == addr.String() {
+					nodeIPValue = instance.IPv4Address
+				}
+			}
+		}
+		if nodeIPValue == "" {
+			return "", errors.New("unable to find IPv4 address to use as Node IP for this instance")
+		}
+		expectedCmd = strings.ReplaceAll(expectedCmd, services.NodeIPVar, nodeIPValue)
 	}
 	return expectedCmd, nil
 }

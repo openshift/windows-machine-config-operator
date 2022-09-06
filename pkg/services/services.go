@@ -21,6 +21,8 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
+const NodeIPVar = "NODE_IP"
+
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
 // will be enabled for services that support it.
 func GenerateManifest(clusterDNS, vxlanPort, platform string, debug bool) (*servicescm.Data, error) {
@@ -91,6 +93,9 @@ func getKubeletConfiguration(clusterDNS, platform string) (*servicescm.Service, 
 
 	log.Info("kubelet service args", "cmd", kubeletServiceCmd)
 
+	if platform == string(config.NonePlatformType) {
+		kubeletServiceCmd += "--=" + NodeIPVar // special case substitution handled in WICD itself
+	}
 	return &servicescm.Service{
 		Name:                         windows.KubeletServiceName,
 		Command:                      kubeletServiceCmd,
