@@ -368,21 +368,31 @@ func getAffinityForNode(node *v1.Node) (*v1.Affinity, error) {
 	}, nil
 }
 
-// ensureNamespace checks if a namespace with the provided name exists and creates one if it does not
-func (tc *testContext) ensureNamespace(name string) error {
+// ensureNamespace checks if a namespace with the provided name exists and creates one if it does not with the given
+// labels
+func (tc *testContext) ensureNamespace(name string, labels map[string]string) error {
 	// Check if the namespace exists
-	_, err := tc.client.K8s.CoreV1().Namespaces().Get(context.TODO(), name, metav1.GetOptions{})
+	ns, err := tc.client.K8s.CoreV1().Namespaces().Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	if err == nil {
+		// ensure namespace was properly created with the required labels
+		for k, expectedValue := range labels {
+			if foundValue, found := ns.Labels[k]; found && expectedValue != foundValue {
+				return fmt.Errorf("labels mismatch for namespace %s label: %s expected: %s found: %s",
+					name, k, expectedValue, foundValue)
+			}
+		}
+		// required labels present in namespace, nothing to do!
 		return nil
 	}
 
 	// The namespace does not exists, so lets create it
-	ns := &v1.Namespace{
+	ns = &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
+			Name:   name,
+			Labels: labels,
 		},
 	}
 	_, err = tc.client.K8s.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{})
