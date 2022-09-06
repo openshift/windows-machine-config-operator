@@ -141,6 +141,10 @@ COPY --from=build /build/windows-machine-config-operator/containernetworking-plu
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .
 COPY pkg/internal/cni-conf-template.json .
 
+# Create directory for generated files with open permissions, this allows WMCO to write to this directory
+RUN mkdir /payload/generated
+RUN chmod 0777 /payload/generated
+
 # Copy required powershell scripts
 WORKDIR /payload/powershell/
 COPY pkg/internal/wget-ignore-cert.ps1 .

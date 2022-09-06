@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
@@ -63,6 +64,9 @@ const (
 	windowsExporterPath = k8sDir + "windows_exporter.exe"
 	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
 	azureCloudNodeManagerPath = k8sDir + payload.AzureCloudNodeManager
+	// podManifestDirectory is the directory needed by kubelet for the static pods
+	// We shouldn't override if the pod manifest directory already exists
+	podManifestDirectory = k8sDir + "etc\\kubernetes\\manifests"
 	// BootstrapKubeconfig is the location of the bootstrap kubeconfig
 	BootstrapKubeconfig = k8sDir + "bootstrap-kubeconfig"
 	// KubeletPath is the location of the kubelet exe
@@ -137,7 +141,9 @@ var (
 		wicdLogDir,
 		HybridOverlayLogDir,
 		ContainerdDir,
-		ContainerdLogDir}
+		ContainerdLogDir,
+		podManifestDirectory,
+	}
 )
 
 // getFilesToTransfer returns the properly populated filesToTransfer map
@@ -162,6 +168,11 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		payload.HcsshimPath:               ContainerdDir,
 		payload.ContainerdConfPath:        ContainerdDir,
 	}
+	// transfer bootstrap files from ignition to the VM, required to start the kubelet
+	for _, file := range ignition.RenderedWorker.BootstrapFiles {
+		srcDestPairs[file] = k8sDir
+	}
+
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
 		f, err := payload.NewFileInfo(src)
@@ -465,7 +476,8 @@ func (vm *windows) Configure() error {
 	if err := vm.configureContainerd(); err != nil {
 		return errors.Wrapf(err, "error configuring containerd")
 	}
-
+	// TODO: Remove the call to WMCB entirely. This is still needed as WICD cannot start the kubelet itself until the
+	// bootstrap command is invoked from WMCO, which will be done as part of https://issues.redhat.com/browse/WINC-732
 	return vm.runBootstrapper()
 }
 

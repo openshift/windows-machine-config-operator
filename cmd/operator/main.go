@@ -178,7 +178,7 @@ func main() {
 		setupLog.Error(err, "error setting up direct client")
 		os.Exit(1)
 	}
-	if err = ignition.Initialize(directClient); err != nil {
+	if err = ignition.Initialize(directClient, clusterConfig.Network().GetServiceCIDR()); err != nil {
 		setupLog.Error(err, "error grabbing ignition contents")
 		os.Exit(1)
 	}
