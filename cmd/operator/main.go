@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	mapi "github.com/openshift/api/machine/v1beta1"
+	mcfg "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/operator-framework/operator-lib/leader"
 	"github.com/spf13/pflag"
@@ -18,11 +19,13 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
@@ -47,6 +50,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(mapi.AddToScheme(scheme))
 	utilruntime.Must(operators.AddToScheme(scheme))
+	utilruntime.Must(mcfg.Install(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -165,6 +169,17 @@ func main() {
 		setupLog.Error(err, "WMCO has an invalid target namespace. "+
 			"OperatorGroup target namespace must be a single, non-cluster-scoped value", "target namespace",
 			watchNamespace)
+		os.Exit(1)
+	}
+
+	// Get and parse the worker ignition spec. Done once on operator start.
+	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		setupLog.Error(err, "error setting up direct client")
+		os.Exit(1)
+	}
+	if err = ignition.Initialize(directClient); err != nil {
+		setupLog.Error(err, "error grabbing ignition contents")
 		os.Exit(1)
 	}
 

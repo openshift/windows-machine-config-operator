@@ -36,6 +36,8 @@ const (
 	// logDir is the remote kubernetes log directory
 	logDir = "C:\\var\\log\\"
 	// kubeProxyLogDir is the remote kube-proxy log directory
+	KubeletLogDir = logDir + "kubelet\\"
+	// kubeProxyLogDir is the remote kube-proxy log directory
 	kubeProxyLogDir = logDir + "kube-proxy\\"
 	// HybridOverlayLogDir is the remote hybrid-overlay log directory
 	HybridOverlayLogDir = logDir + "hybrid-overlay\\"
@@ -53,14 +55,22 @@ const (
 	containerdPath = ContainerdDir + "containerd.exe"
 	// containerdConfPath is the location of containerd config file
 	containerdConfPath = ContainerdDir + "containerd_conf.toml"
-	//containerdServiceName is containerd Windows service name
-	containerdServiceName = "containerd"
+	// ContainerdServiceName is containerd Windows service name
+	ContainerdServiceName = "containerd"
 	// wicdServiceName is the Windows service name for WICD
 	wicdServiceName = "windows-instance-config-daemon"
 	// windowsExporterPath is the location of the windows_exporter.exe
 	windowsExporterPath = k8sDir + "windows_exporter.exe"
 	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
 	azureCloudNodeManagerPath = k8sDir + payload.AzureCloudNodeManager
+	// BootstrapKubeconfig is the location of the bootstrap kubeconfig
+	BootstrapKubeconfig = k8sDir + "bootstrap-kubeconfig"
+	// KubeletPath is the location of the kubelet exe
+	KubeletPath = k8sDir + "kubelet.exe"
+	// KubeletConfigPath is the location of the kubelet configuration file
+	KubeletConfigPath = k8sDir + "kubelet.conf"
+	// KubeletLog is the location of the kubelet log file
+	KubeletLog = KubeletLogDir + "kubelet.log"
 	// kubeProxyPath is the location of the kube-proxy exe
 	kubeProxyPath = k8sDir + "kube-proxy.exe"
 	// HybridOverlayPath is the location of the hybrid-overlay-node exe
@@ -113,9 +123,9 @@ var (
 		HybridOverlayServiceName,
 		KubeletServiceName,
 		wicdServiceName,
-		containerdServiceName}
+		ContainerdServiceName}
 	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
-	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName}
+	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName, KubeletServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		k8sDir,
@@ -476,16 +486,16 @@ func (vm *windows) configureContainerd() error {
 	containerdServiceArgs := "--config " + containerdConfPath + " --log-file " + ContainerdLogDir + "containerd.log" +
 		" --log-level info" + " --run-service"
 
-	containerdService, err := newService(containerdPath, containerdServiceName, containerdServiceArgs, nil)
+	containerdService, err := newService(containerdPath, ContainerdServiceName, containerdServiceArgs, nil)
 	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", containerdServiceName)
+		return errors.Wrapf(err, "error creating %s service object", ContainerdServiceName)
 	}
 
 	if err := vm.ensureServiceIsRunning(containerdService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", containerdServiceName)
+		return errors.Wrapf(err, "error ensuring %s Windows service has started running", ContainerdServiceName)
 	}
 
-	vm.log.Info("configured", "service", containerdServiceName, "args", containerdServiceArgs)
+	vm.log.Info("configured", "service", ContainerdServiceName, "args", containerdServiceArgs)
 	return nil
 }
 

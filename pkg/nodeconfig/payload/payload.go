@@ -63,6 +63,16 @@ const (
 	// AzureCloudNodeManagerPath contains the path of the azure cloud node manager binary. The container image should
 	// already have this binary mounted
 	AzureCloudNodeManagerPath = payloadDirectory + AzureCloudNodeManager
+	// GeneratedDir is the directory in which bootstrap files needed to start kubelet are stored
+	GeneratedDir = payloadDirectory + "/generated/"
+	// KubeletConfigPath is the directory in which bootstrap files needed to start kubelet are stored
+	KubeletConfigPath = GeneratedDir + "kubelet.conf"
+	// BootstrapKubeconfig is the path to the bootstrap kubeconfig
+	BootstrapKubeconfig = "/etc/kubernetes/kubeconfig"
+	// KubeletCACert is the path to the kubelet's CA certificate
+	KubeletCACert = "/etc/kubernetes/kubelet-ca.crt"
+	// CloudConfigPath is the path to the cloud config file as defined in ignition
+	CloudConfigPath = "/etc/kubernetes/cloud.conf"
 )
 
 // FileInfo contains information about a file
