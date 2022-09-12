@@ -112,7 +112,7 @@ RUN make build
 #├── windows_exporter.exe
 #└── wmcb.exe
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10
+FROM registry.ci.openshift.org/openshift/release:golang-1.18
 LABEL stage=operator
 
 # Copy wmcb.exe
@@ -156,11 +156,6 @@ WORKDIR /
 ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
     USER_UID=1001 \
     USER_NAME=windows-machine-config-operator
-
-# Changes needed for our CI
-
-# jq is needed in e2e test script to count the number of data items in the windows-instances ConfigMap
-RUN yum install -y jq
 
 # Copy the source code to be used by our ci infra
 WORKDIR /go/src/github.com/openshift/windows-machine-config-operator/
