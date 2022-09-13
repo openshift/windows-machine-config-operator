@@ -62,3 +62,7 @@ spec:
           operator: "Exists"
           effect: "NoExecute"
           tolerationSeconds: 120
+template:
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/default-container: manager
