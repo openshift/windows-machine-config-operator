@@ -3,6 +3,17 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+# This script depends on the oc client. In CI, the oc cli is injected according
+# to the given OCP version. See https://github.com/openshift/release/pull/26395
+# ensure oc client is available
+which oc || {
+  # fails otherwise
+  echo "cannot find oc binary in PATH"
+  exit 1
+}
+# print oc client version
+oc version
+
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
 
