@@ -170,6 +170,16 @@ OPM = $(shell which opm)
 endif
 endif
 BUNDLE_IMGS ?= $(BUNDLE_IMG)
+# BUNDLE_GEN_FLAGS are the flags passed to the operator-sdk generate bundle command
+BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(WMCO_VERSION) $(BUNDLE_METADATA_OPTS)
+
+# USE_IMAGE_DIGESTS defines if images are resolved via tags or digests
+# You can enable this value if you would like to use SHA Based Digests
+# To enable set flag to true
+USE_IMAGE_DIGESTS ?= false
+ifeq ($(USE_IMAGE_DIGESTS), true)
+    BUNDLE_GEN_FLAGS += --use-image-digests
+endif
 CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(WMCO_VERSION) ifneq ($(origin CATALOG_BASE_IMG), undefined) FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG) endif
 .PHONY: catalog-build
 catalog-build: opm
@@ -179,7 +189,7 @@ catalog-build: opm
 bundle: manifests kustomize
 	operator-sdk generate kustomize manifests -q
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
-	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle --overwrite=false -q --version $(WMCO_VERSION) $(BUNDLE_METADATA_OPTS)
+	$(KUSTOMIZE) build config/manifests | operator-sdk generate bundle $(BUNDLE_GEN_FLAGS)
 	operator-sdk bundle validate ./bundle
 	sed -i 's/windows-machine-config-operator\.v.\.0\.0/windows-machine-config-operator.v$(WMCO_VERSION)/g' ./bundle/windows-machine-config-operator.package.yaml
 
