@@ -3,7 +3,9 @@ package payload
 import (
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -46,8 +48,8 @@ const (
 	// WinOverlayCNIPlugin is the path of the win-overlay CNI Plugin binary. The container image should already have
 	// this binary mounted
 	WinOverlayCNIPlugin = payloadDirectory + cniDirectory + "win-overlay.exe"
-	// CNIConfigTemplatePath is the path for CNI config template
-	CNIConfigTemplatePath = payloadDirectory + cniDirectory + "cni-conf-template.json"
+	// NetworkConfigurationScript is the path for generated Network configuration Script
+	NetworkConfigurationScript = payloadDirectory + "/generated/network-conf.ps1"
 	// HybridOverlayName is the name of the hybrid overlay executable
 	HybridOverlayName = "hybrid-overlay-node.exe"
 	// HybridOverlayPath contains the path of the hybrid overlay binary. The container image should already have this
@@ -63,6 +65,91 @@ const (
 	// AzureCloudNodeManagerPath contains the path of the azure cloud node manager binary. The container image should
 	// already have this binary mounted
 	AzureCloudNodeManagerPath = payloadDirectory + AzureCloudNodeManager
+	// TODO: This script is doing both CNI configuration and HNS endpoint creation, two things that aren't necessarily
+	//       related. Correct that in: https://issues.redhat.com/browse/WINC-882
+	// networkConfTemplate is the template used to generate the network configuration script
+	networkConfTemplate = `# This script ensures the contents of the CNI config file is correct, and returns the HNS endpoint IP
+$ErrorActionPreference = "Stop"
+Import-Module -DisableNameChecking HNS_MODULE_PATH
+
+$cni_template=@'
+{
+    "CniVersion":"0.2.0",
+    "Name":"HNS_NETWORK",
+    "Type":"win-overlay",
+    "apiVersion": 2,
+    "Capabilities":{
+        "portMappings": true,
+        "Dns":true
+    },
+    "Ipam":{
+        "Type":"host-local",
+        "Subnet":"ovn_host_subnet"
+    },
+    "Policies":[
+    {
+        "Name": "EndpointPolicy",
+        "Value": {
+            "Type": "OutBoundNAT",
+            "Settings": {
+                "ExceptionList": [
+                "SERVICE_NETWORK_CIDR"
+                ],
+                "DestinationPrefix": "",
+                "NeedEncap": false
+            }
+        }
+    },
+    {
+        "Name": "EndpointPolicy",
+        "Value": {
+            "Type": "SDNROUTE",
+            "Settings": {
+                "ExceptionList": [],
+                "DestinationPrefix": "SERVICE_NETWORK_CIDR",
+                "NeedEncap": true
+            }
+        }
+    },
+    {
+        "Name": "EndpointPolicy",
+        "Value": {
+            "Type": "ProviderAddress",
+            "Settings": {
+                "ProviderAddress": "provider_address"
+            }
+        }
+    }
+    ]
+}
+'@
+
+# Generate CNI Config
+$hns_network=Get-HnsNetwork  | where { $_.Name -eq 'HNS_NETWORK'}
+$subnet=$hns_network.Subnets.AddressPrefix
+$cni_template=$cni_template.Replace("ovn_host_subnet",$subnet)
+$provider_address=$hns_network.ManagementIP
+$cni_template=$cni_template.Replace("provider_address",$provider_address)
+
+# Compare CNI config with existing file, and replace if necessary
+$existing_config=""
+if(Test-Path -Path CNI_CONFIG_PATH) {
+    $existing_config= Get-Content -Path "CNI_CONFIG_PATH"
+}
+if($existing_config -ne $cni_template){
+    Set-Content -Path "CNI_CONFIG_PATH" -Value $cni_template -NoNewline
+}
+
+# Create HNS endpoint if it doesn't exist
+$endpoint = Invoke-HNSRequest GET endpoints | where { $_.Name -eq 'VIPEndpoint'}
+if( $endpoint -eq $null) {
+    $endpoint = New-HnsEndpoint -NetworkId $hns_network.ID -Name "VIPEndpoint"
+    Attach-HNSHostEndpoint -EndpointID $endpoint.ID -CompartmentID 1
+}
+
+# Return HNS endpoint IP
+(Get-NetIPConfiguration -AllCompartments -All -Detailed | where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()
+`
 )
 
 // FileInfo contains information about a file
@@ -81,4 +168,29 @@ func NewFileInfo(path string) (*FileInfo, error) {
 		Path:   path,
 		SHA256: fmt.Sprintf("%x", sha256.Sum256(contents)),
 	}, nil
+}
+
+// PopulateNetworkConfScript creates the .ps1 file responsible for CNI configuration
+func PopulateNetworkConfScript(clusterCIDR, hnsNetworkName, hnsPSModulePath, cniConfigPath string) error {
+	scriptContents, err := generateNetworkConfigScript(clusterCIDR, hnsNetworkName,
+		hnsPSModulePath, cniConfigPath)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(NetworkConfigurationScript, []byte(scriptContents), fs.ModePerm)
+}
+
+// generateNetworkConfigScript generates the contents of the .ps1 file responsible for CNI configuration
+func generateNetworkConfigScript(clusterCIDR, hnsNetworkName, hnsPSModulePath,
+	cniConfigPath string) (string, error) {
+	networkConfScript := networkConfTemplate
+	for key, val := range map[string]string{
+		"HNS_NETWORK":          hnsNetworkName,
+		"SERVICE_NETWORK_CIDR": clusterCIDR,
+		"HNS_MODULE_PATH":      hnsPSModulePath,
+		"CNI_CONFIG_PATH":      cniConfigPath,
+	} {
+		networkConfScript = strings.ReplaceAll(networkConfScript, key, val)
+	}
+	return networkConfScript, nil
 }

@@ -47,6 +47,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
@@ -59,12 +60,51 @@ const (
 	WMCONamespace = "openshift-windows-machine-config-operator"
 )
 
+// Options contains a list of options available when creating a new ServiceController
+type Options struct {
+	Config    *rest.Config
+	Client    client.Client
+	Mgr       manager.Manager
+	cmdRunner powershell.CommandRunner
+}
+
+// setDefaults returns an Options based on the received options, with all nil or empty fields filled in with reasonable
+// defaults.
+func setDefaults(o Options) (Options, error) {
+	var err error
+	if o.Client == nil {
+		if o.Config == nil {
+			// This instantiates an in-cluster config with all required types present in the scheme
+			o.Config, err = rest.InClusterConfig()
+			if err != nil {
+				return o, err
+			}
+		}
+		// Use a non-caching client
+		o.Client, err = NewDirectClient(o.Config)
+		if err != nil {
+			return o, err
+		}
+	}
+	if o.Mgr == nil {
+		o.Mgr, err = manager.New()
+		if err != nil {
+			return o, err
+		}
+	}
+	if o.cmdRunner == nil {
+		o.cmdRunner = powershell.NewCommandRunner()
+	}
+	return o, nil
+}
+
 type ServiceController struct {
 	manager.Manager
 	client         client.Client
 	ctx            context.Context
 	nodeName       string
 	watchNamespace string
+	psCmdRunner    powershell.CommandRunner
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
@@ -84,10 +124,6 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 
 // RunController is the entry point of WICD's controller functionality
 func RunController(ctx context.Context, apiServerURL, saCA, saToken string) error {
-	svcMgr, err := manager.New()
-	if err != nil {
-		return err
-	}
 	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
 	if err != nil {
 		klog.Error(err)
@@ -106,7 +142,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 	}
 	node, err := GetAssociatedNode(directClient, addrs)
 	if err != nil {
-		errors.Wrap(err, "could not find node object associated with this instance")
+		return errors.Wrap(err, "could not find node object associated with this instance")
 	}
 
 	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
@@ -116,7 +152,10 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 	if err != nil {
 		return errors.Wrap(err, "unable to start manager")
 	}
-	sc := NewServiceController(ctx, ctrlMgr.GetClient(), svcMgr, node.Name)
+	sc, err := NewServiceController(ctx, node.Name, Options{Client: ctrlMgr.GetClient()})
+	if err != nil {
+		return err
+	}
 	if err = sc.SetupWithManager(ctrlMgr); err != nil {
 		return err
 	}
@@ -128,9 +167,13 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 }
 
 // NewServiceController returns a pointer to a ServiceController object
-func NewServiceController(ctx context.Context, client client.Client, mgr manager.Manager, nodeName string) *ServiceController {
-	return &ServiceController{client: client, Manager: mgr, ctx: ctx, nodeName: nodeName,
-		watchNamespace: WMCONamespace}
+func NewServiceController(ctx context.Context, nodeName string, options Options) (*ServiceController, error) {
+	o, err := setDefaults(options)
+	if err != nil {
+		return nil, err
+	}
+	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
+		watchNamespace: WMCONamespace}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -344,11 +387,18 @@ func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[s
 	return vars, nil
 }
 
-// resolvePowershellVariables returns a map, with the keys being each variable, and the value being the string to replace the
-// variable with
+// resolvePowershellVariables returns a map, with the keys being each variable, and the value being the string to
+// replace the variable with
 func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) (map[string]string, error) {
-	// TODO: Implement this function
-	return make(map[string]string), nil
+	vars := make(map[string]string)
+	for _, psVar := range svc.PowershellVariablesInCommand {
+		out, err := sc.psCmdRunner.Run(psVar.Path)
+		if err != nil {
+			return nil, errors.Wrapf(err, "could not resolve PowerShell variable %s", psVar.Name)
+		}
+		vars[psVar.Name] = strings.TrimSpace(out)
+	}
+	return vars, nil
 }
 
 // NewDirectClient creates and returns an authenticated client that reads directly from the API server.

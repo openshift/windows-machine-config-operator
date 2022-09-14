@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
 	//+kubebuilder:scaffold:imports
 )
@@ -115,13 +116,18 @@ func main() {
 		payload.IgnoreWgetPowerShellPath,
 		payload.WmcbPath,
 		payload.WICDPath,
-		payload.CNIConfigTemplatePath,
 		payload.HNSPSModule,
 		payload.WindowsExporterPath,
 		payload.AzureCloudNodeManagerPath,
 	}
 	if err := checkIfRequiredFilesExist(requiredFiles); err != nil {
 		setupLog.Error(err, "could not start the operator")
+		os.Exit(1)
+	}
+
+	if err := payload.PopulateNetworkConfScript(clusterConfig.Network().GetServiceCIDR(), windows.OVNKubeOverlayNetwork,
+		windows.HNSPSModule, windows.CniConfDir+"\\cni.conf"); err != nil {
+		setupLog.Error(err, "unable to generate CNI config script")
 		os.Exit(1)
 	}
 

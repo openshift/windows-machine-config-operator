@@ -27,16 +27,16 @@ const (
 	winTemp = "C:\\Windows\\Temp\\"
 	// wgetIgnoreCertCmd is the remote location of the wget-ignore-cert.ps1 script
 	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
-	// hnsPSModule is the remote location of the hns.psm1 module
-	hnsPSModule = remoteDir + "hns.psm1"
+	// HNSPSModule is the remote location of the hns.psm1 module
+	HNSPSModule = remoteDir + "hns.psm1"
 	// k8sDir is the remote kubernetes executable directory
 	k8sDir = "C:\\k\\"
 	//KubeconfigPath is the remote location of the kubelet's kubeconfig
 	KubeconfigPath = k8sDir + "kubeconfig"
 	// logDir is the remote kubernetes log directory
 	logDir = "C:\\var\\log\\"
-	// kubeProxyLogDir is the remote kube-proxy log directory
-	kubeProxyLogDir = logDir + "kube-proxy\\"
+	// KubeProxyLogDir is the remote kube-proxy log directory
+	KubeProxyLogDir = logDir + "kube-proxy\\"
 	// HybridOverlayLogDir is the remote hybrid-overlay log directory
 	HybridOverlayLogDir = logDir + "hybrid-overlay\\"
 	// ContainerdLogDir is the remote containerd log directory
@@ -45,8 +45,8 @@ const (
 	wicdLogDir = logDir + "wicd\\"
 	// cniDir is the directory for storing CNI binaries
 	cniDir = k8sDir + "cni\\"
-	// cniConfDir is the directory for storing CNI configuration
-	cniConfDir = cniDir + "config\\"
+	// CniConfDir is the directory for storing CNI configuration
+	CniConfDir = cniDir + "config\\"
 	// ContainerdDir is the directory for storing Containerd binary
 	ContainerdDir = k8sDir + "containerd\\"
 	// containerdPath is the location of the containerd exe
@@ -59,10 +59,12 @@ const (
 	wicdServiceName = "windows-instance-config-daemon"
 	// windowsExporterPath is the location of the windows_exporter.exe
 	windowsExporterPath = k8sDir + "windows_exporter.exe"
+	// NetworkConfScriptPath is the location of the network configuration script
+	NetworkConfScriptPath = remoteDir + "network-conf.ps1"
 	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
 	azureCloudNodeManagerPath = k8sDir + payload.AzureCloudNodeManager
-	// kubeProxyPath is the location of the kube-proxy exe
-	kubeProxyPath = k8sDir + "kube-proxy.exe"
+	// KubeProxyPath is the location of the kube-proxy exe
+	KubeProxyPath = k8sDir + "kube-proxy.exe"
 	// HybridOverlayPath is the location of the hybrid-overlay-node exe
 	HybridOverlayPath = k8sDir + "hybrid-overlay-node.exe"
 	// HybridOverlayServiceName is the name of the hybrid-overlay-node Windows service
@@ -71,8 +73,8 @@ const (
 	BaseOVNKubeOverlayNetwork = "BaseOVNKubernetesHybridOverlayNetwork"
 	// OVNKubeOverlayNetwork is the name of the OVN HNS Overlay network
 	OVNKubeOverlayNetwork = "OVNKubernetesHybridOverlayNetwork"
-	// kubeProxyServiceName is the name of the kube-proxy Windows service
-	kubeProxyServiceName = "kube-proxy"
+	// KubeProxyServiceName is the name of the kube-proxy Windows service
+	KubeProxyServiceName = "kube-proxy"
 	// KubeletServiceName is the name of the kubelet Windows service
 	KubeletServiceName = "kubelet"
 	// WindowsExporterServiceName is the name of the windows_exporter Windows service
@@ -109,21 +111,21 @@ var (
 	// dependent service should be placed before the service it depends on.
 	RequiredServices = []string{
 		WindowsExporterServiceName,
-		kubeProxyServiceName,
+		KubeProxyServiceName,
 		HybridOverlayServiceName,
 		KubeletServiceName,
 		wicdServiceName,
 		containerdServiceName}
 	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
-	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName}
+	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName, KubeProxyServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		k8sDir,
 		remoteDir,
 		cniDir,
-		cniConfDir,
+		CniConfDir,
 		logDir,
-		kubeProxyLogDir,
+		KubeProxyLogDir,
 		wicdLogDir,
 		HybridOverlayLogDir,
 		ContainerdDir,
@@ -136,21 +138,22 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		return filesToTransfer, nil
 	}
 	srcDestPairs := map[string]string{
-		payload.IgnoreWgetPowerShellPath:  remoteDir,
-		payload.WmcbPath:                  k8sDir,
-		payload.WICDPath:                  k8sDir,
-		payload.HybridOverlayPath:         k8sDir,
-		payload.HNSPSModule:               remoteDir,
-		payload.WindowsExporterPath:       k8sDir,
-		payload.WinBridgeCNIPlugin:        cniDir,
-		payload.HostLocalCNIPlugin:        cniDir,
-		payload.WinOverlayCNIPlugin:       cniDir,
-		payload.KubeProxyPath:             k8sDir,
-		payload.KubeletPath:               k8sDir,
-		payload.AzureCloudNodeManagerPath: k8sDir,
-		payload.ContainerdPath:            ContainerdDir,
-		payload.HcsshimPath:               ContainerdDir,
-		payload.ContainerdConfPath:        ContainerdDir,
+		payload.IgnoreWgetPowerShellPath:   remoteDir,
+		payload.WmcbPath:                   k8sDir,
+		payload.WICDPath:                   k8sDir,
+		payload.HybridOverlayPath:          k8sDir,
+		payload.HNSPSModule:                remoteDir,
+		payload.WindowsExporterPath:        k8sDir,
+		payload.WinBridgeCNIPlugin:         cniDir,
+		payload.HostLocalCNIPlugin:         cniDir,
+		payload.WinOverlayCNIPlugin:        cniDir,
+		payload.KubeProxyPath:              k8sDir,
+		payload.KubeletPath:                k8sDir,
+		payload.AzureCloudNodeManagerPath:  k8sDir,
+		payload.ContainerdPath:             ContainerdDir,
+		payload.HcsshimPath:                ContainerdDir,
+		payload.ContainerdConfPath:         ContainerdDir,
+		payload.NetworkConfigurationScript: remoteDir,
 	}
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
@@ -193,12 +196,10 @@ type Windows interface {
 	Reinitialize() error
 	// Configure prepares the Windows VM for the bootstrapper and then runs it
 	Configure() error
-	// EnsureCNIConfig ensures that the CNI config file is present on the node
-	EnsureCNIConfig(string) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, []byte, []byte) error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
-	ConfigureKubeProxy(string, string) error
+	ConfigureKubeProxy() error
 	// ConfigureAzureCloudNodeManager ensures that the azure-cloud-node-manager service is running
 	ConfigureAzureCloudNodeManager(string) error
 	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
@@ -515,18 +516,6 @@ func (vm *windows) ConfigureWICD(apiServerURL string, serviceAccountCA, serviceA
 	return nil
 }
 
-func (vm *windows) EnsureCNIConfig(configFile string) error {
-	// copy the CNI config file to the Windows VM
-	file, err := payload.NewFileInfo(configFile)
-	if err != nil {
-		return errors.Wrap(err, "unable to get info for the CNI config file")
-	}
-	if err := vm.EnsureFile(file, cniConfDir); err != nil {
-		return errors.Errorf("unable to copy CNI file %s to %s", configFile, cniConfDir)
-	}
-	return nil
-}
-
 func (vm *windows) ConfigureAzureCloudNodeManager(nodeName string) error {
 	azureCloudNodeManagerServiceArgs := "--windows-service --node-name=" + nodeName + " --wait-routes=false --kubeconfig c:\\k\\kubeconfig"
 
@@ -546,28 +535,15 @@ func (vm *windows) ConfigureAzureCloudNodeManager(nodeName string) error {
 	return nil
 }
 
-func (vm *windows) ConfigureKubeProxy(nodeName, hostSubnet string) error {
-	endpointIP, err := vm.createHNSEndpoint()
-	if err != nil {
-		return errors.Wrap(err, "error creating HNS endpoint")
+func (vm *windows) ConfigureKubeProxy() error {
+	// TODO: Currently this function, and waiting for kube-proxy to be running, is required. kube-proxy is the final
+	//       Windows Service. WMCO still has to perform post-configuration steps such as applying the version
+	//       annotation, which indicates the the Node has been full configured. This function should be removed as part
+	//       of https://issues.redhat.com/browse/WINC-741, where WICD will take care of those steps.
+	vm.log.V(1).Info("waiting for kube-proxy to start running")
+	if err := vm.waitForServiceToRun(KubeProxyServiceName); err != nil {
+		return errors.Wrapf(err, "error waiting for %s Windows service to start running", KubeProxyServiceName)
 	}
-
-	kubeProxyServiceArgs := "--windows-service --v=4 --proxy-mode=kernelspace --feature-gates=WinOverlay=true " +
-		"--hostname-override=" + nodeName + " --kubeconfig=c:\\k\\kubeconfig " +
-		"--cluster-cidr=" + hostSubnet + " --log-dir=" + kubeProxyLogDir + " --logtostderr=false " +
-		"--network-name=" + OVNKubeOverlayNetwork + " --source-vip=" + endpointIP +
-		" --enable-dsr=false"
-
-	kubeProxyService, err := newService(kubeProxyPath, kubeProxyServiceName, kubeProxyServiceArgs,
-		[]string{HybridOverlayServiceName})
-	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", kubeProxyServiceName)
-	}
-
-	if err := vm.ensureServiceIsRunning(kubeProxyService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", kubeProxyServiceName)
-	}
-	vm.log.Info("configured", "service", kubeProxyServiceName, "args", kubeProxyServiceArgs)
 	return nil
 }
 
@@ -924,28 +900,6 @@ func (vm *windows) waitForServiceToRun(serviceName string) error {
 
 	// service did not reach running state
 	return fmt.Errorf("timeout waiting for %s service to be in running state: %v", serviceName, err)
-}
-
-// createHNSEndpoint makes a request to create a new HNS endpoint for the Hybrid Overlay network on the VM. On success,
-// the IP of the endpoint will be returned.
-func (vm *windows) createHNSEndpoint() (string, error) {
-	cmd := "Import-Module -DisableNameChecking " + hnsPSModule + "; " +
-		"$net = (Get-HnsNetwork | where { $_.Name -eq '" + OVNKubeOverlayNetwork + "' }); " +
-		"$endpoint = New-HnsEndpoint -NetworkId $net.ID -Name VIPEndpoint; " +
-		"Attach-HNSHostEndpoint -EndpointID $endpoint.ID -CompartmentID 1; " +
-		"(Get-NetIPConfiguration -AllCompartments -All -Detailed | " +
-		"where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()"
-	out, err := vm.Run(cmd, true)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to get source VIP")
-	}
-
-	// stdout will have trailing '\r\n', so need to trim it
-	endpointIP := strings.TrimSpace(out)
-	if endpointIP == "" {
-		return "", fmt.Errorf("expected HNS endpoint IP is missing")
-	}
-	return endpointIP, nil
 }
 
 // newFileInfo returns a pointer to a FileInfo object created from the specified file on the Windows VM

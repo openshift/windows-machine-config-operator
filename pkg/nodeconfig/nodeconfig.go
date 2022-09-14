@@ -27,7 +27,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
-	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -61,8 +60,6 @@ type nodeConfig struct {
 	windows.Windows
 	// Node holds the information related to node object
 	node *core.Node
-	// network holds the network information specific to the node
-	network *network
 	// publicKeyHash is the hash of the public key present on the VM
 	publicKeyHash string
 	// clusterServiceCIDR holds the service CIDR for cluster
@@ -159,7 +156,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
-	return &nodeConfig{k8sclientset: clientset, Windows: win, network: newNetwork(log), platformType: platformType,
+	return &nodeConfig{k8sclientset: clientset, Windows: win, platformType: platformType,
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
 		log: log, additionalLabels: additionalLabels, additionalAnnotations: additionalAnnotations}, nil
 }
@@ -344,12 +341,8 @@ func (nc *nodeConfig) configureNetwork() error {
 		return errors.Wrap(err, "error reinitializing VM after running hybrid-overlay")
 	}
 
-	// Configure CNI in the Windows VM
-	if err := nc.configureCNI(); err != nil {
-		return errors.Wrapf(err, "error configuring CNI for %s", nc.node.GetName())
-	}
 	// Start the kube-proxy service
-	if err := nc.Windows.ConfigureKubeProxy(nc.node.GetName(), nc.node.Annotations[HybridOverlaySubnet]); err != nil {
+	if err := nc.Windows.ConfigureKubeProxy(); err != nil {
 		return errors.Wrapf(err, "error starting kube-proxy for %s", nc.node.GetName())
 	}
 	return nil
@@ -409,29 +402,6 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 
 	if !found {
 		return errors.Wrapf(err, "timeout waiting for %s node annotation", annotation)
-	}
-	return nil
-}
-
-// configureCNI populates the CNI config template and sends the config file location
-// for completing CNI configuration in the windows VM
-func (nc *nodeConfig) configureCNI() error {
-	// set the hostSubnet value in the network struct
-	if err := nc.network.setHostSubnet(nc.node.Annotations[HybridOverlaySubnet]); err != nil {
-		return errors.Wrap(err, "error populating host subnet in node network")
-	}
-	// populate the CNI config file with the host subnet, service network CIDR and IP address of the Windows VM
-	configFile, err := nc.network.populateCniConfig(nc.clusterServiceCIDR, nc.GetIPv4Address(), payload.CNIConfigTemplatePath)
-	if err != nil {
-		return errors.Wrapf(err, "error populating CNI config file %s", configFile)
-	}
-	// Copy CNI config file
-	if err = nc.Windows.EnsureCNIConfig(configFile); err != nil {
-		return errors.Wrapf(err, "error ensuring CNI config file for %s", nc.node.GetName())
-	}
-	if err = nc.network.cleanupTempConfig(configFile); err != nil {
-		nc.log.Error(err, " error deleting temp CNI config", "file",
-			configFile)
 	}
 	return nil
 }
