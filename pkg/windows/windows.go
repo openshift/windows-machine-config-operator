@@ -29,12 +29,14 @@ const (
 	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
 	// HNSPSModule is the remote location of the hns.psm1 module
 	HNSPSModule = remoteDir + "hns.psm1"
-	// k8sDir is the remote kubernetes executable directory
-	k8sDir = "C:\\k\\"
+	// K8sDir is the remote kubernetes executable directory
+	K8sDir = "C:\\k\\"
 	//KubeconfigPath is the remote location of the kubelet's kubeconfig
-	KubeconfigPath = k8sDir + "kubeconfig"
+	KubeconfigPath = K8sDir + "kubeconfig"
 	// logDir is the remote kubernetes log directory
 	logDir = "C:\\var\\log\\"
+	// KubeletLogDir is the remote kubelet log directory
+	KubeletLogDir = logDir + "kubelet\\"
 	// KubeProxyLogDir is the remote kube-proxy log directory
 	KubeProxyLogDir = logDir + "kube-proxy\\"
 	// HybridOverlayLogDir is the remote hybrid-overlay log directory
@@ -44,29 +46,37 @@ const (
 	// wicdLogDir is the remote wicd log directory
 	wicdLogDir = logDir + "wicd\\"
 	// cniDir is the directory for storing CNI binaries
-	cniDir = k8sDir + "cni\\"
+	cniDir = K8sDir + "cni\\"
 	// CniConfDir is the directory for storing CNI configuration
 	CniConfDir = cniDir + "config\\"
 	// ContainerdDir is the directory for storing Containerd binary
-	ContainerdDir = k8sDir + "containerd\\"
+	ContainerdDir = K8sDir + "containerd\\"
 	// containerdPath is the location of the containerd exe
 	containerdPath = ContainerdDir + "containerd.exe"
 	// containerdConfPath is the location of containerd config file
 	containerdConfPath = ContainerdDir + "containerd_conf.toml"
-	//containerdServiceName is containerd Windows service name
-	containerdServiceName = "containerd"
+	//ContainerdServiceName is containerd Windows service name
+	ContainerdServiceName = "containerd"
 	// wicdServiceName is the Windows service name for WICD
 	wicdServiceName = "windows-instance-config-daemon"
 	// windowsExporterPath is the location of the windows_exporter.exe
-	windowsExporterPath = k8sDir + "windows_exporter.exe"
+	windowsExporterPath = K8sDir + "windows_exporter.exe"
 	// NetworkConfScriptPath is the location of the network configuration script
 	NetworkConfScriptPath = remoteDir + "network-conf.ps1"
 	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
-	azureCloudNodeManagerPath = k8sDir + payload.AzureCloudNodeManager
+	azureCloudNodeManagerPath = K8sDir + payload.AzureCloudNodeManager
+	// BootstrapKubeconfig is the location of the bootstrap kubeconfig
+	BootstrapKubeconfig = K8sDir + "bootstrap-kubeconfig"
+	// KubeletPath is the location of the kubelet exe
+	KubeletPath = K8sDir + "kubelet.exe"
+	// KubeletConfigPath is the location of the kubelet configuration file
+	KubeletConfigPath = K8sDir + "kubelet.conf"
+	// KubeletLog is the location of the kubelet log file
+	KubeletLog = KubeletLogDir + "kubelet.log"
 	// KubeProxyPath is the location of the kube-proxy exe
-	KubeProxyPath = k8sDir + "kube-proxy.exe"
+	KubeProxyPath = K8sDir + "kube-proxy.exe"
 	// HybridOverlayPath is the location of the hybrid-overlay-node exe
-	HybridOverlayPath = k8sDir + "hybrid-overlay-node.exe"
+	HybridOverlayPath = K8sDir + "hybrid-overlay-node.exe"
 	// HybridOverlayServiceName is the name of the hybrid-overlay-node Windows service
 	HybridOverlayServiceName = "hybrid-overlay-node"
 	// BaseOVNKubeOverlayNetwork is the name of base OVN HNS Overlay network
@@ -115,12 +125,13 @@ var (
 		HybridOverlayServiceName,
 		KubeletServiceName,
 		wicdServiceName,
-		containerdServiceName}
+		ContainerdServiceName}
 	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
-	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName, KubeProxyServiceName}
+	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName, KubeProxyServiceName,
+		KubeletServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
-		k8sDir,
+		K8sDir,
 		remoteDir,
 		cniDir,
 		CniConfDir,
@@ -139,17 +150,17 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 	}
 	srcDestPairs := map[string]string{
 		payload.IgnoreWgetPowerShellPath:   remoteDir,
-		payload.WmcbPath:                   k8sDir,
-		payload.WICDPath:                   k8sDir,
-		payload.HybridOverlayPath:          k8sDir,
+		payload.WmcbPath:                   K8sDir,
+		payload.WICDPath:                   K8sDir,
+		payload.HybridOverlayPath:          K8sDir,
 		payload.HNSPSModule:                remoteDir,
-		payload.WindowsExporterPath:        k8sDir,
+		payload.WindowsExporterPath:        K8sDir,
 		payload.WinBridgeCNIPlugin:         cniDir,
 		payload.HostLocalCNIPlugin:         cniDir,
 		payload.WinOverlayCNIPlugin:        cniDir,
-		payload.KubeProxyPath:              k8sDir,
-		payload.KubeletPath:                k8sDir,
-		payload.AzureCloudNodeManagerPath:  k8sDir,
+		payload.KubeProxyPath:              K8sDir,
+		payload.KubeletPath:                K8sDir,
+		payload.AzureCloudNodeManagerPath:  K8sDir,
 		payload.ContainerdPath:             ContainerdDir,
 		payload.HcsshimPath:                ContainerdDir,
 		payload.ContainerdConfPath:         ContainerdDir,
@@ -169,7 +180,7 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 
 // GetK8sDir returns the location of the kubernetes executable directory
 func GetK8sDir() string {
-	return k8sDir
+	return K8sDir
 }
 
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
@@ -477,16 +488,16 @@ func (vm *windows) configureContainerd() error {
 	containerdServiceArgs := "--config " + containerdConfPath + " --log-file " + ContainerdLogDir + "containerd.log" +
 		" --log-level info" + " --run-service"
 
-	containerdService, err := newService(containerdPath, containerdServiceName, containerdServiceArgs, nil)
+	containerdService, err := newService(containerdPath, ContainerdServiceName, containerdServiceArgs, nil)
 	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", containerdServiceName)
+		return errors.Wrapf(err, "error creating %s service object", ContainerdServiceName)
 	}
 
 	if err := vm.ensureServiceIsRunning(containerdService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", containerdServiceName)
+		return errors.Wrapf(err, "error ensuring %s Windows service has started running", ContainerdServiceName)
 	}
 
-	vm.log.Info("configured", "service", containerdServiceName, "args", containerdServiceArgs)
+	vm.log.Info("configured", "service", ContainerdServiceName, "args", containerdServiceArgs)
 	return nil
 }
 
@@ -494,17 +505,17 @@ func (vm *windows) configureContainerd() error {
 func (vm *windows) ConfigureWICD(apiServerURL string, serviceAccountCA, serviceAccountToken []byte) error {
 	saCAFile := "sa-ca.crt"
 	saTokenFile := "sa-token"
-	err := vm.EnsureFileContent(serviceAccountCA, saCAFile, k8sDir)
+	err := vm.EnsureFileContent(serviceAccountCA, saCAFile, K8sDir)
 	if err != nil {
 		return err
 	}
-	err = vm.EnsureFileContent(serviceAccountToken, saTokenFile, k8sDir)
+	err = vm.EnsureFileContent(serviceAccountToken, saTokenFile, K8sDir)
 	if err != nil {
 		return err
 	}
-	wicdPath := k8sDir + "windows-instance-config-daemon.exe"
+	wicdPath := K8sDir + "windows-instance-config-daemon.exe"
 	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s%s --sa-token %s%s",
-		wicdLogDir, apiServerURL, k8sDir, saCAFile, k8sDir, saTokenFile)
+		wicdLogDir, apiServerURL, K8sDir, saCAFile, K8sDir, saTokenFile)
 	wicdService, err := newService(wicdPath, wicdServiceName, wicdServiceArgs, nil)
 	if err != nil {
 		return errors.Wrapf(err, "error creating %s service object", wicdServiceName)
@@ -649,8 +660,8 @@ func (vm *windows) runBootstrapper() error {
 	if err != nil {
 		return errors.Wrap(err, "error initializing bootstrapper files")
 	}
-	wmcbInitializeCmd := k8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
-		"worker.ign --kubelet-path " + k8sDir + "kubelet.exe"
+	wmcbInitializeCmd := K8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
+		"worker.ign --kubelet-path " + K8sDir + "kubelet.exe"
 	if vm.instance.SetNodeIP {
 		wmcbInitializeCmd += " --node-ip=" + vm.GetIPv4Address()
 	}
