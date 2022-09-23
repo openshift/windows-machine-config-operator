@@ -48,7 +48,8 @@
         "scripts/configure-vm-tools.ps1",
         "scripts/install-openssh.ps1",
         "scripts/install-firewall-rules.ps1",
-        "scripts/install-kb5012637.ps1"
+        "scripts/install-kb5012637.ps1",
+        "scripts/install-docker.ps1"
       ],
       "vm_version": 15,
       "guest_os_type": "windows9Server64Guest",

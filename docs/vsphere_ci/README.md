@@ -35,6 +35,7 @@ bastion host and has the following files:
     - install-vm-tools.cmd
     - configure-vm-tools.ps1
     - install-openssh.ps1
+    - install-docker.ps1
     - install-firewall-rules.ps1
     - install-kb5012637.ps1
 
@@ -49,6 +50,7 @@ autounattend.xml specifies that the following steps should occur:
 - Runs `install-vm-tools.cmd` script which installs VMWare tools
 - Runs `configure-vm-tools.ps1` script which configures VMWare tools
 - Runs `install-openssh.ps1` script which installs and configures OpenSSH Server
+- Runs `install-docker.ps1` script which installs Docker
 - Runs `install-firewall-rules.ps1` script which configures the firewall rules
 - Runs `install-kb5012637.ps1` script which installs a required Windows OS-level container networking patch
 
