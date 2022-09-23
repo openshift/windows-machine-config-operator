@@ -3,7 +3,8 @@
     "os-iso-path": "[WorkloadDatastore] windows-iso-images/winsrv2022_sep_2021_x64_dvd.iso",
     "vmtools-iso-path": "[WorkloadDatastore] windows-iso-images/vmtools-v11360-windows.iso",
     "vm-template-folder": "windows-golden-images",
-    "vm-template-name": "windows-server-2022-template",
+    "vm-template-name": "windows-server-2022-template-test",
+    "vm-elevated-user": "Administrator",
     "vm-elevated-password": "WindowsPassword",
     "vsphere-cluster": "Cluster-1",
     "vsphere-datacenter": "SDDC-Datacenter",
@@ -18,20 +19,48 @@
   ],
   "provisioners": [
     {
-      "pause_before": "10m",
-      "inline": [
-        "ipconfig"
-      ],
+      "type": "file",
+      "source": "scripts/rename-computer.ps1",
+      "destination": "C:/"
+    },
+    {
       "type": "powershell",
-      "elevated_user": "Administrator",
-      "elevated_password": "{{user `vm-elevated-password`}}",
-      "max_retries": "10"
+      "script": "scripts/install-firewall-rules.ps1",
+      "elevated_user": "{{user `vm-elevated-user`}}",
+      "elevated_password": "{{user `vm-elevated-password`}}"
+    },
+    {
+      "type": "powershell",
+      "script": "scripts/install-updates.ps1",
+      "elevated_user": "{{user `vm-elevated-user`}}",
+      "elevated_password": "{{user `vm-elevated-password`}}"
+    },
+    {
+      "type": "windows-restart",
+      "restart_timeout": "1h"
+    },
+    {
+      "type": "powershell",
+      "script": "scripts/install-updates.ps1",
+      "elevated_user": "{{user `vm-elevated-user`}}",
+      "elevated_password": "{{user `vm-elevated-password`}}"
+    },
+    {
+      "type": "windows-restart",
+      "restart_timeout": "1h"
+    },
+    {
+      "type": "powershell",
+      "pause_before": "2m",
+      "inline": ["dir c:\\"],
+      "elevated_user": "{{user `vm-elevated-user`}}",
+      "elevated_password": "{{user `vm-elevated-password`}}"
     }
   ],
   "builders": [
     {
-      "CPUs": "2",
-      "RAM": "4096",
+      "CPUs": "4",
+      "RAM": "16384",
       "RAM_reserve_all": true,
       "communicator": "ssh",
       "convert_to_template": "true",
@@ -42,13 +71,13 @@
       "disk_controller_type": "lsilogic-sas",
       "firmware": "bios",
       "floppy_files": [
+        "answer-files/autounattend.xml",
+        "answer-files/unattend.xml",
         "scripts/authorized_keys",
-        "scripts/autounattend.xml",
         "scripts/install-vm-tools.cmd",
         "scripts/configure-vm-tools.ps1",
         "scripts/install-openssh.ps1",
-        "scripts/install-firewall-rules.ps1",
-        "scripts/install-kb5012637.ps1"
+        "scripts/rename-computer.ps1"
       ],
       "vm_version": 15,
       "guest_os_type": "windows9Server64Guest",
@@ -65,7 +94,7 @@
       ],
       "storage": [
         {
-          "disk_size": "40960",
+          "disk_size": "61440",
           "disk_thin_provisioned": true
         }
       ],
@@ -75,8 +104,9 @@
       "username": "{{user `vsphere-user`}}",
       "password": "{{user `vsphere-password`}}",
       "ssh_password": "{{user `vm-elevated-password`}}",
-      "ssh_username": "Administrator",
-      "ssh_timeout": "50m"
+      "ssh_username": "{{user `vm-elevated-user`}}",
+      "ssh_timeout": "10m",
+      "shutdown_command": "c:\\windows\\system32\\sysprep\\sysprep.exe /generalize /oobe /shutdown /unattend:a:\\unattend.xml"
     }
   ]
 }
