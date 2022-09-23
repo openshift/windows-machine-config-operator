@@ -1,7 +1,7 @@
 # Building the vSphere Windows VM Golden Image programmatically
 
 This document focuses on building Windows VM golden image in vSphere 6.7 and later, to be used in CI but can be 
-used as example for other vSphere environments. We propose [Packer](https://github.com/hashicorp/packer) to automate 
+used as example for other vSphere environments. We use [Packer](https://github.com/hashicorp/packer) to automate the
 installation and configuration of the Windows VM golden image. 
 
 Packer generates a vSphere VM template that can be converted to a virtual machine. After converting the 
@@ -9,15 +9,14 @@ template to virtual machine, the `machine-api` can use this newly created virtua
 subsequent VM cloning. 
 
 The above golden image name is the one we use in the Machine Set's `providerSpec.template`. The following steps need 
-to be executed from the bastion host or any instance that has access to the vSphere environment.
-
+to be executed with a sshuttle opened to the vSphere bastion host.
 
 ## Installing Packer
 
-In case of our vSphere environment, we need to install Packer 1.6.6 on the bastion host. The installation steps are:
+Install Packer 1.8.3 on the host where you will be building image. The installation steps are:
 
 - Download [Packer](https://www.packer.io/downloads)
-    - `curl -o packer.zip https://releases.hashicorp.com/packer/1.6.6/packer_1.6.6_linux_amd64.zip`
+    - `curl -o packer.zip https://releases.hashicorp.com/packer/1.8.3/packer_1.8.3_linux_amd64.zip`
 - Unzip using zip utility on the host
     - `gunzip -S .zip packer.zip`
 - Add execution permission to the Packer binary
@@ -27,36 +26,48 @@ In case of our vSphere environment, we need to install Packer 1.6.6 on the basti
 
 ## Prerequisite files
 
-Please ensure the `scripts` directory is present in the location where you are running Packer from on the 
-bastion host and has the following files:
+Please ensure the `scripts` directory is present in the location where you are
+running Packer from and has the following files:
 
     - authorized_keys
-    - autounattend.xml
     - install-vm-tools.cmd
     - configure-vm-tools.ps1
     - install-openssh.ps1
     - install-docker.ps1
     - install-firewall-rules.ps1
-    - install-kb5012637.ps1
+    - install-updates.ps1
+
+In addition the `answer-file` directory is present at the same level as the `scripts` directory and has the following
+files:
+
+    - autounattend.xml
+    - unattend.xml
 
 The [authorized_keys](scripts/authorized_keys) file must contain a public key, where the private key 
 associated with this public key is what will be used by WMCO to configure VMs created from Windows VM. After 
 deploying WMCO, this private key will be provided by the user in the form of a Secret.
 
-The [autounattend.xml](scripts/autounattend.xml) file must be edited to update the value of 
-`WindowsPassword` with a user provided password. The `ProductKey` must also be updated with a proper value.
-autounattend.xml specifies that the following steps should occur:
+The [autounattend.xml](scripts/autounattend.xml) file automates the Windows installation and  must be edited to update the
+value of `WindowsPassword` with a user provided password. autounattend.xml specifies that the following steps should
+occur after the basic install:
 
 - Runs `install-vm-tools.cmd` script which installs VMWare tools
 - Runs `configure-vm-tools.ps1` script which configures VMWare tools
 - Runs `install-openssh.ps1` script which installs and configures OpenSSH Server
 - Runs `install-docker.ps1` script which installs Docker
+
+Packer takes over after after the initial install and runs [provisioners](https://www.packer.io/docs/provisioners) that
+performs the following:
 - Runs `install-firewall-rules.ps1` script which configures the firewall rules
-- Runs `install-kb5012637.ps1` script which installs a required Windows OS-level container networking patch
+- Runs `install-updates.ps1` script which installs the latest updates
+- Reboot to apply the updates
+- Runs `install-updates.ps1` script again to ensure we are installing all updates as some Windows updates requires
+  reboots
+- Reboot again to apply the updates
+- Pauses to wait for the VM to coalesce
 
-The above [autounattend.xml](scripts/autounattend.xml) script is different from the [unattend.xml](../unattend.xml)
-as this script does Windows OS installation as well.
-
+Packer then shutdown the VM via sysprep which uses the [answer-files/unattend.xml](unattend.xml). `unattend.xml` is used to
+generalize the VM that is created from the resulting template.
 ## Packer build configuration file
 
 Packer needs a build file which specifies how the virtual machine template should be built. You can find a [reference 
@@ -73,7 +84,7 @@ adjust the following variables:
 - `<vm-template-folder>` Name of the folder where the VM templates will be created by Packer
 - `<vm-template-name>` Name of the VM template that will be created by Packer
 - `<vm-elevated-password>` Password for the Windows virtual machine Administrator user,
-  must match with the password entered in the [autounattend.xml](scripts/autounattend.xml) script
+   must match with the password entered in the [autounattend.xml](answer-files/autounattend.xml) script
 - `<vsphere-cluster>` Name of the vSphere cluster
 - `<vsphere-datacenter>` Name of the vSphere datacenter
 - `<vsphere-datastore>` Name of the vSphere datastore
@@ -117,8 +128,10 @@ and hit `Enter` on the keyboard. This should start the OS setup as intended.
 Packer mounts the Windows iso and starts the VM. 
 - All the files in `floppy_files` section of your build file will be copied to the floppy disk of the mounted iso 
  which is represented as `a:\` drive in the Windows VM
-- [autounattend.xml](scripts/autounattend.xml) is a special file in Windows which gets automatically executed once the
-VM starts. You can specify all the commands that needs to executed on first boot.
+- [autounattend.xml](answer-files/autounattend.xml) is a special file in Windows which automates the Windows installation
+  once the VM starts. You can specify the commands in the `FirstLogonCommands` section and they will be executed on the
+  first boot of the VM. These steps should be restricted to basic ones that setup the VM for communication with Packer.
+- Rest of the Windows configuration and setup are performed by the provisioners in [build.json](build.json).
   
 ## Using the virtual machine template
 
@@ -127,5 +140,5 @@ the folder `<vm-template-folder>` following the [Variables](#variables). The lat
 golden image, as described in [the documentation](../vsphere-golden-image.md#9-using-the-virtual-machine-template).
 
 ## References
-- [Sample autounattend](https://github.com/guillermo-musumeci/packer-vsphere-iso-windows/blob/master/win2019.base/win2019.base.json)
-- [Packer unattended windows installs](https://www.packer.io/guides/automatic-operating-system-installs/autounattend_windows)
+- [Sample Packer Windows Server 2022 build](https://github.com/StefanZ8n/packer-ws2022/blob/main/ws2022.pkr.hcl)
+- [Packer Unattended Installation for Windows](https://www.packer.io/guides/automatic-operating-system-installs/autounattend_windows)
