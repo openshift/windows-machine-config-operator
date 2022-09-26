@@ -1,6 +1,6 @@
 module github.com/openshift/windows-machine-config-operator
 
-go 1.18
+go 1.19
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
@@ -31,7 +31,7 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.81.0 // indirect
+	cloud.google.com/go/compute v1.7.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest v0.11.18 // indirect

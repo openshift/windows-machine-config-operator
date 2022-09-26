@@ -1,5 +1,5 @@
-# cloud.google.com/go v0.81.0
-## explicit; go 1.11
+# cloud.google.com/go/compute v1.7.0
+## explicit; go 1.15
 cloud.google.com/go/compute/metadata
 # github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1
 ## explicit; go 1.16
