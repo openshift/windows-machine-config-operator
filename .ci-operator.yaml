@@ -2,4 +2,4 @@
 build_root_image:
   namespace: openshift
   name: release
-  tag: golang-1.18
+  tag: rhel-8-release-golang-1.19-openshift-4.12

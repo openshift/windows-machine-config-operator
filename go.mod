@@ -1,6 +1,6 @@
 module github.com/openshift/windows-machine-config-operator
 
-go 1.18
+go 1.19
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
