@@ -165,8 +165,8 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 // For example: https://api-int.abc.devcluster.openshift.com:6443 gets translated to
 // api-int.abc.devcluster.openshift.com
 // TODO: Think if this needs to be removed as this is too restrictive. Imagine apiserver behind
-// 		a loadbalancer.
-// 		Jira story: https://issues.redhat.com/browse/WINC-398
+// a loadbalancer.
+// Jira story: https://issues.redhat.com/browse/WINC-398
 func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
 	clusterEndPoint, err := url.Parse(kubeAPIServerEndpoint)
 	if err != nil {

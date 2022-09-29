@@ -9,8 +9,8 @@ import (
 // but to have something at nodeConfig package locally which will be passed onto other structs. There is no need to
 // invalidate this cache as of now, since the only entry in this workerIgnitionEndPoint which will be immutable. If
 // someone wants to change it, they've to restart the operator which will invalidate the cache automatically.
-// Note : It is ok to remove this struct in future, if we don't want to continue. As of now, I can think of only
-// 		  worker ignition endpoint being part of this struct.
+// Note: It is ok to remove this struct in future, if we don't want to continue. As of now, I can think of only
+// worker ignition endpoint being part of this struct.
 type cache struct {
 	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
 	// the OpenShift worker ignition file.

@@ -585,7 +585,7 @@ func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.J
 	return tc.createJob(name, ubi8Image, command, linuxNodeSelector, []v1.Toleration{}, nil)
 }
 
-//  createWinCurlerJob creates a Job to curl Windows server at given IP address
+// createWinCurlerJob creates a Job to curl Windows server at given IP address
 func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affinity *v1.Affinity) (*batchv1.Job, error) {
 	winCurlerCommand := tc.getWinCurlerCommand(winServerIP)
 	winCurlerJob, err := tc.createWindowsServerJob("win-curler-"+name, winCurlerCommand, affinity)

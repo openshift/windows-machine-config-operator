@@ -301,7 +301,7 @@ SupfHrSpy6CQOJNNlDTjGdvJtV7j+uFgrSJhIA==
 
 // testInitialKubeletCACertificate is a fake certificate that contains an initial CA for
 // kube-apiserver-to-kubelet-signer
-//  Issuer: OU=openshift, CN=kube-apiserver-to-kubelet-signer	Not After : Mar 28 14:35:44 2023 GMT
+// Issuer: OU=openshift, CN=kube-apiserver-to-kubelet-signer	Not After : Mar 28 14:35:44 2023 GMT
 const testInitialKubeletCACertificate = `-----BEGIN CERTIFICATE-----
 MIIDQjCCAiqgAwIBAgIIc9V7aeUc/1wwDQYJKoZIhvcNAQELBQAwPzESMBAGA1UE
 CxMJb3BlbnNoaWZ0MSkwJwYDVQQDEyBrdWJlLWFwaXNlcnZlci10by1rdWJlbGV0

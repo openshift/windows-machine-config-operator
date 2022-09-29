@@ -34,8 +34,8 @@ var (
 
 // globalContext holds the information that we want to use across the test suites.
 // If you want to move item here make sure that
-// 1.) It is needed across test suites
-// 2.) You're responsible for checking if the field is stale or not. Any field
+//  1. It is needed across test suites
+//  2. You're responsible for checking if the field is stale or not. Any field
 //     in this struct is not guaranteed to be latest from the apiserver.
 type globalContext struct {
 	// numberOfMachineNodes are the number of nodes which should be configured by the Machine Controller
