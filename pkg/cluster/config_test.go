@@ -125,9 +125,9 @@ func TestIsValidKubernetesVersion(t *testing.T) {
 		error   bool
 	}{
 		{"cluster version lower than supported version ", "v1.17.1", true},
-		{"cluster version equals supported version", "v1.24.0", false},
-		{"cluster version equals supported version", "v1.25.4", false},
-		{"cluster version greater than supported version ", "v1.26.2", true},
+		{"cluster version equals supported version", "v1.25.0", false},
+		{"cluster version equals supported version", "v1.26.4", false},
+		{"cluster version greater than supported version ", "v1.27.2", true},
 	}
 
 	for _, tt := range tests {

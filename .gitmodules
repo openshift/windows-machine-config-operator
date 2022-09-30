@@ -23,7 +23,7 @@
 [submodule "kube-proxy"]
 	path = kube-proxy
 	url = https://github.com/openshift/kubernetes
-	branch = sdn-4.11-kubernetes-1.24.0
+	branch = sdn-4.12-kubernetes-1.25.1
 [submodule "containerd"]
 	path = containerd
 	url = https://github.com/openshift/containerd

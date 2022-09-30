@@ -24,7 +24,7 @@ const (
 	ovnKubernetesNetwork = "OVNKubernetes"
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
 	// 1.20.x are supported for baseK8sVersion 1.20)
-	baseK8sVersion = "v1.24"
+	baseK8sVersion = "v1.25"
 	// cloudControllerOwnershipConditionType defines the Condition type for Cloud Controllers ownership
 	cloudControllerOwnershipConditionType = "CloudControllerOwner"
 	// clusterCloudControllerManagerOperatorName is the registered name of Cluster Cloud Controller Manager Operator
