@@ -130,9 +130,9 @@ spec:
                 server: <vCenter Server FQDN/IP>
     ```
     Example MachineSet for other cloud providers:
-    - [AWS](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-aws.md)
-    - [Azure](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-azure.md)
-    - [GCP](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/machineset-gcp.md)
+    - [AWS](https://docs.openshift.com/container-platform/4.12/windows_containers/creating_windows_machinesets/creating-windows-machineset-aws.html)
+    - [Azure](https://docs.openshift.com/container-platform/4.12/windows_containers/creating_windows_machinesets/creating-windows-machineset-azure.html)
+    - [GCP](https://docs.openshift.com/container-platform/4.12/windows_containers/creating_windows_machinesets/creating-windows-machineset-gcp.html)
 
     ### Limitations
     #### DeploymentConfigs
