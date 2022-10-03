@@ -450,13 +450,8 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	return podList.Items[0].Status.PodIP, nil
 }
 
-// getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
+// getWindowsServerContainerImage gets the appropriate WindowsServer image based on the cloud provider
 func (tc *testContext) getWindowsServerContainerImage() string {
-	if tc.CloudProvider.GetType() == config.NonePlatformType {
-		// TODO: On platform=none we have to use 2004 since the job points to the WS2004 golden image via release repo
-		// When the release repo is updated to use 2022, this clause should be squashed with the above to use 2022
-		return "mcr.microsoft.com/powershell:lts-nanoserver-2004"
-	}
 	if tc.CloudProvider.GetType() == config.AWSPlatformType {
 		// On AWS we are currently testing 2019
 		return "mcr.microsoft.com/powershell:lts-nanoserver-1809"
