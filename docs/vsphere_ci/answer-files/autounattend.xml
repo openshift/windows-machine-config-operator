@@ -62,15 +62,17 @@
             </ImageInstall>
             <UserData>
                 <AcceptEula>true</AcceptEula>
+                <!-- Product Key from https://learn.microsoft.com/en-us/windows-server/get-started/kms-client-activation-keys#windows-server-2022 -->
+                <!-- This allows us to get around having to intervene and skip entering the key during the packer build -->
                 <ProductKey>
-                    <Key>XXXXX-XXXXX-XXXXX-XXXXX-XXXXX</Key>
+                    <Key>VDYBN-27WPP-V4HQT-9VMD4-VMK7H</Key>
                 </ProductKey>
             </UserData>
         </component>
     </settings>
     <settings pass="specialize">
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-            <TimeZone>Romance Standard Time</TimeZone>
+            <TimeZone>UTC</TimeZone>
             <ComputerName>winhost</ComputerName>
         </component>
     </settings>
@@ -113,21 +115,6 @@
                     <Description>Install and configure OpenSSH Server</Description>
                     <CommandLine>cmd.exe /c powershell.exe -File a:\install-openssh.ps1 "a:\authorized_keys"</CommandLine>
                 </SynchronousCommand>
-                <SynchronousCommand wcm:action="add">
-                    <Order>6</Order>
-                    <Description>Configure firewall rules</Description>
-                    <CommandLine>cmd.exe /c powershell.exe -File a:\install-firewall-rules.ps1</CommandLine>
-                </SynchronousCommand>
-                <SynchronousCommand wcm:action="add">
-                    <Order>7</Order>
-                    <Description>Install Windows Patch KB5012637</Description>
-                    <CommandLine>cmd.exe /c powershell.exe -File a:\install-kb5012637.ps1</CommandLine>
-                </SynchronousCommand>
-                <SynchronousCommand wcm:action="add">
-                    <Order>7</Order>
-                    <Description>Install Docker</Description>
-                    <CommandLine>cmd.exe /c powershell.exe -File a:\install-docker.ps1</CommandLine>
-                </SynchronousCommand>
             </FirstLogonCommands>
             <OOBE>
                 <HideEULAPage>true</HideEULAPage>
@@ -135,7 +122,7 @@
                 <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
                 <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
                 <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
-                <NetworkLocation>Home</NetworkLocation>
+                <NetworkLocation>Work</NetworkLocation>
                 <ProtectYourPC>1</ProtectYourPC>
             </OOBE>
 
