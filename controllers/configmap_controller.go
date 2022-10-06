@@ -101,7 +101,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 		return nil, err
 	}
 	svcData, err := services.GenerateManifest(argsFromIgnition, clusterConfig.Network().VXLANPort(),
-		string(clusterConfig.Platform()), ctrl.Log.V(1).Enabled())
+		clusterConfig.Platform(), ctrl.Log.V(1).Enabled())
 	if err != nil {
 		return nil, errors.Wrap(err, "error generating expected Windows service state")
 	}
