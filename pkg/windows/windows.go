@@ -63,8 +63,8 @@ const (
 	windowsExporterPath = K8sDir + "windows_exporter.exe"
 	// NetworkConfScriptPath is the location of the network configuration script
 	NetworkConfScriptPath = remoteDir + "network-conf.ps1"
-	// azureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
-	azureCloudNodeManagerPath = K8sDir + payload.AzureCloudNodeManager
+	// AzureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
+	AzureCloudNodeManagerPath = K8sDir + payload.AzureCloudNodeManager
 	// BootstrapKubeconfig is the location of the bootstrap kubeconfig
 	BootstrapKubeconfig = K8sDir + "bootstrap-kubeconfig"
 	// KubeletPath is the location of the kubelet exe
@@ -211,8 +211,6 @@ type Windows interface {
 	ConfigureWICD(string, []byte, []byte) error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy() error
-	// ConfigureAzureCloudNodeManager ensures that the azure-cloud-node-manager service is running
-	ConfigureAzureCloudNodeManager(string) error
 	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
 	EnsureRequiredServicesStopped() error
 	// Deconfigure removes all files and services created as part of the configuration process
@@ -524,25 +522,6 @@ func (vm *windows) ConfigureWICD(apiServerURL string, serviceAccountCA, serviceA
 		return errors.Wrapf(err, "error ensuring %s Windows service has started running", wicdServiceName)
 	}
 	vm.log.Info("configured", "service", wicdServiceName, "args", wicdServiceArgs)
-	return nil
-}
-
-func (vm *windows) ConfigureAzureCloudNodeManager(nodeName string) error {
-	azureCloudNodeManagerServiceArgs := "--windows-service --node-name=" + nodeName + " --wait-routes=false --kubeconfig c:\\k\\kubeconfig"
-
-	azureCloudNodeManagerService, err := newService(
-		azureCloudNodeManagerPath,
-		AzureCloudNodeManagerServiceName,
-		azureCloudNodeManagerServiceArgs,
-		nil)
-	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", AzureCloudNodeManagerServiceName)
-	}
-
-	if err := vm.ensureServiceIsRunning(azureCloudNodeManagerService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", AzureCloudNodeManagerServiceName)
-	}
-	vm.log.Info("configured", "service", AzureCloudNodeManagerServiceName, "args", azureCloudNodeManagerServiceArgs)
 	return nil
 }
 
