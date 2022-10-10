@@ -45,7 +45,7 @@ type winService struct {
 	description string
 }
 
-// testNodeMetadata tests if all nodes have a worker label and kubelet version and are annotated with the version of
+// testNodeMetadata tests if all nodes have a worker label and are annotated with the version of
 // the currently deployed WMCO
 func testNodeMetadata(t *testing.T) {
 	tc, err := NewTestContext()
@@ -53,21 +53,12 @@ func testNodeMetadata(t *testing.T) {
 	operatorVersion, err := getWMCOVersion()
 	require.NoError(t, err, "could not get WMCO version")
 
-	clusterKubeletVersion, err := tc.getClusterKubeVersion()
-	require.NoError(t, err, "could not get cluster kube version")
-
 	_, pubKey, err := tc.getExpectedKeyPair()
 	require.NoError(t, err, "error getting the expected public/private key pair")
 	pubKeyAnnotation := nc.CreatePubKeyHashAnnotation(pubKey)
 
 	for _, node := range gc.allNodes() {
 		t.Run(node.GetName()+" Validation Tests", func(t *testing.T) {
-			t.Run("Kubelet Version", func(t *testing.T) {
-				isValidVersion := strings.HasPrefix(node.Status.NodeInfo.KubeletVersion, clusterKubeletVersion)
-				assert.True(t, isValidVersion,
-					"expected kubelet version %s was not present on %s. Found %s", clusterKubeletVersion,
-					node.GetName(), node.Status.NodeInfo.KubeletVersion)
-			})
 			// The worker label is not actually added by WMCO however we would like to validate if the Machine Api is
 			// properly adding the worker label, if it was specified in the MachineSet. The MachineSet created in the
 			// test suite has the worker label
@@ -179,19 +170,6 @@ func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
 		}
 	}
 	return instanceIDs, nil
-}
-
-// getClusterKubeVersion returns the major and minor Kubernetes version of the cluster
-func (tc *testContext) getClusterKubeVersion() (string, error) {
-	serverVersion, err := tc.client.K8s.Discovery().ServerVersion()
-	if err != nil {
-		return "", errors.Wrapf(err, "error getting cluster kube version")
-	}
-	versionSplit := strings.Split(serverVersion.GitVersion, ".")
-	if versionSplit == nil {
-		return "", fmt.Errorf("unexpected cluster kube version output")
-	}
-	return strings.Join(versionSplit[0:2], "."), nil
 }
 
 // getWMCOVersion returns the version of the operator. This is sourced from the WMCO binary used
