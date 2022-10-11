@@ -71,11 +71,11 @@ generalize the VM that is created from the resulting template.
 ## Packer build configuration file
 
 Packer needs a build file which specifies how the virtual machine template should be built. You can find a [reference 
-build file](build.json) in the repository.
+build file](windows-server-2022.pkr.hcl) in the repository.
 
 ### Variables
 
-In order to use the provided [reference build file](build.json) as a valid configuration with Packer, you **must** 
+In order to use the provided [reference build file](windows-server-2022.pkr.hcl) as a valid configuration with Packer, you **must**
 adjust the following variables:
 
 - `<vmtools-iso-path>` Path where VMWare Tools ISO is available in vSphere datacenter
@@ -96,21 +96,21 @@ adjust the following variables:
 
 ## Building with Packer
 
-Packer relies on a [build file](build.json) for virtual machine template creation.
+Packer relies on a [build file](windows-server-2022.pkr.hcl) for virtual machine template creation.
 
 To build:
 ```bash
-  packer build build.json
+  packer build windows-server-2022.pkr.hcl
 ```
 
 To forcefully rebuild the template:
 ```bash
-  packer build -force build.json
+  packer build -force windows-server-2022.pkr.hcl
 ```
 
 To enable detailed logging:
 ```bash
-  PACKER_LOG=1 packer build build.json
+  PACKER_LOG=1 packer build windows-server-2022.pkr.hcl
 ```
 
 ### What to do during the Packer build
@@ -131,7 +131,8 @@ Packer mounts the Windows iso and starts the VM.
 - [autounattend.xml](answer-files/autounattend.xml) is a special file in Windows which automates the Windows installation
   once the VM starts. You can specify the commands in the `FirstLogonCommands` section and they will be executed on the
   first boot of the VM. These steps should be restricted to basic ones that setup the VM for communication with Packer.
-- Rest of the Windows configuration and setup are performed by the provisioners in [build.json](build.json).
+- Rest of the Windows configuration and setup are performed by the provisioners in
+  [windows-server-2022.pkr.hcl](windows-server-2022.pkr.hcl).
   
 ## Using the virtual machine template
 
