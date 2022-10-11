@@ -109,18 +109,19 @@ on TCP port `10250` by running the following PowerShell command:
     New-NetFirewallRule -DisplayName "ContainerLogsPort" -LocalPort 10250 -Enabled True -Direction Inbound -Protocol TCP -Action Allow -EdgeTraversalPolicy Allow
 ```
 
-## 6. Install OS-level container networking patch KB5012637 
+## 6. Install Windows OS updates
 
-Download the patch files from the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com/Search.aspx?q=KB5012637).
-Then, install the patch. Windows Command Prompt example:
-* `wusa.exe C:\PATH-TO-UPDATE\windows10.0-kb5012637-x64.msu /quiet /norestart`
+Ensure that you have the latest
+[Windows Server updates](https://support.microsoft.com/en-us/topic/windows-server-2022-update-history-e1caa597-00c5-4ab9-9f3e-8212fe80b2ee)
+installed.
 
-Alternatively, you can use the PowerShell script [install-kb5012637.ps1](vsphere_ci/scripts/install-kb5012637.ps1) to 
-programmatically download and install the required patch:
+Alternatively, you can use the PowerShell script [install-updates.ps1](vsphere_ci/scripts/install-updates.ps1) to
+programmatically download and install the updates:
 
 ```powershell
-    ./install-kb5012637.ps1
+    ./install-updates.ps1
 ```
+Note that you will have to perform multiple updates and reboots to ensure all the updates are applied.
 
 ## 7. Generalize the virtual machine installation
 
