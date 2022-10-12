@@ -230,6 +230,10 @@ workloads.
 ### Storage
 At this time, only in-tree storage is supported in all cloud providers.
 
+### Pod Autoscaling
+[Horizontal](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html) and
+[Vertical](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-vertical-autoscaler.html) Pod
+autoscaling support are not available for Windows workloads.
 ### Other limitations
 WMCO / Windows nodes does not work with the following products:
 * [odo](https://docs.openshift.com/container-platform/latest/cli_reference/developer_cli_odo/understanding-odo.html)
