@@ -1,9 +1,6 @@
 FROM registry.ci.openshift.org/openshift/release:rhel-8-release-golang-1.19-openshift-4.12 as build
 LABEL stage=build
 
-# dos2unix is needed to build CNI plugins
-RUN yum install -y dos2unix
-
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 

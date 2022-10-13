@@ -7,9 +7,6 @@ FROM registry.ci.openshift.org/openshift/release:rhel-8-release-golang-1.19-open
 LABEL stage=build
 WORKDIR /build/
 
-# dos2unix is needed to build CNI plugins
-RUN yum install -y dos2unix
-
 # The source here corresponds to the code in the PR and is placed here by the CI infrastructure.
 WORKDIR /build/windows-machine-config-operator/
 # Copy .git metadata so that we can generate the version for the WMCO binary
