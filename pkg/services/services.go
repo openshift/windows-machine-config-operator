@@ -19,10 +19,9 @@ const (
 	// https://docs.openshift.com/container-platform/latest/rest_api/editing-kubelet-log-level-verbosity.html#log-verbosity-descriptions_editing-kubelet-log-level-verbosity
 	debugLogLevel    = "4"
 	standardLogLevel = "2"
-	// ec2HostnameVar is a variable that should be replaced with the value of `local-hostname` in the ec2 instance
-	// metadata
-	ec2HostnameVar = "EC2_HOSTNAME"
-	NodeIPVar      = "NODE_IP"
+	// hostnameOverrideVar is the variable that should be replaced with the value of the desired instance hostname
+	hostnameOverrideVar = "HOSTNAME_OVERRIDE"
+	NodeIPVar           = "NODE_IP"
 )
 
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
@@ -144,13 +143,16 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 		return servicescm.Service{}, err
 	}
 	var powershellVars []servicescm.PowershellCmdArg
-	hostnameArg := getKubeletHostnameOverride(platform)
-	if hostnameArg != "" {
-		kubeletArgs = append(kubeletArgs, hostnameArg)
-		powershellVars = append(powershellVars, servicescm.PowershellCmdArg{
-			Name: ec2HostnameVar,
-			Path: "Get-EC2InstanceMetadata -Category LocalHostname",
-		})
+
+	hostnameOverrideCmd := getHostnameCmd(platform)
+	if hostnameOverrideCmd != "" {
+		hostnameOverrideArg := "--hostname-override=" + hostnameOverrideVar
+		hostnameOverridePowershellVar := servicescm.PowershellCmdArg{
+			Name: hostnameOverrideVar,
+			Path: hostnameOverrideCmd,
+		}
+		kubeletArgs = append(kubeletArgs, hostnameOverrideArg)
+		powershellVars = append(powershellVars, hostnameOverridePowershellVar)
 	}
 
 	kubeletServiceCmd := windows.KubeletPath
@@ -217,12 +219,15 @@ func klogVerbosityArg(debug bool) string {
 	}
 }
 
-// getKubeletHostnameOverride returns the hostname override arg that should be used
-func getKubeletHostnameOverride(platformType config.PlatformType) string {
+// getHostnameCmd returns the hostname override command for the given platform as needed
+func getHostnameCmd(platformType config.PlatformType) string {
 	switch platformType {
 	case config.AWSPlatformType:
-		return "--hostname-override=" + ec2HostnameVar
+		return "Get-EC2InstanceMetadata -Category LocalHostname"
+	case config.GCPPlatformType:
+		return windows.GcpGetHostnameScriptRemotePath
 	default:
+		// by default use the original hostname
 		return ""
 	}
 }
