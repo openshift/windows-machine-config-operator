@@ -28,6 +28,10 @@ const (
 	HcsshimPath = payloadDirectory + "/containerd/containerd-shim-runhcs-v1.exe"
 	// ContainerdConfPath contains the path of the containerd config file.
 	ContainerdConfPath = payloadDirectory + "/containerd/containerd_conf.toml"
+	// GcpGetHostnameScriptName is the name of the PowerShell script that resolves the hostname for GCP instances
+	GcpGetHostnameScriptName = "gcp-get-hostname.ps1"
+	// GcpGetValidHostnameScriptPath is the path of the PowerShell script that resolves the hostname for GCP instances
+	GcpGetValidHostnameScriptPath = payloadDirectory + "/powershell/" + GcpGetHostnameScriptName
 	// HNSPSModule is the path to the powershell module which defines various functions for dealing with Windows HNS
 	// networks
 	HNSPSModule = payloadDirectory + "/powershell/hns.psm1"
