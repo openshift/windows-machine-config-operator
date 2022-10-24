@@ -675,6 +675,14 @@ func (vm *windows) runBootstrapper() error {
 	if err != nil {
 		return errors.Wrap(err, "error running bootstrapper")
 	}
+	// TODO: This is necessary to get around WICD's current inability to handle reconfiguring services which have a
+	// running dependent service. WMCB is starting hybrid-overlay-node and preventing WICD from reconfiguring the
+	// kubelet service. This can be removed when WMCB is removed from the code as part of
+	// https://issues.redhat.com/browse/WINC-732
+	err = vm.ensureServiceNotRunning(&service{name: HybridOverlayServiceName})
+	if err != nil {
+		return errors.Wrap(err, "error ensuring ")
+	}
 	return nil
 }
 
