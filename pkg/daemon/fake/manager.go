@@ -135,11 +135,49 @@ func (t *testMgr) EnsureServiceState(service winsvc.Service, state svc.State) er
 	case svc.Running:
 		return service.Start()
 	case svc.Stopped:
+		fakeService, ok := service.(*FakeService)
+		if !ok {
+			return fmt.Errorf("service is not correct type")
+		}
+		dependentServices, err := t.listDependentServices(fakeService.name)
+		if err != nil {
+			return err
+		}
+		for _, dependentServiceName := range dependentServices {
+			dependentSvc, err := t.OpenService(dependentServiceName)
+			if err != nil {
+				return fmt.Errorf("error opening dependent service %s", dependentServiceName)
+			}
+			err = t.EnsureServiceState(dependentSvc, svc.Stopped)
+			if err != nil {
+				return errors.Wrapf(err, "unable to stop dependent service %s", dependentServiceName)
+			}
+		}
+
 		_, err = service.Control(svc.Stop)
 		return err
 	default:
 		return fmt.Errorf("unexpected state request: %d", state)
 	}
+}
+
+func (t *testMgr) listDependentServices(serviceName string) ([]string, error) {
+	var dependencies []string
+	for name, svc := range t.svcList.svcs {
+		if name == serviceName {
+			continue
+		}
+		config, err := svc.Config()
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range config.Dependencies {
+			if s == serviceName {
+				dependencies = append(dependencies, name)
+			}
+		}
+	}
+	return dependencies, nil
 }
 
 func NewTestMgr(existingServices map[string]*FakeService) *testMgr {
