@@ -125,7 +125,7 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 		return nil, errors.Wrap(err, "failed to marshal vSphere machine provider spec")
 	}
 
-	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withIgnoreLabel), nil
+	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withIgnoreLabel, ""), nil
 }
 
 func (p *Provider) GetType() config.PlatformType {

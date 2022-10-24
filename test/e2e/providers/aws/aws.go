@@ -326,7 +326,7 @@ func (a *awsProvider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (
 		return nil, err
 	}
 
-	return machineset.New(rawBytes, a.InfrastructureName, replicas, withIgnoreLabel), nil
+	return machineset.New(rawBytes, a.InfrastructureName, replicas, withIgnoreLabel, a.InfrastructureName+"-"), nil
 }
 
 func (a *awsProvider) GetType() config.PlatformType {

@@ -109,7 +109,7 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 		return nil, fmt.Errorf("failed to marshal azure machine provider spec: %v", err)
 	}
 
-	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withIgnoreLabel), nil
+	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withIgnoreLabel, ""), nil
 }
 
 func (p *Provider) GetType() config.PlatformType {
