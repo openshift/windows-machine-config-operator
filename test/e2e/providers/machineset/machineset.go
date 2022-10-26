@@ -10,8 +10,8 @@ import (
 )
 
 // New returns a new MachineSet for use with the e2e test suite
-func New(rawProvider []byte, infrastructureName string, replicas int32, withIgnoreLabel bool) *mapi.MachineSet {
-	machineSetName := machineSetName(withIgnoreLabel)
+func New(rawProvider []byte, infrastructureName string, replicas int32, withIgnoreLabel bool, withPrefix string) *mapi.MachineSet {
+	machineSetName := machineSetName(withIgnoreLabel, withPrefix)
 	matchLabels := map[string]string{
 		mapi.MachineClusterIDLabel:   infrastructureName,
 		clusterinfo.MachineE2ELabel:  "true",
@@ -63,12 +63,12 @@ func New(rawProvider []byte, infrastructureName string, replicas int32, withIgno
 	}
 }
 
-// machineSetName returns the name of the Windows MachineSet created in the e2e tests depending on if the
-// ignore label is set or not
-func machineSetName(isIgnoreLabelSet bool) string {
+// machineSetName returns the name of the Windows MachineSet with the specified prefix created in the e2e tests
+// depending on if the ignore label is set or not
+func machineSetName(isIgnoreLabelSet bool, prefix string) string {
 	if isIgnoreLabelSet {
-		return "e2e"
+		return prefix + "e2e"
 	}
 	// Designate MachineSets that will be configured by the Windows Machine controller "e2e-wm"
-	return "e2e-wm"
+	return prefix + "e2e-wm"
 }

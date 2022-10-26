@@ -39,7 +39,7 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 	if err != nil {
 		return nil, errors.Wrap(err, "error marshalling gcp provider spec")
 	}
-	return machineset.New(rawSpec, p.InfrastructureName, replicas, withIgnoreLabel), nil
+	return machineset.New(rawSpec, p.InfrastructureName, replicas, withIgnoreLabel, p.InfrastructureName+"-"), nil
 }
 
 // newGCPProviderSpec returns a GCPMachineProviderSpec which describes a Windows server 2022 VM
