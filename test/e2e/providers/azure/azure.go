@@ -19,7 +19,7 @@ const (
 	defaultImageOffer            = "WindowsServer"
 	defaultImagePublisher        = "MicrosoftWindowsServer"
 	defaultImageSKU              = "2022-datacenter-smalldisk"
-	defaultImageVersion          = "latest"
+	defaultImageVersion          = "20348.1129.221007"
 	defaultOSDiskSizeGB          = 128
 	defaultStorageAccountType    = "Premium_LRS"
 	// The default vm size set by machine-api-operator yields
