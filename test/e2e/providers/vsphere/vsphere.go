@@ -48,7 +48,7 @@ func (p *Provider) newVSphereMachineProviderSpec(clusterID string) (*vsphere.VSp
 	// defined in the job spec.
 	vmTemplate := os.Getenv("VM_TEMPLATE")
 	if vmTemplate == "" {
-		vmTemplate = "windows-golden-images/windows-server-2004-template"
+		vmTemplate = "windows-golden-images/windows-server-2022-template-with-docker"
 	}
 
 	log.Printf("creating machineset based on template %s\n", vmTemplate)

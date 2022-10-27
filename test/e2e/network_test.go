@@ -422,7 +422,7 @@ func (tc *testContext) getWindowsServerContainerImage() string {
 	var windowsServerImage string
 	if tc.hasCustomVXLAN {
 		// If we're using a custom VXLANPort we need to use 2004
-		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-2004"
+		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-2022"
 	} else if tc.CloudProvider.GetType() == config.AzurePlatformType {
 		// On Azure we are testing 20H2
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-20h2"
