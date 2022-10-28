@@ -20,38 +20,13 @@ type Service interface {
 	UpdateConfig(mgr.Config) error
 }
 
-// EnsureServiceState ensures the service is in the given state
-func EnsureServiceState(service Service, state svc.State) error {
-	status, err := service.Query()
-	if err != nil {
-		return errors.Wrap(err, "error querying service state")
-	}
-	if status.State == state {
-		return nil
-	}
-	switch state {
-	case svc.Running:
-		err = service.Start()
-		if err != nil {
-			return err
-		}
-	case svc.Stopped:
-		_, err = service.Control(svc.Stop)
-		if err != nil {
-			return err
-		}
-	default:
-		return errors.New("unexpected state request")
-	}
-	// Wait for the state change to actually take place
+// WaitForState retries until the services reaches the expected state, or reaches timeout
+func WaitForState(service Service, state svc.State) error {
 	return wait.PollImmediate(retry.WindowsAPIInterval, retry.ResourceChangeTimeout, func() (bool, error) {
 		status, err := service.Query()
 		if err != nil {
 			return false, errors.Wrap(err, "error querying service state")
 		}
-		if status.State == state {
-			return true, nil
-		}
-		return false, nil
+		return status.State == state, nil
 	})
 }

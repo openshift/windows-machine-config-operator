@@ -20,6 +20,8 @@ type Manager interface {
 	OpenService(string) (winsvc.Service, error)
 	// DeleteService marks a Windows service of the given name for deletion. No-op if the service already doesn't exist
 	DeleteService(string) error
+	// EnsureServiceState ensures the service is in the given state
+	EnsureServiceState(winsvc.Service, svc.State) error
 }
 
 // manager is defined as a way for us to redefine the function signatures of mgr.Mgr, so that they can fulfill
@@ -73,13 +75,39 @@ func (m *manager) DeleteService(name string) error {
 	}
 	defer service.Close()
 	// Ensure service is stopped before deleting
-	if err = winsvc.EnsureServiceState(service, svc.Stopped); err != nil {
+	if err = m.EnsureServiceState(service, svc.Stopped); err != nil {
 		return errors.Wrapf(err, "failed to stop service %q", name)
 	}
 	if err = service.Delete(); err != nil {
 		return errors.Wrapf(err, "failed to delete service %q", name)
 	}
 	return nil
+}
+
+func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) error {
+	status, err := service.Query()
+	if err != nil {
+		return errors.Wrap(err, "error querying service state")
+	}
+	if status.State == state {
+		return nil
+	}
+	switch state {
+	case svc.Running:
+		err = service.Start()
+		if err != nil {
+			return err
+		}
+	case svc.Stopped:
+		_, err = service.Control(svc.Stop)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unexpected state request: %d", state)
+	}
+	// Wait for the state change to actually take place
+	return winsvc.WaitForState(service, state)
 }
 
 func New() (Manager, error) {
