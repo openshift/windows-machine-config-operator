@@ -208,9 +208,9 @@ func (nc *nodeConfig) Configure() error {
 		return err
 	}
 
-	// Perform the basic kubelet configuration using WMCB
-	if err := nc.Windows.Configure(); err != nil {
-		return errors.Wrap(err, "configuring the Windows VM failed")
+	// Start all required services to bootstrap a node object using WICD
+	if err := nc.Windows.Bootstrap(version.Get(), nodeConfigCache.apiServerEndpoint, nodeConfigCache.credentials); err != nil {
+		return errors.Wrap(err, "bootstrapping the Windows instance failed")
 	}
 
 	// Perform rest of the configuration with the kubelet running
@@ -241,7 +241,7 @@ func (nc *nodeConfig) Configure() error {
 			return errors.Wrap(err, "unable to check if cloud controller owned by cloud controller manager")
 		}
 
-		if err := nc.configureWICD(); err != nil {
+		if err := nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, nodeConfigCache.credentials); err != nil {
 			return errors.Wrap(err, "configuring WICD failed")
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
@@ -598,34 +598,6 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 		return err
 	}
 	return nil
-}
-
-// configureWICD configures and ensures WICD is running
-func (nc *nodeConfig) configureWICD() error {
-	tokenSecretPrefix := "windows-instance-config-daemon-token-"
-	secrets, err := nc.k8sclientset.CoreV1().Secrets("openshift-windows-machine-config-operator").
-		List(context.TODO(), meta.ListOptions{})
-	if err != nil {
-		return errors.Wrap(err, "error listing secrets")
-	}
-	var filteredSecrets []core.Secret
-	for _, secret := range secrets.Items {
-		if strings.HasPrefix(secret.Name, tokenSecretPrefix) {
-			filteredSecrets = append(filteredSecrets, secret)
-		}
-	}
-	if len(filteredSecrets) != 1 {
-		return fmt.Errorf("expected 1 secret with '%s' prefix, found %d", tokenSecretPrefix, len(filteredSecrets))
-	}
-	saCA := filteredSecrets[0].Data["ca.crt"]
-	if len(saCA) == 0 {
-		return errors.New("ServiceAccount ca.crt value empty")
-	}
-	saToken := filteredSecrets[0].Data["token"]
-	if len(saToken) == 0 {
-		return errors.New("ServiceAccount token value empty")
-	}
-	return nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, saCA, saToken)
 }
 
 // generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret
