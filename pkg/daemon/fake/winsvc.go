@@ -6,8 +6,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
-
-	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 )
 
 type FakeService struct {
@@ -32,8 +30,15 @@ func (f *FakeService) Start(_ ...string) error {
 			return errors.New("dependent service doesnt exist")
 		}
 		// Windows will attempt to start the service only if it is not already running
-		if err := winsvc.EnsureServiceState(dependencyService, svc.Running); err != nil {
+		dependencyStatus, err := dependencyService.Query()
+		if err != nil {
 			return err
+		}
+		if dependencyStatus.State != svc.Running {
+			err = dependencyService.Start()
+			if err != nil {
+				return errors.Wrapf(err, "error starting dependency %s", dependency)
+			}
 		}
 	}
 	f.status.State = svc.Running

@@ -117,10 +117,29 @@ func (t *testMgr) DeleteService(name string) error {
 		return nil
 	}
 	// Ensure service is stopped before deleting
-	if err := winsvc.EnsureServiceState(winSvc, svc.Stopped); err != nil {
+	if err := t.EnsureServiceState(winSvc, svc.Stopped); err != nil {
 		return errors.Wrapf(err, "failed to stop service %q", name)
 	}
 	return t.svcList.remove(name)
+}
+
+func (t *testMgr) EnsureServiceState(service winsvc.Service, state svc.State) error {
+	status, err := service.Query()
+	if err != nil {
+		return errors.Wrap(err, "error querying service state")
+	}
+	if status.State == state {
+		return nil
+	}
+	switch state {
+	case svc.Running:
+		return service.Start()
+	case svc.Stopped:
+		_, err = service.Control(svc.Stop)
+		return err
+	default:
+		return fmt.Errorf("unexpected state request: %d", state)
+	}
 }
 
 func NewTestMgr(existingServices map[string]*FakeService) *testMgr {
