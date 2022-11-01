@@ -65,8 +65,11 @@ const (
 	NetworkConfScriptPath = remoteDir + "network-conf.ps1"
 	// AzureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
 	AzureCloudNodeManagerPath = K8sDir + payload.AzureCloudNodeManager
-	// BootstrapKubeconfig is the location of the bootstrap kubeconfig
-	BootstrapKubeconfig = K8sDir + "bootstrap-kubeconfig"
+	// podManifestDirectory is the directory needed by kubelet for the static pods
+	// We shouldn't override if the pod manifest directory already exists
+	podManifestDirectory = K8sDir + "etc\\kubernetes\\manifests"
+	// BootstrapKubeconfigPath is the location of the bootstrap kubeconfig
+	BootstrapKubeconfigPath = K8sDir + "bootstrap-kubeconfig"
 	// KubeletPath is the location of the kubelet exe
 	KubeletPath = K8sDir + "kubelet.exe"
 	// KubeletConfigPath is the location of the kubelet configuration file
@@ -136,11 +139,14 @@ var (
 		cniDir,
 		CniConfDir,
 		logDir,
+		KubeletLogDir,
 		KubeProxyLogDir,
 		wicdLogDir,
 		HybridOverlayLogDir,
 		ContainerdDir,
-		ContainerdLogDir}
+		ContainerdLogDir,
+		podManifestDirectory,
+	}
 )
 
 // getFilesToTransfer returns the properly populated filesToTransfer map
@@ -181,6 +187,14 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 // GetK8sDir returns the location of the kubernetes executable directory
 func GetK8sDir() string {
 	return K8sDir
+}
+
+// Authentication holds credential information used to communicate with a kubernetes cluster
+type Authentication struct {
+	// CaCert is the PEM-encoded certificate authority certificate
+	CaCert []byte
+	// Token is the bearer Token used to grant access to the cluster API server
+	Token []byte
 }
 
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
@@ -1032,4 +1046,11 @@ func rmDirCmd(dirName string) string {
 // getHNSNetworkCmd returns the Windows command to get HNS network by name
 func getHNSNetworkCmd(networkName string) string {
 	return "Get-HnsNetwork | where { $_.Name -eq '" + networkName + "'}"
+}
+
+// SplitPath splits a Windows file path into the directory and base file name.
+// Example: 'C:\\k\\bootstrap-kubeconfig' --> dir: 'C:\\k\\', fileName: 'bootstrap-kubeconfig'
+func SplitPath(filepath string) (dir string, fileName string) {
+	splitIndex := strings.LastIndexByte(filepath, '\\') + 1
+	return filepath[:splitIndex], filepath[splitIndex:]
 }

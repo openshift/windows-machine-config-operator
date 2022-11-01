@@ -71,8 +71,8 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 		return nil
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instanceInfo, r.signer,
-		labelsToApply, annotationsToApply, r.platform)
+	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instanceInfo,
+		r.signer, labelsToApply, annotationsToApply, r.platform)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
@@ -123,8 +123,8 @@ func (r *instanceReconciler) updateKubeletCA(node core.Node, contents []byte) er
 	if err != nil {
 		return errors.Wrapf(err, "error creating instance for node %s", node.Name)
 	}
-	nodeConfig, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, winInstance,
-		r.signer, nil, nil, r.platform)
+	nodeConfig, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort,
+		winInstance, r.signer, nil, nil, r.platform)
 	if err != nil {
 		return errors.Wrapf(err, "error creating nodeConfig for instance %s", winInstance.Address)
 	}
@@ -183,7 +183,7 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 		return errors.Wrap(err, "unable to create instance object from node")
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
+	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.vxlanPort, instance, r.signer,
 		nil, nil, r.platform)
 	if err != nil {
 		return errors.Wrap(err, "failed to create new nodeconfig")

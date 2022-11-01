@@ -3,8 +3,10 @@ package nodeconfig
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,19 +14,24 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/pkg/errors"
+	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	cloudproviderapi "k8s.io/cloud-provider/api"
 	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	"k8s.io/kubectl/pkg/drain"
+	kubeletconfig "k8s.io/kubelet/config/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
@@ -49,11 +56,16 @@ const (
 	KubeletClientCAFilename = "kubelet-ca.crt"
 	// DesiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
 	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
+	// mcoNamespace is the namespace the Machine Config Server is deployed in, which manages the node bootsrapper secret
+	mcoNamespace = "openshift-machine-config-operator"
+	// mcoBootstrapSecret is the resource name that holds the cert and token required to create the bootstrap kubeconfig
+	mcoBootstrapSecret = "node-bootstrapper-token"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
 // related to kubeclient and the windowsVM.
 type nodeConfig struct {
+	client client.Client
 	// k8sclientset holds the information related to kubernetes clientset
 	k8sclientset *kubernetes.Clientset
 	// Windows holds the information related to the windows VM
@@ -120,7 +132,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
-func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
+func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
 	var err error
@@ -156,7 +168,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
-	return &nodeConfig{k8sclientset: clientset, Windows: win, platformType: platformType,
+	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, platformType: platformType,
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
 		log: log, additionalLabels: additionalLabels, additionalAnnotations: additionalAnnotations}, nil
 }
@@ -190,6 +202,10 @@ func (nc *nodeConfig) Configure() error {
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
 			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
 		}
+	}
+
+	if err := nc.createBootstrapFiles(); err != nil {
+		return err
 	}
 
 	// Perform the basic kubelet configuration using WMCB
@@ -285,6 +301,123 @@ func (nc *nodeConfig) Configure() error {
 		}
 	}
 	return err
+}
+
+// createBootstrapFiles creates all prerequisite files on the node required to start kubelet using latest ignition spec
+func (nc *nodeConfig) createBootstrapFiles() error {
+	filePathsToContents := make(map[string]string)
+	filePathsToContents, err := nc.createFilesFromIgnition()
+	if err != nil {
+		return err
+	}
+	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(context.TODO(), mcoBootstrapSecret,
+		meta.GetOptions{})
+	if err != nil {
+		return err
+	}
+	filePathsToContents[windows.BootstrapKubeconfigPath], err = createBootstrapKubeconfig(bootstrapSecret)
+	if err != nil {
+		return err
+	}
+	filePathsToContents[windows.KubeletConfigPath], err = createKubeletConf(nc.clusterServiceCIDR)
+	if err != nil {
+		return err
+	}
+	return nc.write(filePathsToContents)
+}
+
+// write outputs the data to the path on the underlying Windows instance for each given pair. Creates files if needed.
+func (nc *nodeConfig) write(pathToData map[string]string) error {
+	for path, data := range pathToData {
+		dir, fileName := windows.SplitPath(path)
+		if err := nc.Windows.EnsureFileContent([]byte(data), fileName, dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// createFilesFromIgnition returns the contents and write locations on the instance for any file it can create from
+// ignition spec: kubelet CA cert, cloud-config file
+func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
+	ign, err := ignition.New(nc.client)
+	if err != nil {
+		return nil, err
+	}
+	kubeletArgs, err := ign.GetKubeletArgs()
+	if err != nil {
+		return nil, err
+	}
+
+	filesToTransfer := map[string]struct{}{
+		ignition.KubeletCACertPath: {},
+	}
+	if _, ok := kubeletArgs[ignition.CloudConfigOption]; ok {
+		filesToTransfer[ignition.CloudConfigPath] = struct{}{}
+	}
+	filePathsToContents := make(map[string]string)
+	// For each new file in the ignition file check if is a file we are interested in and, if so, decode its contents
+	for _, ignFile := range ign.GetFiles() {
+		if _, ok := filesToTransfer[ignFile.Node.Path]; ok {
+			if ignFile.Contents.Source == nil {
+				return nil, errors.Errorf("could not process %s: File is empty", ignFile.Node.Path)
+			}
+			contents, err := dataurl.DecodeString(*ignFile.Contents.Source)
+			if err != nil {
+				return nil, errors.Wrapf(err, "could not decode %s", ignFile.Node.Path)
+			}
+			fileName := filepath.Base(ignFile.Node.Path)
+			filePathsToContents[windows.K8sDir+fileName] = string(contents.Data)
+		}
+	}
+	return filePathsToContents, nil
+}
+
+// createBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server
+func createBootstrapKubeconfig(bootstrapSecret *core.Secret) (string, error) {
+	// extract ca.crt and token data fields
+	caCert := bootstrapSecret.Data[core.ServiceAccountRootCAKey]
+	if caCert == nil {
+		return "", errors.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
+			bootstrapSecret.GetName())
+	}
+	token := bootstrapSecret.Data[core.ServiceAccountTokenKey]
+	if token == nil {
+		return "", errors.Errorf("unable to find %s token in secret %s", core.ServiceAccountTokenKey,
+			bootstrapSecret.GetName())
+	}
+	kubeconfig, err := generateKubeconfig(&windows.Authentication{CaCert: caCert, Token: token},
+		nodeConfigCache.apiServerEndpoint)
+	if err != nil {
+		return "", err
+	}
+	kubeconfigData, err := json.Marshal(kubeconfig)
+	if err != nil {
+		return "", err
+	}
+	return string(kubeconfigData), nil
+}
+
+// createKubeletConf returns contents of the config file for kubelet, with Windows specific configuration
+func createKubeletConf(clusterServiceCIDR string) (string, error) {
+	clusterDNS, err := cluster.GetDNS(clusterServiceCIDR)
+	if err != nil {
+		return "", err
+	}
+	kubeletConfig := generateKubeletConfiguration(clusterDNS)
+	kubeletConfigData, err := json.Marshal(kubeletConfig)
+	if err != nil {
+		return "", err
+	}
+	// Replace last character ('}') with comma
+	kubeletConfigData[len(kubeletConfigData)-1] = ','
+	// Appending this option is needed here instead of in the kubelet configuration object. Otherwise, when marshalling,
+	// the empty value will be omitted, so it would end up being incorrectly populated at service start time.
+	// Can be moved to kubelet configuration object with https://issues.redhat.com/browse/WINC-926
+	enforceNodeAllocatable := []byte("\"enforceNodeAllocatable\":[]}")
+	kubeletConfigData = append(kubeletConfigData, enforceNodeAllocatable...)
+
+	return string(kubeletConfigData), nil
 }
 
 // applyLabelsAndAnnotations applies all the given labels and annotations and updates the Node object in NodeConfig
@@ -493,6 +626,79 @@ func (nc *nodeConfig) configureWICD() error {
 		return errors.New("ServiceAccount token value empty")
 	}
 	return nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, saCA, saToken)
+}
+
+// generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret
+func generateKubeconfig(secret *windows.Authentication, apiServerURL string) (clientcmdv1.Config, error) {
+	kubeconfig := clientcmdv1.Config{
+		Clusters: []clientcmdv1.NamedCluster{{
+			Name: "local",
+			Cluster: clientcmdv1.Cluster{
+				Server:                   apiServerURL,
+				CertificateAuthorityData: secret.CaCert,
+			}},
+		},
+		AuthInfos: []clientcmdv1.NamedAuthInfo{{
+			Name: "kubelet",
+			AuthInfo: clientcmdv1.AuthInfo{
+				Token: string(secret.Token),
+			},
+		}},
+		Contexts: []clientcmdv1.NamedContext{{
+			Name: "kubelet",
+			Context: clientcmdv1.Context{
+				Cluster:  "local",
+				AuthInfo: "kubelet",
+			},
+		}},
+		CurrentContext: "kubelet",
+	}
+	return kubeconfig, nil
+}
+
+// generateKubeletConfiguration returns the configuration spec for the kubelet Windows service
+func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfiguration {
+	// default numeric values chosen based on the OpenShift kubelet config recommendations for Linux worker nodes
+	falseBool := false
+	kubeAPIQPS := int32(50)
+	return kubeletconfig.KubeletConfiguration{
+		TypeMeta: meta.TypeMeta{
+			Kind:       "KubeletConfiguration",
+			APIVersion: "kubelet.config.k8s.io/v1beta1",
+		},
+		RotateCertificates: true,
+		ServerTLSBootstrap: true,
+		Authentication: kubeletconfig.KubeletAuthentication{
+			X509: kubeletconfig.KubeletX509Authentication{
+				ClientCAFile: windows.K8sDir + KubeletClientCAFilename,
+			},
+			Anonymous: kubeletconfig.KubeletAnonymousAuthentication{
+				Enabled: &falseBool,
+			},
+		},
+		ClusterDomain:         "cluster.local",
+		ClusterDNS:            []string{clusterDNS},
+		CgroupsPerQOS:         &falseBool,
+		RuntimeRequestTimeout: meta.Duration{Duration: 10 * time.Minute},
+		MaxPods:               250,
+		KubeAPIQPS:            &kubeAPIQPS,
+		KubeAPIBurst:          100,
+		SerializeImagePulls:   &falseBool,
+		FeatureGates: map[string]bool{
+			"LegacyNodeRoleBehavior":         false,
+			"NodeDisruptionExclusion":        true,
+			"RotateKubeletServerCertificate": true,
+			"SCTPSupport":                    true,
+			"ServiceNodeExclusion":           true,
+			"SupportPodPidsLimit":            true,
+		},
+		ContainerLogMaxSize: "50Mi",
+		SystemReserved: map[string]string{
+			"cpu":               "500m",
+			"ephemeral-storage": "1Gi",
+			"memory":            "1Gi",
+		},
+	}
 }
 
 // CreatePubKeyHashAnnotation returns a formatted string which can be used for a public key annotation on a node.
