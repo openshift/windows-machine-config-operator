@@ -115,8 +115,6 @@ func main() {
 		payload.HybridOverlayPath,
 		payload.KubeletPath,
 		payload.KubeProxyPath,
-		payload.IgnoreWgetPowerShellPath,
-		payload.WmcbPath,
 		payload.WICDPath,
 		payload.HNSPSModule,
 		payload.WindowsExporterPath,
@@ -250,8 +248,7 @@ func main() {
 
 // checkIfRequiredFilesExist checks for the existence of required files and binaries before starting WMCO
 // sample error message: errors encountered with required files: could not stat /payload/hybrid-overlay-node.exe:
-// stat /payload/hybrid-overlay-node.exe: no such file or directory, could not stat /payload/wmcb.exe: stat /payload/wmcb.exe:
-// no such file or directory
+// stat /payload/hybrid-overlay-node.exe: no such file or directory
 func checkIfRequiredFilesExist(requiredFiles []string) error {
 	var errorMessages []string
 	// Iterating through file paths and checking if they are present
