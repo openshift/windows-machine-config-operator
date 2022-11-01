@@ -177,6 +177,7 @@ rules:
   - machineconfigs
   verbs:
   - list
+  - watch
 - apiGroups:
   - operators.coreos.com
   resources:

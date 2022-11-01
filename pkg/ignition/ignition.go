@@ -14,7 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-//+kubebuilder:rbac:groups="machineconfiguration.openshift.io",resources=machineconfigs,verbs=list
+// Watch permission are needed in order to populate the cache. We use a cached client to list machineconfig resources.
+//+kubebuilder:rbac:groups="machineconfiguration.openshift.io",resources=machineconfigs,verbs=list;watch
 
 const (
 	// kubeletSystemdName is the name of the systemd service that the kubelet runs under,
@@ -27,6 +28,10 @@ const (
 	// RenderedWorkerPrefix allows identification of the rendered worker MachineConfig, the combination of all worker
 	// MachineConfigs.
 	RenderedWorkerPrefix = "rendered-worker-"
+	// KubeletCACertPath is the path to the kubelet's client CA certificate as defined in ignition
+	KubeletCACertPath = "/etc/kubernetes/kubelet-ca.crt"
+	// CloudConfigPath is the path to the cloud config file as defined in ignition
+	CloudConfigPath = "/etc/kubernetes/cloud.conf"
 )
 
 // Ignition is a representation of an Ignition file
@@ -57,6 +62,11 @@ func New(c client.Client) (*Ignition, error) {
 	log.V(1).Info("parsed", "machineconfig", renderedWorker.GetName(), "ignition version",
 		configuration.Ignition.Version)
 	return ign, nil
+}
+
+// GetFiles is a getter for the files embedded within the ignition spec
+func (ign *Ignition) GetFiles() []ignCfgTypes.File {
+	return ign.config.Storage.Files
 }
 
 // GetKubeletArgs returns a set of arguments for kubelet.exe, as specified in the ignition file

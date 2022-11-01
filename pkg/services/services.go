@@ -177,9 +177,10 @@ func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]stri
 	containerdEndpointValue := "npipe://./pipe/containerd-containerd"
 	certDirectory := "c:\\var\\lib\\kubelet\\pki\\"
 	windowsTaints := "os=Windows:NoSchedule"
+	// TODO: Removal of deprecated flags to be done in https://issues.redhat.com/browse/WINC-924
 	kubeletArgs := []string{
 		"--config=" + windows.KubeletConfigPath,
-		"--bootstrap-kubeconfig=" + windows.BootstrapKubeconfig,
+		"--bootstrap-kubeconfig=" + windows.BootstrapKubeconfigPath,
 		"--kubeconfig=" + windows.KubeconfigPath,
 		"--cert-dir=" + certDirectory,
 		"--windows-service",
