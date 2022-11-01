@@ -25,8 +25,6 @@ const (
 	remoteDir = "C:\\Temp\\"
 	// winTemp is the default Windows temporary directory
 	winTemp = "C:\\Windows\\Temp\\"
-	// wgetIgnoreCertCmd is the remote location of the wget-ignore-cert.ps1 script
-	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
 	// HNSPSModule is the remote location of the hns.psm1 module
 	HNSPSModule = remoteDir + "hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
@@ -161,8 +159,6 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		return filesToTransfer, nil
 	}
 	srcDestPairs := map[string]string{
-		payload.IgnoreWgetPowerShellPath:   remoteDir,
-		payload.WmcbPath:                   K8sDir,
 		payload.WICDPath:                   K8sDir,
 		payload.HybridOverlayPath:          K8sDir,
 		payload.HNSPSModule:                remoteDir,
@@ -239,9 +235,6 @@ type Windows interface {
 
 // windows implements the Windows interface
 type windows struct {
-	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
-	// the OpenShift worker ignition file.
-	workerIgnitionEndpoint string
 	// clusterDNS is the IP address of the DNS server used for all containers
 	clusterDNS string
 	// signer is used for authenticating against the VM
@@ -256,13 +249,10 @@ type windows struct {
 	log      logr.Logger
 	// defaultShellPowerShell indicates if the default SSH shell is PowerShell
 	defaultShellPowerShell bool
-	// platformType overrides default hostname in bootstrapper
-	platformType string
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer,
-	platformType string) (Windows, error) {
+func New(clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer) (Windows, error) {
 	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
@@ -272,13 +262,11 @@ func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *ins
 
 	return &windows{
 			interact:               conn,
-			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			clusterDNS:             clusterDNS,
 			vxlanPort:              vxlanPort,
 			instance:               instanceInfo,
 			log:                    log,
 			defaultShellPowerShell: defaultShellPowershell(conn),
-			platformType:           platformType,
 		},
 		nil
 }
@@ -650,60 +638,6 @@ func (vm *windows) transferFiles() error {
 		if err := vm.EnsureFile(src, dest); err != nil {
 			return errors.Wrapf(err, "error copying %s to %s ", src.Path, dest)
 		}
-	}
-	return nil
-}
-
-// runBootstrapper copies the bootstrapper and runs the code on the remote Windows VM
-func (vm *windows) runBootstrapper() error {
-	err := vm.initializeBootstrapperFiles()
-	if err != nil {
-		return errors.Wrap(err, "error initializing bootstrapper files")
-	}
-	wmcbInitializeCmd := K8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
-		"worker.ign --kubelet-path " + K8sDir + "kubelet.exe"
-	if vm.instance.SetNodeIP {
-		wmcbInitializeCmd += " --node-ip=" + vm.GetIPv4Address()
-	}
-	if vm.clusterDNS != "" {
-		wmcbInitializeCmd += " --cluster-dns " + vm.clusterDNS
-	}
-	wmcbInitializeCmd += " --platform-type=" + vm.platformType
-
-	// check log level and increase kubelet verbosity accordingly
-	if vm.log.V(1).Enabled() {
-		// set value to 5 for trace level verbosity
-		wmcbInitializeCmd = wmcbInitializeCmd + " --kubelet-verbosity 5"
-	}
-	out, err := vm.Run(wmcbInitializeCmd, true)
-	vm.log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
-	if err != nil {
-		return errors.Wrap(err, "error running bootstrapper")
-	}
-	// TODO: This is necessary to get around WICD's current inability to handle reconfiguring services which have a
-	// running dependent service. WMCB is starting hybrid-overlay-node and preventing WICD from reconfiguring the
-	// kubelet service. This can be removed when WMCB is removed from the code as part of
-	// https://issues.redhat.com/browse/WINC-732
-	err = vm.ensureServiceNotRunning(&service{name: HybridOverlayServiceName})
-	if err != nil {
-		return errors.Wrap(err, "error ensuring ")
-	}
-	return nil
-}
-
-// initializeTestBootstrapperFiles initializes the files required for initialize-kubelet
-func (vm *windows) initializeBootstrapperFiles() error {
-	if vm.workerIgnitionEndpoint == "" {
-		return errors.New("cannot use empty ignition endpoint")
-	}
-	// Ignition v2.3.0 maps to Ignition config spec v3.1.0.
-	ignitionAcceptHeaderSpec := "application/vnd.coreos.ignition+json`;version=3.1.0"
-	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
-	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server " + vm.workerIgnitionEndpoint + " -output " +
-		winTemp + "worker.ign" + " -acceptHeader " + ignitionAcceptHeaderSpec
-	_, err := vm.Run(ignitionFileDownloadCmd, true)
-	if err != nil {
-		return errors.Wrap(err, "unable to download worker.ign")
 	}
 	return nil
 }

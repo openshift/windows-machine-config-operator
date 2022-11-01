@@ -20,7 +20,7 @@ type Info struct {
 	Username string
 	// NewHostname being set means that the instance's hostname should be changed. An empty value is a no-op.
 	NewHostname string
-	// SetNodeIP indicates if the instance should have the node-ip arg set when running WMCB.
+	// SetNodeIP indicates if the instance should have the node-ip arg set when bootstrapping.
 	SetNodeIP bool
 	// Node is an optional pointer to the Node object associated with the instance, if it has one.
 	Node *core.Node

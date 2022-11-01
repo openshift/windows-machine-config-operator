@@ -228,7 +228,6 @@ opm index rm --from-index $INDEX_REPOSITORY:$INDEX_TAG
 
 ## Updating Git submodules
 This project contains git submodules for the following components:
-- windows-machine-config-bootstrapper
 - kubernetes
 - ovn-kubernetes
 - containernetworking-plugins
