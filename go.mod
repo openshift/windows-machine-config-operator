@@ -5,18 +5,20 @@ go 1.19
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.38.23
+	github.com/coreos/ignition/v2 v2.14.0
 	github.com/go-logr/logr v1.2.3
 	github.com/openshift/api v0.0.0-20220929131120-2bde012f248a
 	github.com/openshift/client-go v0.0.0-20220915152853-9dfefb19db2e
 	github.com/openshift/library-go v0.0.0-20210811133500-5e31383de2a7
+	github.com/openshift/machine-config-operator v0.0.1-0.20200913004441-7eba765c69c9
 	github.com/operator-framework/api v0.10.5
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.58.0
 	github.com/spf13/cobra v1.4.0
-	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.7.0
+	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
+	github.com/stretchr/testify v1.8.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/crypto v0.0.0-20220817201139-bc19a97f63c8
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
@@ -44,6 +46,10 @@ require (
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/chai2010/gettext-go v1.0.2 // indirect
+	github.com/coreos/go-json v0.0.0-20211020211907-c63f628265de // indirect
+	github.com/coreos/go-semver v0.3.0 // indirect
+	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
+	github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.8.0 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
@@ -89,6 +95,7 @@ require (
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/russross/blackfriday v1.5.2 // indirect
+	github.com/vincent-petithory/dataurl v1.0.0 // indirect
 	github.com/xlab/treeprint v1.1.0 // indirect
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5 // indirect
 	go.uber.org/atomic v1.7.0 // indirect

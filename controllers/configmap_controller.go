@@ -42,6 +42,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
+	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -87,8 +88,20 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 		return nil, errors.Wrap(err, "unable to initialize Prometheus configuration")
 	}
 
-	// Get expected state of the Windows service ConfigMap
-	svcData, err := services.GenerateManifest(clusterConfig.Network().VXLANPort(), ctrl.Log.V(1).Enabled())
+	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		return nil, err
+	}
+	ign, err := ignition.New(directClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating ignition object")
+	}
+	argsFromIgnition, err := ign.GetKubeletArgs()
+	if err != nil {
+		return nil, err
+	}
+	svcData, err := services.GenerateManifest(argsFromIgnition, clusterConfig.Network().VXLANPort(),
+		string(clusterConfig.Platform()), ctrl.Log.V(1).Enabled())
 	if err != nil {
 		return nil, errors.Wrap(err, "error generating expected Windows service state")
 	}
