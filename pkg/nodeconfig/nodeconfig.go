@@ -125,6 +125,9 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
 	var err error
 
+	// When the new Node is provisioned via MAPI on Nutanix we need to configure SetNodeIP to have the right Machine IP assigned
+	instanceInfo.SetNodeIP = platformType == configv1.NutanixPlatformType
+
 	if nodeConfigCache.workerIgnitionEndPoint == "" {
 		var kubeAPIServerEndpoint string
 		// We couldn't find it in cache. Let's compute it now.

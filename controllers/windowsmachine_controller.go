@@ -407,8 +407,9 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 	// equivalent of ignition in Windows, WMCO must correct this by changing the VM's hostname.
 	// TODO: Remove this once we figure out how to do this via guestInfo in vSphere
 	// 		https://bugzilla.redhat.com/show_bug.cgi?id=1876987
+	// Windows Hostname could be changed in initial customizing, however we are using the same workflow as with vSphere
 	hostname := ""
-	if r.platform == oconfig.VSpherePlatformType {
+	if (r.platform == oconfig.VSpherePlatformType) || (r.platform == oconfig.NutanixPlatformType) {
 		hostname = machineName
 	}
 	username := r.getDefaultUsername()
