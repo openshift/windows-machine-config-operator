@@ -27,7 +27,8 @@ const (
 
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
 // will be enabled for services that support it.
-func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort, platform string, debug bool) (*servicescm.Data, error) {
+func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort string, platform config.PlatformType,
+	ccmEnabled, debug bool) (*servicescm.Data, error) {
 	kubeletConfiguration, err := getKubeletServiceConfiguration(kubeletArgsFromIgnition, debug, platform)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not determine kubelet service configuration spec")
@@ -45,9 +46,31 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort, plat
 		hybridOverlayConfiguration(vxlanPort, debug),
 		kubeProxyConfiguration(debug),
 	}
+	if platform == config.AzurePlatformType && ccmEnabled {
+		*services = append(*services, azureCloudNodeManagerConfiguration())
+	}
 	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
 	files := &[]servicescm.FileInfo{}
 	return servicescm.NewData(services, files)
+}
+
+// azureCloudNodeManagerConfiguration returns the service specification for azure-cloud-node-manager.exe
+func azureCloudNodeManagerConfiguration() servicescm.Service {
+	cmd := fmt.Sprintf("%s --windows-service --node-name=NODE_NAME --wait-routes=false --kubeconfig=%s",
+		windows.AzureCloudNodeManagerPath, windows.KubeconfigPath)
+
+	return servicescm.Service{
+		Name:    windows.AzureCloudNodeManagerServiceName,
+		Command: cmd,
+		NodeVariablesInCommand: []servicescm.NodeCmdArg{{
+			Name:               "NODE_NAME",
+			NodeObjectJsonPath: "{.metadata.name}",
+		}},
+		PowershellVariablesInCommand: nil,
+		Dependencies:                 nil,
+		Bootstrap:                    false,
+		Priority:                     2,
+	}
 }
 
 // hybridOverlayConfiguration returns the Service definition for hybrid-overlay
@@ -114,7 +137,8 @@ func kubeProxyConfiguration(debug bool) servicescm.Service {
 }
 
 // getKubeletServiceConfiguration returns the Service definition for the kubelet
-func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug bool, platform string) (servicescm.Service, error) {
+func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug bool,
+	platform config.PlatformType) (servicescm.Service, error) {
 	kubeletArgs, err := generateKubeletArgs(argsFromIginition, debug)
 	if err != nil {
 		return servicescm.Service{}, err
@@ -133,7 +157,7 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 	for _, arg := range kubeletArgs {
 		kubeletServiceCmd += fmt.Sprintf(" %s", arg)
 	}
-	if platform == string(config.NonePlatformType) {
+	if platform == config.NonePlatformType {
 		// special case substitution handled in WICD itself
 		kubeletServiceCmd = fmt.Sprintf("%s --node-ip=%s", kubeletServiceCmd, NodeIPVar)
 	}
@@ -193,10 +217,9 @@ func klogVerbosityArg(debug bool) string {
 }
 
 // getKubeletHostnameOverride returns the hostname override arg that should be used
-func getKubeletHostnameOverride(platformType string) string {
-	platformType = strings.ToUpper(platformType)
+func getKubeletHostnameOverride(platformType config.PlatformType) string {
 	switch platformType {
-	case string(config.AWSPlatformType):
+	case config.AWSPlatformType:
 		return "--hostname-override=" + ec2HostnameVar
 	default:
 		return ""

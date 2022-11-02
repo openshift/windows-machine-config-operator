@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	cloudproviderapi "k8s.io/cloud-provider/api"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
@@ -460,6 +461,13 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 			if !readyCondition {
 				log.Printf("expected node Status to have condition type Ready for node %v", node.Name)
 				return false, nil
+			}
+			// explicitly check for the external cloud provider taint for more helpful test logging
+			for _, taint := range node.Spec.Taints {
+				if taint.Key == cloudproviderapi.TaintExternalCloudProvider && taint.Effect == v1.TaintEffectNoSchedule {
+					log.Printf("expected node %s to not have the external cloud provider taint", node.GetName())
+					return false, nil
+				}
 			}
 			if node.Spec.Unschedulable {
 				log.Printf("expected node %s to be schedulable", node.Name)
