@@ -10,10 +10,10 @@ import (
 	operatorClient "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
 	routeClient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
 	mapiClient "github.com/openshift/machine-api-operator/pkg/generated/clientset/versioned/typed/machine/v1beta1"
+	"github.com/operator-framework/operator-lifecycle-manager/pkg/api/client/clientset/versioned"
 	monitoringClient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sclient "k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlruntimecfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
@@ -26,7 +26,7 @@ type OpenShift struct {
 	Route      routeClient.RouteV1Interface
 	K8s        k8sclient.Interface
 	Images     imageClient.ImageV1Interface
-	Cache      client.Client
+	Olm        versioned.Interface
 }
 
 // GetOpenShift creates client for the current OpenShift cluster. If KUBECONFIG env var is set, it is used to
@@ -69,7 +69,7 @@ func GetOpenShift() (*OpenShift, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := client.New(rc, client.Options{})
+	olmc, err := versioned.NewForConfig(rc)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func GetOpenShift() (*OpenShift, error) {
 		Route:      routec,
 		K8s:        kc,
 		Images:     ic,
-		Cache:      c,
+		Olm:        olmc,
 	}, nil
 }
 
