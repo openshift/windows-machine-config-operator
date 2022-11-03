@@ -319,6 +319,12 @@ spec:
           - list
           - watch
         - apiGroups:
+          - machineconfiguration.openshift.io
+          resources:
+          - machineconfigs
+          verbs:
+          - list
+        - apiGroups:
           - operators.coreos.com
           resources:
           - operatorconditions

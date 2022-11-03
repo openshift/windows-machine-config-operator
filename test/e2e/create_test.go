@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,7 +75,15 @@ func testWindowsNodeCreation(t *testing.T) {
 	// failing the pub key annotation validation as it compares the current private key secret with the annotation.
 	// TODO: Remove this dependency by rotating keys as part of https://issues.redhat.com/browse/WINC-655
 	t.Run("ConfigMap controller", testCtx.testBYOHConfiguration)
+}
 
+// nodelessLogCollection runs a job which will print to stdout all logs in /var/log on the given instance
+// these logs can will be written to the artifact directory
+func (tc *testContext) nodelessLogCollection(name, address string) error {
+	// recurse through all files in /var/log and print the file name and file contents
+	cmd := "Get-ChildItem -Path /var/log -Recurse | ForEach-Object {Write-Output $_.FullName; Get-Content $_.FullName}"
+	_, err := tc.runPowerShellSSHJob("print-logs-"+name, cmd, address)
+	return err
 }
 
 // deleteWindowsInstanceConfigMap deletes the windows-instances configmap if it exists
@@ -141,7 +150,7 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	// Depending on timing and configuration flakes this will either cause all Machines, or all Machines after
 	// the first configured Machines to hit this scenario. This is a platform agonistic test so we run it only on
 	// Azure.
-	_, err = tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
+	machines, err := tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
 	if tc.CloudProvider.GetType() == config.AzurePlatformType {
 		// Replace the known private key with a randomly generated one.
@@ -150,6 +159,23 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	}
 	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
 	assert.NoError(t, err, "Windows node creation failed")
+	tc.machineLogCollection(machines.Items)
+}
+
+// machineLogCollection makes a best effort attempt to collect logs from each Machine instance
+func (tc *testContext) machineLogCollection(machines []mapi.Machine) {
+	for _, machine := range machines {
+		addr, err := controllers.GetAddress(machine.Status.Addresses)
+		if err != nil {
+			log.Printf("Machine %s does not have a valid address, unable to get logs", machine.GetName())
+			continue
+		}
+		err = tc.nodelessLogCollection(machine.GetName(), addr)
+		if err != nil {
+			log.Printf("failed to collect logs from %s: %v", machine.GetName(), err)
+		}
+	}
+
 }
 
 // testBYOHConfiguration tests that the ConfigMap controller can properly configure VMs
@@ -176,6 +202,26 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 		err := tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
 		assert.NoError(t, err, "Windows node creation failed")
 	})
+	// Make a best effort attempt to collect logs from each BYOH instance
+	tc.byohLogCollection()
+}
+
+// byohLogCollection kicks off the collection of logs for instances listed in the windows-instances configmap
+func (tc *testContext) byohLogCollection() {
+	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(),
+		wiparser.InstanceConfigMap, metav1.GetOptions{})
+	if err != nil {
+		log.Printf("unable to collect logs, error retrieving instances ConfigMap: %v", err)
+		return
+	}
+	for addr := range windowsInstances.Data {
+		// Resource names can't have the character `.` in them.
+		nameSuffix := strings.ReplaceAll(addr, ".", "-")
+		err = tc.nodelessLogCollection("byoh-"+nameSuffix, addr)
+		if err != nil {
+			log.Printf("failed to collect byoh instance logs: %v", err)
+		}
+	}
 }
 
 // provisionBYOHConfigMapWithMachineSet provisions BYOH instances using MachineSet and creates the `windows-instances`
