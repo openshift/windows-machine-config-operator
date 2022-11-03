@@ -450,7 +450,7 @@ func (r *WindowsMachineReconciler) validateUserData() error {
 	}
 
 	secretData := string(userDataSecret.Data["userData"][:])
-	desiredUserDataSecret, err := secrets.GenerateUserData(r.signer.PublicKey())
+	desiredUserDataSecret, err := secrets.GenerateUserData(r.platform, r.signer.PublicKey())
 	if err != nil {
 		return err
 	}
