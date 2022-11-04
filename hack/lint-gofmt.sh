@@ -30,7 +30,6 @@ find_files() {
         -o -wholename './kube-proxy' \
         -o -wholename './ovn-kubernetes' \
         -o -wholename './promu' \
-        -o -wholename './windows-machine-config-bootstrapper' \
         -o -wholename './windows_exporter' \
       \) -prune \
     \) -name '*.go'

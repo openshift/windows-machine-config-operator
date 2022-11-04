@@ -14,9 +14,6 @@ import (
 const (
 	// payloadDirectory is the directory in the operator image where are all the binaries live
 	payloadDirectory = "/payload/"
-	// WmcbPath contains the path of the Windows Machine Config Bootstrapper binary. The container image should already
-	// have this binary mounted
-	WmcbPath = payloadDirectory + "wmcb.exe"
 	// WICDPath is the path to the Windows Instance Config Daemon exe
 	WICDPath = payloadDirectory + "windows-instance-config-daemon.exe"
 	// KubeletPath contains the path of the kubelet binary. The container image should already have this binary mounted
@@ -31,9 +28,6 @@ const (
 	HcsshimPath = payloadDirectory + "/containerd/containerd-shim-runhcs-v1.exe"
 	// ContainerdConfPath contains the path of the containerd config file.
 	ContainerdConfPath = payloadDirectory + "/containerd/containerd_conf.toml"
-	// IgnoreWgetPowerShellPath contains the path of the powershell script which allows wget to ignore certs. The
-	// container image should already have this mounted
-	IgnoreWgetPowerShellPath = payloadDirectory + "/powershell/wget-ignore-cert.ps1"
 	// HNSPSModule is the path to the powershell module which defines various functions for dealing with Windows HNS
 	// networks
 	HNSPSModule = payloadDirectory + "/powershell/hns.psm1"

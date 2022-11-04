@@ -7,11 +7,6 @@ RUN yum install -y dos2unix
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
-# Build WMCB
-WORKDIR /build/windows-machine-config-operator/windows-machine-config-bootstrapper/
-COPY windows-machine-config-bootstrapper/ .
-RUN make build
-
 # Build hybrid-overlay
 WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
 COPY ovn-kubernetes/ .
@@ -65,10 +60,7 @@ RUN ./build_windows.sh
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 LABEL stage=base
 
-# Copy wmcb.exe
 WORKDIR /payload/
-COPY --from=build /build/windows-machine-config-operator/windows-machine-config-bootstrapper/wmcb.exe .
-
 # Copy hybrid-overlay-node.exe
 COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
 

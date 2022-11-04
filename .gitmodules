@@ -1,7 +1,3 @@
-[submodule "windows-machine-config-bootstrapper"]
-	path = windows-machine-config-bootstrapper
-	url = https://github.com/openshift/windows-machine-config-bootstrapper
-	branch = release-4.12
 [submodule "ovn-kubernetes"]
 	path = ovn-kubernetes
 	url = https://github.com/openshift/ovn-kubernetes
