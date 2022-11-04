@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
+	oconfig "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -42,13 +43,15 @@ const (
 )
 
 // NewSecretReconciler returns a pointer to a SecretReconciler
-func NewSecretReconciler(mgr manager.Manager, watchNamespace string) *SecretReconciler {
+func NewSecretReconciler(mgr manager.Manager, platform oconfig.PlatformType, watchNamespace string) *SecretReconciler {
 	reconciler := &SecretReconciler{
 		client:         mgr.GetClient(),
 		scheme:         mgr.GetScheme(),
 		log:            ctrl.Log.WithName("controller").WithName(SecretController),
 		watchNamespace: watchNamespace,
-		recorder:       mgr.GetEventRecorderFor(SecretController)}
+		recorder:       mgr.GetEventRecorderFor(SecretController),
+		platform:       platform,
+	}
 	return reconciler
 }
 
@@ -125,6 +128,8 @@ type SecretReconciler struct {
 	watchNamespace string
 	// recorder to generate events
 	recorder record.EventRecorder
+	// platform indicates the platform on which the cluster is running
+	platform oconfig.PlatformType
 }
 
 // Reconcile reads that state of the cluster for a Secret object and makes changes based on the state read
@@ -156,7 +161,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 		return reconcile.Result{}, errors.Wrapf(err, "unable to get secret %s", request.NamespacedName)
 	}
 	// Generate expected userData based on the existing private key
-	validUserData, err := secrets.GenerateUserData(keySigner.PublicKey())
+	validUserData, err := secrets.GenerateUserData(r.platform, keySigner.PublicKey())
 	if err != nil {
 		return reconcile.Result{}, errors.Wrapf(err, "error generating %s secret", userDataSecret)
 	}

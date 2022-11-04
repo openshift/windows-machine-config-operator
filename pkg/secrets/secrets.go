@@ -2,7 +2,9 @@ package secrets
 
 import (
 	"context"
+	"fmt"
 
+	oconfig "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
@@ -37,12 +39,12 @@ func GetPrivateKey(secret kubeTypes.NamespacedName, c client.Client) ([]byte, er
 }
 
 // GenerateUserData generates the desired value of userdata secret.
-func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
+func GenerateUserData(platformType oconfig.PlatformType, publicKey ssh.PublicKey) (*core.Secret, error) {
 	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
 	if pubKeyBytes == nil {
 		return nil, errors.Errorf("failed to retrieve public key using signer")
 	}
-
+	userData := processTags(platformType, generateUserDataWithPubKey(string(pubKeyBytes[:])))
 	// sshd service is started to create the default sshd_config file. This file is modified
 	// for enabling publicKey auth and the service is restarted for the changes to take effect.
 	userDataSecret := &core.Secret{
@@ -51,8 +53,16 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 			Namespace: UserDataNamespace,
 		},
 		Data: map[string][]byte{
-			"userData": []byte(`<powershell>
-			function Get-RandomPassword {
+			"userData": []byte(userData),
+		},
+	}
+
+	return userDataSecret, nil
+}
+
+// generateUserDataWithPubKey returns the Windows user data for the given pubKey
+func generateUserDataWithPubKey(pubKey string) string {
+	return `function Get-RandomPassword {
 				Add-Type -AssemblyName 'System.Web'
 				return [System.Web.Security.Membership]::GeneratePassword(16, 2)
 			}
@@ -81,7 +91,7 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 			$passwordConf | Set-Content -Path C:\ProgramData\ssh\sshd_config
 			$authorizedKeyFilePath = "$env:ProgramData\ssh\administrators_authorized_keys"
 			New-Item -Force $authorizedKeyFilePath
-			echo "` + string(pubKeyBytes[:]) + `"| Out-File $authorizedKeyFilePath -Encoding ascii
+			echo "` + pubKey + `"| Out-File $authorizedKeyFilePath -Encoding ascii
 			$acl = Get-Acl C:\ProgramData\ssh\administrators_authorized_keys
 			$acl.SetAccessRuleProtection($true, $false)
 			$administratorsRule = New-Object system.security.accesscontrol.filesystemaccessrule("Administrators","FullControl","Allow")
@@ -89,11 +99,26 @@ func GenerateUserData(publicKey ssh.PublicKey) (*core.Secret, error) {
 			$acl.SetAccessRule($administratorsRule)
 			$acl.SetAccessRule($systemRule)
 			$acl | Set-Acl
-			Restart-Service sshd
-			</powershell>
-			<persist>true</persist>`),
-		},
-	}
+			Restart-Service sshd`
+}
 
-	return userDataSecret, nil
+// applyTag surrounds the given data using the tag name with the following
+// pattern: <tagName>data</tagName>
+func applyTag(tagName, data string) string {
+	return fmt.Sprintf("<%s>%s</%s>\n", tagName, data, tagName)
+}
+
+// processTags returns the platform-specific userData with the corresponding tags
+func processTags(platformType oconfig.PlatformType, userData string) string {
+	switch platformType {
+	case oconfig.GCPPlatformType:
+		// no tag required for GCP
+		break
+	default:
+		// enclose with powershell tag
+		userData = applyTag("powershell", userData)
+		// append persist tag
+		userData = userData + applyTag("persist", "true")
+	}
+	return userData
 }
