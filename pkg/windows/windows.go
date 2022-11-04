@@ -446,8 +446,8 @@ func (vm *windows) Configure() error {
 // configureContainerd configures the Windows defender exclusion and starts the
 // Windows containerd service
 func (vm *windows) configureContainerd() error {
-	// if Windows Defender is installed on the instance, create an exclusion for containerd
-	exclusionNeeded, err := vm.isWindowsDefenderEnabled()
+	// if Windows Defender is running on the instance, create an exclusion for containerd
+	exclusionNeeded, err := vm.isWindowsDefenderRunning()
 	if err != nil {
 		return err
 	}
@@ -1045,9 +1045,11 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 	return strings.Contains(out, "Enabled"), nil
 }
 
-// isWindowsDefenderEnabled returns true if the Windows Defender antivirus/firewall is installed on the Windows instance
-func (vm *windows) isWindowsDefenderEnabled() (bool, error) {
-	command := "(Get-Service | where {$_.DisplayName -Like 'Windows Defender*'}).Count -gt 0"
+// isWindowsDefenderRunning returns true if the Windows Defender antivirus/firewall is running on the Windows instance
+func (vm *windows) isWindowsDefenderRunning() (bool, error) {
+	// Check if the process associated with Windows Defender exists. Reference:
+	// https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/microsoft-defender-antivirus-compatibility?view=o365-worldwide#use-windows-powershell-to-confirm-that-microsoft-defender-antivirus-is-running
+	command := "(Get-Process -Name MsMpEng -ErrorAction SilentlyContinue) -ne $null"
 	out, err := vm.Run(command, true)
 	if err != nil {
 		return false, errors.Wrap(err, "error checking if Windows Defender is enabled")
