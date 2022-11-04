@@ -23,13 +23,11 @@ import (
 const (
 	// remoteDir is the remote temporary directory created on the Windows VM
 	remoteDir = "C:\\Temp\\"
-	// winTemp is the default Windows temporary directory
-	winTemp = "C:\\Windows\\Temp\\"
 	// HNSPSModule is the remote location of the hns.psm1 module
 	HNSPSModule = remoteDir + "hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
 	K8sDir = "C:\\k\\"
-	//KubeconfigPath is the remote location of the kubelet's kubeconfig
+	// KubeconfigPath is the remote location of the kubelet's kubeconfig
 	KubeconfigPath = K8sDir + "kubeconfig"
 	// logDir is the remote kubernetes log directory
 	logDir = "C:\\var\\log\\"
@@ -53,7 +51,7 @@ const (
 	containerdPath = ContainerdDir + "containerd.exe"
 	// containerdConfPath is the location of containerd config file
 	containerdConfPath = ContainerdDir + "containerd_conf.toml"
-	//ContainerdServiceName is containerd Windows service name
+	// ContainerdServiceName is containerd Windows service name
 	ContainerdServiceName = "containerd"
 	// wicdServiceName is the Windows service name for WICD
 	wicdServiceName = "windows-instance-config-daemon"
