@@ -225,23 +225,6 @@ func (nc *nodeConfig) Configure() error {
 			return errors.Wrap(err, "unable to check if cloud controller owned by cloud controller manager")
 		}
 
-		// Configuring cloud node manager for Azure platform with CCM support
-		if ownedByCCM && nc.platformType == configv1.AzurePlatformType {
-			if err := nc.Windows.ConfigureAzureCloudNodeManager(nc.node.GetName()); err != nil {
-				return errors.Wrap(err, "configuring azure cloud node manager failed")
-			}
-
-			// If we deploy on Azure with CCM support, we have to explicitly remove the cloud taint, because cloud node manager
-			// running on the node can't do it itself. The taint should be removed only when the related CSR
-			// has been approved.
-			cloudTaint := &core.Taint{
-				Key:    cloudproviderapi.TaintExternalCloudProvider,
-				Effect: core.TaintEffectNoSchedule,
-			}
-			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
-				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
-			}
-		}
 		if err := nc.configureWICD(); err != nil {
 			return errors.Wrap(err, "configuring WICD failed")
 		}
@@ -262,6 +245,22 @@ func (nc *nodeConfig) Configure() error {
 			return errors.Wrap(err, "error getting node object")
 		}
 
+		// If we deploy on Azure with CCM support, we have to explicitly remove the cloud taint, because cloud node
+		// manager running on the node can't do it itself, due to lack of RBAC permissions given by the node
+		// kubeconfig it uses.
+		if ownedByCCM && nc.platformType == configv1.AzurePlatformType {
+			// TODO: The proper long term solution is to run this as a pod and give it the correct permissions
+			// via service account. This isn't currently possible as we are unable to build Windows container images
+			// due to shortcomings in our build system. Short term solution is to do this taint removal in WICD, when
+			// WICD removes the cordon. https://issues.redhat.com/browse/WINC-741
+			cloudTaint := &core.Taint{
+				Key:    cloudproviderapi.TaintExternalCloudProvider,
+				Effect: core.TaintEffectNoSchedule,
+			}
+			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
+				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
+			}
+		}
 		// Version annotation is the indicator that the node was fully configured by this version of WMCO, so it should
 		// be added at the end of the process.
 		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{metadata.VersionAnnotation: version.Get()}); err != nil {

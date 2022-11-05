@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
+	openshiftClient "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -100,8 +101,16 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, err
 	}
+	oc, err := openshiftClient.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to create openshift client-go client")
+	}
+	ccmEnabled, err := cluster.IsCloudControllerOwnedByCCM(oc)
+	if err != nil {
+		return nil, errors.Wrap(err, "error determining if CCM owns cloud controller")
+	}
 	svcData, err := services.GenerateManifest(argsFromIgnition, clusterConfig.Network().VXLANPort(),
-		string(clusterConfig.Platform()), ctrl.Log.V(1).Enabled())
+		clusterConfig.Platform(), ccmEnabled, ctrl.Log.V(1).Enabled())
 	if err != nil {
 		return nil, errors.Wrap(err, "error generating expected Windows service state")
 	}
