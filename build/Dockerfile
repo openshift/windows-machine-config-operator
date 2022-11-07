@@ -7,11 +7,6 @@ RUN yum install -y dos2unix
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
-# Build WMCB
-WORKDIR /build/windows-machine-config-operator/windows-machine-config-bootstrapper/
-COPY windows-machine-config-bootstrapper/ .
-RUN make build
-
 # Build hybrid-overlay
 WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
 COPY ovn-kubernetes/ .
@@ -98,19 +93,14 @@ RUN make build-daemon
 #│   ├── kubelet.exe
 #│   └── kube-proxy.exe
 #├── powershell/
-#│   ├── wget-ignore-cert.ps1
 #│   └── hns.psm1
 #├── windows_exporter.exe
-#├── windows-instance-config-daemon.exe
-#└── wmcb.exe
+#└── windows-instance-config-daemon.exe
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 LABEL stage=operator
 
-# Copy wmcb.exe
 WORKDIR /payload/
-COPY --from=build /build/windows-machine-config-operator/windows-machine-config-bootstrapper/wmcb.exe .
-
 # Copy WICD
 COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
 
@@ -146,7 +136,6 @@ RUN chmod 0777 /payload/generated
 
 # Copy required powershell scripts
 WORKDIR /payload/powershell/
-COPY pkg/internal/wget-ignore-cert.ps1 .
 COPY pkg/internal/hns.psm1 .
 
 WORKDIR /

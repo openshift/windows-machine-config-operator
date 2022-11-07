@@ -25,8 +25,6 @@ const (
 	remoteDir = "C:\\Temp\\"
 	// winTemp is the default Windows temporary directory
 	winTemp = "C:\\Windows\\Temp\\"
-	// wgetIgnoreCertCmd is the remote location of the wget-ignore-cert.ps1 script
-	wgetIgnoreCertCmd = remoteDir + "wget-ignore-cert.ps1"
 	// HNSPSModule is the remote location of the hns.psm1 module
 	HNSPSModule = remoteDir + "hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
@@ -59,14 +57,19 @@ const (
 	ContainerdServiceName = "containerd"
 	// wicdServiceName is the Windows service name for WICD
 	wicdServiceName = "windows-instance-config-daemon"
+	// wicdPath is the path to the WICD executable
+	wicdPath = K8sDir + "windows-instance-config-daemon.exe"
 	// windowsExporterPath is the location of the windows_exporter.exe
 	windowsExporterPath = K8sDir + "windows_exporter.exe"
 	// NetworkConfScriptPath is the location of the network configuration script
 	NetworkConfScriptPath = remoteDir + "network-conf.ps1"
 	// AzureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
 	AzureCloudNodeManagerPath = K8sDir + payload.AzureCloudNodeManager
-	// BootstrapKubeconfig is the location of the bootstrap kubeconfig
-	BootstrapKubeconfig = K8sDir + "bootstrap-kubeconfig"
+	// podManifestDirectory is the directory needed by kubelet for the static pods
+	// We shouldn't override if the pod manifest directory already exists
+	podManifestDirectory = K8sDir + "etc\\kubernetes\\manifests"
+	// BootstrapKubeconfigPath is the location of the bootstrap kubeconfig
+	BootstrapKubeconfigPath = K8sDir + "bootstrap-kubeconfig"
 	// KubeletPath is the location of the kubelet exe
 	KubeletPath = K8sDir + "kubelet.exe"
 	// KubeletConfigPath is the location of the kubelet configuration file
@@ -111,6 +114,10 @@ const (
 	ManagedTag = "OpenShift managed"
 	// containersFeatureName is the name of the Windows feature that is required to be enabled on the Windows instance.
 	containersFeatureName = "Containers"
+	// wicdCAFile is the name of the file that holds the WICD service account CA certificate
+	wicdCAFile = K8sDir + "sa-ca.crt"
+	// wicdTokenFile is the name of the file that holds the WICD service account secret token
+	wicdTokenFile = K8sDir + "sa-token"
 )
 
 var (
@@ -136,11 +143,14 @@ var (
 		cniDir,
 		CniConfDir,
 		logDir,
+		KubeletLogDir,
 		KubeProxyLogDir,
 		wicdLogDir,
 		HybridOverlayLogDir,
 		ContainerdDir,
-		ContainerdLogDir}
+		ContainerdLogDir,
+		podManifestDirectory,
+	}
 )
 
 // getFilesToTransfer returns the properly populated filesToTransfer map
@@ -149,8 +159,6 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		return filesToTransfer, nil
 	}
 	srcDestPairs := map[string]string{
-		payload.IgnoreWgetPowerShellPath:   remoteDir,
-		payload.WmcbPath:                   K8sDir,
 		payload.WICDPath:                   K8sDir,
 		payload.HybridOverlayPath:          K8sDir,
 		payload.HNSPSModule:                remoteDir,
@@ -183,6 +191,14 @@ func GetK8sDir() string {
 	return K8sDir
 }
 
+// Authentication holds credential information used to communicate with a kubernetes cluster
+type Authentication struct {
+	// CaCert is the PEM-encoded certificate authority certificate
+	CaCert []byte
+	// Token is the bearer Token used to grant access to the cluster API server
+	Token []byte
+}
+
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
 type Windows interface {
 	// GetIPv4Address returns the IPv4 address of the associated instance.
@@ -205,10 +221,10 @@ type Windows interface {
 	Run(string, bool) (string, error)
 	// Reinitialize re-initializes the Windows VM's SSH client
 	Reinitialize() error
-	// Configure prepares the Windows VM for the bootstrapper and then runs it
-	Configure() error
+	// Bootstrap prepares the Windows instance and runs the WICD bootstrap command
+	Bootstrap(string, string, *Authentication) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
-	ConfigureWICD(string, []byte, []byte) error
+	ConfigureWICD(string, *Authentication) error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy() error
 	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
@@ -219,9 +235,6 @@ type Windows interface {
 
 // windows implements the Windows interface
 type windows struct {
-	// workerIgnitionEndpoint is the Machine Config Server(MCS) endpoint from which we can download the
-	// the OpenShift worker ignition file.
-	workerIgnitionEndpoint string
 	// clusterDNS is the IP address of the DNS server used for all containers
 	clusterDNS string
 	// signer is used for authenticating against the VM
@@ -236,13 +249,10 @@ type windows struct {
 	log      logr.Logger
 	// defaultShellPowerShell indicates if the default SSH shell is PowerShell
 	defaultShellPowerShell bool
-	// platformType overrides default hostname in bootstrapper
-	platformType string
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer,
-	platformType string) (Windows, error) {
+func New(clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer) (Windows, error) {
 	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
@@ -252,13 +262,11 @@ func New(workerIgnitionEndpoint, clusterDNS, vxlanPort string, instanceInfo *ins
 
 	return &windows{
 			interact:               conn,
-			workerIgnitionEndpoint: workerIgnitionEndpoint,
 			clusterDNS:             clusterDNS,
 			vxlanPort:              vxlanPort,
 			instance:               instanceInfo,
 			log:                    log,
 			defaultShellPowerShell: defaultShellPowershell(conn),
-			platformType:           platformType,
 		},
 		nil
 }
@@ -448,7 +456,7 @@ func (vm *windows) Deconfigure() error {
 	return nil
 }
 
-func (vm *windows) Configure() error {
+func (vm *windows) Bootstrap(desiredVer, apiServerURL string, credentials *Authentication) error {
 	vm.log.Info("configuring")
 	if err := vm.EnsureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop all services")
@@ -466,7 +474,16 @@ func (vm *windows) Configure() error {
 		return errors.Wrapf(err, "error configuring containerd")
 	}
 
-	return vm.runBootstrapper()
+	if err := vm.ensureWICDSecretContent(credentials); err != nil {
+		return err
+	}
+	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --api-server %s --sa-ca %s --sa-token %s",
+		wicdPath, desiredVer, apiServerURL, wicdCAFile, wicdTokenFile)
+	if out, err := vm.Run(wicdBootstrapCmd, true); err != nil {
+		vm.log.Info("failed to bootstrap node", "command", wicdBootstrapCmd, "output", out)
+		return err
+	}
+	return nil
 }
 
 // configureContainerd configures the Windows defender exclusion and starts the
@@ -500,20 +517,12 @@ func (vm *windows) configureContainerd() error {
 }
 
 // ConfigureWICD starts the Windows Instance Config Daemon service
-func (vm *windows) ConfigureWICD(apiServerURL string, serviceAccountCA, serviceAccountToken []byte) error {
-	saCAFile := "sa-ca.crt"
-	saTokenFile := "sa-token"
-	err := vm.EnsureFileContent(serviceAccountCA, saCAFile, K8sDir)
-	if err != nil {
+func (vm *windows) ConfigureWICD(apiServerURL string, credentials *Authentication) error {
+	if err := vm.ensureWICDSecretContent(credentials); err != nil {
 		return err
 	}
-	err = vm.EnsureFileContent(serviceAccountToken, saTokenFile, K8sDir)
-	if err != nil {
-		return err
-	}
-	wicdPath := K8sDir + "windows-instance-config-daemon.exe"
-	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s%s --sa-token %s%s",
-		wicdLogDir, apiServerURL, K8sDir, saCAFile, K8sDir, saTokenFile)
+	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s --sa-token %s",
+		wicdLogDir, apiServerURL, wicdCAFile, wicdTokenFile)
 	wicdService, err := newService(wicdPath, wicdServiceName, wicdServiceArgs, nil)
 	if err != nil {
 		return errors.Wrapf(err, "error creating %s service object", wicdServiceName)
@@ -629,60 +638,6 @@ func (vm *windows) transferFiles() error {
 		if err := vm.EnsureFile(src, dest); err != nil {
 			return errors.Wrapf(err, "error copying %s to %s ", src.Path, dest)
 		}
-	}
-	return nil
-}
-
-// runBootstrapper copies the bootstrapper and runs the code on the remote Windows VM
-func (vm *windows) runBootstrapper() error {
-	err := vm.initializeBootstrapperFiles()
-	if err != nil {
-		return errors.Wrap(err, "error initializing bootstrapper files")
-	}
-	wmcbInitializeCmd := K8sDir + "\\wmcb.exe initialize-kubelet --ignition-file " + winTemp +
-		"worker.ign --kubelet-path " + K8sDir + "kubelet.exe"
-	if vm.instance.SetNodeIP {
-		wmcbInitializeCmd += " --node-ip=" + vm.GetIPv4Address()
-	}
-	if vm.clusterDNS != "" {
-		wmcbInitializeCmd += " --cluster-dns " + vm.clusterDNS
-	}
-	wmcbInitializeCmd += " --platform-type=" + vm.platformType
-
-	// check log level and increase kubelet verbosity accordingly
-	if vm.log.V(1).Enabled() {
-		// set value to 5 for trace level verbosity
-		wmcbInitializeCmd = wmcbInitializeCmd + " --kubelet-verbosity 5"
-	}
-	out, err := vm.Run(wmcbInitializeCmd, true)
-	vm.log.Info("configured kubelet", "cmd", wmcbInitializeCmd, "output", out)
-	if err != nil {
-		return errors.Wrap(err, "error running bootstrapper")
-	}
-	// TODO: This is necessary to get around WICD's current inability to handle reconfiguring services which have a
-	// running dependent service. WMCB is starting hybrid-overlay-node and preventing WICD from reconfiguring the
-	// kubelet service. This can be removed when WMCB is removed from the code as part of
-	// https://issues.redhat.com/browse/WINC-732
-	err = vm.ensureServiceNotRunning(&service{name: HybridOverlayServiceName})
-	if err != nil {
-		return errors.Wrap(err, "error ensuring ")
-	}
-	return nil
-}
-
-// initializeTestBootstrapperFiles initializes the files required for initialize-kubelet
-func (vm *windows) initializeBootstrapperFiles() error {
-	if vm.workerIgnitionEndpoint == "" {
-		return errors.New("cannot use empty ignition endpoint")
-	}
-	// Ignition v2.3.0 maps to Ignition config spec v3.1.0.
-	ignitionAcceptHeaderSpec := "application/vnd.coreos.ignition+json`;version=3.1.0"
-	// Download the worker ignition to C:\Windows\Temp\ using the script that ignores the server cert
-	ignitionFileDownloadCmd := wgetIgnoreCertCmd + " -server " + vm.workerIgnitionEndpoint + " -output " +
-		winTemp + "worker.ign" + " -acceptHeader " + ignitionAcceptHeaderSpec
-	_, err := vm.Run(ignitionFileDownloadCmd, true)
-	if err != nil {
-		return errors.Wrap(err, "unable to download worker.ign")
 	}
 	return nil
 }
@@ -1009,6 +964,17 @@ func (vm *windows) rebootAndReinitialize() error {
 	return nil
 }
 
+// ensureWICDSecretContent checks if the WICD CA cert and token files on the instance hold the expected values
+func (vm *windows) ensureWICDSecretContent(credentials *Authentication) error {
+	caDir, caFileName := SplitPath(wicdCAFile)
+	err := vm.EnsureFileContent(credentials.CaCert, caFileName, caDir)
+	if err != nil {
+		return err
+	}
+	tokenDir, tokenFileName := SplitPath(wicdTokenFile)
+	return vm.EnsureFileContent(credentials.Token, tokenFileName, tokenDir)
+}
+
 // Generic helper methods
 
 // formatRemotePowerShellCommand returns a formatted string, prepended with the required PowerShell prefix and
@@ -1032,4 +998,11 @@ func rmDirCmd(dirName string) string {
 // getHNSNetworkCmd returns the Windows command to get HNS network by name
 func getHNSNetworkCmd(networkName string) string {
 	return "Get-HnsNetwork | where { $_.Name -eq '" + networkName + "'}"
+}
+
+// SplitPath splits a Windows file path into the directory and base file name.
+// Example: 'C:\\k\\bootstrap-kubeconfig' --> dir: 'C:\\k\\', fileName: 'bootstrap-kubeconfig'
+func SplitPath(filepath string) (dir string, fileName string) {
+	splitIndex := strings.LastIndexByte(filepath, '\\') + 1
+	return filepath[:splitIndex], filepath[splitIndex:]
 }

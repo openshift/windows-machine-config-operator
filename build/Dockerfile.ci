@@ -15,11 +15,6 @@ WORKDIR /build/windows-machine-config-operator/
 # Copy .git metadata so that we can generate the version for the WMCO binary
 COPY .git .git
 
-# Build WMCB
-WORKDIR /build/windows-machine-config-operator/windows-machine-config-bootstrapper/
-COPY windows-machine-config-bootstrapper/ .
-RUN make build
-
 # Build hybrid-overlay
 WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
 COPY ovn-kubernetes/ .
@@ -108,19 +103,14 @@ RUN make build-daemon
 #│   ├── kubelet.exe
 #│   └── kube-proxy.exe
 #├── powershell/
-#│   ├── wget-ignore-cert.ps1
 #│   └── hns.psm1
 #├── windows_exporter.exe
-#├── windows-instance-config-daemon.exe
-#└── wmcb.exe
+#└── windows-instance-config-daemon.exe
 
 FROM registry.ci.openshift.org/openshift/release:rhel-8-release-golang-1.19-openshift-4.12
 LABEL stage=operator
 
-# Copy wmcb.exe
 WORKDIR /payload/
-COPY --from=build /build/windows-machine-config-operator/windows-machine-config-bootstrapper/wmcb.exe .
-
 # Copy WICD
 COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
 
@@ -156,7 +146,6 @@ RUN chmod 0777 /payload/generated
 
 # Copy required powershell scripts
 WORKDIR /payload/powershell/
-COPY --from=build /build/windows-machine-config-operator/pkg/internal/wget-ignore-cert.ps1 .
 COPY --from=build /build/windows-machine-config-operator/pkg/internal/hns.psm1 .
 
 WORKDIR /
