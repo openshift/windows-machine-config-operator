@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -21,7 +20,6 @@ import (
 	rbac "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
@@ -34,6 +32,11 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
+)
+
+const (
+	// wmcoContainerName is the name of the container in the deployment spec of the operator
+	wmcoContainerName = "manager"
 )
 
 // winService contains information regarding a Windows service's current state
@@ -667,14 +670,12 @@ func (tc *testContext) findNodeCSRs(nodeName string) ([]certificates.Certificate
 
 // validateUpgradeableCondition ensures that the operator's Upgradeable condition is correctly communicated to OLM
 func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatus) error {
-	ocName, present := os.LookupEnv(condition.OperatorConditionName)
-	if !present {
-		// Implies operator is not OLM-managed
-		return nil
+	ocName, err := tc.getOperatorConditionName()
+	if err != nil {
+		return err
 	}
-	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
-		oc := &operators.OperatorCondition{}
-		err := tc.client.Cache.Get(context.TODO(), types.NamespacedName{Namespace: tc.namespace, Name: ocName}, oc)
+	err = wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+		oc, err := tc.client.Olm.OperatorsV2().OperatorConditions(tc.namespace).Get(context.TODO(), ocName, meta.GetOptions{})
 		if err != nil {
 			log.Printf("unable to get OperatorCondition %s from namespace %s", ocName, tc.namespace)
 			return false, nil
@@ -688,4 +689,25 @@ func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatu
 		return errors.Wrapf(err, "failed to verify condition type %s has state %s", operators.Upgradeable, expected)
 	}
 	return nil
+}
+
+// getOperatorConditionName returns the operator condition name using the env var present in the deployment
+func (tc *testContext) getOperatorConditionName() (string, error) {
+	deployment, err := tc.client.K8s.AppsV1().Deployments(tc.namespace).Get(context.TODO(), resourceName,
+		meta.GetOptions{})
+	if err != nil {
+		return "", errors.Wrap(err, "error getting operator deployment")
+	}
+	// Get the operator condition name using the deployment spec
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		if container.Name != wmcoContainerName {
+			continue
+		}
+		for _, envVar := range container.Env {
+			if envVar.Name == condition.OperatorConditionName {
+				return envVar.Value, nil
+			}
+		}
+	}
+	return "", errors.Errorf("unable to get operatorCondition name from namespace %s", tc.namespace)
 }
