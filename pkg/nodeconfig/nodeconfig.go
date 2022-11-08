@@ -3,8 +3,9 @@ package nodeconfig
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
-	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,19 +13,24 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/pkg/errors"
+	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	cloudproviderapi "k8s.io/cloud-provider/api"
 	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	"k8s.io/kubectl/pkg/drain"
+	kubeletconfig "k8s.io/kubelet/config/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
@@ -38,7 +44,7 @@ const (
 	HybridOverlaySubnet = "k8s.ovn.org/hybrid-overlay-node-subnet"
 	// HybridOverlayMac is an annotation applied by the hybrid-overlay
 	HybridOverlayMac = "k8s.ovn.org/hybrid-overlay-distributed-router-gateway-mac"
-	// WindowsOSLabel is the label that is applied by WMCB to identify the Windows nodes bootstrapped via WMCB
+	// WindowsOSLabel is the label applied when kubelet is ran to identify Windows nodes
 	WindowsOSLabel = "node.openshift.io/os_id=Windows"
 	// WorkerLabel is the label that needs to be applied to the Windows node to make it worker node
 	WorkerLabel = "node-role.kubernetes.io/worker"
@@ -49,11 +55,16 @@ const (
 	KubeletClientCAFilename = "kubelet-ca.crt"
 	// DesiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
 	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
+	// mcoNamespace is the namespace the Machine Config Server is deployed in, which manages the node bootsrapper secret
+	mcoNamespace = "openshift-machine-config-operator"
+	// mcoBootstrapSecret is the resource name that holds the cert and token required to create the bootstrap kubeconfig
+	mcoBootstrapSecret = "node-bootstrapper-token"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
 // related to kubeclient and the windowsVM.
 type nodeConfig struct {
+	client client.Client
 	// k8sclientset holds the information related to kubernetes clientset
 	k8sclientset *kubernetes.Clientset
 	// Windows holds the information related to the windows VM
@@ -95,35 +106,13 @@ func (ow OutWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
-func discoverKubeAPIServerEndpoint() (string, error) {
-	cfg, err := crclientcfg.GetConfig()
-	if err != nil {
-		return "", errors.Wrap(err, "unable to get config to talk to kubernetes api server")
-	}
-
-	client, err := clientset.NewForConfig(cfg)
-	if err != nil {
-		return "", errors.Wrap(err, "unable to get client from the given config")
-	}
-
-	host, err := client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
-	if err != nil {
-		return "", errors.Wrap(err, "unable to get cluster infrastructure resource")
-	}
-	// get API server internal url of format https://api-int.abc.devcluster.openshift.com:6443
-	if host.Status.APIServerInternalURL == "" {
-		return "", errors.Wrap(err, "could not get host name for the kubernetes api server")
-	}
-	return host.Status.APIServerInternalURL, nil
-}
-
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
-func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
+func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
 	var err error
+
 
 	// When the new Node is provisioned via MAPI on Nutanix we need to configure SetNodeIP to have the right Machine IP assigned
 	instanceInfo.SetNodeIP = platformType == configv1.NutanixPlatformType
@@ -142,6 +131,7 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 		workerIgnitionEndpoint := "https://" + clusterAddress + ":22623/config/worker"
 		nodeConfigCache.workerIgnitionEndPoint = workerIgnitionEndpoint
 	}
+
 	if err = cluster.ValidateCIDR(clusterServiceCIDR); err != nil {
 		return nil, errors.Wrap(err, "error receiving valid CIDR value for "+
 			"creating new node config")
@@ -153,35 +143,14 @@ func NewNodeConfig(clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPor
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
-	win, err := windows.New(nodeConfigCache.workerIgnitionEndPoint, clusterDNS, vxlanPort,
-		instanceInfo, signer, string(platformType))
+	win, err := windows.New(clusterDNS, vxlanPort, instanceInfo, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
-	return &nodeConfig{k8sclientset: clientset, Windows: win, platformType: platformType,
+	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, platformType: platformType,
 		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
 		log: log, additionalLabels: additionalLabels, additionalAnnotations: additionalAnnotations}, nil
-}
-
-// getClusterAddr gets the cluster address associated with given kubernetes APIServerEndpoint.
-// For example: https://api-int.abc.devcluster.openshift.com:6443 gets translated to
-// api-int.abc.devcluster.openshift.com
-// TODO: Think if this needs to be removed as this is too restrictive. Imagine apiserver behind
-// a loadbalancer.
-// Jira story: https://issues.redhat.com/browse/WINC-398
-func getClusterAddr(kubeAPIServerEndpoint string) (string, error) {
-	clusterEndPoint, err := url.Parse(kubeAPIServerEndpoint)
-	if err != nil {
-		return "", errors.Wrap(err, "unable to parse the kubernetes API server endpoint")
-	}
-	hostName := clusterEndPoint.Hostname()
-
-	// Check if hostname is valid
-	if !strings.HasPrefix(hostName, "api-int.") {
-		return "", fmt.Errorf("invalid API server url %s: expected hostname to start with `api-int.`", hostName)
-	}
-	return hostName, nil
 }
 
 // Configure configures the Windows VM to make it a Windows worker node
@@ -195,9 +164,13 @@ func (nc *nodeConfig) Configure() error {
 		}
 	}
 
-	// Perform the basic kubelet configuration using WMCB
-	if err := nc.Windows.Configure(); err != nil {
-		return errors.Wrap(err, "configuring the Windows VM failed")
+	if err := nc.createBootstrapFiles(); err != nil {
+		return err
+	}
+
+	// Start all required services to bootstrap a node object using WICD
+	if err := nc.Windows.Bootstrap(version.Get(), nodeConfigCache.apiServerEndpoint, nodeConfigCache.credentials); err != nil {
+		return errors.Wrap(err, "bootstrapping the Windows instance failed")
 	}
 
 	// Perform rest of the configuration with the kubelet running
@@ -228,24 +201,7 @@ func (nc *nodeConfig) Configure() error {
 			return errors.Wrap(err, "unable to check if cloud controller owned by cloud controller manager")
 		}
 
-		// Configuring cloud node manager for Azure platform with CCM support
-		if ownedByCCM && nc.platformType == configv1.AzurePlatformType {
-			if err := nc.Windows.ConfigureAzureCloudNodeManager(nc.node.GetName()); err != nil {
-				return errors.Wrap(err, "configuring azure cloud node manager failed")
-			}
-
-			// If we deploy on Azure with CCM support, we have to explicitly remove the cloud taint, because cloud node manager
-			// running on the node can't do it itself. The taint should be removed only when the related CSR
-			// has been approved.
-			cloudTaint := &core.Taint{
-				Key:    cloudproviderapi.TaintExternalCloudProvider,
-				Effect: core.TaintEffectNoSchedule,
-			}
-			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
-				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
-			}
-		}
-		if err := nc.configureWICD(); err != nil {
+		if err := nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, nodeConfigCache.credentials); err != nil {
 			return errors.Wrap(err, "configuring WICD failed")
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
@@ -265,6 +221,22 @@ func (nc *nodeConfig) Configure() error {
 			return errors.Wrap(err, "error getting node object")
 		}
 
+		// If we deploy on Azure with CCM support, we have to explicitly remove the cloud taint, because cloud node
+		// manager running on the node can't do it itself, due to lack of RBAC permissions given by the node
+		// kubeconfig it uses.
+		if ownedByCCM && nc.platformType == configv1.AzurePlatformType {
+			// TODO: The proper long term solution is to run this as a pod and give it the correct permissions
+			// via service account. This isn't currently possible as we are unable to build Windows container images
+			// due to shortcomings in our build system. Short term solution is to do this taint removal in WICD, when
+			// WICD removes the cordon. https://issues.redhat.com/browse/WINC-741
+			cloudTaint := &core.Taint{
+				Key:    cloudproviderapi.TaintExternalCloudProvider,
+				Effect: core.TaintEffectNoSchedule,
+			}
+			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
+				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
+			}
+		}
 		// Version annotation is the indicator that the node was fully configured by this version of WMCO, so it should
 		// be added at the end of the process.
 		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{metadata.VersionAnnotation: version.Get()}); err != nil {
@@ -289,6 +261,123 @@ func (nc *nodeConfig) Configure() error {
 		}
 	}
 	return err
+}
+
+// createBootstrapFiles creates all prerequisite files on the node required to start kubelet using latest ignition spec
+func (nc *nodeConfig) createBootstrapFiles() error {
+	filePathsToContents := make(map[string]string)
+	filePathsToContents, err := nc.createFilesFromIgnition()
+	if err != nil {
+		return err
+	}
+	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(context.TODO(), mcoBootstrapSecret,
+		meta.GetOptions{})
+	if err != nil {
+		return err
+	}
+	filePathsToContents[windows.BootstrapKubeconfigPath], err = createBootstrapKubeconfig(bootstrapSecret)
+	if err != nil {
+		return err
+	}
+	filePathsToContents[windows.KubeletConfigPath], err = createKubeletConf(nc.clusterServiceCIDR)
+	if err != nil {
+		return err
+	}
+	return nc.write(filePathsToContents)
+}
+
+// write outputs the data to the path on the underlying Windows instance for each given pair. Creates files if needed.
+func (nc *nodeConfig) write(pathToData map[string]string) error {
+	for path, data := range pathToData {
+		dir, fileName := windows.SplitPath(path)
+		if err := nc.Windows.EnsureFileContent([]byte(data), fileName, dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// createFilesFromIgnition returns the contents and write locations on the instance for any file it can create from
+// ignition spec: kubelet CA cert, cloud-config file
+func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
+	ign, err := ignition.New(nc.client)
+	if err != nil {
+		return nil, err
+	}
+	kubeletArgs, err := ign.GetKubeletArgs()
+	if err != nil {
+		return nil, err
+	}
+
+	filesToTransfer := map[string]struct{}{
+		ignition.KubeletCACertPath: {},
+	}
+	if _, ok := kubeletArgs[ignition.CloudConfigOption]; ok {
+		filesToTransfer[ignition.CloudConfigPath] = struct{}{}
+	}
+	filePathsToContents := make(map[string]string)
+	// For each new file in the ignition file check if is a file we are interested in and, if so, decode its contents
+	for _, ignFile := range ign.GetFiles() {
+		if _, ok := filesToTransfer[ignFile.Node.Path]; ok {
+			if ignFile.Contents.Source == nil {
+				return nil, errors.Errorf("could not process %s: File is empty", ignFile.Node.Path)
+			}
+			contents, err := dataurl.DecodeString(*ignFile.Contents.Source)
+			if err != nil {
+				return nil, errors.Wrapf(err, "could not decode %s", ignFile.Node.Path)
+			}
+			fileName := filepath.Base(ignFile.Node.Path)
+			filePathsToContents[windows.K8sDir+fileName] = string(contents.Data)
+		}
+	}
+	return filePathsToContents, nil
+}
+
+// createBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server
+func createBootstrapKubeconfig(bootstrapSecret *core.Secret) (string, error) {
+	// extract ca.crt and token data fields
+	caCert := bootstrapSecret.Data[core.ServiceAccountRootCAKey]
+	if caCert == nil {
+		return "", errors.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
+			bootstrapSecret.GetName())
+	}
+	token := bootstrapSecret.Data[core.ServiceAccountTokenKey]
+	if token == nil {
+		return "", errors.Errorf("unable to find %s token in secret %s", core.ServiceAccountTokenKey,
+			bootstrapSecret.GetName())
+	}
+	kubeconfig, err := generateKubeconfig(&windows.Authentication{CaCert: caCert, Token: token},
+		nodeConfigCache.apiServerEndpoint)
+	if err != nil {
+		return "", err
+	}
+	kubeconfigData, err := json.Marshal(kubeconfig)
+	if err != nil {
+		return "", err
+	}
+	return string(kubeconfigData), nil
+}
+
+// createKubeletConf returns contents of the config file for kubelet, with Windows specific configuration
+func createKubeletConf(clusterServiceCIDR string) (string, error) {
+	clusterDNS, err := cluster.GetDNS(clusterServiceCIDR)
+	if err != nil {
+		return "", err
+	}
+	kubeletConfig := generateKubeletConfiguration(clusterDNS)
+	kubeletConfigData, err := json.Marshal(kubeletConfig)
+	if err != nil {
+		return "", err
+	}
+	// Replace last character ('}') with comma
+	kubeletConfigData[len(kubeletConfigData)-1] = ','
+	// Appending this option is needed here instead of in the kubelet configuration object. Otherwise, when marshalling,
+	// the empty value will be omitted, so it would end up being incorrectly populated at service start time.
+	// Can be moved to kubelet configuration object with https://issues.redhat.com/browse/WINC-926
+	enforceNodeAllocatable := []byte("\"enforceNodeAllocatable\":[]}")
+	kubeletConfigData = append(kubeletConfigData, enforceNodeAllocatable...)
+
+	return string(kubeletConfigData), nil
 }
 
 // applyLabelsAndAnnotations applies all the given labels and annotations and updates the Node object in NodeConfig
@@ -471,32 +560,77 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 	return nil
 }
 
-// configureWICD configures and ensures WICD is running
-func (nc *nodeConfig) configureWICD() error {
-	tokenSecretPrefix := "windows-instance-config-daemon-token-"
-	secrets, err := nc.k8sclientset.CoreV1().Secrets("openshift-windows-machine-config-operator").
-		List(context.TODO(), meta.ListOptions{})
-	if err != nil {
-		return errors.Wrap(err, "error listing secrets")
+// generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret
+func generateKubeconfig(secret *windows.Authentication, apiServerURL string) (clientcmdv1.Config, error) {
+	kubeconfig := clientcmdv1.Config{
+		Clusters: []clientcmdv1.NamedCluster{{
+			Name: "local",
+			Cluster: clientcmdv1.Cluster{
+				Server:                   apiServerURL,
+				CertificateAuthorityData: secret.CaCert,
+			}},
+		},
+		AuthInfos: []clientcmdv1.NamedAuthInfo{{
+			Name: "kubelet",
+			AuthInfo: clientcmdv1.AuthInfo{
+				Token: string(secret.Token),
+			},
+		}},
+		Contexts: []clientcmdv1.NamedContext{{
+			Name: "kubelet",
+			Context: clientcmdv1.Context{
+				Cluster:  "local",
+				AuthInfo: "kubelet",
+			},
+		}},
+		CurrentContext: "kubelet",
 	}
-	var filteredSecrets []core.Secret
-	for _, secret := range secrets.Items {
-		if strings.HasPrefix(secret.Name, tokenSecretPrefix) {
-			filteredSecrets = append(filteredSecrets, secret)
-		}
+	return kubeconfig, nil
+}
+
+// generateKubeletConfiguration returns the configuration spec for the kubelet Windows service
+func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfiguration {
+	// default numeric values chosen based on the OpenShift kubelet config recommendations for Linux worker nodes
+	falseBool := false
+	kubeAPIQPS := int32(50)
+	return kubeletconfig.KubeletConfiguration{
+		TypeMeta: meta.TypeMeta{
+			Kind:       "KubeletConfiguration",
+			APIVersion: "kubelet.config.k8s.io/v1beta1",
+		},
+		RotateCertificates: true,
+		ServerTLSBootstrap: true,
+		Authentication: kubeletconfig.KubeletAuthentication{
+			X509: kubeletconfig.KubeletX509Authentication{
+				ClientCAFile: windows.K8sDir + KubeletClientCAFilename,
+			},
+			Anonymous: kubeletconfig.KubeletAnonymousAuthentication{
+				Enabled: &falseBool,
+			},
+		},
+		ClusterDomain:         "cluster.local",
+		ClusterDNS:            []string{clusterDNS},
+		CgroupsPerQOS:         &falseBool,
+		RuntimeRequestTimeout: meta.Duration{Duration: 10 * time.Minute},
+		MaxPods:               250,
+		KubeAPIQPS:            &kubeAPIQPS,
+		KubeAPIBurst:          100,
+		SerializeImagePulls:   &falseBool,
+		FeatureGates: map[string]bool{
+			"LegacyNodeRoleBehavior":         false,
+			"NodeDisruptionExclusion":        true,
+			"RotateKubeletServerCertificate": true,
+			"SCTPSupport":                    true,
+			"ServiceNodeExclusion":           true,
+			"SupportPodPidsLimit":            true,
+		},
+		ContainerLogMaxSize: "50Mi",
+		SystemReserved: map[string]string{
+			"cpu":               "500m",
+			"ephemeral-storage": "1Gi",
+			"memory":            "1Gi",
+		},
 	}
-	if len(filteredSecrets) != 1 {
-		return fmt.Errorf("expected 1 secret with '%s' prefix, found %d", tokenSecretPrefix, len(filteredSecrets))
-	}
-	saCA := filteredSecrets[0].Data["ca.crt"]
-	if len(saCA) == 0 {
-		return errors.New("ServiceAccount ca.crt value empty")
-	}
-	saToken := filteredSecrets[0].Data["token"]
-	if len(saToken) == 0 {
-		return errors.New("ServiceAccount token value empty")
-	}
-	return nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, saCA, saToken)
 }
 
 // CreatePubKeyHashAnnotation returns a formatted string which can be used for a public key annotation on a node.

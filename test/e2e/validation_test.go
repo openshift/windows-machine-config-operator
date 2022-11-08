@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -21,7 +20,6 @@ import (
 	rbac "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
@@ -36,13 +34,18 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
+const (
+	// wmcoContainerName is the name of the container in the deployment spec of the operator
+	wmcoContainerName = "manager"
+)
+
 // winService contains information regarding a Windows service's current state
 type winService struct {
 	state       string
 	description string
 }
 
-// testNodeMetadata tests if all nodes have a worker label and kubelet version and are annotated with the version of
+// testNodeMetadata tests if all nodes have a worker label and are annotated with the version of
 // the currently deployed WMCO
 func testNodeMetadata(t *testing.T) {
 	tc, err := NewTestContext()
@@ -50,21 +53,12 @@ func testNodeMetadata(t *testing.T) {
 	operatorVersion, err := getWMCOVersion()
 	require.NoError(t, err, "could not get WMCO version")
 
-	clusterKubeletVersion, err := tc.getClusterKubeVersion()
-	require.NoError(t, err, "could not get cluster kube version")
-
 	_, pubKey, err := tc.getExpectedKeyPair()
 	require.NoError(t, err, "error getting the expected public/private key pair")
 	pubKeyAnnotation := nc.CreatePubKeyHashAnnotation(pubKey)
 
 	for _, node := range gc.allNodes() {
 		t.Run(node.GetName()+" Validation Tests", func(t *testing.T) {
-			t.Run("Kubelet Version", func(t *testing.T) {
-				isValidVersion := strings.HasPrefix(node.Status.NodeInfo.KubeletVersion, clusterKubeletVersion)
-				assert.True(t, isValidVersion,
-					"expected kubelet version %s was not present on %s. Found %s", clusterKubeletVersion,
-					node.GetName(), node.Status.NodeInfo.KubeletVersion)
-			})
 			// The worker label is not actually added by WMCO however we would like to validate if the Machine Api is
 			// properly adding the worker label, if it was specified in the MachineSet. The MachineSet created in the
 			// test suite has the worker label
@@ -176,19 +170,6 @@ func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
 		}
 	}
 	return instanceIDs, nil
-}
-
-// getClusterKubeVersion returns the major and minor Kubernetes version of the cluster
-func (tc *testContext) getClusterKubeVersion() (string, error) {
-	serverVersion, err := tc.client.K8s.Discovery().ServerVersion()
-	if err != nil {
-		return "", errors.Wrapf(err, "error getting cluster kube version")
-	}
-	versionSplit := strings.Split(serverVersion.GitVersion, ".")
-	if versionSplit == nil {
-		return "", fmt.Errorf("unexpected cluster kube version output")
-	}
-	return strings.Join(versionSplit[0:2], "."), nil
 }
 
 // getWMCOVersion returns the version of the operator. This is sourced from the WMCO binary used
@@ -689,14 +670,12 @@ func (tc *testContext) findNodeCSRs(nodeName string) ([]certificates.Certificate
 
 // validateUpgradeableCondition ensures that the operator's Upgradeable condition is correctly communicated to OLM
 func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatus) error {
-	ocName, present := os.LookupEnv(condition.OperatorConditionName)
-	if !present {
-		// Implies operator is not OLM-managed
-		return nil
+	ocName, err := tc.getOperatorConditionName()
+	if err != nil {
+		return err
 	}
-	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
-		oc := &operators.OperatorCondition{}
-		err := tc.client.Cache.Get(context.TODO(), types.NamespacedName{Namespace: tc.namespace, Name: ocName}, oc)
+	err = wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+		oc, err := tc.client.Olm.OperatorsV2().OperatorConditions(tc.namespace).Get(context.TODO(), ocName, meta.GetOptions{})
 		if err != nil {
 			log.Printf("unable to get OperatorCondition %s from namespace %s", ocName, tc.namespace)
 			return false, nil
@@ -710,4 +689,25 @@ func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatu
 		return errors.Wrapf(err, "failed to verify condition type %s has state %s", operators.Upgradeable, expected)
 	}
 	return nil
+}
+
+// getOperatorConditionName returns the operator condition name using the env var present in the deployment
+func (tc *testContext) getOperatorConditionName() (string, error) {
+	deployment, err := tc.client.K8s.AppsV1().Deployments(tc.namespace).Get(context.TODO(), resourceName,
+		meta.GetOptions{})
+	if err != nil {
+		return "", errors.Wrap(err, "error getting operator deployment")
+	}
+	// Get the operator condition name using the deployment spec
+	for _, container := range deployment.Spec.Template.Spec.Containers {
+		if container.Name != wmcoContainerName {
+			continue
+		}
+		for _, envVar := range container.Env {
+			if envVar.Name == condition.OperatorConditionName {
+				return envVar.Value, nil
+			}
+		}
+	}
+	return "", errors.Errorf("unable to get operatorCondition name from namespace %s", tc.namespace)
 }

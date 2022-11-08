@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	mapi "github.com/openshift/api/machine/v1beta1"
+	mcfg "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/operator-framework/operator-lib/leader"
 	"github.com/spf13/pflag"
@@ -48,6 +49,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(mapi.AddToScheme(scheme))
 	utilruntime.Must(operators.AddToScheme(scheme))
+	utilruntime.Must(mcfg.Install(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -113,8 +115,6 @@ func main() {
 		payload.HybridOverlayPath,
 		payload.KubeletPath,
 		payload.KubeProxyPath,
-		payload.IgnoreWgetPowerShellPath,
-		payload.WmcbPath,
 		payload.WICDPath,
 		payload.HNSPSModule,
 		payload.WindowsExporterPath,
@@ -185,7 +185,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	secretReconciler := controllers.NewSecretReconciler(mgr, watchNamespace)
+	secretReconciler := controllers.NewSecretReconciler(mgr, clusterConfig.Platform(), watchNamespace)
 	if err = secretReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create Secret controller")
 		os.Exit(1)
@@ -248,8 +248,7 @@ func main() {
 
 // checkIfRequiredFilesExist checks for the existence of required files and binaries before starting WMCO
 // sample error message: errors encountered with required files: could not stat /payload/hybrid-overlay-node.exe:
-// stat /payload/hybrid-overlay-node.exe: no such file or directory, could not stat /payload/wmcb.exe: stat /payload/wmcb.exe:
-// no such file or directory
+// stat /payload/hybrid-overlay-node.exe: no such file or directory
 func checkIfRequiredFilesExist(requiredFiles []string) error {
 	var errorMessages []string
 	// Iterating through file paths and checking if they are present

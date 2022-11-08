@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
+	openshiftClient "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -42,6 +43,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
+	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -87,8 +89,28 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 		return nil, errors.Wrap(err, "unable to initialize Prometheus configuration")
 	}
 
-	// Get expected state of the Windows service ConfigMap
-	svcData, err := services.GenerateManifest(clusterConfig.Network().VXLANPort(), ctrl.Log.V(1).Enabled())
+	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		return nil, err
+	}
+	ign, err := ignition.New(directClient)
+	if err != nil {
+		return nil, errors.Wrap(err, "error creating ignition object")
+	}
+	argsFromIgnition, err := ign.GetKubeletArgs()
+	if err != nil {
+		return nil, err
+	}
+	oc, err := openshiftClient.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to create openshift client-go client")
+	}
+	ccmEnabled, err := cluster.IsCloudControllerOwnedByCCM(oc)
+	if err != nil {
+		return nil, errors.Wrap(err, "error determining if CCM owns cloud controller")
+	}
+	svcData, err := services.GenerateManifest(argsFromIgnition, clusterConfig.Network().VXLANPort(),
+		clusterConfig.Platform(), ccmEnabled, ctrl.Log.V(1).Enabled())
 	if err != nil {
 		return nil, errors.Wrap(err, "error generating expected Windows service state")
 	}
