@@ -443,13 +443,10 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 // getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
 func (tc *testContext) getWindowsServerContainerImage() string {
 	var windowsServerImage string
-	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
-		// If we're on vSphere we will use 2022
+	if tc.CloudProvider.GetType() == config.VSpherePlatformType ||
+		tc.CloudProvider.GetType() == config.NonePlatformType {
+		// If we're on vSphere or platform:none we will use 2022
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
-	} else if tc.CloudProvider.GetType() == config.NonePlatformType {
-		// TODO: On platform=none we have to use 2004 since the job points to the WS2004 golden image via release repo
-		// When the release repo is updated to use 2022, this clause should be squashed with the above to use 2022
-		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-2004"
 	} else if tc.CloudProvider.GetType() == config.AzurePlatformType {
 		// On Azure we are testing 20H2
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-20h2"
