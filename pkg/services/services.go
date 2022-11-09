@@ -223,7 +223,9 @@ func klogVerbosityArg(debug bool) string {
 func getHostnameCmd(platformType config.PlatformType) string {
 	switch platformType {
 	case config.AWSPlatformType:
-		return "Get-EC2InstanceMetadata -Category LocalHostname"
+		// Use the Instance Metadata Service Version 1 (IMDSv1) to fetch the hostname. IMDSv1 will continue to be
+		// supported indefinitely as per AWS docs. https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html
+		return "Invoke-RestMethod -UseBasicParsing -Uri http://169.254.169.254/latest/meta-data/local-hostname"
 	case config.GCPPlatformType:
 		return windows.GcpGetHostnameScriptRemotePath
 	default:
