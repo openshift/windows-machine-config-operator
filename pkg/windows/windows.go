@@ -23,6 +23,9 @@ import (
 const (
 	// remoteDir is the remote temporary directory created on the Windows VM
 	remoteDir = "C:\\Temp\\"
+	// GcpGetHostnameScriptRemotePath is the remote location of the PowerShell script that resolves the hostname
+	// for GCP instances
+	GcpGetHostnameScriptRemotePath = remoteDir + payload.GcpGetHostnameScriptName
 	// HNSPSModule is the remote location of the hns.psm1 module
 	HNSPSModule = remoteDir + "hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
@@ -157,20 +160,21 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		return filesToTransfer, nil
 	}
 	srcDestPairs := map[string]string{
-		payload.WICDPath:                   K8sDir,
-		payload.HybridOverlayPath:          K8sDir,
-		payload.HNSPSModule:                remoteDir,
-		payload.WindowsExporterPath:        K8sDir,
-		payload.WinBridgeCNIPlugin:         cniDir,
-		payload.HostLocalCNIPlugin:         cniDir,
-		payload.WinOverlayCNIPlugin:        cniDir,
-		payload.KubeProxyPath:              K8sDir,
-		payload.KubeletPath:                K8sDir,
-		payload.AzureCloudNodeManagerPath:  K8sDir,
-		payload.ContainerdPath:             ContainerdDir,
-		payload.HcsshimPath:                ContainerdDir,
-		payload.ContainerdConfPath:         ContainerdDir,
-		payload.NetworkConfigurationScript: remoteDir,
+		payload.GcpGetValidHostnameScriptPath: remoteDir,
+		payload.WICDPath:                      K8sDir,
+		payload.HybridOverlayPath:             K8sDir,
+		payload.HNSPSModule:                   remoteDir,
+		payload.WindowsExporterPath:           K8sDir,
+		payload.WinBridgeCNIPlugin:            cniDir,
+		payload.HostLocalCNIPlugin:            cniDir,
+		payload.WinOverlayCNIPlugin:           cniDir,
+		payload.KubeProxyPath:                 K8sDir,
+		payload.KubeletPath:                   K8sDir,
+		payload.AzureCloudNodeManagerPath:     K8sDir,
+		payload.ContainerdPath:                ContainerdDir,
+		payload.HcsshimPath:                   ContainerdDir,
+		payload.ContainerdConfPath:            ContainerdDir,
+		payload.NetworkConfigurationScript:    remoteDir,
 	}
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
