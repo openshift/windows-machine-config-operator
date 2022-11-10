@@ -74,59 +74,79 @@ func testUserData(t *testing.T) {
 	userData, err := tc.getUserDataContents()
 	require.NoError(t, err, "could not retrieve userdata contents")
 	assert.Contains(t, userData, string(ssh.MarshalAuthorizedKey(pubKey)), "public key not found within Windows userdata")
+	t.Run("Delete the userdata secret", tc.testUserDataRegeneration)
+	t.Run("Update the userdata secret with invalid data", tc.testUserDataTamper)
 }
 
-// testUserDataTamper tests if userData reverts to previous value if updated
-func testUserDataTamper(t *testing.T) {
+// testUserDataTamper tests if userdata reverts to previous value if updated
+func (tc *testContext) testUserDataTamper(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 
-	secretInstance := &core.Secret{}
-	validUserDataSecret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(), "windows-user-data", meta.GetOptions{})
+	validUserDataSecret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(),
+		secrets.UserDataSecret, meta.GetOptions{})
 	require.NoError(t, err, "could not find Windows userData secret in required namespace")
 
-	var tests = []struct {
-		name           string
-		operation      string
-		expectedSecret *core.Secret
-	}{
-		{"Update the userData secret with invalid data", "Update", validUserDataSecret},
-		{"Delete the userData secret", "Delete", validUserDataSecret},
+	updatedSecret := validUserDataSecret.DeepCopy()
+	updatedSecret.Data["userData"] = []byte("invalid data")
+	_, err = tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Update(context.TODO(), updatedSecret,
+		meta.UpdateOptions{})
+	require.NoError(t, err, "could not update userData secret")
+
+	// Updating the userdata with incorrect contents will cause the Machine nodes to be deleted and recreated, wait
+	// until the Machine is back up.
+	log.Printf("waiting for Machine nodes to be recreated after userdata update")
+	assert.NoError(t, tc.waitForNewMachineNodes(), "error waiting for Machine nodes to be reconfigured")
+	assert.NoError(t, tc.waitForValidUserData(validUserDataSecret), "error waiting for valid userdata")
+}
+
+// waitForNewMachineNodes returns an error if waitForWindowsNodes returns the same Machine backed nodes
+func (tc *testContext) waitForNewMachineNodes() error {
+	var oldNodes []string
+	for _, node := range gc.machineNodes {
+		oldNodes = append(oldNodes, node.GetName())
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.operation == "Update" {
-				updatedSecret := validUserDataSecret.DeepCopy()
-				updatedSecret.Data["userData"] = []byte("invalid data")
-				_, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Update(context.TODO(), updatedSecret,
-					meta.UpdateOptions{})
-				require.NoError(t, err, "could not update userData secret")
-			}
-			if tt.operation == "Delete" {
-				err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})
-				require.NoError(t, err, "could not delete userData secret")
-			}
-
-			// wait for userData secret creation / update to take effect.
-			err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (done bool, err error) {
-				secretInstance, err = tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(), "windows-user-data", meta.GetOptions{})
-				if err != nil {
-					if apierrors.IsNotFound(err) {
-						log.Printf("still waiting for user data secret: %v", err)
-						return false, nil
-					}
-					log.Printf("error listing secrets: %v", err)
-					return false, nil
-				}
-				if string(validUserDataSecret.Data["userData"][:]) != string(secretInstance.Data["userData"][:]) {
-					return false, nil
-				}
-				return true, nil
-			})
-			require.NoError(t, err, "could not find a valid userData secret in the namespace : %v", secretInstance.Namespace)
-		})
+	// waitForWindowsNodes will re-populate gc.machineNodes with the configured nodes found
+	err := tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	if err != nil {
+		return err
 	}
+	for _, newNode := range gc.machineNodes {
+		for _, oldNode := range oldNodes {
+			if newNode.GetName() == oldNode {
+				return errors.Wrapf(err, "node %s is not a new Node", oldNode)
+			}
+		}
+	}
+	return nil
+}
+
+// testUserDataRegeneration tests that the userdata will be created by WMCO if deleted by a user
+func (tc *testContext) testUserDataRegeneration(t *testing.T) {
+	validUserDataSecret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(),
+		secrets.UserDataSecret, meta.GetOptions{})
+	require.NoError(t, err, "could not find Windows userData secret in required namespace")
+	err = tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Delete(context.TODO(),
+		secrets.UserDataSecret, meta.DeleteOptions{})
+	require.NoError(t, err, "could not delete userData secret")
+	assert.NoError(t, tc.waitForValidUserData(validUserDataSecret))
+}
+
+// waitForValidUserData waits until the userdata secret exists with expected content
+func (tc *testContext) waitForValidUserData(expected *core.Secret) error {
+	return wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (done bool, err error) {
+		actualData, err := tc.getUserDataContents()
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Printf("still waiting for user data secret: %v", err)
+				return false, nil
+			}
+			log.Printf("error getting secret: %v", err)
+			return false, nil
+		}
+		return string(expected.Data["userData"][:]) == actualData, nil
+	})
 }
 
 // testPrivateKeyChange alters the private key used to SSH into instances and ensures nodes are updated properly

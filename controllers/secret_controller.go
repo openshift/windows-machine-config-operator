@@ -207,13 +207,13 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 		return err
 	}
 	for _, node := range nodes.Items {
-		// Since the public key hash and username annotations are both dependent on the private key secret as well
-		// as applied and updated at the same time, checking one is enough to see if the private key is up to date
-		if node.Annotations[nodeconfig.PubKeyHashAnnotation] == expectedPubKeyAnno {
-			continue
-		}
 		annotationsToApply := make(map[string]string)
 		if _, present := node.GetLabels()[BYOHLabel]; present {
+			// Since the public key hash and username annotations are both dependent on the private key secret as well
+			// as applied and updated at the same time, checking one is enough to see if the private key is up to date
+			if node.Annotations[nodeconfig.PubKeyHashAnnotation] == expectedPubKeyAnno {
+				continue
+			}
 			// For BYOH nodes, update the username annotation and public key hash annotation using new private key
 			expectedUsernameAnnotation, err := r.getEncryptedUsername(ctx, node, privateKeyBytes)
 			if err != nil {
@@ -226,7 +226,8 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 			}
 		} else {
 			// For Nodes associated with Machines, clear the public key annotation, as the clearing of the
-			// annotation is used solely to kick off the deletion and recreation of Machines.
+			// annotation is used solely to kick off the deletion and recreation of Machines, causing them to be
+			// provisioned with the new userdata
 			annotationsToApply = map[string]string{nodeconfig.PubKeyHashAnnotation: ""}
 		}
 
