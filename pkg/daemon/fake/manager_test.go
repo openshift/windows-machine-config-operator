@@ -168,3 +168,57 @@ func TestDeleteService(t *testing.T) {
 		})
 	}
 }
+
+func TestEnsureService(t *testing.T) {
+	testIO := []struct {
+		name          string
+		signal        svc.Cmd
+		startingState svc.State
+		expectedState svc.State
+		expectErr     bool
+	}{
+		{
+			name:          "stop a stopped service",
+			startingState: svc.Stopped,
+			expectedState: svc.Stopped,
+			expectErr:     false,
+		},
+		{
+			name:          "stop a running service",
+			startingState: svc.Running,
+			expectedState: svc.Stopped,
+			expectErr:     false,
+		},
+		{
+			name:          "start a stopped service",
+			startingState: svc.Stopped,
+			expectedState: svc.Running,
+			expectErr:     false,
+		},
+		{
+			name:          "start a running service",
+			startingState: svc.Running,
+			expectedState: svc.Running,
+			expectErr:     false,
+		},
+	}
+	for _, test := range testIO {
+		t.Run(test.name, func(t *testing.T) {
+			svcName := "testsvc"
+			svcs := map[string]*FakeService{svcName: {name: svcName, status: svc.Status{State: test.startingState}}}
+			manager := NewTestMgr(svcs)
+			service, err := manager.OpenService(svcName)
+			require.NoError(t, err)
+			err = manager.EnsureServiceState(service, test.expectedState)
+			if test.expectErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			newStatus, err := service.Query()
+			require.NoError(t, err)
+			assert.Equal(t, test.expectedState, newStatus.State)
+
+		})
+	}
+}
