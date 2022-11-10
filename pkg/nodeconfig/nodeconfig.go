@@ -149,6 +149,15 @@ func (nc *nodeConfig) Configure() error {
 		return err
 	}
 
+	// This is a hack to circumvent the routing issue in Windows Server 2022 running the EC2Launch V2 agent where
+	// the instance metadata endpoint is not available after hybrid-overlay is running as a Windows service.
+	// See https://github.com/ovn-org/ovn-kubernetes/issues/3119
+	if nc.platformType == configv1.AWSPlatformType {
+		if err := nc.runAwsEc2LunchV2Agent(); err != nil {
+			return err
+		}
+	}
+
 	// Start all required services to bootstrap a node object using WICD
 	if err := nc.Windows.Bootstrap(version.Get(), nodeConfigCache.apiServerEndpoint, nodeConfigCache.credentials); err != nil {
 		return errors.Wrap(err, "bootstrapping the Windows instance failed")
@@ -242,6 +251,31 @@ func (nc *nodeConfig) Configure() error {
 		}
 	}
 	return err
+}
+
+// runAwsEc2LunchV2Agent runs the AWS EC2 Launch V2 agent if present in the default location
+// See https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/ec2launch-v2-verify-version.html
+func (nc *nodeConfig) runAwsEc2LunchV2Agent() error {
+	ec2lunchPath := "\"%programfiles%\\amazon\\ec2launch\\ec2launch.exe\""
+	out, err := nc.Windows.Run(ec2lunchPath+" version", false)
+	if err != nil {
+		// EC2Launch V2 agent is not present, nothing to do!
+		return nil
+	}
+
+	out, err = nc.Windows.Run(ec2lunchPath+" run", false)
+	if err != nil {
+		return errors.Wrapf(err, "failed run EC2Launch V2 agent")
+	}
+	metadataAvailableMessage := "Meta-data is now available"
+	index := strings.Index(out, metadataAvailableMessage)
+	if index < 0 {
+		return errors.Errorf("unable to check instance metadata: %s", out)
+	}
+	// clean output and log debug information
+	nc.log.V(1).Info(out[:index+len(metadataAvailableMessage)+1])
+
+	return nil
 }
 
 // createBootstrapFiles creates all prerequisite files on the node required to start kubelet using latest ignition spec
