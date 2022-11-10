@@ -286,10 +286,9 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 		}
 
 		if _, present := node.Annotations[metadata.VersionAnnotation]; present {
-			// If either the version annotation doesn't match the current operator version, or the private key used
-			// to configure the machine is out of date, the machine should be deleted
-			if node.Annotations[metadata.VersionAnnotation] != version.Get() ||
-				node.Annotations[nodeconfig.PubKeyHashAnnotation] != nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
+			// If the private key used to configure the machine is out of date, the machine should be deleted
+			if node.Annotations[nodeconfig.PubKeyHashAnnotation] !=
+				nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
 				log.Info("deleting machine")
 				deletionAllowed, err := r.isAllowedDeletion(machine)
 				if err != nil {
@@ -304,13 +303,15 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 				}
 				return ctrl.Result{}, r.deleteMachine(machine)
 			}
-			// version annotation exists with a valid value, node is fully configured.
-			// configure Prometheus when we have already configured Windows Nodes. This is required to update Endpoints object if
-			// it gets reverted when the operator pod restarts.
-			if err := r.prometheusNodeConfig.Configure(); err != nil {
-				return ctrl.Result{}, errors.Wrap(err, "unable to configure Prometheus")
+			if node.Annotations[metadata.VersionAnnotation] == version.Get() {
+				// version annotation exists with a valid value, node is fully configured.
+				// configure Prometheus when we have already configured Windows Nodes. This is required to update
+				// Endpoints object if it gets reverted when the operator pod restarts.
+				if err := r.prometheusNodeConfig.Configure(); err != nil {
+					return ctrl.Result{}, errors.Wrap(err, "unable to configure Prometheus")
+				}
+				return ctrl.Result{}, nil
 			}
-			return ctrl.Result{}, nil
 		}
 	} else if *machine.Status.Phase != provisionedPhase {
 		log.V(1).Info("machine not provisioned", "phase", *machine.Status.Phase)
