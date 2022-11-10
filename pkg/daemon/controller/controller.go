@@ -318,7 +318,7 @@ func (sc *ServiceController) reconcileService(service winsvc.Service, expected s
 	if updateRequired {
 		klog.Infof("updating service %s", expected.Name)
 		// Always ensure the service isn't running before updating its config, just to be safe
-		if err := winsvc.EnsureServiceState(service, svc.Stopped); err != nil {
+		if err := sc.EnsureServiceState(service, svc.Stopped); err != nil {
 			return err
 		}
 		err = service.UpdateConfig(config)
@@ -327,7 +327,7 @@ func (sc *ServiceController) reconcileService(service winsvc.Service, expected s
 		}
 	}
 	// always ensure service is started
-	return winsvc.EnsureServiceState(service, svc.Running)
+	return sc.EnsureServiceState(service, svc.Running)
 }
 
 // expectedServiceCommand returns the full command that the given service should run with
