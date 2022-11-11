@@ -245,6 +245,14 @@ func (tc *testContext) provisionBYOHConfigMapWithMachineSet() error {
 	if err != nil {
 		return errors.Wrapf(err, "unable to change default shell of machine %s", machines.Items[0].GetName())
 	}
+	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
+		// By default the Windows Defender antivirus is running on VMs in the test suite. Disable it for a BYOH node to
+		// validate instances are able to be configured into Nodes regardless of the Windows Defender antivirus status.
+		err = tc.uninstallWindowsDefender(&machines.Items[0])
+		if err != nil {
+			return errors.Wrapf(err, "unable to uninstall Windows Defender on machine %s", machines.Items[0].GetName())
+		}
+	}
 	return tc.createWindowsInstanceConfigMap(machines)
 }
 
@@ -302,6 +310,20 @@ func (tc *testContext) setPowerShellDefaultShell(machine *mapi.Machine) error {
 		}
 		return true, nil
 	})
+}
+
+// uninstallWindowsDefender uninstalls Windows Defender from the given machine. Reboots the underlying VM.
+func (tc *testContext) uninstallWindowsDefender(machine *mapi.Machine) error {
+	addr, err := controllers.GetAddress(machine.Status.Addresses)
+	if err != nil {
+		return err
+	}
+	command := "Uninstall-WindowsFeature -Name Windows-Defender; Restart-Computer -Force"
+	_, err = tc.runPowerShellSSHJob("uninstall-windows-defender", command, addr)
+	if err != nil {
+		return errors.Wrap(err, "failed to uninstall Windows Defender antivirus")
+	}
+	return nil
 }
 
 // createWindowsMachineSet creates given number of Windows Machines.
