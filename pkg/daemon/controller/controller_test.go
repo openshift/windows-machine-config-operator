@@ -454,6 +454,73 @@ func TestReconcile(t *testing.T) {
 			expectErr:                    false,
 		},
 		{
+			name: "Single service to be updated, with a running dependency",
+			existingServices: map[string]*fake.FakeService{
+				"test1": fake.NewFakeService("test1",
+					mgr.Config{BinaryPathName: "badvalue"}, svc.Status{State: svc.Running}),
+				"test2": fake.NewFakeService("test2",
+					mgr.Config{BinaryPathName: "test2 arg1 arg2", Dependencies: []string{"test1"}},
+					svc.Status{State: svc.Running}),
+			},
+			configMapServices: []servicescm.Service{
+				{
+					Name:         "test1",
+					Command:      "test1 arg1",
+					Dependencies: nil,
+					Bootstrap:    true,
+					Priority:     0,
+				},
+				{
+					Name:         "test2",
+					Command:      "test2 arg1 arg2",
+					Dependencies: []string{"test1"},
+					Bootstrap:    false,
+					Priority:     1,
+				},
+			},
+			expectedServicesNameCmdPairs: map[string]string{"test1": "test1 arg1", "test2": "test2 arg1 arg2"},
+			expectErr:                    false,
+		},
+		{
+			name: "Single service to be updated, with a dependency chain",
+			existingServices: map[string]*fake.FakeService{
+				"test1": fake.NewFakeService("test1",
+					mgr.Config{BinaryPathName: "badvalue"}, svc.Status{State: svc.Running}),
+				"test2": fake.NewFakeService("test2",
+					mgr.Config{BinaryPathName: "test2 arg1 arg2", Dependencies: []string{"test1"}},
+					svc.Status{State: svc.Running}),
+				"test3": fake.NewFakeService("test3",
+					mgr.Config{BinaryPathName: "test3 arg1 arg2", Dependencies: []string{"test2"}},
+					svc.Status{State: svc.Running}),
+			},
+			configMapServices: []servicescm.Service{
+				{
+					Name:         "test1",
+					Command:      "test1 arg1",
+					Dependencies: nil,
+					Bootstrap:    true,
+					Priority:     0,
+				},
+				{
+					Name:         "test2",
+					Command:      "test2 arg1 arg2",
+					Dependencies: []string{"test1"},
+					Bootstrap:    false,
+					Priority:     1,
+				},
+				{
+					Name:         "test3",
+					Command:      "test3 arg1 arg2",
+					Dependencies: []string{"test2"},
+					Bootstrap:    false,
+					Priority:     2,
+				},
+			},
+			expectedServicesNameCmdPairs: map[string]string{"test1": "test1 arg1", "test2": "test2 arg1 arg2",
+				"test3": "test3 arg1 arg2"},
+			expectErr: false,
+		},
+		{
 			name: "Multiple services",
 			configMapServices: []servicescm.Service{
 				{

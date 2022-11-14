@@ -23,6 +23,9 @@ import (
 const (
 	// remoteDir is the remote temporary directory created on the Windows VM
 	remoteDir = "C:\\Temp\\"
+	// GcpGetHostnameScriptRemotePath is the remote location of the PowerShell script that resolves the hostname
+	// for GCP instances
+	GcpGetHostnameScriptRemotePath = remoteDir + payload.GcpGetHostnameScriptName
 	// HNSPSModule is the remote location of the hns.psm1 module
 	HNSPSModule = remoteDir + "hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
@@ -157,20 +160,21 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		return filesToTransfer, nil
 	}
 	srcDestPairs := map[string]string{
-		payload.WICDPath:                   K8sDir,
-		payload.HybridOverlayPath:          K8sDir,
-		payload.HNSPSModule:                remoteDir,
-		payload.WindowsExporterPath:        K8sDir,
-		payload.WinBridgeCNIPlugin:         cniDir,
-		payload.HostLocalCNIPlugin:         cniDir,
-		payload.WinOverlayCNIPlugin:        cniDir,
-		payload.KubeProxyPath:              K8sDir,
-		payload.KubeletPath:                K8sDir,
-		payload.AzureCloudNodeManagerPath:  K8sDir,
-		payload.ContainerdPath:             ContainerdDir,
-		payload.HcsshimPath:                ContainerdDir,
-		payload.ContainerdConfPath:         ContainerdDir,
-		payload.NetworkConfigurationScript: remoteDir,
+		payload.GcpGetValidHostnameScriptPath: remoteDir,
+		payload.WICDPath:                      K8sDir,
+		payload.HybridOverlayPath:             K8sDir,
+		payload.HNSPSModule:                   remoteDir,
+		payload.WindowsExporterPath:           K8sDir,
+		payload.WinBridgeCNIPlugin:            cniDir,
+		payload.HostLocalCNIPlugin:            cniDir,
+		payload.WinOverlayCNIPlugin:           cniDir,
+		payload.KubeProxyPath:                 K8sDir,
+		payload.KubeletPath:                   K8sDir,
+		payload.AzureCloudNodeManagerPath:     K8sDir,
+		payload.ContainerdPath:                ContainerdDir,
+		payload.HcsshimPath:                   ContainerdDir,
+		payload.ContainerdConfPath:            ContainerdDir,
+		payload.NetworkConfigurationScript:    remoteDir,
 	}
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
@@ -487,8 +491,8 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL string, credentials *Authe
 // configureContainerd configures the Windows defender exclusion and starts the
 // Windows containerd service
 func (vm *windows) configureContainerd() error {
-	// if Windows Defender is installed on the instance, create an exclusion for containerd
-	exclusionNeeded, err := vm.isWindowsDefenderEnabled()
+	// if Windows Defender is running on the instance, create an exclusion for containerd
+	exclusionNeeded, err := vm.isWindowsDefenderRunning()
 	if err != nil {
 		return err
 	}
@@ -930,9 +934,11 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 	return strings.Contains(out, "Enabled"), nil
 }
 
-// isWindowsDefenderEnabled returns true if the Windows Defender antivirus/firewall is installed on the Windows instance
-func (vm *windows) isWindowsDefenderEnabled() (bool, error) {
-	command := "(Get-Service | where {$_.DisplayName -Like 'Windows Defender*'}).Count -gt 0"
+// isWindowsDefenderRunning returns true if the Windows Defender antivirus/firewall is running on the Windows instance
+func (vm *windows) isWindowsDefenderRunning() (bool, error) {
+	// Check if the process associated with Windows Defender exists. Reference:
+	// https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/microsoft-defender-antivirus-compatibility?view=o365-worldwide#use-windows-powershell-to-confirm-that-microsoft-defender-antivirus-is-running
+	command := "(Get-Process -Name MsMpEng -ErrorAction SilentlyContinue) -ne $null"
 	out, err := vm.Run(command, true)
 	if err != nil {
 		return false, errors.Wrap(err, "error checking if Windows Defender is enabled")

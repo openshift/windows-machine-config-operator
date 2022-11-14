@@ -6,6 +6,8 @@ import (
 	"log"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -20,6 +22,7 @@ import (
 	rbac "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
@@ -710,4 +713,105 @@ func (tc *testContext) getOperatorConditionName() (string, error) {
 		}
 	}
 	return "", errors.Errorf("unable to get operatorCondition name from namespace %s", tc.namespace)
+}
+
+// testDependentServiceChanges tests that a Windows service which a running service is dependent on can be reconfigured
+func testDependentServiceChanges(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	require.NoError(t, err, "timed out waiting for Windows Machine nodes")
+	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	require.NoError(t, err, "timed out waiting for BYOH Windows nodes")
+	nodes := append(gc.machineNodes, gc.byohNodes...)
+
+	queryCommand := "Get-WmiObject win32_service | Where-Object {$_.Name -eq \\\"hybrid-overlay-node\\\"} " +
+		"|select -ExpandProperty PathName"
+	for _, node := range nodes {
+		t.Run(node.GetName(), func(t *testing.T) {
+			// Get initial configuration of hybrid-overlay-node, this service is used as kube-proxy is dependent on it
+			addr, err := controllers.GetAddress(node.Status.Addresses)
+			require.NoError(t, err, "error getting node address")
+			out, err := tc.runPowerShellSSHJob("hybrid-overlay-query", queryCommand, addr)
+			require.NoError(t, err, "error querying hybrid-overlay service")
+			// The binPath/pathName will be the final line of the pod logs
+			originalPath := finalLine(out)
+
+			// Change hybrid-overlay-node configuration
+			newPath, err := changeHybridOverlayCommandVerbosity(originalPath)
+			require.NoError(t, err, "error constructing new hybrid-overlay command")
+			changeCommand := fmt.Sprintf("sc.exe config hybrid-overlay-node binPath=\\\"%s\\\"", newPath)
+			out, err = tc.runPowerShellSSHJob("hybrid-overlay-change", changeCommand, addr)
+			require.NoError(t, err, "error changing hybrid-overlay command")
+
+			require.NoError(t, tc.triggerWICDReconciliation(&node), "error triggering reconciliation")
+
+			// Wait until hybrid-overlay-node is returned to correct config
+			err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+				out, err = tc.runPowerShellSSHJob("hybrid-overlay-query2", queryCommand, addr)
+				if err != nil {
+					return false, nil
+				}
+				currentPath := finalLine(out)
+				if currentPath != originalPath {
+					log.Printf("waiting for hybrid-overlay service config to be reconciled, current value: %s",
+						currentPath)
+					return false, nil
+				}
+				return true, nil
+			})
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TODO: Remove this function when https://issues.redhat.com/browse/WINC-736 is complete
+// triggerWICDReconciliation kicks off WICD instance reconciliation by changing the desiredVersionAnnotation to an
+// incorrect version, and then back to the correct version.
+func (tc *testContext) triggerWICDReconciliation(node *core.Node) error {
+	patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.DesiredVersionAnnotation,
+		"test")
+	_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
+		[]byte(patchData), meta.PatchOptions{})
+	if err != nil {
+		return errors.Wrap(err, "error patching node annotation")
+	}
+	patchData = fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.DesiredVersionAnnotation,
+		node.Annotations[nc.DesiredVersionAnnotation])
+	_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
+		[]byte(patchData), meta.PatchOptions{})
+	if err != nil {
+		return errors.Wrap(err, "error patching node annotation back to expected")
+	}
+	return nil
+}
+
+// logLevelRegex finds the loglevel argument and captures the log level itself
+var logLevelRegex = regexp.MustCompile(`loglevel(?:=|\s)(\d+\.?\d*)`)
+
+// changeHybridOverlayCommandVerbosity will change the loglevel argument in the hybrid-overlay-node command to a
+// different level. It takes the full command path of the hybrid-overlay-node service, and returns the command with
+// altered arguments.
+func changeHybridOverlayCommandVerbosity(in string) (string, error) {
+	matches := logLevelRegex.FindStringSubmatch(in)
+	if len(matches) != 2 {
+		return "", fmt.Errorf("'%s' did not match expected argument format", in)
+	}
+	originalLogLevel, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return "", errors.Wrapf(err, "could not convert %s into int", matches[1])
+	}
+	var newLogLevel string
+	if originalLogLevel == 0 {
+		newLogLevel = fmt.Sprintf("%d", originalLogLevel+1)
+	} else {
+		newLogLevel = fmt.Sprintf("%d", originalLogLevel-1)
+	}
+	return logLevelRegex.ReplaceAllString(in, "loglevel "+newLogLevel), nil
+}
+
+// finalLine returns the contents of the final line of a given string
+func finalLine(s string) string {
+	lineSplit := strings.Split(strings.TrimSpace(s), "\n")
+	return strings.TrimSpace(lineSplit[len(lineSplit)-1])
 }
