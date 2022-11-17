@@ -21,7 +21,7 @@ func TestGetHostnameCmd(t *testing.T) {
 		{
 			name:         "AWS platform",
 			platformType: config.AWSPlatformType,
-			expected:     "Get-EC2InstanceMetadata -Category LocalHostname",
+			expected:     "Invoke-RestMethod -UseBasicParsing -Uri http://169.254.169.254/latest/meta-data/local-hostname",
 		},
 		{
 			name:         "GCP platform",
