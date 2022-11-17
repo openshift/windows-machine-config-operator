@@ -144,7 +144,6 @@ var (
 		KubeletServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
-		K8sDir,
 		remoteDir,
 		cniDir,
 		CniConfDir,
@@ -156,6 +155,7 @@ var (
 		ContainerdDir,
 		containerdLogDir,
 		podManifestDirectory,
+		K8sDir,
 	}
 )
 
@@ -235,10 +235,10 @@ type Windows interface {
 	ConfigureWICD(string, string, *Authentication) error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy() error
-	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
-	EnsureRequiredServicesStopped() error
-	// Deconfigure removes all files and services created as part of the configuration process
-	Deconfigure() error
+	// Deconfigure removes all files and networks created by WMCO and runs the WICD cleanup command.
+	Deconfigure(string, string) error
+	// RunWICDCleanup runs the WICD cleanup command that ensures all services configured by WICD are stopped.
+	RunWICDCleanup(string, string) error
 }
 
 // windows implements the Windows interface
@@ -400,60 +400,24 @@ func (vm *windows) Reinitialize() error {
 	return nil
 }
 
-func (vm *windows) EnsureRequiredServicesStopped() error {
-	// TODO: In this transitional period of migrating services to WICD's responsibility, WICD must be stopped first to
-	//       ensure it does not start any of these stopped services. This code should be removed as part of
-	//       https://issues.redhat.com/browse/WINC-733
-	svc := &service{name: wicdServiceName}
-	if err := vm.ensureServiceNotRunning(svc); err != nil {
-		return errors.Wrapf(err, "could not stop service %s", wicdServiceName)
-	}
-	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
-		svc := &service{name: svcName}
-		if err := vm.ensureServiceNotRunning(svc); err != nil {
-			return errors.Wrapf(err, "could not stop service %s", svcName)
-		}
+func (vm *windows) RunWICDCleanup(apiServerURL string, watchNamespace string) error {
+	wicdCleanupCmd := fmt.Sprintf("%s cleanup --api-server %s --sa-ca %s --sa-token %s --namespace %s",
+		wicdPath, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
+	if out, err := vm.Run(wicdCleanupCmd, true); err != nil {
+		vm.log.Info("failed to cleanup node", "command", wicdCleanupCmd, "output", out)
+		return err
 	}
 	return nil
 }
 
-// ensureServicesAreRemoved ensures that all services installed by WMCO are removed from the instance
-func (vm *windows) ensureServicesAreRemoved() error {
-	// TODO: In this transitional period of migrating services to WICD's responsibility, WICD must be stopped first to
-	//       ensure it does not start any of these stopped services. This code should be removed as part of
-	//       https://issues.redhat.com/browse/WINC-733
-	svc := &service{name: wicdServiceName}
-	if err := vm.ensureServiceNotRunning(svc); err != nil {
-		return errors.Wrapf(err, "could not stop service %s", wicdServiceName)
-	}
-	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
-		svc := &service{name: svcName}
-
-		// If the service is not installed, do nothing
-		exists, err := vm.serviceExists(svc.name)
-		if err != nil {
-			return errors.Wrapf(err, "unable to check if %s service exists", svc.name)
-		}
-		if !exists {
-			continue
-		}
-
-		// Make sure the service is stopped before we attempt to delete it
-		if err := vm.ensureServiceNotRunning(svc); err != nil {
-			return errors.Wrapf(err, "could not stop service %s", svc.name)
-		}
-		if err := vm.deleteService(svc); err != nil {
-			return errors.Wrapf(err, "could not delete service %s", svcName)
-		}
-		vm.log.Info("deconfigured", "service", svc.name)
-	}
-	return nil
-}
-
-func (vm *windows) Deconfigure() error {
+func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string) error {
 	vm.log.Info("deconfiguring")
-	if err := vm.ensureServicesAreRemoved(); err != nil {
-		return errors.Wrap(err, "unable to remove Windows services")
+
+	if err := vm.deconfigureWICD(); err != nil {
+		return err
+	}
+	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace); err != nil {
+		return errors.Wrap(err, "Unable to cleanup the Windows instance")
 	}
 	if err := vm.removeDirectories(); err != nil {
 		return errors.Wrap(err, "unable to remove created directories")
@@ -470,7 +434,7 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, cr
 	if err := vm.deconfigureWICD(); err != nil {
 		return err
 	}
-	if err := vm.EnsureRequiredServicesStopped(); err != nil {
+	if err := vm.ensureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop all services")
 	}
 	if err := vm.ensureHostNameAndContainersFeature(); err != nil {
@@ -526,6 +490,18 @@ func (vm *windows) ConfigureKubeProxy() error {
 }
 
 // Interface helper methods
+// ensureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
+func (vm *windows) ensureRequiredServicesStopped() error {
+	// TODO: WMCO no longer stops services started by WICD before calling WICD bootstrap command
+	//		 This code should be removed as part of: https://issues.redhat.com/browse/WINC-741
+	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
+		svc := &service{name: svcName}
+		if err := vm.ensureServiceNotRunning(svc); err != nil {
+			return errors.Wrapf(err, "could not stop service %s", svcName)
+		}
+	}
+	return nil
+}
 
 // ensureHostNameAndContainersFeature ensures hostname of the Windows VM matches the expected name
 // and the required Windows feature is enabled.
@@ -883,15 +859,21 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
 	for _, network := range []string{BaseOVNKubeOverlayNetwork, OVNKubeOverlayNetwork} {
 		err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+			// reinitialize and retry on failure to avoid connection reset SSH errors
 			if err := vm.removeHNSNetwork(network); err != nil {
-				return false, errors.Wrapf(err, "error removing %s HNS network", network)
+				vm.log.V(1).Error(err, "error removing %s HNS network", "network", network)
+				if err := vm.Reinitialize(); err != nil {
+					return false, errors.Wrapf(err, "error reinitializing VM after removing %s HNS network", network)
+				}
+				return false, nil
 			}
 			if err := vm.Reinitialize(); err != nil {
 				return false, errors.Wrapf(err, "error reinitializing VM after removing %s HNS network", network)
 			}
 			out, err := vm.Run(getHNSNetworkCmd(network), true)
 			if err != nil {
-				return false, errors.Wrapf(err, "error waiting for %s HNS network", network)
+				vm.log.V(1).Error(err, "error waiting for HNS network", "network", network)
+				return false, nil
 			}
 			return !strings.Contains(out, network), nil
 		})
@@ -905,8 +887,8 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 // removeHNSNetwork removes the given HNS network.
 func (vm *windows) removeHNSNetwork(networkName string) error {
 	cmd := getHNSNetworkCmd(networkName) + " | Remove-HnsNetwork;"
-	// PowerShell returns error waiting without exit status or signal error when the OVNKubeOverlayNetwork is removed.
-	if out, err := vm.Run(cmd, true); err != nil && !(networkName == OVNKubeOverlayNetwork && strings.Contains(err.Error(), cmdExitNoStatus)) {
+	// PowerShell returns error waiting without exit status or signal error when the networks are removed.
+	if out, err := vm.Run(cmd, true); err != nil && !strings.Contains(err.Error(), cmdExitNoStatus) {
 		return errors.Wrapf(err, "failed to remove %s HNS network with output: %s", networkName, out)
 	}
 	return nil
