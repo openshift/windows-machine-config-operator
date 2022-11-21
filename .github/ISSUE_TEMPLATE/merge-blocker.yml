@@ -1,0 +1,9 @@
+name: Merge Blocker
+description: Merge blocker template for a release. Meant for use only by @openshift/openshift-team-windows-containers.
+title: "WINC-xxx: Merge blocker for active release | branch:release-x.y"
+labels: "tide/merge-blocker"
+body:
+- type: textarea
+  attributes:
+    label: Description
+    placeholder: WINC-xxx Windows Machine Config Operator x.y.z Release
