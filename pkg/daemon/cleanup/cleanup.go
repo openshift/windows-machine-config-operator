@@ -69,7 +69,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, preserveNode bool, confi
 	}()
 	if err != nil {
 		// TODO: best effort cleanup of all OpenShift managed services and those in the latest services ConfigMap
-		// https://issues.redhat.com/browse/WINC-733
+		// https://issues.redhat.com/browse/WINC-853
 		return err
 	}
 
