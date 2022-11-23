@@ -39,8 +39,9 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 		PowershellVariablesInCommand: nil,
 		Dependencies:                 nil,
 		Bootstrap:                    false,
-		Priority:                     1,
+		Priority:                     2,
 	},
+		containerdConfiguration(debug),
 		kubeletConfiguration,
 		hybridOverlayConfiguration(vxlanPort, debug),
 		kubeProxyConfiguration(debug),
@@ -51,6 +52,30 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
 	files := &[]servicescm.FileInfo{}
 	return servicescm.NewData(services, files)
+}
+
+// containerdConfiguration returns the service specification for the Windows containerd service
+func containerdConfiguration(debug bool) servicescm.Service {
+	containerdServiceCmd := fmt.Sprintf("%s --config %s --log-file %s --run-service",
+		windows.ContainerdPath, windows.ContainerdConfPath, windows.ContainerdLogPath)
+	if debug {
+		containerdServiceCmd = containerdServiceCmd + " --log-level debug"
+	} else {
+		containerdServiceCmd = containerdServiceCmd + " --log-level info"
+	}
+	return servicescm.Service{
+		Name:                   windows.ContainerdServiceName,
+		Command:                containerdServiceCmd,
+		NodeVariablesInCommand: nil,
+		PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
+			// Name is left blank as we just want this script to execute, without any service command replacements
+			Name: "",
+			Path: fmt.Sprintf("%s -BinPath %s", windows.WinDefenderExclusionScriptRemotePath, windows.ContainerdPath),
+		}},
+		Dependencies: nil,
+		Bootstrap:    true,
+		Priority:     0,
+	}
 }
 
 // azureCloudNodeManagerConfiguration returns the service specification for azure-cloud-node-manager.exe
@@ -68,7 +93,7 @@ func azureCloudNodeManagerConfiguration() servicescm.Service {
 		PowershellVariablesInCommand: nil,
 		Dependencies:                 nil,
 		Bootstrap:                    false,
-		Priority:                     2,
+		Priority:                     3,
 	}
 }
 
@@ -99,7 +124,7 @@ func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service
 		PowershellVariablesInCommand: nil,
 		Dependencies:                 []string{windows.KubeletServiceName},
 		Bootstrap:                    false,
-		Priority:                     1,
+		Priority:                     2,
 	}
 }
 
@@ -131,7 +156,7 @@ func kubeProxyConfiguration(debug bool) servicescm.Service {
 		}},
 		Dependencies: []string{windows.HybridOverlayServiceName},
 		Bootstrap:    false,
-		Priority:     2,
+		Priority:     3,
 	}
 }
 
@@ -166,7 +191,7 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 	return servicescm.Service{
 		Name:                         windows.KubeletServiceName,
 		Command:                      kubeletServiceCmd,
-		Priority:                     0,
+		Priority:                     1,
 		Bootstrap:                    true,
 		Dependencies:                 []string{windows.ContainerdServiceName},
 		PowershellVariablesInCommand: powershellVars,

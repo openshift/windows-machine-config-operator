@@ -26,6 +26,9 @@ const (
 	// GcpGetHostnameScriptRemotePath is the remote location of the PowerShell script that resolves the hostname
 	// for GCP instances
 	GcpGetHostnameScriptRemotePath = remoteDir + payload.GcpGetHostnameScriptName
+	// WinDefenderExclusionScriptRemotePath is the remote location of the PowerShell script that creates an exclusion
+	// for containerd if the Windows Defender Antivirus is active
+	WinDefenderExclusionScriptRemotePath = remoteDir + payload.WinDefenderExclusionScriptName
 	// HNSPSModule is the remote location of the hns.psm1 module
 	HNSPSModule = remoteDir + "hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
@@ -40,8 +43,6 @@ const (
 	KubeProxyLogDir = logDir + "kube-proxy\\"
 	// HybridOverlayLogDir is the remote hybrid-overlay log directory
 	HybridOverlayLogDir = logDir + "hybrid-overlay\\"
-	// ContainerdLogDir is the remote containerd log directory
-	ContainerdLogDir = logDir + "containerd\\"
 	// wicdLogDir is the remote wicd log directory
 	wicdLogDir = logDir + "wicd\\"
 	// cniDir is the directory for storing CNI binaries
@@ -50,10 +51,14 @@ const (
 	CniConfDir = cniDir + "config\\"
 	// ContainerdDir is the directory for storing Containerd binary
 	ContainerdDir = K8sDir + "containerd\\"
-	// containerdPath is the location of the containerd exe
-	containerdPath = ContainerdDir + "containerd.exe"
-	// containerdConfPath is the location of containerd config file
-	containerdConfPath = ContainerdDir + "containerd_conf.toml"
+	// ContainerdPath is the location of the containerd exe
+	ContainerdPath = ContainerdDir + "containerd.exe"
+	// ContainerdConfPath is the location of containerd config file
+	ContainerdConfPath = ContainerdDir + "containerd_conf.toml"
+	// containerdLogDir is the remote containerd log directory
+	containerdLogDir = logDir + "containerd\\"
+	// ContainerdLogPath is the location of the containerd log file
+	ContainerdLogPath = containerdLogDir + "containerd.log"
 	// ContainerdServiceName is containerd Windows service name
 	ContainerdServiceName = "containerd"
 	// wicdServiceName is the Windows service name for WICD
@@ -149,7 +154,7 @@ var (
 		wicdLogDir,
 		HybridOverlayLogDir,
 		ContainerdDir,
-		ContainerdLogDir,
+		containerdLogDir,
 		podManifestDirectory,
 	}
 )
@@ -160,21 +165,22 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		return filesToTransfer, nil
 	}
 	srcDestPairs := map[string]string{
-		payload.GcpGetValidHostnameScriptPath: remoteDir,
-		payload.WICDPath:                      K8sDir,
-		payload.HybridOverlayPath:             K8sDir,
-		payload.HNSPSModule:                   remoteDir,
-		payload.WindowsExporterPath:           K8sDir,
-		payload.WinBridgeCNIPlugin:            cniDir,
-		payload.HostLocalCNIPlugin:            cniDir,
-		payload.WinOverlayCNIPlugin:           cniDir,
-		payload.KubeProxyPath:                 K8sDir,
-		payload.KubeletPath:                   K8sDir,
-		payload.AzureCloudNodeManagerPath:     K8sDir,
-		payload.ContainerdPath:                ContainerdDir,
-		payload.HcsshimPath:                   ContainerdDir,
-		payload.ContainerdConfPath:            ContainerdDir,
-		payload.NetworkConfigurationScript:    remoteDir,
+		payload.GcpGetValidHostnameScriptPath:  remoteDir,
+		payload.WinDefenderExclusionScriptPath: remoteDir,
+		payload.WICDPath:                       K8sDir,
+		payload.HybridOverlayPath:              K8sDir,
+		payload.HNSPSModule:                    remoteDir,
+		payload.WindowsExporterPath:            K8sDir,
+		payload.WinBridgeCNIPlugin:             cniDir,
+		payload.HostLocalCNIPlugin:             cniDir,
+		payload.WinOverlayCNIPlugin:            cniDir,
+		payload.KubeProxyPath:                  K8sDir,
+		payload.KubeletPath:                    K8sDir,
+		payload.AzureCloudNodeManagerPath:      K8sDir,
+		payload.ContainerdPath:                 ContainerdDir,
+		payload.HcsshimPath:                    ContainerdDir,
+		payload.ContainerdConfPath:             ContainerdDir,
+		payload.NetworkConfigurationScript:     remoteDir,
 	}
 	files := make(map[*payload.FileInfo]string)
 	for src, dest := range srcDestPairs {
@@ -472,9 +478,6 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL string, credentials *Authe
 	if err := vm.transferFiles(); err != nil {
 		return errors.Wrap(err, "error transferring files to Windows VM")
 	}
-	if err := vm.configureContainerd(); err != nil {
-		return errors.Wrapf(err, "error configuring containerd")
-	}
 
 	if err := vm.ensureWICDSecretContent(credentials); err != nil {
 		return err
@@ -485,36 +488,6 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL string, credentials *Authe
 		vm.log.Info("failed to bootstrap node", "command", wicdBootstrapCmd, "output", out)
 		return err
 	}
-	return nil
-}
-
-// configureContainerd configures the Windows defender exclusion and starts the
-// Windows containerd service
-func (vm *windows) configureContainerd() error {
-	// if Windows Defender is running on the instance, create an exclusion for containerd
-	exclusionNeeded, err := vm.isWindowsDefenderRunning()
-	if err != nil {
-		return err
-	}
-	if exclusionNeeded {
-		if err := vm.createWindowsDefenderExclusion(containerdPath); err != nil {
-			return err
-		}
-	}
-
-	containerdServiceArgs := "--config " + containerdConfPath + " --log-file " + ContainerdLogDir + "containerd.log" +
-		" --log-level info" + " --run-service"
-
-	containerdService, err := newService(containerdPath, ContainerdServiceName, containerdServiceArgs, nil)
-	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", ContainerdServiceName)
-	}
-
-	if err := vm.ensureServiceIsRunning(containerdService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", ContainerdServiceName)
-	}
-
-	vm.log.Info("configured", "service", ContainerdServiceName, "args", containerdServiceArgs)
 	return nil
 }
 
@@ -932,28 +905,6 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 		return false, errors.Wrapf(err, "failed to get Windows feature: %s", containersFeatureName)
 	}
 	return strings.Contains(out, "Enabled"), nil
-}
-
-// isWindowsDefenderRunning returns true if the Windows Defender antivirus/firewall is running on the Windows instance
-func (vm *windows) isWindowsDefenderRunning() (bool, error) {
-	// Check if the process associated with Windows Defender exists. Reference:
-	// https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/microsoft-defender-antivirus-compatibility?view=o365-worldwide#use-windows-powershell-to-confirm-that-microsoft-defender-antivirus-is-running
-	command := "(Get-Process -Name MsMpEng -ErrorAction SilentlyContinue) -ne $null"
-	out, err := vm.Run(command, true)
-	if err != nil {
-		return false, errors.Wrap(err, "error checking if Windows Defender is enabled")
-	}
-	return strings.TrimSpace(out) == "True", nil
-}
-
-// createWindowsDefenderExclusion sets a Windows Defender exclusion for the given file
-func (vm *windows) createWindowsDefenderExclusion(pathToFile string) error {
-	command := "Add-MpPreference -ExclusionProcess " + pathToFile
-	out, err := vm.Run(command, true)
-	if err != nil {
-		return errors.Wrapf(err, "setting Windows defender process exclusion failed with output: %s", out)
-	}
-	return nil
 }
 
 // rebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
