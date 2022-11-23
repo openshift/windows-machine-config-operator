@@ -31,4 +31,4 @@
 [submodule "cloud-provider-azure"]
 	path = cloud-provider-azure
 	url = https://github.com/openshift/cloud-provider-azure
-	branch = release-4.12
+	branch = release-4.13
