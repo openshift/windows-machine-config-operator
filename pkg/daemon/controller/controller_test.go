@@ -131,6 +131,93 @@ func TestResolveNodeVariables(t *testing.T) {
 	}
 }
 
+func TestResolvePowershellVariables(t *testing.T) {
+	testIO := []struct {
+		name      string
+		service   servicescm.Service
+		expected  map[string]string
+		expectErr bool
+	}{
+		{
+			name:      "No Powershell variables to replace",
+			service:   servicescm.Service{},
+			expected:  map[string]string{},
+			expectErr: false,
+		},
+		{
+			name: "Resolve variable with unknown path",
+			service: servicescm.Service{
+				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
+					Name: "CMD_REPLACE",
+					Path: "invalid-script.ps1",
+				}},
+			},
+			expectErr: true,
+		},
+		{
+			name: "Resolve variable with known path",
+			service: servicescm.Service{
+				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
+					Name: "CMD_REPLACE",
+					Path: "c:\\k\\script.ps1",
+				}},
+			},
+			expected:  map[string]string{"CMD_REPLACE": "127.0.0.1"},
+			expectErr: false,
+		},
+		{
+			name: "Empty variable name",
+			service: servicescm.Service{
+				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
+					Name: "",
+					Path: "c:\\k\\script.ps1",
+				}},
+			},
+			expected:  map[string]string{},
+			expectErr: false,
+		},
+		{
+			name: "Multiple variable to resolve",
+			service: servicescm.Service{
+				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{
+					{
+						Name: "CMD_REPLACE1",
+						Path: "c:\\k\\script.ps1",
+					},
+					{
+						Name: "CMD_REPLACE2",
+						Path: "c:\\k\\test.ps1",
+					},
+				},
+			},
+			expected:  map[string]string{"CMD_REPLACE1": "127.0.0.1", "CMD_REPLACE2": "test-output"},
+			expectErr: false,
+		},
+	}
+	for _, test := range testIO {
+		t.Run(test.name, func(t *testing.T) {
+			c, err := NewServiceController(context.TODO(), "", Options{
+				Client: clientfake.NewClientBuilder().Build(),
+				Mgr:    fake.NewTestMgr(nil),
+				cmdRunner: &fakePSCmdRunner{
+					map[string]string{
+						"c:\\k\\script.ps1": "127.0.0.1",
+						"c:\\k\\test.ps1":   "test-output",
+					},
+				},
+			})
+			require.NoError(t, err)
+			actual, err := c.resolvePowershellVariables(test.service)
+			if test.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.EqualValues(t, test.expected, actual)
+		})
+	}
+}
+
 func TestReconcileService(t *testing.T) {
 	testIO := []struct {
 		name                  string
