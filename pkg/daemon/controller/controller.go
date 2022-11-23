@@ -414,7 +414,7 @@ func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[s
 }
 
 // resolvePowershellVariables returns a map, with the keys being each variable, and the value being the string to
-// replace the variable with
+// replace the variable with. Variables with blank names will not result in a map entry, but their script will be run.
 func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) (map[string]string, error) {
 	vars := make(map[string]string)
 	for _, psVar := range svc.PowershellVariablesInCommand {
@@ -422,7 +422,9 @@ func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) 
 		if err != nil {
 			return nil, errors.Wrapf(err, "could not resolve PowerShell variable %s", psVar.Name)
 		}
-		vars[psVar.Name] = strings.TrimSpace(out)
+		if psVar.Name != "" {
+			vars[psVar.Name] = strings.TrimSpace(out)
+		}
 	}
 	return vars, nil
 }
