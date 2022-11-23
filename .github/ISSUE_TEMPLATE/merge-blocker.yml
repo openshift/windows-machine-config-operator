@@ -6,4 +6,4 @@ body:
 - type: textarea
   attributes:
     label: Description
-    placeholder: WINC-xxx Windows Machine Config Operator x.y.z Release
+    value: WINC-xxx Windows Machine Config Operator x.y.z Release
