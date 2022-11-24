@@ -194,6 +194,11 @@ func isEndpointsValid(nodes *v1.NodeList, endpoints *v1.Endpoints) bool {
 	for _, node := range nodes.Items {
 		nodeFound := false
 		for _, address := range endpoints.Subsets[0].Addresses {
+			// check TargetRef is present and has the expected kind
+			if address.TargetRef == nil || address.TargetRef.Kind != "Node" {
+				// otherwise, skip the invalid address
+				continue
+			}
 			if address.TargetRef.Name == node.Name {
 				nodeFound = true
 				break
