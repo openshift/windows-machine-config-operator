@@ -6,6 +6,7 @@ import (
 	"github.com/go-logr/logr"
 	oconfig "github.com/openshift/api/config/v1"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -186,59 +187,63 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 		return reconcile.Result{}, nil
 	} else {
 		// userdata secret data does not match what is expected
-		nodes := &core.NodeList{}
-		err = r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
-		if err != nil {
-			return reconcile.Result{}, errors.Wrapf(err, "error getting node list")
-		}
+		return reconcile.Result{}, r.updateUserData(ctx, keySigner, validUserData)
+	}
+}
 
-		// Modify annotations on nodes configured with the previous private key, if it has changed
-		expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
-		privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
-			Name: secrets.PrivateKeySecret}, r.client)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-		for _, node := range nodes.Items {
-			// Since the public key hash and username annotations are both dependant on the private key secret as well
+// updateUserData updates the userdata secret to the expected state
+func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Signer, expected *core.Secret) error {
+	nodes := &core.NodeList{}
+	err := r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
+	if err != nil {
+		return errors.Wrapf(err, "error getting node list")
+	}
+
+	// Modify annotations on nodes configured with the previous private key, if it has changed
+	expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
+	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes.Items {
+		annotationsToApply := make(map[string]string)
+		if _, present := node.GetLabels()[BYOHLabel]; present {
+			// Since the public key hash and username annotations are both dependent on the private key secret as well
 			// as applied and updated at the same time, checking one is enough to see if the private key is up to date
 			if node.Annotations[nodeconfig.PubKeyHashAnnotation] == expectedPubKeyAnno {
 				continue
 			}
-			annotationsToApply := make(map[string]string)
-			if _, present := node.GetLabels()[BYOHLabel]; present {
-				// For BYOH nodes, update the username annotation and public key hash annotation using new private key
-				expectedUsernameAnnotation, err := r.getEncryptedUsername(ctx, node, privateKeyBytes)
-				if err != nil {
-					return reconcile.Result{}, errors.Wrapf(err, "unable to retrieve expected username annotation")
-				}
-
-				annotationsToApply = map[string]string{
-					UsernameAnnotation:              expectedUsernameAnnotation,
-					nodeconfig.PubKeyHashAnnotation: expectedPubKeyAnno,
-				}
-			} else {
-				// For Nodes associated with Machines, clear the public key annotation, as the clearing of the
-				// annotation is used solely to kick off the deletion and recreation of Machines.
-				annotationsToApply = map[string]string{nodeconfig.PubKeyHashAnnotation: ""}
+			// For BYOH nodes, update the username annotation and public key hash annotation using new private key
+			expectedUsernameAnnotation, err := r.getEncryptedUsername(ctx, node, privateKeyBytes)
+			if err != nil {
+				return errors.Wrapf(err, "unable to retrieve expected username annotation")
 			}
 
-			if err := metadata.ApplyAnnotations(r.client, ctx, node, annotationsToApply); err != nil {
-				return reconcile.Result{}, errors.Wrapf(err, "error updating annotations on node %s", node.GetName())
+			annotationsToApply = map[string]string{
+				UsernameAnnotation:              expectedUsernameAnnotation,
+				nodeconfig.PubKeyHashAnnotation: expectedPubKeyAnno,
 			}
-			log.V(1).Info("patched node object", "node", node.GetName(), "patch", annotationsToApply)
+		} else {
+			// For Nodes associated with Machines, clear the public key annotation, as the clearing of the
+			// annotation is used solely to kick off the deletion and recreation of Machines, causing them to be
+			// provisioned with the new userdata
+			annotationsToApply = map[string]string{nodeconfig.PubKeyHashAnnotation: ""}
 		}
 
-		// Set userdata to expected value
-		log.Info("updating secret", "name", userDataSecret)
-		err = r.client.Update(ctx, validUserData)
-		if err != nil {
-			return reconcile.Result{}, err
+		if err := metadata.ApplyAnnotations(r.client, ctx, node, annotationsToApply); err != nil {
+			return errors.Wrapf(err, "error updating annotations on node %s", node.GetName())
 		}
-
-		// Secret updated successfully
-		return reconcile.Result{}, nil
+		r.log.V(1).Info("patched node object", "node", node.GetName(), "patch", annotationsToApply)
 	}
+
+	// Set userdata to expected value
+	r.log.Info("updating secret", "name", userDataSecret)
+	err = r.client.Update(ctx, expected)
+	if err != nil {
+		return errors.Wrap(err, "error updating secret")
+	}
+	return nil
 }
 
 // getEncryptedUsername retrieves the username associated with a given node and ecrypts it using the given key
