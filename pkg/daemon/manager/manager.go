@@ -27,6 +27,8 @@ type Manager interface {
 	DeleteService(string) error
 	// EnsureServiceState ensures the service is in the given state
 	EnsureServiceState(winsvc.Service, svc.State) error
+	// Disconnect closes connection to the service manager
+	Disconnect() error
 }
 
 // enumServiceStatus implements the ENUM_SERVICE_STATUS type as defined in the Windows API
@@ -131,6 +133,7 @@ func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) er
 			if err != nil {
 				return fmt.Errorf("error opening dependent service %s", dependentServiceName)
 			}
+			defer dependentSvc.Close()
 			err = m.EnsureServiceState(dependentSvc, svc.Stopped)
 			if err != nil {
 				return errors.Wrapf(err, "unable to stop dependent service %s", dependentServiceName)
@@ -195,6 +198,11 @@ func (m *manager) listDependentServices(serviceHandle windows.Handle) ([]string,
 		dependencies = append(dependencies, windows.UTF16PtrToString(s.ServiceName))
 	}
 	return dependencies, nil
+}
+
+func (m *manager) Disconnect() error {
+	underlyingMgr := (*mgr.Mgr)(m)
+	return underlyingMgr.Disconnect()
 }
 
 func New() (Manager, error) {

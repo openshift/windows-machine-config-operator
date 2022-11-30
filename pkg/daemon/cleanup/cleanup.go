@@ -77,6 +77,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, preserveNode bool, confi
 	if err != nil {
 		klog.Exitf("could not create service manager: %s", err.Error())
 	}
+	defer svcMgr.Disconnect()
 	if err = removeServices(svcMgr, cmData.Services); err != nil {
 		return err
 	}
