@@ -437,7 +437,7 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
 			meta.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
-			nc.log.V(1).Error(err, "node listing failed")
+			nc.log.V(1).Info("node listing failed", "err", err)
 			return false, nil
 		}
 		if len(nodes.Items) == 0 {
@@ -461,7 +461,7 @@ func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, meta.GetOptions{})
 		if err != nil {
-			nc.log.V(1).Error(err, "unable to get associated node object")
+			nc.log.V(1).Info("unable to get associated node object", "err", err)
 			return false, nil
 		}
 		_, found := node.Annotations[annotation]

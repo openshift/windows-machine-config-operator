@@ -768,7 +768,7 @@ func (vm *windows) deleteService(svc *service) error {
 	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		exists, err := vm.serviceExists(svc.name)
 		if err != nil {
-			vm.log.V(1).Error(err, "unable to check if Windows service exists", "service", svc.name)
+			vm.log.V(1).Info("unable to check if Windows service exists", "service", svc.name, "err", err)
 			return false, nil
 		}
 		return !exists, nil
