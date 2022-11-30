@@ -68,6 +68,10 @@ type testMgr struct {
 	svcList *fakeServiceList
 }
 
+func (t *testMgr) Disconnect() error {
+	return nil
+}
+
 // CreateService installs new service name on the system.
 // The service will be executed by running exepath binary.
 // Use config c to specify service parameters.
