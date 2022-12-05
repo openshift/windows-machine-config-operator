@@ -77,9 +77,9 @@ func TestGenerate(t *testing.T) {
 				Name:               "NAME_VAR",
 				NodeObjectJsonPath: "{.metadata.name}",
 			}},
-			PowershellVariablesInCommand: []PowershellCmdArg{{
-				Name: "PS_VAR",
-				Path: "C:\\k\\test-path.ps1",
+			PowershellPreScripts: []PowershellPreScript{{
+				VariableName: "PS_VAR",
+				Path:         "C:\\k\\test-path.ps1",
 			}},
 			Dependencies: []string{"kubelet"},
 			Bootstrap:    false,
@@ -196,10 +196,10 @@ func TestValidateDependencies(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{},
@@ -228,10 +228,10 @@ func TestValidateDependencies(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{},
@@ -287,10 +287,10 @@ func TestValidateDependencies(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{"test-controller-service", "test-controller-service-2"},
@@ -320,10 +320,10 @@ func TestValidateDependencies(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{"test-controller-service"},
@@ -458,10 +458,10 @@ func TestValidatePriorities(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{},
@@ -491,10 +491,10 @@ func TestValidatePriorities(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{},
@@ -524,10 +524,10 @@ func TestValidatePriorities(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{},
@@ -557,10 +557,10 @@ func TestValidatePriorities(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{},
@@ -590,10 +590,10 @@ func TestValidatePriorities(t *testing.T) {
 				{
 					Name:    "new-bootstrap-service",
 					Command: "C:\\new-service --variable-arg2=NETWORK_IP",
-					PowershellVariablesInCommand: []PowershellCmdArg{
+					PowershellPreScripts: []PowershellPreScript{
 						{
-							Name: "NETWORK_IP",
-							Path: "C:\\k\\scripts\\get_net_ip.ps",
+							VariableName: "NETWORK_IP",
+							Path:         "C:\\k\\scripts\\get_net_ip.ps",
 						},
 					},
 					Dependencies: []string{},
