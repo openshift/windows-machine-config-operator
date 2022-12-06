@@ -145,9 +145,9 @@ func TestResolvePowershellVariables(t *testing.T) {
 		{
 			name: "Resolve variable with unknown path",
 			service: servicescm.Service{
-				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
-					Name: "CMD_REPLACE",
-					Path: "invalid-script.ps1",
+				PowershellPreScripts: []servicescm.PowershellPreScript{{
+					VariableName: "CMD_REPLACE",
+					Path:         "invalid-script.ps1",
 				}},
 			},
 			expectErr: true,
@@ -155,9 +155,9 @@ func TestResolvePowershellVariables(t *testing.T) {
 		{
 			name: "Resolve variable with known path",
 			service: servicescm.Service{
-				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
-					Name: "CMD_REPLACE",
-					Path: "c:\\k\\script.ps1",
+				PowershellPreScripts: []servicescm.PowershellPreScript{{
+					VariableName: "CMD_REPLACE",
+					Path:         "c:\\k\\script.ps1",
 				}},
 			},
 			expected:  map[string]string{"CMD_REPLACE": "127.0.0.1"},
@@ -166,9 +166,9 @@ func TestResolvePowershellVariables(t *testing.T) {
 		{
 			name: "Empty variable name",
 			service: servicescm.Service{
-				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
-					Name: "",
-					Path: "c:\\k\\script.ps1",
+				PowershellPreScripts: []servicescm.PowershellPreScript{{
+					VariableName: "",
+					Path:         "c:\\k\\script.ps1",
 				}},
 			},
 			expected:  map[string]string{},
@@ -177,14 +177,14 @@ func TestResolvePowershellVariables(t *testing.T) {
 		{
 			name: "Multiple variable to resolve",
 			service: servicescm.Service{
-				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{
+				PowershellPreScripts: []servicescm.PowershellPreScript{
 					{
-						Name: "CMD_REPLACE1",
-						Path: "c:\\k\\script.ps1",
+						VariableName: "CMD_REPLACE1",
+						Path:         "c:\\k\\script.ps1",
 					},
 					{
-						Name: "CMD_REPLACE2",
-						Path: "c:\\k\\test.ps1",
+						VariableName: "CMD_REPLACE2",
+						Path:         "c:\\k\\test.ps1",
 					},
 				},
 			},
@@ -235,11 +235,11 @@ func TestReconcileService(t *testing.T) {
 					State: svc.Running,
 				}),
 			expectedService: servicescm.Service{
-				Name:                         "fakeservice",
-				Command:                      "fakeservice",
-				NodeVariablesInCommand:       nil,
-				PowershellVariablesInCommand: nil,
-				Dependencies:                 nil,
+				Name:                   "fakeservice",
+				Command:                "fakeservice",
+				NodeVariablesInCommand: nil,
+				PowershellPreScripts:   nil,
+				Dependencies:           nil,
 			},
 			expectedServiceConfig: mgr.Config{
 				BinaryPathName: "fakeservice",
@@ -260,11 +260,11 @@ func TestReconcileService(t *testing.T) {
 					State: svc.Running,
 				}),
 			expectedService: servicescm.Service{
-				Name:                         "fakeservice",
-				Command:                      "fakeservice",
-				NodeVariablesInCommand:       nil,
-				PowershellVariablesInCommand: nil,
-				Dependencies:                 nil,
+				Name:                   "fakeservice",
+				Command:                "fakeservice",
+				NodeVariablesInCommand: nil,
+				PowershellPreScripts:   nil,
+				Dependencies:           nil,
 			},
 			expectedServiceConfig: mgr.Config{
 				BinaryPathName: "fakeservice",
@@ -291,8 +291,8 @@ func TestReconcileService(t *testing.T) {
 					Name:               "NAME_REPLACE",
 					NodeObjectJsonPath: "{.metadata.name}",
 				}},
-				PowershellVariablesInCommand: nil,
-				Dependencies:                 nil,
+				PowershellPreScripts: nil,
+				Dependencies:         nil,
 			},
 			expectedServiceConfig: mgr.Config{
 				BinaryPathName: "fakeservice --node-name=node -v",
@@ -316,9 +316,9 @@ func TestReconcileService(t *testing.T) {
 				Name:                   "fakeservice",
 				Command:                "fakeservice --ip_example=CMD_REPLACE -v",
 				NodeVariablesInCommand: nil,
-				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
-					Name: "CMD_REPLACE",
-					Path: "c:\\k\\script.ps1",
+				PowershellPreScripts: []servicescm.PowershellPreScript{{
+					VariableName: "CMD_REPLACE",
+					Path:         "c:\\k\\script.ps1",
 				}},
 				Dependencies: nil,
 			},
@@ -347,9 +347,9 @@ func TestReconcileService(t *testing.T) {
 					Name:               "NAME_REPLACE",
 					NodeObjectJsonPath: "{.metadata.name}",
 				}},
-				PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
-					Name: "CMD_REPLACE",
-					Path: "c:\\k\\script.ps1",
+				PowershellPreScripts: []servicescm.PowershellPreScript{{
+					VariableName: "CMD_REPLACE",
+					Path:         "c:\\k\\script.ps1",
 				}},
 				Dependencies: nil,
 			},
