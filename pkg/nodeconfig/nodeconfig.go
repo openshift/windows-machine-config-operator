@@ -24,7 +24,7 @@ import (
 	cloudproviderapi "k8s.io/cloud-provider/api"
 	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	"k8s.io/kubectl/pkg/drain"
-	kubeletconfig "k8s.io/kubelet/config/v1beta1"
+	kubeletconfig "k8s.io/kubernetes/pkg/kubelet/apis/config"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -346,19 +346,15 @@ func createKubeletConf(clusterServiceCIDR string) (string, error) {
 		return "", err
 	}
 	kubeletConfig := generateKubeletConfiguration(clusterDNS)
-	kubeletConfigData, err := json.Marshal(kubeletConfig)
+	kubeletConfigBytes, err := json.Marshal(kubeletConfig)
 	if err != nil {
 		return "", err
 	}
-	// Replace last character ('}') with comma
-	kubeletConfigData[len(kubeletConfigData)-1] = ','
-	// Appending this option is needed here instead of in the kubelet configuration object. Otherwise, when marshalling,
-	// the empty value will be omitted, so it would end up being incorrectly populated at service start time.
-	// Can be moved to kubelet configuration object with https://issues.redhat.com/browse/WINC-926
-	enforceNodeAllocatable := []byte("\"enforceNodeAllocatable\":[]}")
-	kubeletConfigData = append(kubeletConfigData, enforceNodeAllocatable...)
-
-	return string(kubeletConfigData), nil
+	kubeletConfigStrData := string(kubeletConfigBytes)
+	// Windows kubelet does not recognize the uppercase versions of these arguments
+	kubeletConfigStrData = strings.ReplaceAll(kubeletConfigStrData, "CgroupsPerQOS", "cgroupsPerQOS")
+	kubeletConfigStrData = strings.ReplaceAll(kubeletConfigStrData, "EnforceNodeAllocatable", "enforceNodeAllocatable")
+	return kubeletConfigStrData, nil
 }
 
 // applyLabelsAndAnnotations applies all the given labels and annotations and updates the Node object in NodeConfig
@@ -572,8 +568,6 @@ func generateKubeconfig(secret *windows.Authentication, apiServerURL string) (cl
 // generateKubeletConfiguration returns the configuration spec for the kubelet Windows service
 func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfiguration {
 	// default numeric values chosen based on the OpenShift kubelet config recommendations for Linux worker nodes
-	falseBool := false
-	kubeAPIQPS := int32(50)
 	return kubeletconfig.KubeletConfiguration{
 		TypeMeta: meta.TypeMeta{
 			Kind:       "KubeletConfiguration",
@@ -586,17 +580,18 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 				ClientCAFile: windows.K8sDir + KubeletClientCAFilename,
 			},
 			Anonymous: kubeletconfig.KubeletAnonymousAuthentication{
-				Enabled: &falseBool,
+				Enabled: false,
 			},
 		},
-		ClusterDomain:         "cluster.local",
-		ClusterDNS:            []string{clusterDNS},
-		CgroupsPerQOS:         &falseBool,
-		RuntimeRequestTimeout: meta.Duration{Duration: 10 * time.Minute},
-		MaxPods:               250,
-		KubeAPIQPS:            &kubeAPIQPS,
-		KubeAPIBurst:          100,
-		SerializeImagePulls:   &falseBool,
+		ClusterDomain:          "cluster.local",
+		ClusterDNS:             []string{clusterDNS},
+		CgroupsPerQOS:          false,
+		EnforceNodeAllocatable: []string{},
+		RuntimeRequestTimeout:  meta.Duration{Duration: 10 * time.Minute},
+		MaxPods:                250,
+		KubeAPIQPS:             int32(50),
+		KubeAPIBurst:           100,
+		SerializeImagePulls:    false,
 		FeatureGates: map[string]bool{
 			"LegacyNodeRoleBehavior":         false,
 			"NodeDisruptionExclusion":        true,
