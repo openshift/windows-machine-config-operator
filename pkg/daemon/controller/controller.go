@@ -57,11 +57,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
-const (
-	// WMCONamespace defines the namespace service ConfigMaps are expected to be in
-	WMCONamespace = "openshift-windows-machine-config-operator"
-)
-
 // Options contains a list of options available when creating a new ServiceController
 type Options struct {
 	Config    *rest.Config
@@ -125,7 +120,7 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 }
 
 // RunController is the entry point of WICD's controller functionality
-func RunController(ctx context.Context, apiServerURL, saCA, saToken string) error {
+func RunController(ctx context.Context, apiServerURL, saCA, saToken, watchNamespace string) error {
 	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
 	if err != nil {
 		klog.Error(err)
@@ -148,13 +143,13 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 	}
 
 	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Namespace: WMCONamespace,
+		Namespace: watchNamespace,
 		Scheme:    directClient.Scheme(),
 	})
 	if err != nil {
 		return errors.Wrap(err, "unable to start manager")
 	}
-	sc, err := NewServiceController(ctx, node.Name, Options{Client: ctrlMgr.GetClient()})
+	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{Client: ctrlMgr.GetClient()})
 	if err != nil {
 		return err
 	}
@@ -169,13 +164,13 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken string) erro
 }
 
 // NewServiceController returns a pointer to a ServiceController object
-func NewServiceController(ctx context.Context, nodeName string, options Options) (*ServiceController, error) {
+func NewServiceController(ctx context.Context, nodeName, watchNamespace string, options Options) (*ServiceController, error) {
 	o, err := setDefaults(options)
 	if err != nil {
 		return nil, err
 	}
 	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
-		watchNamespace: WMCONamespace}, nil
+		watchNamespace: watchNamespace}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
