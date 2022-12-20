@@ -87,6 +87,16 @@ func main() {
 
 	version.Print()
 
+	watchNamespace, err := getWatchNamespace()
+	if err != nil {
+		setupLog.Error(err, "failed to get watch namespace")
+		os.Exit(1)
+	}
+	if err = validateWatchNamespace(watchNamespace); err != nil {
+		setupLog.Error(err, "invalid watch namespace")
+		os.Exit(1)
+	}
+
 	// Get a config to talk to the apiserver
 	cfg, err := config.GetConfig()
 	if err != nil {
@@ -153,25 +163,6 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	// Get the watched namespace. This is originally sourced from from the OperatorGroup associated with the CSV.
-	// Because the WMCO CSV only supports the OwnNamespace InstallMode, the watch namespace will always be the namespace
-	// that WMCO is deployed in.
-	watchNamespace, err := getWatchNamespace()
-	if err != nil {
-		setupLog.Error(err, "failed to get watch namespace")
-		os.Exit(1)
-	}
-	// This is a defensive check to ensure that the WMCO CSV was not changed from only supporting OwnNamespace only.
-	// Check that the OperatorGroup + CSV were not deployed with a cluster scope (namespace = ""), and that the
-	// OperatorGroup does not target multiple namespaces. This should not be able to happen as both `AllNamespaces` and
-	// `MultiNamespaces` are not supported InstallModes.
-	if watchNamespace == "" || strings.Contains(watchNamespace, ",") {
-		setupLog.Error(err, "WMCO has an invalid target namespace. "+
-			"OperatorGroup target namespace must be a single, non-cluster-scoped value", "target namespace",
-			watchNamespace)
 		os.Exit(1)
 	}
 
@@ -275,4 +266,17 @@ func getWatchNamespace() (string, error) {
 		return "", fmt.Errorf("%s must be set", watchNamespaceEnvVar)
 	}
 	return ns, nil
+}
+
+// validateWatchNamespace returns an error if the given namespace is invalid
+func validateWatchNamespace(namespace string) error {
+	// WMCO can only function properly in this namespace, as OLM is unable to adjust the WICD RoleBinding to target a
+	// ServiceAccount in any namespace but this one.
+	// Because the WMCO CSV only supports the OwnNamespace InstallMode, the watch namespace will always be the namespace
+	// that WMCO is deployed in.
+	supportedNamespace := "openshift-windows-machine-config-operator"
+	if namespace != supportedNamespace {
+		return fmt.Errorf("the operator must be deployed in the %s namespace", supportedNamespace)
+	}
+	return nil
 }
