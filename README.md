@@ -17,6 +17,10 @@ More design details can be explored in the [WMCO enhancement](https://github.com
 The operator can be installed from the *community-operators* catalog on OperatorHub.
 It can also be build and installed from source manually, see the [development instructions](docs/HACKING.md).
 
+The operator must be deployed in the `openshift-windows-machine-config-operator` namespace for it to function properly.
+If the operator has been previously deployed in another namespace, it should be removed from the cluster and redeployed
+into the correct namespace.
+
 ### Create a private key secret
 Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
 the private key that will be used to access the Windows instances:
