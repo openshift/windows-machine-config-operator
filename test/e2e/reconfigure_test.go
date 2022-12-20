@@ -77,7 +77,7 @@ func testReAddInstance(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 
-	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), wiparser.InstanceConfigMap,
+	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), wiparser.InstanceConfigMap,
 		metav1.GetOptions{})
 	require.NoError(t, err, "error retrieving windows-instances ConfigMap")
 	require.NotEmpty(t, windowsInstances.Data, "no instances to remove")
@@ -96,7 +96,7 @@ func testReAddInstance(t *testing.T) {
 	patchDataBytes, err := json.Marshal(patchData)
 	require.NoError(t, err, "error getting patch data in bytes")
 
-	windowsInstances, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Patch(context.TODO(),
+	windowsInstances, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Patch(context.TODO(),
 		wiparser.InstanceConfigMap, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
 	require.NoError(t, err, "error patching windows-instances ConfigMap data with remove operation")
 	// Ensure operator communicates to OLM that upgrade is not safe when processing BYOH nodes
@@ -118,7 +118,7 @@ func testReAddInstance(t *testing.T) {
 	patchDataBytes, err = json.Marshal(patchData)
 	require.NoError(t, err, "error getting patch data in bytes")
 
-	windowsInstances, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Patch(context.TODO(),
+	windowsInstances, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Patch(context.TODO(),
 		wiparser.InstanceConfigMap, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
 	require.NoError(t, err, "error patching windows-instances ConfigMap data with add operation")
 

@@ -30,13 +30,13 @@ func deletionTestSuite(t *testing.T) {
 
 // clearWindowsInstanceConfigMap removes all entries in the windows-instances ConfigMap
 func (tc *testContext) clearWindowsInstanceConfigMap() error {
-	cm, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), wiparser.InstanceConfigMap,
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), wiparser.InstanceConfigMap,
 		meta.GetOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error retrieving windows-instances ConfigMap")
 	}
 	cm.Data = map[string]string{}
-	_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Update(context.TODO(), cm, meta.UpdateOptions{})
+	_, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Update(context.TODO(), cm, meta.UpdateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error clearing windows-instances ConfigMap data")
 	}
