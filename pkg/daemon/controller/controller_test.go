@@ -25,6 +25,8 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
+var wmcoNamespace = "openshift-windows-machine-config-operator"
+
 type fakePSCmdRunner struct {
 	results map[string]string
 }
@@ -106,7 +108,7 @@ func TestResolveNodeVariables(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			c, err := NewServiceController(context.TODO(), test.nodeName, Options{
+			c, err := NewServiceController(context.TODO(), test.nodeName, wmcoNamespace, Options{
 				Client: clientfake.NewClientBuilder().WithObjects(&core.Node{
 					ObjectMeta: meta.ObjectMeta{
 						Name:        "node",
@@ -194,7 +196,7 @@ func TestResolvePowershellVariables(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			c, err := NewServiceController(context.TODO(), "", Options{
+			c, err := NewServiceController(context.TODO(), "", wmcoNamespace, Options{
 				Client: clientfake.NewClientBuilder().Build(),
 				Mgr:    fake.NewTestMgr(nil),
 				cmdRunner: &fakePSCmdRunner{
@@ -363,7 +365,7 @@ func TestReconcileService(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			c, err := NewServiceController(context.TODO(), "node", Options{
+			c, err := NewServiceController(context.TODO(), "node", wmcoNamespace, Options{
 				Client: clientfake.NewClientBuilder().WithObjects(&core.Node{
 					ObjectMeta: meta.ObjectMeta{
 						Name: "node",
@@ -468,13 +470,13 @@ func TestBootstrap(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			desiredVersion := "testversion"
 			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
-				"openshift-windows-machine-config-operator", &servicescm.Data{test.configMapServices,
+				wmcoNamespace, &servicescm.Data{test.configMapServices,
 					[]servicescm.FileInfo{}})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{cm}
 
 			winSvcMgr := fake.NewTestMgr(make(map[string]*fake.FakeService))
-			sc, err := NewServiceController(context.TODO(), "", Options{
+			sc, err := NewServiceController(context.TODO(), "", wmcoNamespace, Options{
 				Client:    clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
 				Mgr:       winSvcMgr,
 				cmdRunner: &fakePSCmdRunner{},
@@ -634,7 +636,7 @@ func TestReconcile(t *testing.T) {
 			desiredVersion := "testversion"
 			// This ConfigMap's name must match with the given Node object's desired-version annotation
 			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
-				"openshift-windows-machine-config-operator", &servicescm.Data{test.configMapServices,
+				wmcoNamespace, &servicescm.Data{test.configMapServices,
 					[]servicescm.FileInfo{}})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{
@@ -651,7 +653,7 @@ func TestReconcile(t *testing.T) {
 			}
 
 			winSvcMgr := fake.NewTestMgr(test.existingServices)
-			c, err := NewServiceController(context.TODO(), "node", Options{
+			c, err := NewServiceController(context.TODO(), "node", wmcoNamespace, Options{
 				Client:    clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
 				Mgr:       winSvcMgr,
 				cmdRunner: &fakePSCmdRunner{},
