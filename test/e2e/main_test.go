@@ -28,6 +28,8 @@ var (
 	privateKeyPath string
 	// wmcoPath is the path to the WMCO binary that was used within the operator image
 	wmcoPath string
+	// wmcoNamespace is the namespace WMCO is deployed to
+	wmcoNamespace string
 	// gc is the global context across the test suites.
 	gc = globalContext{}
 )
@@ -62,8 +64,6 @@ func (gc *globalContext) allNodes() []core.Node {
 // information should be easily accessible by other methods within the same test suite.
 // Some of the fields we have here can be exposed by via flags to the test suite.
 type testContext struct {
-	// namespace is the namespace the operator is deployed in
-	namespace string
 	// client is the OpenShift client
 	client *clusterinfo.OpenShift
 	// retryInterval to check for existence of resource in kube api server
@@ -105,8 +105,8 @@ func NewTestContext() (*testContext, error) {
 
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
-		namespace: "openshift-windows-machine-config-operator", CloudProvider: cloudProvider,
-		workloadNamespace: "wmco-test", workloadNamespaceLabels: workloadNamespaceLabels, toolsImage: toolsImage}, nil
+		CloudProvider: cloudProvider, workloadNamespace: "wmco-test", workloadNamespaceLabels: workloadNamespaceLabels,
+		toolsImage: toolsImage}, nil
 }
 
 // vmUsername returns the name of the user which can be used to log into each Windows instance
@@ -141,6 +141,8 @@ func TestMain(m *testing.M) {
 			"Setting this to 0 will result in some tests being skipped")
 	flag.StringVar(&wmcoPath, "wmco-path", "./../../build/_output/bin/windows-machine-config-operator",
 		"Path to the WMCO binary, used for version validation")
+	flag.StringVar(&wmcoNamespace, "wmco-namespace", "openshift-windows-machine-config-operator",
+		"Namespace that WMCO is deployed to")
 	flag.StringVar(&privateKeyPath, "private-key-path", "",
 		"path of the private key file used to configure the Windows node")
 	flag.Parse()

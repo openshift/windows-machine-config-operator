@@ -30,13 +30,13 @@ func deletionTestSuite(t *testing.T) {
 
 // clearWindowsInstanceConfigMap removes all entries in the windows-instances ConfigMap
 func (tc *testContext) clearWindowsInstanceConfigMap() error {
-	cm, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), wiparser.InstanceConfigMap,
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), wiparser.InstanceConfigMap,
 		meta.GetOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error retrieving windows-instances ConfigMap")
 	}
 	cm.Data = map[string]string{}
-	_, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Update(context.TODO(), cm, meta.UpdateOptions{})
+	_, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Update(context.TODO(), cm, meta.UpdateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error clearing windows-instances ConfigMap data")
 	}
@@ -165,7 +165,7 @@ func testWindowsNodeDeletion(t *testing.T) {
 	err = testCtx.client.K8s.CoreV1().Secrets("openshift-machine-api").Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete userData secret")
 
-	err = testCtx.client.K8s.CoreV1().Secrets("openshift-windows-machine-config-operator").Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
+	err = testCtx.client.K8s.CoreV1().Secrets(wmcoNamespace).Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete privateKey secret")
 
 	// Cleanup wmco-test namespace created by us.
