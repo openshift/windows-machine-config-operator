@@ -239,6 +239,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := configMapReconciler.EnsureWICDRBAC(); err != nil {
+		setupLog.Error(err, "error ensuring WICD RBAC resources exist", "namespace", watchNamespace)
+		os.Exit(1)
+	}
+
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
