@@ -54,11 +54,10 @@ func creationTestSuite(t *testing.T) {
 	t.Run("NodeIP Arg", testNodeIPArg)
 	t.Run("NodeTaint validation", testNodeTaint)
 	t.Run("CSR Validation", func(t *testing.T) { testCSRApproval(t) })
-	t.Run("UserData validation", testUserData)
-	t.Run("UserData idempotent check", testUserDataTamper)
 	t.Run("Certificates", testCertificates)
 	t.Run("Node Logs", testNodeLogs)
 	t.Run("Metrics validation", testMetrics)
+	t.Run("UserData validation", testUserData)
 }
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
