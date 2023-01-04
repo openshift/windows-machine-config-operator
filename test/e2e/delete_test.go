@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apps "k8s.io/api/apps/v1"
+	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
@@ -112,6 +115,16 @@ func testWindowsNodeDeletion(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
+	// Deploy a DaemonSet and wait until its pods have been made ready on each Windows node. DaemonSet pods cannot be
+	// drained from a Node.
+	// Doing this ensures that WMCO is able to handle containers being present on the instance when deconfiguring.
+	ds, err := testCtx.deployNOOPDaemonSet()
+	require.NoError(t, err, "error creating DaemonSet")
+	defer testCtx.client.K8s.AppsV1().DaemonSets(ds.GetNamespace()).Delete(context.TODO(), ds.GetName(),
+		meta.DeleteOptions{})
+	err = testCtx.waitUntilDaemonsetScaled(ds.GetName(), int(gc.numberOfMachineNodes+gc.numberOfBYOHNodes))
+	require.NoError(t, err, "error waiting for DaemonSet pods to become ready")
+
 	// set expected node count to zero, since all Windows Nodes should be deleted in the test
 	expectedNodeCount := int32(0)
 	// Get all the Machines created by the e2e tests
@@ -171,4 +184,53 @@ func testWindowsNodeDeletion(t *testing.T) {
 	// Cleanup wmco-test namespace created by us.
 	err = testCtx.deleteNamespace(testCtx.workloadNamespace)
 	require.NoError(t, err, "could not delete test namespace")
+}
+
+// DeployNOOPDaemonSet deploys a DaemonSet which will deploy pods in a sleep loop across all Windows nodes
+func (tc *testContext) deployNOOPDaemonSet() (*apps.DaemonSet, error) {
+	ds := apps.DaemonSet{
+		ObjectMeta: meta.ObjectMeta{
+			Name: "noop-ds",
+		},
+		Spec: apps.DaemonSetSpec{
+			Selector: &meta.LabelSelector{
+				MatchLabels: map[string]string{"name": "noop-ds"},
+			},
+			Template: core.PodTemplateSpec{
+				ObjectMeta: meta.ObjectMeta{
+					Labels: map[string]string{"name": "noop-ds"},
+				},
+				Spec: core.PodSpec{
+					Tolerations: []core.Toleration{{Key: "os", Value: "Windows", Effect: "NoSchedule"}},
+					Containers: []core.Container{{
+						Name:    "sleep",
+						Image:   tc.getWindowsServerContainerImage(),
+						Command: []string{powerShellExe, "-command", "while ($true) {Start-Sleep -Seconds 1}"},
+					}},
+					NodeSelector: map[string]string{"kubernetes.io/os": "windows"},
+				},
+			},
+		},
+	}
+	created, err := tc.client.K8s.AppsV1().DaemonSets(tc.workloadNamespace).Create(context.TODO(), &ds,
+		meta.CreateOptions{})
+	if err != nil {
+		return nil, errors.Wrapf(err, "error creating daemonset %v", ds)
+	}
+	return created, nil
+}
+
+// waitUntilDeploymentScaled will return nil if the daemonset is fully deployed across the Windows nodes
+func (tc *testContext) waitUntilDaemonsetScaled(name string, desiredReplicas int) error {
+	for i := 0; i < retryCount; i++ {
+		ds, err := tc.client.K8s.AppsV1().DaemonSets(tc.workloadNamespace).Get(context.TODO(), name, meta.GetOptions{})
+		if err != nil {
+			return errors.Wrapf(err, "could not get daemonset %s", name)
+		}
+		if int(ds.Status.NumberAvailable) == desiredReplicas {
+			return nil
+		}
+		time.Sleep(retryInterval)
+	}
+	return errors.Errorf("timed out waiting for daemonset %s to scale", name)
 }

@@ -175,7 +175,7 @@ fi
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
 if ! $SKIP_NODE_DELETION; then
-  go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args --private-key-path=$KUBE_SSH_KEY_PATH --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+  go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
   # Get logs on success before cleanup
   PRINT_UPGRADE=""
   if [[ "$TEST" = "upgrade" ]]; then

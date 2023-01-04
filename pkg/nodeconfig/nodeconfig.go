@@ -39,6 +39,8 @@ import (
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
+//+kubebuilder:rbac:groups="apps",resources=daemonsets,verbs=get
+
 const (
 	// HybridOverlaySubnet is an annotation applied by the cluster network operator which is used by the hybrid overlay
 	HybridOverlaySubnet = "k8s.ovn.org/hybrid-overlay-node-subnet"
@@ -490,7 +492,11 @@ func (nc *nodeConfig) newDrainHelper() *drain.Helper {
 		Ctx:    context.TODO(),
 		Client: nc.k8sclientset,
 		ErrOut: &ErrWriter{nc.log},
-		Out:    &OutWriter{nc.log},
+		// Evict all pods regardless of their controller and orphan status
+		Force: true,
+		// Prevents erroring out in case a DaemonSet's pod is on the node
+		IgnoreAllDaemonSets: true,
+		Out:                 &OutWriter{nc.log},
 	}
 }
 
