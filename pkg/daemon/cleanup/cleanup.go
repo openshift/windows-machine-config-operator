@@ -29,6 +29,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
@@ -81,6 +82,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	if err = removeServices(svcMgr, cmData.Services); err != nil {
 		return err
 	}
+	cleanupContainers()
 	return nil
 }
 
@@ -103,4 +105,12 @@ func removeServices(svcMgr manager.Manager, services []servicescm.Service) error
 		return errors.Errorf("%#v", failedRemovals)
 	}
 	return nil
+}
+
+// cleanupContainers makes a best effort to stop all processes with the name containerd-shim-runhcs-v1, stopping
+// any containers which were not able to be drained from the Node.
+func cleanupContainers() {
+	cmdRunner := powershell.NewCommandRunner()
+	cmdRunner.Run("Stop-Process -Force -Name containerd-shim-runhcs-v1")
+	return
 }
