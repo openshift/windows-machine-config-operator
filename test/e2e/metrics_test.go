@@ -53,11 +53,8 @@ func testWindowsExporter(t *testing.T) {
 			require.Greaterf(t, len(winNodeInternalIP), 0, "test requires Windows node %s to have internal IP",
 				winNode.Name)
 
-			// This will curl the windows server. curl must be present in the container image.
-			linuxCurlerCommand := []string{"bash", "-c", "curl http://" + winNodeInternalIP + ":" +
-				strconv.Itoa(int(metrics.Port)) + "/" + metrics.PortName}
-			linuxCurlerJob, err := testCtx.createLinuxJob("linux-curler-"+strings.ToLower(winNode.Status.NodeInfo.MachineID),
-				linuxCurlerCommand)
+			linuxCurlerJob, err := testCtx.createLinuxCurlerJob(strings.ToLower(winNode.Status.NodeInfo.MachineID),
+				fmt.Sprintf("http://%s:%d/%s", winNodeInternalIP, int(metrics.Port), metrics.PortName), false)
 			require.NoError(t, err, "could not create Linux job")
 			// delete the job created
 			defer testCtx.deleteJob(linuxCurlerJob.Name)
