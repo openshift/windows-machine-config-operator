@@ -474,7 +474,7 @@ func testServicesConfigMap(t *testing.T) {
 	var cmData *servicescm.Data
 	t.Run("Services ConfigMap contents", func(t *testing.T) {
 		// Get CM and parse data
-		cm, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), servicesConfigMapName,
+		cm, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), servicesConfigMapName,
 			meta.GetOptions{})
 		require.NoErrorf(t, err, "error ensuring ConfigMap %s exists", servicesConfigMapName)
 		cmData, err = servicescm.Parse(cm.Data)
@@ -514,7 +514,7 @@ func containsService(name string, services []servicescm.Service) bool {
 
 // testServicesCMRegeneration tests that if the services ConfigMap is deleted, a valid one is re-created in its place
 func (tc *testContext) testServicesCMRegeneration(cmName string, expected *servicescm.Data) error {
-	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), cmName, meta.DeleteOptions{})
+	err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Delete(context.TODO(), cmName, meta.DeleteOptions{})
 	if err != nil {
 		return err
 	}
@@ -529,19 +529,19 @@ func (tc *testContext) testInvalidServicesCM(cmName string, expected *servicescm
 		return err
 	}
 	// Delete existing services CM
-	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), cmName, meta.DeleteOptions{})
+	err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Delete(context.TODO(), cmName, meta.DeleteOptions{})
 	if err != nil {
 		return err
 	}
 
 	// Generate and create a service CM with incorrect data
-	invalidServicesCM, err := servicescm.Generate(cmName, tc.namespace,
+	invalidServicesCM, err := servicescm.Generate(cmName, wmcoNamespace,
 		&servicescm.Data{Services: []servicescm.Service{{Name: "fakeservice", Bootstrap: true}},
 			Files: []servicescm.FileInfo{}})
 	if err != nil {
 		return err
 	}
-	if _, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Create(context.TODO(), invalidServicesCM,
+	if _, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Create(context.TODO(), invalidServicesCM,
 		meta.CreateOptions{}); err != nil {
 		return err
 	}
@@ -565,7 +565,7 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
 	configMap := &core.ConfigMap{}
 	err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
 		var err error
-		configMap, err = tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), cmName, meta.GetOptions{})
+		configMap, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), cmName, meta.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				// Retry if the Get() results in a IsNotFound error
@@ -582,7 +582,7 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
 		return true, nil
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "error waiting for ConfigMap %s/%s", tc.namespace, cmName)
+		return nil, errors.Wrapf(err, "error waiting for ConfigMap %s/%s", wmcoNamespace, cmName)
 	}
 	return configMap, nil
 }
@@ -591,7 +591,7 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
 // Returns an error if it is still present in the WMCO namespace at the time limit.
 func (tc *testContext) waitForServicesConfigMapDeletion(cmName string) error {
 	err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
-		_, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(), cmName, meta.GetOptions{})
+		_, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), cmName, meta.GetOptions{})
 		if err == nil {
 			// Retry if the resource is found
 			return false, nil
@@ -602,7 +602,7 @@ func (tc *testContext) waitForServicesConfigMapDeletion(cmName string) error {
 		return false, errors.Wrapf(err, "error retrieving ConfigMap: %s", cmName)
 	})
 	if err != nil {
-		return errors.Wrapf(err, "error waiting for ConfigMap deletion %s/%s", tc.namespace, cmName)
+		return errors.Wrapf(err, "error waiting for ConfigMap deletion %s/%s", wmcoNamespace, cmName)
 	}
 	return nil
 }
@@ -678,9 +678,9 @@ func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatu
 		return err
 	}
 	err = wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
-		oc, err := tc.client.Olm.OperatorsV2().OperatorConditions(tc.namespace).Get(context.TODO(), ocName, meta.GetOptions{})
+		oc, err := tc.client.Olm.OperatorsV2().OperatorConditions(wmcoNamespace).Get(context.TODO(), ocName, meta.GetOptions{})
 		if err != nil {
-			log.Printf("unable to get OperatorCondition %s from namespace %s", ocName, tc.namespace)
+			log.Printf("unable to get OperatorCondition %s from namespace %s", ocName, wmcoNamespace)
 			return false, nil
 		}
 
@@ -696,7 +696,7 @@ func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatu
 
 // getOperatorConditionName returns the operator condition name using the env var present in the deployment
 func (tc *testContext) getOperatorConditionName() (string, error) {
-	deployment, err := tc.client.K8s.AppsV1().Deployments(tc.namespace).Get(context.TODO(), resourceName,
+	deployment, err := tc.client.K8s.AppsV1().Deployments(wmcoNamespace).Get(context.TODO(), resourceName,
 		meta.GetOptions{})
 	if err != nil {
 		return "", errors.Wrap(err, "error getting operator deployment")
@@ -712,7 +712,7 @@ func (tc *testContext) getOperatorConditionName() (string, error) {
 			}
 		}
 	}
-	return "", errors.Errorf("unable to get operatorCondition name from namespace %s", tc.namespace)
+	return "", errors.Errorf("unable to get operatorCondition name from namespace %s", wmcoNamespace)
 }
 
 // testDependentServiceChanges tests that a Windows service which a running service is dependent on can be reconfigured
