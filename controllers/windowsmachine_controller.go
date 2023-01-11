@@ -261,6 +261,8 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	provisionedPhase := "Provisioned"
 	// runningPhase is the status of the machine when it is in the `Running` state, indicating that it is configured into a node
 	runningPhase := "Running"
+	// node is the Node object associated with the machine being reconciled, if any exists
+	var node *core.Node
 	if machine.Status.Phase == nil {
 		// This condition should never be true as machine objects without a phase will be filtered out via the predicate functions
 		return ctrl.Result{}, fmt.Errorf("could not get the phase associated with machine %s", machine.Name)
@@ -272,8 +274,8 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			// machine api operator
 			return ctrl.Result{}, fmt.Errorf("ready Windows machine %s missing NodeRef", machine.GetName())
 		}
-
-		node := &core.Node{}
+		// Populate the running Machine's Node object
+		node = &core.Node{}
 		err := r.client.Get(ctx, kubeTypes.NamespacedName{Namespace: machine.Status.NodeRef.Namespace,
 			Name: machine.Status.NodeRef.Name}, node)
 		if err != nil {
@@ -349,8 +351,8 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	}
 
 	log.Info("processing", "address", ipAddress)
-	// Make the Machine a Windows Worker node
-	if err := r.addWorkerNode(ipAddress, instanceID, machine.Name); err != nil {
+	// Configure the Machine as an up-to-date Windows Worker node
+	if err := r.configureMachine(ipAddress, instanceID, machine.Name, node); err != nil {
 		var authErr *windows.AuthErr
 		if errors.As(err, &authErr) {
 			// SSH authentication errors with the Machine are non recoverable, stemming from a mismatch with the
@@ -401,8 +403,8 @@ func (r *WindowsMachineReconciler) getDefaultUsername() string {
 	return "Administrator"
 }
 
-// addWorkerNode configures the given Windows VM, adding it as a node object to the cluster
-func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineName string) error {
+// configureMachine configures the given Windows VM, adding it as a node object to the cluster or upgrading it in place.
+func (r *WindowsMachineReconciler) configureMachine(ipAddress, instanceID, machineName string, node *core.Node) error {
 	// The name of the Machine must be the same as the hostname of the associated VM. This is currently not true in the
 	// case of vSphere VMs provisioned by MAPI. In case of Linux, ignition was handling it. As we don't have an
 	// equivalent of ignition in Windows, WMCO must correct this by changing the VM's hostname.
@@ -413,7 +415,7 @@ func (r *WindowsMachineReconciler) addWorkerNode(ipAddress, instanceID, machineN
 		hostname = machineName
 	}
 	username := r.getDefaultUsername()
-	instanceInfo, err := instance.NewInfo(ipAddress, username, hostname, false, nil)
+	instanceInfo, err := instance.NewInfo(ipAddress, username, hostname, false, node)
 	if err != nil {
 		return err
 	}
