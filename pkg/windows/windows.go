@@ -22,70 +22,70 @@ import (
 
 const (
 	// remoteDir is the remote temporary directory created on the Windows VM
-	remoteDir = "C:\\Temp\\"
+	remoteDir = "C:\\Temp"
 	// GcpGetHostnameScriptRemotePath is the remote location of the PowerShell script that resolves the hostname
 	// for GCP instances
-	GcpGetHostnameScriptRemotePath = remoteDir + payload.GcpGetHostnameScriptName
+	GcpGetHostnameScriptRemotePath = remoteDir + "\\" + payload.GcpGetHostnameScriptName
 	// WinDefenderExclusionScriptRemotePath is the remote location of the PowerShell script that creates an exclusion
 	// for containerd if the Windows Defender Antivirus is active
-	WinDefenderExclusionScriptRemotePath = remoteDir + payload.WinDefenderExclusionScriptName
+	WinDefenderExclusionScriptRemotePath = remoteDir + "\\" + payload.WinDefenderExclusionScriptName
 	// HNSPSModule is the remote location of the hns.psm1 module
-	HNSPSModule = remoteDir + "hns.psm1"
+	HNSPSModule = remoteDir + "\\hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
-	K8sDir = "C:\\k\\"
+	K8sDir = "C:\\k"
 	// KubeconfigPath is the remote location of the kubelet's kubeconfig
-	KubeconfigPath = K8sDir + "kubeconfig"
+	KubeconfigPath = K8sDir + "\\kubeconfig"
 	// logDir is the remote kubernetes log directory
-	logDir = "C:\\var\\log\\"
+	logDir = "C:\\var\\log"
 	// KubeletLogDir is the remote kubelet log directory
-	KubeletLogDir = logDir + "kubelet\\"
+	KubeletLogDir = logDir + "\\kubelet"
 	// KubeProxyLogDir is the remote kube-proxy log directory
-	KubeProxyLogDir = logDir + "kube-proxy\\"
+	KubeProxyLogDir = logDir + "\\kube-proxy"
 	// HybridOverlayLogDir is the remote hybrid-overlay log directory
-	HybridOverlayLogDir = logDir + "hybrid-overlay\\"
+	HybridOverlayLogDir = logDir + "\\hybrid-overlay"
 	// wicdLogDir is the remote wicd log directory
-	wicdLogDir = logDir + "wicd\\"
+	wicdLogDir = logDir + "\\wicd"
 	// cniDir is the directory for storing CNI binaries
-	cniDir = K8sDir + "cni\\"
+	cniDir = K8sDir + "\\cni"
 	// CniConfDir is the directory for storing CNI configuration
-	CniConfDir = cniDir + "config\\"
+	CniConfDir = cniDir + "\\config"
 	// ContainerdDir is the directory for storing Containerd binary
-	ContainerdDir = K8sDir + "containerd\\"
+	ContainerdDir = K8sDir + "\\containerd"
 	// ContainerdPath is the location of the containerd exe
-	ContainerdPath = ContainerdDir + "containerd.exe"
+	ContainerdPath = ContainerdDir + "\\containerd.exe"
 	// ContainerdConfPath is the location of containerd config file
-	ContainerdConfPath = ContainerdDir + "containerd_conf.toml"
+	ContainerdConfPath = ContainerdDir + "\\containerd_conf.toml"
 	// containerdLogDir is the remote containerd log directory
-	containerdLogDir = logDir + "containerd\\"
+	containerdLogDir = logDir + "\\containerd"
 	// ContainerdLogPath is the location of the containerd log file
-	ContainerdLogPath = containerdLogDir + "containerd.log"
+	ContainerdLogPath = containerdLogDir + "\\containerd.log"
 	// ContainerdServiceName is containerd Windows service name
 	ContainerdServiceName = "containerd"
 	// wicdServiceName is the Windows service name for WICD
 	wicdServiceName = "windows-instance-config-daemon"
 	// wicdPath is the path to the WICD executable
-	wicdPath = K8sDir + "windows-instance-config-daemon.exe"
+	wicdPath = K8sDir + "\\windows-instance-config-daemon.exe"
 	// windowsExporterPath is the location of the windows_exporter.exe
-	windowsExporterPath = K8sDir + "windows_exporter.exe"
+	windowsExporterPath = K8sDir + "\\windows_exporter.exe"
 	// NetworkConfScriptPath is the location of the network configuration script
-	NetworkConfScriptPath = remoteDir + "network-conf.ps1"
+	NetworkConfScriptPath = remoteDir + "\\network-conf.ps1"
 	// AzureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
-	AzureCloudNodeManagerPath = K8sDir + payload.AzureCloudNodeManager
+	AzureCloudNodeManagerPath = K8sDir + "\\" + payload.AzureCloudNodeManager
 	// podManifestDirectory is the directory needed by kubelet for the static pods
 	// We shouldn't override if the pod manifest directory already exists
-	podManifestDirectory = K8sDir + "etc\\kubernetes\\manifests"
+	podManifestDirectory = K8sDir + "\\etc\\kubernetes\\manifests"
 	// BootstrapKubeconfigPath is the location of the bootstrap kubeconfig
-	BootstrapKubeconfigPath = K8sDir + "bootstrap-kubeconfig"
+	BootstrapKubeconfigPath = K8sDir + "\\bootstrap-kubeconfig"
 	// KubeletPath is the location of the kubelet exe
-	KubeletPath = K8sDir + "kubelet.exe"
+	KubeletPath = K8sDir + "\\kubelet.exe"
 	// KubeletConfigPath is the location of the kubelet configuration file
-	KubeletConfigPath = K8sDir + "kubelet.conf"
+	KubeletConfigPath = K8sDir + "\\kubelet.conf"
 	// KubeletLog is the location of the kubelet log file
-	KubeletLog = KubeletLogDir + "kubelet.log"
+	KubeletLog = KubeletLogDir + "\\kubelet.log"
 	// KubeProxyPath is the location of the kube-proxy exe
-	KubeProxyPath = K8sDir + "kube-proxy.exe"
+	KubeProxyPath = K8sDir + "\\kube-proxy.exe"
 	// HybridOverlayPath is the location of the hybrid-overlay-node exe
-	HybridOverlayPath = K8sDir + "hybrid-overlay-node.exe"
+	HybridOverlayPath = K8sDir + "\\hybrid-overlay-node.exe"
 	// HybridOverlayServiceName is the name of the hybrid-overlay-node Windows service
 	HybridOverlayServiceName = "hybrid-overlay-node"
 	// BaseOVNKubeOverlayNetwork is the name of base OVN HNS Overlay network
@@ -121,9 +121,9 @@ const (
 	// containersFeatureName is the name of the Windows feature that is required to be enabled on the Windows instance.
 	containersFeatureName = "Containers"
 	// wicdCAFile is the name of the file that holds the WICD service account CA certificate
-	wicdCAFile = K8sDir + "sa-ca.crt"
+	wicdCAFile = K8sDir + "\\sa-ca.crt"
 	// wicdTokenFile is the name of the file that holds the WICD service account secret token
-	wicdTokenFile = K8sDir + "sa-token"
+	wicdTokenFile = K8sDir + "\\sa-token"
 )
 
 var (
@@ -595,8 +595,8 @@ func (vm *windows) createDirectories() error {
 func (vm *windows) removeDirectories() error {
 	vm.log.Info("removing directories")
 	for _, dir := range RequiredDirectories {
-		if _, err := vm.Run(rmDirCmd(dir), false); err != nil {
-			return errors.Wrapf(err, "unable to remove directory %s", dir)
+		if out, err := vm.Run(rmDirCmd(dir), true); err != nil {
+			return fmt.Errorf("unable to remove directory %s, out: %s, err: %s", dir, out, err)
 		}
 	}
 	return nil
@@ -945,9 +945,9 @@ func mkdirCmd(dirName string) string {
 	return fmt.Sprintf("if not exist %s mkdir %s ", dirName, dirName)
 }
 
-// rmDirCmd returns the Windows command to recursively remove a directory if it exists
+// rmDirCmd returns the PowerShell command to recursively remove a directory if it exists
 func rmDirCmd(dirName string) string {
-	return fmt.Sprintf("if exist %s rmdir %s /s /q", dirName, dirName)
+	return fmt.Sprintf("if(Test-Path %s) {Remove-Item -Recurse -Force %s}", dirName, dirName)
 }
 
 // getHNSNetworkCmd returns the Windows command to get HNS network by name

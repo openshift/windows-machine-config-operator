@@ -98,7 +98,7 @@ func azureCloudNodeManagerConfiguration() servicescm.Service {
 // hybridOverlayConfiguration returns the Service definition for hybrid-overlay
 func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service {
 	hybridOverlayServiceCmd := fmt.Sprintf("%s --node NODE_NAME --k8s-kubeconfig %s --windows-service "+
-		"--logfile "+"%shybrid-overlay.log", windows.HybridOverlayPath, windows.KubeconfigPath,
+		"--logfile "+"%s\\hybrid-overlay.log", windows.HybridOverlayPath, windows.KubeconfigPath,
 		windows.HybridOverlayLogDir)
 	if len(vxlanPort) > 0 {
 		hybridOverlayServiceCmd = fmt.Sprintf("%s --hybrid-overlay-vxlan-port %s", hybridOverlayServiceCmd, vxlanPort)
@@ -226,7 +226,7 @@ func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]stri
 	}
 	if cloudConfigValue, ok := argsFromIgnition[ignition.CloudConfigOption]; ok {
 		// cloud config is placed by WMCO in the c:\k directory with the same file name
-		cloudConfigPath := windows.K8sDir + filepath.Base(cloudConfigValue)
+		cloudConfigPath := windows.K8sDir + "\\" + filepath.Base(cloudConfigValue)
 		kubeletArgs = append(kubeletArgs, fmt.Sprintf("--%s=%s", ignition.CloudConfigOption, cloudConfigPath))
 	}
 
