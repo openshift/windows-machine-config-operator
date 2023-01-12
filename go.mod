@@ -18,6 +18,7 @@ require (
 	github.com/openshift/machine-api-operator v0.2.1-0.20210820103535-d50698c302f5
 	github.com/operator-framework/api v0.10.5
 	github.com/operator-framework/operator-lib v0.4.0
+	github.com/operator-framework/operator-lifecycle-manager v0.19.1
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.11.0
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.45.0
