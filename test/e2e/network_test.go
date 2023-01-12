@@ -131,8 +131,8 @@ func testEastWestNetworking(t *testing.T) {
 
 					// create the curler job based on the specified curlerOS
 					if tt.curlerOS == linux {
-						curlerCommand := []string{"bash", "-c", "curl " + endpointIP}
-						curlerJob, err = testCtx.createLinuxJob("linux-curler-"+strings.ToLower(node.Status.NodeInfo.MachineID), curlerCommand)
+						curlerJob, err = testCtx.createLinuxCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID),
+							endpointIP, false)
 						require.NoError(t, err, "could not create Linux job")
 					} else if tt.curlerOS == windowsOS {
 						// Always deploy the Windows curler pod on the first node. Because we test scaling multiple
@@ -567,6 +567,28 @@ func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
 		}
 	}
 	return podEvents, nil
+}
+
+// createLinuxCurlerJob creates a linux job to curl a specific endpoint. curl must be present in the container image.
+func (testCtx *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, continuous bool) (*batchv1.Job, error) {
+	// Retries a failed curl attempt once to avoid flakes
+	curlCommand := fmt.Sprintf(
+		"curl %s;"+
+			" if [ $? != 0 ]; then"+
+			" sleep 60;"+
+			" curl %s || exit 1;"+
+			" fi",
+		endpoint, endpoint)
+	if continuous {
+		// curl every 5 seconds indefinitely. If the endpoint is inaccessible for a few minutes, pod exits with an error
+		curlCommand = fmt.Sprintf(
+			"while true; do "+
+				"%s;"+
+				" sleep 5;"+
+				" done",
+			curlCommand)
+	}
+	return testCtx.createLinuxJob("linux-curler-"+jobSuffix, []string{"bash", "-c", curlCommand})
 }
 
 // createLinuxJob creates a job which will run the provided command with a ubi8 image

@@ -30,23 +30,6 @@ const (
 	windowsWorkloadTesterJob = "windows-workload-tester"
 )
 
-// generateLinuxWorkloadTesterCommand creates a Job to curl Windows webserver every 5 seconds.
-// If the webserver is not accessible for few minutes Curl Windows webserver
-// exit the pod with an error.
-func generateLinuxWorkloadTesterCommand(clusterIP string) []string {
-	return []string{
-		"bash",
-		"-c",
-		" while true;" +
-			" do curl " + clusterIP + ";" +
-			" if [ $? != 0 ]; then" +
-			" sleep 60;" +
-			" curl " + clusterIP + " || exit 1;" +
-			" fi; " +
-			"sleep 5; " +
-			"done"}
-}
-
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
 func upgradeTestSuite(t *testing.T) {
 	testCtx, err := NewTestContext()
@@ -185,8 +168,7 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 		return nil, errors.Wrapf(err, "error creating service for deployment %s", deployment.Name)
 	}
 	// create a Job object that continuously curls the webserver every 5 seconds.
-	testerJob, err := tc.createLinuxJob(windowsWorkloadTesterJob,
-		generateLinuxWorkloadTesterCommand(intermediarySVC.Spec.ClusterIP))
+	testerJob, err := tc.createLinuxCurlerJob(windowsWorkloadTesterJob, intermediarySVC.Spec.ClusterIP, true)
 	if err != nil {
 		_ = tc.deleteDeployment(deployment.Name)
 		_ = tc.deleteService(intermediarySVC.Name)
