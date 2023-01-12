@@ -27,7 +27,7 @@
 [submodule "hcsshim"]
 	path = hcsshim
 	url = https://github.com/openshift/hcsshim
-	branch = master
+	branch = release-4.12
 [submodule "cloud-provider-azure"]
 	path = cloud-provider-azure
 	url = https://github.com/openshift/cloud-provider-azure
