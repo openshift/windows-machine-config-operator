@@ -26,8 +26,6 @@ const (
 	deploymentTimeout = time.Minute * 1
 	// resourceName is the name of a resource in the watched namespace (e.g pod name, deployment name)
 	resourceName = "windows-machine-config-operator"
-	// resourceNamespace is the namespace the resources are deployed in
-	resourceNamespace = "openshift-windows-machine-config-operator"
 	// windowsWorkloadTesterJob is the name of the job created to test Windows workloads
 	windowsWorkloadTesterJob = "windows-workload-tester"
 	// outdatedVersion is the 'previous' version in the simulated upgrade that the operator is being upgraded from
@@ -124,11 +122,11 @@ func (tc *testContext) configureUpgradeTest() error {
 	outdatedServicesCM := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      servicescm.NamePrefix + outdatedVersion,
-			Namespace: tc.namespace,
+			Namespace: wmcoNamespace,
 		},
 		Data: map[string]string{"services": "[]", "files": "[]"},
 	}
-	if _, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Create(context.TODO(), outdatedServicesCM,
+	if _, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Create(context.TODO(), outdatedServicesCM,
 		metav1.CreateOptions{}); err != nil {
 		return err
 	}
@@ -149,7 +147,7 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 
 		patchData := fmt.Sprintf(`{"spec":{"replicas":%v}}`, desiredReplicas)
 
-		_, err = tc.client.K8s.AppsV1().Deployments(resourceNamespace).Patch(context.TODO(), resourceName,
+		_, err = tc.client.K8s.AppsV1().Deployments(wmcoNamespace).Patch(context.TODO(), resourceName,
 			types.MergePatchType, []byte(patchData), metav1.PatchOptions{})
 		if err != nil {
 			log.Printf("error patching operator deployment : %v", err)
@@ -164,7 +162,7 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 
 	// wait for the windows-machine-config-operator to scale up/down
 	err = wait.Poll(deploymentRetryInterval, deploymentTimeout, func() (done bool, err error) {
-		deployment, err := tc.client.K8s.AppsV1().Deployments(resourceNamespace).Get(context.TODO(), resourceName,
+		deployment, err := tc.client.K8s.AppsV1().Deployments(wmcoNamespace).Get(context.TODO(), resourceName,
 			metav1.GetOptions{})
 		if err != nil {
 			log.Printf("error getting operator deployment: %v", err)

@@ -42,7 +42,7 @@ func (tc *testContext) getExpectedKeyPair() ([]byte, ssh.PublicKey, error) {
 
 // getCloudPrivateKey returns the private key present within the cloud-private-key secret
 func (tc *testContext) getCloudPrivateKey() ([]byte, error) {
-	privateKeySecret, err := tc.client.K8s.CoreV1().Secrets("openshift-windows-machine-config-operator").Get(context.TODO(),
+	privateKeySecret, err := tc.client.K8s.CoreV1().Secrets(wmcoNamespace).Get(context.TODO(),
 		secrets.PrivateKeySecret, meta.GetOptions{})
 	if err != nil {
 		return []byte{}, errors.Wrapf(err, "failed to retrieve cloud private key secret")
@@ -228,7 +228,7 @@ func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 
 	// Create the private key secret in both the operator's namespace, and the test namespace. This is needed to make it
 	// possible to SSH into the Windows nodes from pods spun up in the test namespace.
-	for _, ns := range []string{tc.namespace, tc.workloadNamespace} {
+	for _, ns := range []string{wmcoNamespace, tc.workloadNamespace} {
 		_, err := tc.client.K8s.CoreV1().Secrets(ns).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
 		if err != nil {
 			return errors.Wrapf(err, "could not create private key secret in namespace %s", ns)
@@ -239,7 +239,7 @@ func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 
 // ensurePrivateKeyDeleted ensures that the privateKeySecret is deleted in both the operator and test namespaces
 func (tc *testContext) ensurePrivateKeyDeleted() error {
-	for _, ns := range []string{tc.namespace, tc.workloadNamespace} {
+	for _, ns := range []string{wmcoNamespace, tc.workloadNamespace} {
 		err := tc.client.K8s.CoreV1().Secrets(ns).Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
 			return errors.Wrapf(err, "could not delete private key secret in namespace %s", ns)

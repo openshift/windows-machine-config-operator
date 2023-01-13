@@ -60,7 +60,7 @@ func TestWMCO(t *testing.T) {
 func testOperatorDeployed(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
-	deployment, err := testCtx.client.K8s.AppsV1().Deployments(testCtx.namespace).Get(context.TODO(),
+	deployment, err := testCtx.client.K8s.AppsV1().Deployments(wmcoNamespace).Get(context.TODO(),
 		"windows-machine-config-operator", meta.GetOptions{})
 	require.NoError(t, err, "could not get WMCO deployment")
 	require.NotZerof(t, deployment.Status.AvailableReplicas, "WMCO deployment has no available replicas: %v", deployment)
