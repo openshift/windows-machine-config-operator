@@ -440,16 +440,13 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	return podList.Items[0].Status.PodIP, nil
 }
 
-// getWindowsServerContainerImage gets the appropriate WindowsServer image based on VXLAN port
+// getWindowsServerContainerImage gets the appropriate WindowsServer image based on cloud provider
 func (tc *testContext) getWindowsServerContainerImage() string {
 	var windowsServerImage string
 	if tc.CloudProvider.GetType() == config.VSpherePlatformType ||
 		tc.CloudProvider.GetType() == config.NonePlatformType {
 		// If we're on vSphere or platform:none we will use 2022
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
-	} else if tc.CloudProvider.GetType() == config.AzurePlatformType {
-		// On Azure we are testing 20H2
-		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-20h2"
 	} else {
 		// For other providers we use 1809
 		windowsServerImage = "mcr.microsoft.com/powershell:lts-nanoserver-1809"
