@@ -186,8 +186,7 @@ get_gcp_ms() {
   # For GCP the zone field returns the region + zone, like: `us-central1-a`.
   # Installer created MachineSets only append the `-a` portion, so we should do the same.
   local az_suffix=$(echo $az |awk -F "-" '{print $NF}')
-  local projectID=$(gcloud config get-value project)
-  local imageName=$(gcloud compute images list --filter="family = windows-2022-core" --sort-by="~creationTimestamp" --standard-images --limit=1 --format="value(NAME)")
+  local projectID=$(oc get infrastructure cluster -ojsonpath={.status.platformStatus.gcp.projectID})
 
   cat <<EOF
 $(get_spec $infraID $az_suffix $provider)
@@ -201,7 +200,7 @@ $(get_spec $infraID $az_suffix $provider)
           disks:
           - autoDelete: true
             boot: true
-            image: projects/windows-cloud/global/images/${imageName}
+            image: projects/windows-cloud/global/images/family/windows-2022-core
             sizeGb: 128
             type: pd-ssd
           kind: GCPMachineProviderSpec
