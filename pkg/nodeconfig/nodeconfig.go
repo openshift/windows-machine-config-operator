@@ -313,7 +313,7 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 				return nil, errors.Wrapf(err, "could not decode %s", ignFile.Node.Path)
 			}
 			fileName := filepath.Base(ignFile.Node.Path)
-			filePathsToContents[windows.K8sDir+fileName] = string(contents.Data)
+			filePathsToContents[windows.K8sDir+"\\"+fileName] = string(contents.Data)
 		}
 	}
 	return filePathsToContents, nil
@@ -588,7 +588,7 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		ServerTLSBootstrap: true,
 		Authentication: kubeletconfig.KubeletAuthentication{
 			X509: kubeletconfig.KubeletX509Authentication{
-				ClientCAFile: windows.K8sDir + KubeletClientCAFilename,
+				ClientCAFile: windows.K8sDir + "\\" + KubeletClientCAFilename,
 			},
 			Anonymous: kubeletconfig.KubeletAnonymousAuthentication{
 				Enabled: &falseBool,
