@@ -35,15 +35,10 @@ var (
 			"according to information given by Windows Service ConfigMaps present within the cluster",
 		Run: runCleanupCmd,
 	}
-	// preserveNode is an optional flag that instructs WICD to deconfigure an instance without deleting the Node object.
-	// This is useful in the node upgrade scenario.
-	preserveNode bool
 )
 
 func init() {
 	rootCmd.AddCommand(cleanupCmd)
-	cleanupCmd.PersistentFlags().BoolVar(&preserveNode, "preserveNode", false,
-		"If set to true, preserves the Node associated with this instance. Defaults to false.")
 }
 
 func runCleanupCmd(cmd *cobra.Command, args []string) {
@@ -52,7 +47,7 @@ func runCleanupCmd(cmd *cobra.Command, args []string) {
 		klog.Exitf("error using service account to build config: %s", err.Error())
 	}
 	ctx := ctrl.SetupSignalHandler()
-	if err := cleanup.Deconfigure(cfg, ctx, preserveNode, namespace); err != nil {
+	if err := cleanup.Deconfigure(cfg, ctx, namespace); err != nil {
 		klog.Exitf(err.Error())
 	}
 }
