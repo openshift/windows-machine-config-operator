@@ -33,10 +33,10 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
-// Deconfigure removes an instance from the cluster. If preserveNode is true, the node object is not deleted.
+// Deconfigure removes an instance from the cluster.
 // If we are able to get the services ConfigMap tied to the desired version, all services defined in it are cleaned up.
 // TODO: Otherwise, perform cleanup based on a combination of the OpenShift managed tag and latest services ConfigMap.
-func Deconfigure(cfg *rest.Config, ctx context.Context, preserveNode bool, configMapNamespace string) error {
+func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace string) error {
 	// Cannot use a cached client as no manager will be started to populate cache
 	directClient, err := controller.NewDirectClient(cfg)
 	if err != nil {
@@ -81,13 +81,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, preserveNode bool, confi
 	if err = removeServices(svcMgr, cmData.Services); err != nil {
 		return err
 	}
-
-	// Delete node if needed
-	if preserveNode || node == nil {
-		return nil
-	}
-	klog.Infof("deleting node %s", node.GetName())
-	return directClient.Delete(ctx, node)
+	return nil
 }
 
 // removeServices uses the given manager to remove all the given Windows services from this instance.
