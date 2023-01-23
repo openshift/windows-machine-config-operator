@@ -466,6 +466,10 @@ func (vm *windows) Deconfigure() error {
 
 func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, credentials *Authentication) error {
 	vm.log.Info("configuring")
+	// Make sure WICD service is not running before calling node bootstrap
+	if err := vm.deconfigureWICD(); err != nil {
+		return err
+	}
 	if err := vm.EnsureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop all services")
 	}
@@ -698,6 +702,28 @@ func (vm *windows) ensureServiceNotRunning(svc *service) error {
 
 }
 
+// ensureServiceIsRemoved ensures that the given service installed by WMCO is removed from the instance
+func (vm *windows) ensureServiceIsRemoved(svcName string) error {
+	svc := &service{name: svcName}
+	// If the service is not installed, do nothing
+	exists, err := vm.serviceExists(svcName)
+	if err != nil {
+		return errors.Wrapf(err, "error checking if %s Windows service exists", svc.name)
+	}
+	if !exists {
+		return nil
+	}
+	// Make sure the service is stopped before we attempt to delete it
+	if err := vm.ensureServiceNotRunning(svc); err != nil {
+		return errors.Wrapf(err, "error stopping %s Windows service", svc.name)
+	}
+	if err := vm.deleteService(svc); err != nil {
+		return errors.Wrapf(err, "error deleting %s Windows service", svc.name)
+	}
+	vm.log.Info("deconfigured", "service", svc.name)
+	return nil
+}
+
 // stopService stops the service that was already running
 func (vm *windows) stopService(svc *service) error {
 	if svc == nil {
@@ -928,6 +954,14 @@ func (vm *windows) ensureWICDSecretContent(credentials *Authentication) error {
 	}
 	tokenDir, tokenFileName := SplitPath(wicdTokenFile)
 	return vm.EnsureFileContent(credentials.Token, tokenFileName, tokenDir)
+}
+
+// deconfigureWICD ensures the WICD service running on the Windows instance is removed
+func (vm *windows) deconfigureWICD() error {
+	if err := vm.ensureServiceIsRemoved(wicdServiceName); err != nil {
+		return errors.Wrapf(err, "error ensuring %s Windows service is removed", wicdServiceName)
+	}
+	return nil
 }
 
 // Generic helper methods
