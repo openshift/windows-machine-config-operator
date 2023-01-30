@@ -156,14 +156,16 @@ const (
 	CatalogTypeDisabled CatalogTypesState = "Disabled"
 )
 
-// DeveloperConsoleCatalogTypesState defines the state of the sub-catalog types.
-// +kubebuilder:validation:XValidation:rule="has(self.state) && self.state == 'Enabled' && has(self.disabled)",message="disabled is forbidden when state is Enabled."
-// +kubebuilder:validation:XValidation:rule="has(self.state) && self.state == 'Disabled' && has(self.enabled)",message="enabled is forbidden when state is Disabled."
+// DeveloperConsoleCatalogTypes defines the state of the sub-catalog types.
+// +kubebuilder:validation:XValidation:rule="self.state == 'Enabled' ? true : !has(self.enabled)",message="enabled is forbidden when state is not Enabled"
+// +kubebuilder:validation:XValidation:rule="self.state == 'Disabled' ? true : !has(self.disabled)",message="disabled is forbidden when state is not Disabled"
 // +union
-type DeveloperConsoleCatalogTypesState struct {
+type DeveloperConsoleCatalogTypes struct {
 	// state defines if a list of catalog types should be enabled or disabled.
 	// +unionDiscriminator
 	// +kubebuilder:validation:Enum:="Enabled";"Disabled";
+	// +kubebuilder:default:="Enabled"
+	// +default="Enabled"
 	// +kubebuilder:validation:Required
 	State CatalogTypesState `json:"state,omitempty"`
 	// enabled is a list of developer catalog types (sub-catalogs IDs) that will be shown to users.
@@ -194,7 +196,7 @@ type DeveloperConsoleCatalogCustomization struct {
 	// types allows enabling or disabling of sub-catalog types that user can see in the Developer catalog.
 	// When omitted, all the sub-catalog types will be shown.
 	// +optional
-	Types DeveloperConsoleCatalogTypesState `json:"types"`
+	Types DeveloperConsoleCatalogTypes `json:"types,omitempty"`
 }
 
 // DeveloperConsoleCatalogCategoryMeta are the key identifiers of a developer catalog category.
@@ -286,6 +288,9 @@ type PerspectiveVisibility struct {
 	AccessReview *ResourceAttributesAccessReview `json:"accessReview,omitempty"`
 }
 
+// Perspective defines a perspective that cluster admins want to show/hide in the perspective switcher dropdown
+// +kubebuilder:validation:XValidation:rule="has(self.id) && self.id != 'dev'? !has(self.pinnedResources) : true",message="pinnedResources is allowed only for dev and forbidden for other perspectives"
+// +optional
 type Perspective struct {
 	// id defines the id of the perspective.
 	// Example: "dev", "admin".
@@ -296,6 +301,37 @@ type Perspective struct {
 	// visibility defines the state of perspective along with access review checks if needed for that perspective.
 	// +kubebuilder:validation:Required
 	Visibility PerspectiveVisibility `json:"visibility"`
+	// pinnedResources defines the list of default pinned resources that users will see on the perspective navigation if they have not customized these pinned resources themselves.
+	// The list of available Kubernetes resources could be read via `kubectl api-resources`.
+	// The console will also provide a configuration UI and a YAML snippet that will list the available resources that can be pinned to the navigation.
+	// Incorrect or unknown resources will be ignored.
+	// +kubebuilder:validation:MaxItems=100
+	// +optional
+	PinnedResources *[]PinnedResourceReference `json:"pinnedResources,omitempty"`
+}
+
+// PinnedResourceReference includes the group, version and type of resource
+type PinnedResourceReference struct {
+	// group is the API Group of the Resource.
+	// Enter empty string for the core group.
+	// This value should consist of only lowercase alphanumeric characters, hyphens and periods.
+	// Example: "", "apps", "build.openshift.io", etc.
+	// +kubebuilder:validation:Pattern:="^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+	// +kubebuilder:validation:Required
+	Group string `json:"group"`
+	// version is the API Version of the Resource.
+	// This value should consist of only lowercase alphanumeric characters.
+	// Example: "v1", "v1beta1", etc.
+	// +kubebuilder:validation:Pattern:="^[a-z0-9]+$"
+	// +kubebuilder:validation:Required
+	Version string `json:"version"`
+	// resource is the type that is being referenced.
+	// It is normally the plural form of the resource kind in lowercase.
+	// This value should consist of only lowercase alphanumeric characters and hyphens.
+	// Example: "deployments", "deploymentconfigs", "pods", etc.
+	// +kubebuilder:validation:Pattern:="^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+	// +kubebuilder:validation:Required
+	Resource string `json:"resource"`
 }
 
 // Brand is a specific supported brand within the console.
