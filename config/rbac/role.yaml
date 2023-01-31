@@ -97,6 +97,12 @@ rules:
   - delete
   - get
 - apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - get
+- apiGroups:
   - certificates.k8s.io
   resources:
   - certificatesigningrequests
