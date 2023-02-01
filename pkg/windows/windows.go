@@ -61,8 +61,8 @@ const (
 	ContainerdLogPath = containerdLogDir + "\\containerd.log"
 	// ContainerdServiceName is containerd Windows service name
 	ContainerdServiceName = "containerd"
-	// wicdServiceName is the Windows service name for WICD
-	wicdServiceName = "windows-instance-config-daemon"
+	// WicdServiceName is the Windows service name for WICD
+	WicdServiceName = "windows-instance-config-daemon"
 	// wicdPath is the path to the WICD executable
 	wicdPath = K8sDir + "\\windows-instance-config-daemon.exe"
 	// windowsExporterPath is the location of the windows_exporter.exe
@@ -129,7 +129,7 @@ const (
 var (
 	// filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
 	filesToTransfer map[*payload.FileInfo]string
-	// RequiredServices is a list of Windows services installed by WMCO
+	// RequiredServices is a list of Windows services installed by WMCO. WICD owns all services aside from itself.
 	// The order of this slice matters due to service dependencies. If a service depends on another service, the
 	// dependent service should be placed before the service it depends on.
 	RequiredServices = []string{
@@ -137,11 +137,8 @@ var (
 		KubeProxyServiceName,
 		HybridOverlayServiceName,
 		KubeletServiceName,
-		wicdServiceName,
+		WicdServiceName,
 		ContainerdServiceName}
-	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
-	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName, KubeProxyServiceName,
-		KubeletServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		remoteDir,
@@ -466,14 +463,14 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 	}
 	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
 		wicdLogDir, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
-	wicdService, err := newService(wicdPath, wicdServiceName, wicdServiceArgs, nil)
+	wicdService, err := newService(wicdPath, WicdServiceName, wicdServiceArgs, nil)
 	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", wicdServiceName)
+		return errors.Wrapf(err, "error creating %s service object", WicdServiceName)
 	}
 	if err := vm.ensureServiceIsRunning(wicdService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", wicdServiceName)
+		return errors.Wrapf(err, "error ensuring %s Windows service has started running", WicdServiceName)
 	}
-	vm.log.Info("configured", "service", wicdServiceName, "args", wicdServiceArgs)
+	vm.log.Info("configured", "service", WicdServiceName, "args", wicdServiceArgs)
 	return nil
 }
 
@@ -940,8 +937,8 @@ func (vm *windows) ensureWICDSecretContent(credentials *Authentication) error {
 
 // deconfigureWICD ensures the WICD service running on the Windows instance is removed
 func (vm *windows) deconfigureWICD() error {
-	if err := vm.ensureServiceIsRemoved(wicdServiceName); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service is removed", wicdServiceName)
+	if err := vm.ensureServiceIsRemoved(WicdServiceName); err != nil {
+		return errors.Wrapf(err, "error ensuring %s Windows service is removed", WicdServiceName)
 	}
 	return nil
 }
