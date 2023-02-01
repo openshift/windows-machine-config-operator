@@ -480,13 +480,14 @@ func testServicesConfigMap(t *testing.T) {
 		cmData, err = servicescm.Parse(cm.Data)
 		require.NoError(t, err, "unable to parse ConfigMap data")
 
-		// Check that the expected services are defined within the CM data
-		expectedSvcs, err := tc.expectedWindowsServices(windows.RequiredServicesOwnedByWICD)
+		// Check that only the expected services are defined within the CM data. WICD itself should not be defined in it
+		expectedSvcs, err := tc.expectedWindowsServices(windows.RequiredServices)
+		expectedSvcs[windows.WicdServiceName] = false
 		require.NoError(t, err)
-		for svcName, shouldBeRunning := range expectedSvcs {
+		for svcName, shouldBeInConfigMap := range expectedSvcs {
 			t.Run(svcName, func(t *testing.T) {
-				assert.Equalf(t, shouldBeRunning, containsService(svcName, cmData.Services),
-					"service existence should be %t", shouldBeRunning)
+				assert.Equalf(t, shouldBeInConfigMap, containsService(svcName, cmData.Services),
+					"service existence should be %t", shouldBeInConfigMap)
 			})
 		}
 	})
