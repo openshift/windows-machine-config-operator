@@ -49,7 +49,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
-	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/services"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
@@ -179,15 +179,15 @@ func (sc *ServiceController) SetupWithManager(mgr ctrl.Manager) error {
 		// A node's name will never change, so it is fine to use the name for node identification
 		// The node must have a desired-version annotation for it to be reconcilable
 		CreateFunc: func(e event.CreateEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[metadata.DesiredVersionAnnotation] != ""
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			// Only process update events if the desired version has changed
 			return sc.nodeName == e.ObjectNew.GetName() &&
-				e.ObjectOld.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[nodeconfig.DesiredVersionAnnotation]
+				e.ObjectOld.GetAnnotations()[metadata.DesiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[metadata.DesiredVersionAnnotation]
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[metadata.DesiredVersionAnnotation] != ""
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -223,7 +223,7 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 
-	desiredVersion, present := node.Annotations[nodeconfig.DesiredVersionAnnotation]
+	desiredVersion, present := node.Annotations[metadata.DesiredVersionAnnotation]
 	if !present {
 		// node missing desired version annotation, don't requeue
 		return ctrl.Result{}, nil

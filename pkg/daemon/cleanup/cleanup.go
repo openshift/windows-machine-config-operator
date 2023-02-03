@@ -30,7 +30,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
-	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
@@ -54,7 +54,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		if err != nil {
 			return err
 		}
-		desiredVersion, present := node.Annotations[nodeconfig.DesiredVersionAnnotation]
+		desiredVersion, present := node.Annotations[metadata.DesiredVersionAnnotation]
 		if !present {
 			return errors.Wrapf(err, "node missing desired version annotation")
 		}
