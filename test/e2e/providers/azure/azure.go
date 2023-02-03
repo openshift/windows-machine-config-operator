@@ -87,7 +87,7 @@ func (p *Provider) newAzureMachineProviderSpec(location, zone string) (*mapi.Azu
 // GenerateMachineSet generates the machineset object which is aws provider specific
 func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*mapi.MachineSet, error) {
 	// Inspect master-0 to get Azure Location and Zone
-	machines, err := p.oc.Machine.Machines("openshift-machine-api").Get(context.TODO(),
+	machines, err := p.oc.Machine.Machines(clusterinfo.MachineAPINamespace).Get(context.TODO(),
 		p.InfrastructureName+"-master-0", meta.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)

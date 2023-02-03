@@ -57,7 +57,8 @@ func (tc *testContext) getCloudPrivateKey() ([]byte, error) {
 
 // getUserDataContents returns the contents of the windows-user-data secret
 func (tc *testContext) getUserDataContents() (string, error) {
-	secret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(), "windows-user-data", meta.GetOptions{})
+	secret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(),
+		clusterinfo.UserDataSecretName, meta.GetOptions{})
 	if err != nil {
 		return "", err
 	}

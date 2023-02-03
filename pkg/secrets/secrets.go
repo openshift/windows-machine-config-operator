@@ -11,13 +11,13 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 )
 
 const (
 	// UserDataSecret is the name of the userData secret that WMCO creates
 	UserDataSecret = "windows-user-data"
-	// UserDataNamespace is the namespace of the userData secret that WMCO creates
-	UserDataNamespace = "openshift-machine-api"
 	// PrivateKeySecret is the name of the private key secret provided by the user
 	PrivateKeySecret = "cloud-private-key"
 	// PrivateKeySecretKey is the key within the private key secret which holds the private key
@@ -50,7 +50,7 @@ func GenerateUserData(platformType oconfig.PlatformType, publicKey ssh.PublicKey
 	userDataSecret := &core.Secret{
 		ObjectMeta: meta.ObjectMeta{
 			Name:      UserDataSecret,
-			Namespace: UserDataNamespace,
+			Namespace: cluster.MachineAPINamespace,
 		},
 		Data: map[string][]byte{
 			"userData": []byte(userData),

@@ -74,7 +74,7 @@ func (p *Provider) newVSphereMachineProviderSpec() (*mapi.VSphereMachineProvider
 func (p *Provider) getWorkspaceFromExistingMachineSet() (*mapi.Workspace, error) {
 	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-cluster=" +
 		p.InfrastructureName}
-	machineSets, err := p.oc.Machine.MachineSets("openshift-machine-api").List(context.TODO(), listOptions)
+	machineSets, err := p.oc.Machine.MachineSets(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get machinesets")
 	}
