@@ -103,6 +103,22 @@ func NewData(services *[]Service, files *[]FileInfo) (*Data, error) {
 	return cmData, nil
 }
 
+// GetLatest returns the most recently created services ConfigMap in the cluster or an error if none exists.
+func GetLatest(c client.Client, ctx context.Context, namespace string) (*core.ConfigMap, error) {
+	servicesCMs, err := List(c, ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+	if len(servicesCMs) == 0 {
+		return nil, errors.Errorf("no services ConfigMaps found in namespace %s", namespace)
+	}
+	// sort with most recently created first
+	sort.Slice(servicesCMs, func(i, j int) bool {
+		return servicesCMs[i].CreationTimestamp.After(servicesCMs[j].CreationTimestamp.Time)
+	})
+	return &servicesCMs[0], nil
+}
+
 // List returns a list of all windows-services ConfigMaps in the given namespace
 func List(c client.Client, ctx context.Context, namespace string) ([]core.ConfigMap, error) {
 	watchNamespaceCMs := &core.ConfigMapList{}
