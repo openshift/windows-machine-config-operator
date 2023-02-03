@@ -14,8 +14,12 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 )
 
-// VersionAnnotation indicates the version of WMCO that configured the node
-const VersionAnnotation = "windowsmachineconfig.openshift.io/version"
+const (
+	// VersionAnnotation indicates the version of WMCO that configured the node
+	VersionAnnotation = "windowsmachineconfig.openshift.io/version"
+	// DesiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
+	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
+)
 
 // generatePatch creates a patch applying the given operation onto each given annotation key and value
 func generatePatch(op string, labels, annotations map[string]string) ([]*patch.JSONPatch, error) {

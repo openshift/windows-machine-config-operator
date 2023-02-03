@@ -21,7 +21,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/fake"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
-	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
@@ -645,7 +645,7 @@ func TestReconcile(t *testing.T) {
 					ObjectMeta: meta.ObjectMeta{
 						Name: "node",
 						Annotations: map[string]string{
-							nodeconfig.DesiredVersionAnnotation: desiredVersion,
+							metadata.DesiredVersionAnnotation: desiredVersion,
 						},
 					},
 				},
