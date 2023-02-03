@@ -155,7 +155,7 @@ var (
 	}
 )
 
-// getFilesToTransfer returns the properly populated filesToTransfer map
+// getFilesToTransfer returns the properly populated filesToTransfer map. Note this does not include the WICD binary.
 func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 	if filesToTransfer != nil {
 		return filesToTransfer, nil
@@ -163,7 +163,6 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 	srcDestPairs := map[string]string{
 		payload.GcpGetValidHostnameScriptPath:  remoteDir,
 		payload.WinDefenderExclusionScriptPath: remoteDir,
-		payload.WICDPath:                       K8sDir,
 		payload.HybridOverlayPath:              K8sDir,
 		payload.HNSPSModule:                    remoteDir,
 		payload.WindowsExporterPath:            K8sDir,
@@ -421,13 +420,24 @@ func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string) error
 
 func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, credentials *Authentication) error {
 	vm.log.Info("configuring")
-	// Make sure WICD service is not running before calling node bootstrap
+
+	// Make sure WICD service is not running before calling node cleanup and/or bootstrap
 	if err := vm.deconfigureWICD(); err != nil {
 		return err
 	}
-	if err := vm.ensureRequiredServicesStopped(); err != nil {
-		return errors.Wrap(err, "unable to stop all services")
+	// We have to ensure the WICD files exist separately before the rest of the files because we must ensure services
+	// are stopped and their files closed before modifying them.
+	if err := vm.ensureWICDExists(credentials); err != nil {
+		return err
 	}
+	if err := vm.ensureWICDSecretContent(credentials); err != nil {
+		return err
+	}
+	// Stop any services that may be running. This prevents the node being shown as Ready after a failed configuration.
+	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace); err != nil {
+		return errors.Wrap(err, "Unable to cleanup the Windows instance")
+	}
+
 	if err := vm.ensureHostNameAndContainersFeature(); err != nil {
 		return err
 	}
@@ -438,9 +448,6 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, cr
 		return errors.Wrap(err, "error transferring files to Windows VM")
 	}
 
-	if err := vm.ensureWICDSecretContent(credentials); err != nil {
-		return err
-	}
 	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
 		wicdPath, desiredVer, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
 	if out, err := vm.Run(wicdBootstrapCmd, true); err != nil {
@@ -469,15 +476,18 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 }
 
 // Interface helper methods
-// ensureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
-func (vm *windows) ensureRequiredServicesStopped() error {
-	// TODO: WMCO no longer stops services started by WICD before calling WICD bootstrap command
-	//		 This code should be removed as part of: https://issues.redhat.com/browse/WINC-741
-	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
-		svc := &service{name: svcName}
-		if err := vm.ensureServiceNotRunning(svc); err != nil {
-			return errors.Wrapf(err, "could not stop service %s", svcName)
-		}
+
+// ensureWICDExists ensures the WICD executable exists. Creates the destination directory and binary file, if needed.
+func (vm *windows) ensureWICDExists(credentials *Authentication) error {
+	if _, err := vm.Run(mkdirCmd(K8sDir), false); err != nil {
+		return errors.Wrapf(err, "unable to create remote directory %s", K8sDir)
+	}
+	wicdFileInfo, err := payload.NewFileInfo(payload.WICDPath)
+	if err != nil {
+		return errors.Wrapf(err, "could not create FileInfo object for file %s", payload.WICDPath)
+	}
+	if err := vm.EnsureFile(wicdFileInfo, K8sDir); err != nil {
+		return errors.Wrapf(err, "error copying %s to %s ", wicdFileInfo.Path, K8sDir)
 	}
 	return nil
 }
