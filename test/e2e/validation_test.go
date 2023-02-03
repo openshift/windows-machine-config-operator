@@ -770,15 +770,15 @@ func testDependentServiceChanges(t *testing.T) {
 // triggerWICDReconciliation kicks off WICD instance reconciliation by changing the desiredVersionAnnotation to an
 // incorrect version, and then back to the correct version.
 func (tc *testContext) triggerWICDReconciliation(node *core.Node) error {
-	patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.DesiredVersionAnnotation,
+	patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.DesiredVersionAnnotation,
 		"test")
 	_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
 		[]byte(patchData), meta.PatchOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error patching node annotation")
 	}
-	patchData = fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.DesiredVersionAnnotation,
-		node.Annotations[nc.DesiredVersionAnnotation])
+	patchData = fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.DesiredVersionAnnotation,
+		node.Annotations[metadata.DesiredVersionAnnotation])
 	_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
 		[]byte(patchData), meta.PatchOptions{})
 	if err != nil {

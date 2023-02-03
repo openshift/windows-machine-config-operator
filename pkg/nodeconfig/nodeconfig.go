@@ -55,8 +55,6 @@ const (
 	// KubeletClientCAFilename is the name of the CA certificate file required by kubelet to interact
 	// with the kube-apiserver client
 	KubeletClientCAFilename = "kubelet-ca.crt"
-	// DesiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
-	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
 	// mcoNamespace is the namespace the Machine Config Server is deployed in, which manages the node bootsrapper secret
 	mcoNamespace = "openshift-machine-config-operator"
 	// mcoBootstrapSecret is the resource name that holds the cert and token required to create the bootstrap kubeconfig
@@ -193,7 +191,7 @@ func (nc *nodeConfig) Configure() error {
 			return errors.Wrap(err, "configuring WICD failed")
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
-		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{DesiredVersionAnnotation: version.Get()}); err != nil {
+		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{metadata.DesiredVersionAnnotation: version.Get()}); err != nil {
 			return errors.Wrapf(err, "error updating desired version annotation on node %s", nc.node.GetName())
 		}
 
