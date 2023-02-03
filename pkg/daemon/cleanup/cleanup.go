@@ -34,9 +34,10 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
-// Deconfigure removes all managed services from the instance and the version annotation
+// Deconfigure removes all managed services from the instance and the version annotation, if it has an associated node.
 // If we are able to get the services ConfigMap tied to the desired version, all services defined in it are cleaned up.
-// TODO: Otherwise, perform cleanup based on a combination of the OpenShift managed tag and latest services ConfigMap.
+// Otherwise, cleanup is based on the latest services ConfigMap.
+// TODO: remove services with the OpenShift managed tag in best effort cleanup https://issues.redhat.com/browse/WINC-853
 func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace string) error {
 	// Cannot use a cached client as no manager will be started to populate cache
 	directClient, err := controller.NewDirectClient(cfg)
@@ -50,16 +51,22 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	var node *core.Node
 	var cmData *servicescm.Data
 	err = func() error {
-		node, err = controller.GetAssociatedNode(directClient, addrs)
+		cm := &core.ConfigMap{}
+		node, err := controller.GetAssociatedNode(directClient, addrs)
 		if err != nil {
+			// If no node is found, fetch the most recently created services ConfigMap for best effort cleanup
+			cm, err = servicescm.GetLatest(directClient, ctx, configMapNamespace)
+			if err != nil {
+				return errors.Wrapf(err, "cannot get latest services ConfigMap from namespace %s", configMapNamespace)
+			}
+			cmData, err = servicescm.Parse(cm.Data)
 			return err
 		}
+		// Otherwise, fetch the ConfigMap tied to the node's desired version annotation
 		desiredVersion, present := node.Annotations[metadata.DesiredVersionAnnotation]
 		if !present {
-			return errors.Wrapf(err, "node missing desired version annotation")
+			return errors.Wrapf(err, "node %s missing desired version annotation", node.Name)
 		}
-		// Fetch the CM of the desired version
-		cm := &core.ConfigMap{}
 		err = directClient.Get(ctx,
 			client.ObjectKey{Namespace: configMapNamespace, Name: servicescm.NamePrefix + desiredVersion}, cm)
 		if err != nil {
@@ -69,8 +76,6 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		return err
 	}()
 	if err != nil {
-		// TODO: best effort cleanup of all OpenShift managed services and those in the latest services ConfigMap
-		// https://issues.redhat.com/browse/WINC-853
 		return err
 	}
 
