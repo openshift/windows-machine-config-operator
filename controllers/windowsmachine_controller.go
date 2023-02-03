@@ -147,7 +147,7 @@ func (r *WindowsMachineReconciler) mapNodeToMachine(object client.Object) []reco
 	}
 
 	// Map the Node to the associated Machine through the Node's UID
-	machines, err := r.machineClient.Machines(machineAPINamespace).List(context.TODO(),
+	machines, err := r.machineClient.Machines(cluster.MachineAPINamespace).List(context.TODO(),
 		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows," + IgnoreLabel + "!=true"})
 	if err != nil {
 		r.log.Error(err, "could not get a list of machines")
@@ -244,8 +244,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	}
 
 	// Fetch the Machine instance
-	machine, err := r.machineClient.Machines(machineAPINamespace).Get(ctx,
-		request.Name, meta.GetOptions{})
+	machine, err := r.machineClient.Machines(cluster.MachineAPINamespace).Get(ctx, request.Name, meta.GetOptions{})
 	if err != nil {
 		if k8sapierrors.IsNotFound(err) {
 			// Request object not found, could have been deleted after reconcile request.
@@ -447,7 +446,7 @@ func (r *WindowsMachineReconciler) validateUserData() error {
 
 	userDataSecret := &core.Secret{}
 	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: secrets.UserDataSecret,
-		Namespace: secrets.UserDataNamespace}, userDataSecret)
+		Namespace: cluster.MachineAPINamespace}, userDataSecret)
 	if err != nil {
 		return errors.Wrap(err, "could not find Windows userData secret in required namespace")
 	}
@@ -471,14 +470,14 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) (boo
 	}
 	machinesetName := machine.OwnerReferences[0].Name
 
-	machines, err := r.machineClient.Machines(machineAPINamespace).List(context.TODO(),
+	machines, err := r.machineClient.Machines(cluster.MachineAPINamespace).List(context.TODO(),
 		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows"})
 	if err != nil {
 		return false, errors.Wrap(err, "cannot list Machines")
 	}
 
 	// get Windows MachineSet
-	windowsMachineSet, err := r.machineClient.MachineSets(machineAPINamespace).Get(context.TODO(),
+	windowsMachineSet, err := r.machineClient.MachineSets(cluster.MachineAPINamespace).Get(context.TODO(),
 		machinesetName, meta.GetOptions{})
 	if err != nil {
 		return false, errors.Wrap(err, "cannot get MachineSet")
