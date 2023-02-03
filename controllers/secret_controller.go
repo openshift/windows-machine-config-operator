@@ -232,7 +232,7 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 			annotationsToApply = map[string]string{nodeconfig.PubKeyHashAnnotation: ""}
 		}
 
-		if err := metadata.ApplyAnnotations(r.client, ctx, node, annotationsToApply); err != nil {
+		if err := metadata.ApplyLabelsAndAnnotations(ctx, r.client, node, nil, annotationsToApply); err != nil {
 			return errors.Wrapf(err, "error updating annotations on node %s", node.GetName())
 		}
 		r.log.V(1).Info("patched node object", "node", node.GetName(), "patch", annotationsToApply)

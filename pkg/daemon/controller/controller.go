@@ -247,6 +247,10 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		klog.Error(err)
 		return ctrl.Result{}, err
 	}
+	// Version annotation is the indicator that the node was fully configured by this version of the services ConfigMap
+	if err = metadata.ApplyVersionAnnotation(sc.ctx, sc.client, node, desiredVersion); err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "error updating version annotation on node %s", sc.nodeName)
+	}
 	return ctrl.Result{}, nil
 }
 

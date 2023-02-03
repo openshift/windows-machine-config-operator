@@ -34,7 +34,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
-// Deconfigure removes an instance from the cluster.
+// Deconfigure removes all managed services from the instance and the version annotation
 // If we are able to get the services ConfigMap tied to the desired version, all services defined in it are cleaned up.
 // TODO: Otherwise, perform cleanup based on a combination of the OpenShift managed tag and latest services ConfigMap.
 func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace string) error {
@@ -83,6 +83,10 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		return err
 	}
 	cleanupContainers()
+
+	if node != nil {
+		return metadata.RemoveVersionAnnotation(ctx, directClient, *node)
+	}
 	return nil
 }
 

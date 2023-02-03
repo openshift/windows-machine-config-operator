@@ -9,9 +9,11 @@ import (
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 const (
@@ -74,15 +76,63 @@ func escape(key string) string {
 	return strings.Replace(key, "/", "~1", -1)
 }
 
-// ApplyAnnotations applies all the given annotations to the given Node resource
-func ApplyAnnotations(c client.Client, ctx context.Context, node core.Node, annotations map[string]string) error {
-	patchData, err := GenerateAddPatch(nil, annotations)
+// ApplyLabelsAndAnnotations applies all the given annotations to the given Node resource
+func ApplyLabelsAndAnnotations(ctx context.Context, c client.Client, node core.Node, labels, annotations map[string]string) error {
+	patchData, err := GenerateAddPatch(labels, annotations)
 	if err != nil {
 		return errors.Wrapf(err, "error creating annotations patch request")
 	}
 	err = c.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
 	if err != nil {
 		return errors.Wrapf(err, "unable to apply patch data %s on node %s", patchData, node.GetName())
+	}
+	return nil
+}
+
+// ApplyVersionAnnotation applies this operator's version as the version annotation to the given Node
+func ApplyVersionAnnotation(ctx context.Context, c client.Client, node core.Node, value string) error {
+	return ApplyLabelsAndAnnotations(ctx, c, node, nil, map[string]string{VersionAnnotation: value})
+}
+
+// ApplyDesiredVersionAnnotation applies this operator's version as the desired version annotation to the given Node
+func ApplyDesiredVersionAnnotation(ctx context.Context, c client.Client, node core.Node, value string) error {
+	return ApplyLabelsAndAnnotations(ctx, c, node, nil, map[string]string{DesiredVersionAnnotation: value})
+}
+
+// RemoveVersionAnnotation clears the version annotation from the node object, indicating the node is not configured
+func RemoveVersionAnnotation(ctx context.Context, c client.Client, node core.Node) error {
+	if _, present := node.GetAnnotations()[VersionAnnotation]; present {
+		patchData, err := GenerateRemovePatch([]string{}, []string{VersionAnnotation})
+		if err != nil {
+			return errors.Wrapf(err, "error creating version annotation remove request")
+		}
+		err = c.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
+		if err != nil {
+			return errors.Wrapf(err, "error removing version annotation from node %s", node.GetName())
+		}
+	}
+	return nil
+}
+
+// WaitForVersionAnnotation checks if the node object has equivalent version and desiredVersion annotations.
+// Waits for retry.Interval seconds and returns an error if the version annotation does not appear in that time frame.
+func WaitForVersionAnnotation(ctx context.Context, c client.Client, nodeName string) error {
+	var found bool
+	node := &core.Node{}
+	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		err := c.Get(ctx, kubeTypes.NamespacedName{Name: nodeName}, node)
+		if err != nil {
+			return false, err
+		}
+		desiredVer, ok := node.Annotations[DesiredVersionAnnotation]
+		if !ok {
+			return true, errors.Errorf("node %s does not have %s annotation", nodeName, DesiredVersionAnnotation)
+		}
+		return node.Annotations[VersionAnnotation] == desiredVer, nil
+	})
+	if !found {
+		return errors.Wrapf(err, "timeout waiting for %s and %s annotations to match on node %s", VersionAnnotation,
+			DesiredVersionAnnotation, nodeName)
 	}
 	return nil
 }
