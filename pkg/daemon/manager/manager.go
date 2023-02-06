@@ -78,18 +78,13 @@ func (m *manager) OpenService(name string) (winsvc.Service, error) {
 }
 
 func (m *manager) DeleteService(name string) error {
-	existingSvcs, err := m.GetServices()
-	if err != nil {
-		return err
-	}
-	// Nothing to do if it already does not exist
-	if _, present := existingSvcs[name]; !present {
-		return nil
-	}
-
 	manager := (*mgr.Mgr)(m)
 	service, err := manager.OpenService(name)
 	if err != nil {
+		// Nothing to do if it already does not exist
+		if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
+			return nil
+		}
 		return errors.Wrapf(err, "failed to open service %q", name)
 	}
 	defer service.Close()
