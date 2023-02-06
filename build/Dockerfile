@@ -35,16 +35,14 @@ COPY hcsshim/ .
 RUN GOOS=windows go build ./cmd/containerd-shim-runhcs-v1
 
 # Build kubelet
-WORKDIR /build/windows-machine-config-operator/kubelet/
-COPY kubelet/ .
-ENV KUBE_BUILD_PLATFORMS windows/amd64
-RUN make WHAT=cmd/kubelet
+WORKDIR /build/windows-machine-config-operator/
+COPY kubelet/ kubelet/
+COPY Makefile Makefile
+RUN make kubelet
 
 # Build kube-proxy
-WORKDIR /build/windows-machine-config-operator/kube-proxy/
-COPY kube-proxy/ .
-ENV KUBE_BUILD_PLATFORMS windows/amd64
-RUN make WHAT=cmd/kube-proxy
+COPY kube-proxy/ kube-proxy/
+RUN make kube-proxy
 
 # Build azure-cloud-node-manager
 WORKDIR /build/windows-machine-config-operator/cloud-provider-azure/
@@ -66,7 +64,6 @@ COPY go.mod go.mod
 COPY go.sum go.sum
 COPY vendor vendor
 COPY .gitignore .gitignore
-COPY Makefile Makefile
 COPY build build
 COPY cmd cmd
 COPY controllers controllers
