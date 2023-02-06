@@ -115,6 +115,7 @@ func main() {
 		payload.HybridOverlayPath,
 		payload.KubeletPath,
 		payload.KubeProxyPath,
+		payload.KubeLogRunnerPath,
 		payload.GcpGetValidHostnameScriptPath,
 		payload.WICDPath,
 		payload.HNSPSModule,

@@ -178,7 +178,9 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 		preScripts = append(preScripts, hostnameOverridePowershellVar)
 	}
 
-	kubeletServiceCmd := windows.KubeletPath
+	kubeletServiceCmd := fmt.Sprintf("%s -log-file=%s -redirect-stderr=false %s",
+		windows.KubeLogRunnerPath, windows.KubeletLog, windows.KubeletPath)
+
 	for _, arg := range kubeletArgs {
 		kubeletServiceCmd += fmt.Sprintf(" %s", arg)
 	}
@@ -209,8 +211,6 @@ func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]stri
 		"--kubeconfig=" + windows.KubeconfigPath,
 		"--cert-dir=" + certDirectory,
 		"--windows-service",
-		"--logtostderr=false",
-		"--log-file=" + windows.KubeletLog,
 		// Registers the Kubelet with Windows specific taints so that linux pods won't get scheduled onto
 		// Windows nodes.
 		"--register-with-taints=" + windowsTaints,
