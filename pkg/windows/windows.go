@@ -78,6 +78,8 @@ const (
 	BootstrapKubeconfigPath = K8sDir + "\\bootstrap-kubeconfig"
 	// KubeletPath is the location of the kubelet exe
 	KubeletPath = K8sDir + "\\kubelet.exe"
+	// KubeLogRunnerPath is the location of the kube-log-runner exe
+	KubeLogRunnerPath = K8sDir + "\\kube-log-runner.exe"
 	// KubeletConfigPath is the location of the kubelet configuration file
 	KubeletConfigPath = K8sDir + "\\kubelet.conf"
 	// KubeletLog is the location of the kubelet log file
@@ -177,6 +179,7 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		payload.KubeProxyPath:                  K8sDir,
 		payload.KubeletPath:                    K8sDir,
 		payload.AzureCloudNodeManagerPath:      K8sDir,
+		payload.KubeLogRunnerPath:              K8sDir,
 		payload.ContainerdPath:                 ContainerdDir,
 		payload.HcsshimPath:                    ContainerdDir,
 		payload.ContainerdConfPath:             ContainerdDir,

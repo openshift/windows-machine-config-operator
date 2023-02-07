@@ -39,6 +39,7 @@ WORKDIR /build/windows-machine-config-operator/kubelet/
 COPY kubelet/ .
 ENV KUBE_BUILD_PLATFORMS windows/amd64
 RUN make WHAT=cmd/kubelet
+RUN make WHAT=vendor/k8s.io/component-base/logs/kube-log-runner
 
 # Build kube-proxy
 WORKDIR /build/windows-machine-config-operator/kube-proxy/
@@ -91,6 +92,7 @@ RUN make build-daemon
 #├── hybrid-overlay-node.exe
 #├── kube-node/
 #│   ├── kubelet.exe
+#│   ├── kube-log-runner.exe
 #│   └── kube-proxy.exe
 #├── powershell/
 #│   ├── gcp-get-hostname.ps1
@@ -121,9 +123,10 @@ COPY --from=build /build/windows-machine-config-operator/containerd/bin/containe
 COPY --from=build /build/windows-machine-config-operator/hcsshim/containerd-shim-runhcs-v1.exe .
 COPY pkg/internal/containerd_conf.toml .
 
-# Copy kubelet.exe and kube-proxy.exe
+# Copy kubelet.exe, kube-log-runner.exe and kube-proxy.exe
 WORKDIR /payload/kube-node/
 COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kubelet.exe .
+COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kube-log-runner.exe .
 COPY --from=build /build/windows-machine-config-operator/kube-proxy/_output/local/bin/windows/amd64/kube-proxy.exe .
 
 # Copy CNI plugin binaries

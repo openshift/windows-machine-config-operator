@@ -21,6 +21,8 @@ const (
 	// KubeProxyPath contains the path of the kube-proxy binary. The container image should already have this binary
 	// mounted
 	KubeProxyPath = payloadDirectory + "/kube-node/kube-proxy.exe"
+	// KubeLogRunnerPath contains the path of the kube-log-runner binary.
+	KubeLogRunnerPath = payloadDirectory + "/kube-node/kube-log-runner.exe"
 	// ContainerdPath contains the path of the containerd binary. The container image should already have this binary
 	// mounted
 	ContainerdPath = payloadDirectory + "/containerd/containerd.exe"
