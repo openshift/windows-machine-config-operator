@@ -11,8 +11,10 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 type Manager interface {
@@ -139,8 +141,7 @@ func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) er
 				return errors.Wrapf(err, "unable to stop dependent service %s", dependentServiceName)
 			}
 		}
-		_, err = service.Control(svc.Stop)
-		if err != nil {
+		if err := m.stopServiceAndProcess(winSvc); err != nil {
 			return err
 		}
 	default:
@@ -148,6 +149,37 @@ func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) er
 	}
 	// Wait for the state change to actually take place
 	return winsvc.WaitForState(service, state)
+}
+
+// Stop the service, and wait for the process associated with the service to stop
+func (m *manager) stopServiceAndProcess(winSvc *mgr.Service) error {
+	status, err := winSvc.Query()
+	if err != nil {
+		return errors.Wrap(err, "error querying service")
+	}
+	var pHandle windows.Handle
+	// A value of 0 indicates that no process is running
+	if status.ProcessId != 0 {
+		pHandle, err = windows.OpenProcess(windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_INFORMATION, false,
+			status.ProcessId)
+		if err != nil {
+			return errors.Wrap(err, "unable to open service's associated process")
+		}
+		defer windows.CloseHandle(pHandle)
+	}
+	_, err = winSvc.Control(svc.Stop)
+	if err != nil {
+		return err
+	}
+	if status.ProcessId != 0 {
+		if err = waitForProcessToStop(pHandle); err != nil {
+			// Terminate the process if it does not exit on its own
+			if err = windows.TerminateProcess(pHandle, uint32(1)); err != nil {
+				return errors.Wrap(err, "error terminating stalled process")
+			}
+		}
+	}
+	return nil
 }
 
 // listDependentServices returns a list of names of all services dependent on the given service
@@ -221,4 +253,20 @@ func enumDependentServicesSyscall(hService windows.Handle, dwServiceState uint32
 	pcbBytesNeeded *uint32, lpServicesReturned *uint32) (uintptr, uintptr, error) {
 	return enumDependentServicesW.Call(uintptr(hService), uintptr(dwServiceState), uintptr(unsafe.Pointer(lpServices)),
 		uintptr(cbBufSize), uintptr(unsafe.Pointer(pcbBytesNeeded)), uintptr(unsafe.Pointer(lpServicesReturned)))
+}
+
+// waitForProcessToStop waits until the process has exited
+func waitForProcessToStop(process windows.Handle) error {
+	return wait.PollImmediate(retry.WindowsAPIInterval, retry.ResourceChangeTimeout, func() (done bool, err error) {
+		var exitCode uint32
+		if err := windows.GetExitCodeProcess(process, &exitCode); err != nil {
+			// unexpected error, most likely related to permissions
+			return false, errors.Wrap(err, "error getting process exit code")
+		}
+		// STATUS_PENDING indicates the process has not exited, keep retrying.
+		if exitCode == uint32(windows.STATUS_PENDING) {
+			return false, nil
+		}
+		return true, nil
+	})
 }
