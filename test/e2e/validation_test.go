@@ -480,13 +480,14 @@ func testServicesConfigMap(t *testing.T) {
 		cmData, err = servicescm.Parse(cm.Data)
 		require.NoError(t, err, "unable to parse ConfigMap data")
 
-		// Check that the expected services are defined within the CM data
-		expectedSvcs, err := tc.expectedWindowsServices(windows.RequiredServicesOwnedByWICD)
+		// Check that only the expected services are defined within the CM data. WICD itself should not be defined in it
+		expectedSvcs, err := tc.expectedWindowsServices(windows.RequiredServices)
+		expectedSvcs[windows.WicdServiceName] = false
 		require.NoError(t, err)
-		for svcName, shouldBeRunning := range expectedSvcs {
+		for svcName, shouldBeInConfigMap := range expectedSvcs {
 			t.Run(svcName, func(t *testing.T) {
-				assert.Equalf(t, shouldBeRunning, containsService(svcName, cmData.Services),
-					"service existence should be %t", shouldBeRunning)
+				assert.Equalf(t, shouldBeInConfigMap, containsService(svcName, cmData.Services),
+					"service existence should be %t", shouldBeInConfigMap)
 			})
 		}
 	})
@@ -769,15 +770,15 @@ func testDependentServiceChanges(t *testing.T) {
 // triggerWICDReconciliation kicks off WICD instance reconciliation by changing the desiredVersionAnnotation to an
 // incorrect version, and then back to the correct version.
 func (tc *testContext) triggerWICDReconciliation(node *core.Node) error {
-	patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.DesiredVersionAnnotation,
+	patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.DesiredVersionAnnotation,
 		"test")
 	_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
 		[]byte(patchData), meta.PatchOptions{})
 	if err != nil {
 		return errors.Wrap(err, "error patching node annotation")
 	}
-	patchData = fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, nc.DesiredVersionAnnotation,
-		node.Annotations[nc.DesiredVersionAnnotation])
+	patchData = fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.DesiredVersionAnnotation,
+		node.Annotations[metadata.DesiredVersionAnnotation])
 	_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
 		[]byte(patchData), meta.PatchOptions{})
 	if err != nil {

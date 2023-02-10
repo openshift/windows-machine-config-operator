@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
@@ -38,7 +39,6 @@ import (
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=create;get;list;watch;update
 
 const (
-	userDataSecret = "windows-user-data"
 	// SecretController is the name of this controller in logs and other outputs.
 	SecretController = "secret"
 )
@@ -110,7 +110,7 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // isUserDataSecret returns true if the provided object is the userData Secret
 func isUserDataSecret(obj client.Object) bool {
-	return obj.GetName() == userDataSecret && obj.GetNamespace() == machineAPINamespace
+	return obj.GetName() == secrets.UserDataSecret && obj.GetNamespace() == cluster.MachineAPINamespace
 }
 
 // isPrivateKeySecret returns true if the provided object is the private key secret
@@ -164,15 +164,16 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 	// Generate expected userData based on the existing private key
 	validUserData, err := secrets.GenerateUserData(r.platform, keySigner.PublicKey())
 	if err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "error generating %s secret", userDataSecret)
+		return reconcile.Result{}, errors.Wrapf(err, "error generating %s secret", secrets.UserDataSecret)
 	}
 
 	userData := &core.Secret{}
 	// Fetch UserData instance
-	err = r.client.Get(ctx, kubeTypes.NamespacedName{Name: userDataSecret, Namespace: machineAPINamespace}, userData)
+	err = r.client.Get(ctx,
+		kubeTypes.NamespacedName{Name: secrets.UserDataSecret, Namespace: cluster.MachineAPINamespace}, userData)
 	if err != nil && k8sapierrors.IsNotFound(err) {
 		// Secret is deleted
-		log.Info("secret not found, creating the secret", "name", userDataSecret)
+		log.Info("secret not found, creating the secret", "name", secrets.UserDataSecret)
 		err = r.client.Create(ctx, validUserData)
 		if err != nil {
 			return reconcile.Result{}, err
@@ -180,7 +181,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 		// Secret created successfully - don't requeue
 		return reconcile.Result{}, nil
 	} else if err != nil {
-		log.Error(err, "error retrieving the secret", "name", userDataSecret)
+		log.Error(err, "error retrieving the secret", "name", secrets.UserDataSecret)
 		return reconcile.Result{}, err
 	} else if string(userData.Data["userData"][:]) == string(validUserData.Data["userData"][:]) {
 		// valid userData secret already exists
@@ -231,14 +232,14 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 			annotationsToApply = map[string]string{nodeconfig.PubKeyHashAnnotation: ""}
 		}
 
-		if err := metadata.ApplyAnnotations(r.client, ctx, node, annotationsToApply); err != nil {
+		if err := metadata.ApplyLabelsAndAnnotations(ctx, r.client, node, nil, annotationsToApply); err != nil {
 			return errors.Wrapf(err, "error updating annotations on node %s", node.GetName())
 		}
 		r.log.V(1).Info("patched node object", "node", node.GetName(), "patch", annotationsToApply)
 	}
 
 	// Set userdata to expected value
-	r.log.Info("updating secret", "name", userDataSecret)
+	r.log.Info("updating secret", "name", secrets.UserDataSecret)
 	err = r.client.Update(ctx, expected)
 	if err != nil {
 		return errors.Wrap(err, "error updating secret")

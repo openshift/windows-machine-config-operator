@@ -29,6 +29,8 @@ const (
 	cloudControllerOwnershipConditionType = "CloudControllerOwner"
 	// clusterCloudControllerManagerOperatorName is the registered name of Cluster Cloud Controller Manager Operator
 	clusterCloudControllerManagerOperatorName = "cloud-controller-manager"
+	// MachineAPINamespace is the name of the namespace in which machine objects and userData secret is created.
+	MachineAPINamespace = "openshift-machine-api"
 )
 
 // Network interface contains methods to interact with cluster network objects

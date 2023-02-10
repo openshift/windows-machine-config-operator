@@ -17,7 +17,6 @@ import (
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
@@ -55,8 +54,6 @@ const (
 	// KubeletClientCAFilename is the name of the CA certificate file required by kubelet to interact
 	// with the kube-apiserver client
 	KubeletClientCAFilename = "kubelet-ca.crt"
-	// DesiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
-	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
 	// mcoNamespace is the namespace the Machine Config Server is deployed in, which manages the node bootsrapper secret
 	mcoNamespace = "openshift-machine-config-operator"
 	// mcoBootstrapSecret is the resource name that holds the cert and token required to create the bootstrap kubeconfig
@@ -154,8 +151,9 @@ func (nc *nodeConfig) Configure() error {
 		return err
 	}
 
+	wmcoVersion := version.Get()
 	// Start all required services to bootstrap a node object using WICD
-	if err := nc.Windows.Bootstrap(version.Get(), nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace,
+	if err := nc.Windows.Bootstrap(wmcoVersion, nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace,
 		nodeConfigCache.credentials); err != nil {
 		return errors.Wrap(err, "bootstrapping the Windows instance failed")
 	}
@@ -178,7 +176,8 @@ func (nc *nodeConfig) Configure() error {
 		for key, value := range nc.additionalAnnotations {
 			annotationsToApply[key] = value
 		}
-		if err := nc.applyLabelsAndAnnotations(nc.additionalLabels, annotationsToApply); err != nil {
+		if err := metadata.ApplyLabelsAndAnnotations(context.TODO(), nc.client, *nc.node, nc.additionalLabels,
+			annotationsToApply); err != nil {
 			return errors.Wrapf(err, "error updating public key hash and additional annotations on node %s",
 				nc.node.GetName())
 		}
@@ -193,18 +192,17 @@ func (nc *nodeConfig) Configure() error {
 			return errors.Wrap(err, "configuring WICD failed")
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
-		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{DesiredVersionAnnotation: version.Get()}); err != nil {
+		if err := metadata.ApplyDesiredVersionAnnotation(context.TODO(), nc.client, *nc.node, wmcoVersion); err != nil {
 			return errors.Wrapf(err, "error updating desired version annotation on node %s", nc.node.GetName())
 		}
 
-		// Now that basic kubelet configuration is complete, configure networking in the node
-		if err := nc.configureNetwork(); err != nil {
-			return errors.Wrap(err, "configuring node network failed")
+		// Wait for version annotation. This prevents uncordoning the node until all node services and networks are up
+		if err := metadata.WaitForVersionAnnotation(context.TODO(), nc.client, nc.node.Name); err != nil {
+			return errors.Wrapf(err, "error waiting for proper %s annotation for node %s", metadata.VersionAnnotation,
+				nc.node.GetName())
 		}
 
-		// Now that the node has been fully configured, add the version annotation to signify that the node
-		// was successfully configured by this version of WMCO
-		// populate node object in nodeConfig once more
+		// Now that the node has been fully configured, update the node object in nodeConfig once more
 		if err := nc.setNode(false); err != nil {
 			return errors.Wrap(err, "error getting node object")
 		}
@@ -215,8 +213,7 @@ func (nc *nodeConfig) Configure() error {
 		if ownedByCCM && nc.platformType == configv1.AzurePlatformType {
 			// TODO: The proper long term solution is to run this as a pod and give it the correct permissions
 			// via service account. This isn't currently possible as we are unable to build Windows container images
-			// due to shortcomings in our build system. Short term solution is to do this taint removal in WICD, when
-			// WICD removes the cordon. https://issues.redhat.com/browse/WINC-741
+			// due to shortcomings in our build system.
 			cloudTaint := &core.Taint{
 				Key:    cloudproviderapi.TaintExternalCloudProvider,
 				Effect: core.TaintEffectNoSchedule,
@@ -224,11 +221,6 @@ func (nc *nodeConfig) Configure() error {
 			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
 				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
 			}
-		}
-		// Version annotation is the indicator that the node was fully configured by this version of WMCO, so it should
-		// be added at the end of the process.
-		if err := nc.applyLabelsAndAnnotations(nil, map[string]string{metadata.VersionAnnotation: version.Get()}); err != nil {
-			return errors.Wrapf(err, "error updating version annotation on node %s", nc.node.GetName())
 		}
 
 		// Uncordon the node now that it is fully configured
@@ -368,21 +360,6 @@ func createKubeletConf(clusterServiceCIDR string) (string, error) {
 	return string(kubeletConfigData), nil
 }
 
-// applyLabelsAndAnnotations applies all the given labels and annotations and updates the Node object in NodeConfig
-func (nc *nodeConfig) applyLabelsAndAnnotations(labels, annotations map[string]string) error {
-	patchData, err := metadata.GenerateAddPatch(labels, annotations)
-	if err != nil {
-		return err
-	}
-	node, err := nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
-		patchData, meta.PatchOptions{})
-	if err != nil {
-		return errors.Wrapf(err, "unable to apply patch data %s", patchData)
-	}
-	nc.node = node
-	return nil
-}
-
 // isCloudControllerOwnedByCCM checks if Cloud Controllers are managed by Cloud Controller Manager (CCM)
 // instead of Kube Controller Manager.
 func isCloudControllerOwnedByCCM() (bool, error) {
@@ -397,35 +374,6 @@ func isCloudControllerOwnedByCCM() (bool, error) {
 	}
 
 	return cluster.IsCloudControllerOwnedByCCM(client)
-}
-
-// configureNetwork configures k8s networking in the node
-// we are assuming that the WindowsVM and node objects are valid
-func (nc *nodeConfig) configureNetwork() error {
-	// Wait until the node object has the hybrid overlay subnet annotation. Otherwise the hybrid-overlay will fail to
-	// start
-	if err := nc.waitForNodeAnnotation(HybridOverlaySubnet); err != nil {
-		return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlaySubnet,
-			nc.node.GetName())
-	}
-
-	// Wait until the node object has the hybrid overlay MAC annotation. This indicates that hybrid-overlay is running
-	// successfully, and is required for the CNI configuration to start.
-	if err := nc.waitForNodeAnnotation(HybridOverlayMac); err != nil {
-		return errors.Wrapf(err, "error waiting for %s node annotation for %s", HybridOverlayMac,
-			nc.node.GetName())
-	}
-	// Running the hybrid-overlay causes network reconfiguration in the Windows VM which results in the ssh connection
-	// being closed, and the client is not smart enough to reconnect.
-	if err := nc.Windows.Reinitialize(); err != nil {
-		return errors.Wrap(err, "error reinitializing VM after running hybrid-overlay")
-	}
-
-	// Start the kube-proxy service
-	if err := nc.Windows.ConfigureKubeProxy(); err != nil {
-		return errors.Wrapf(err, "error starting kube-proxy for %s", nc.node.GetName())
-	}
-	return nil
 }
 
 // setNode finds the Node associated with the VM that has been configured, and sets the node field of the
@@ -460,32 +408,6 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 	return errors.Wrapf(err, "unable to find node with address %s", instanceAddress)
 }
 
-// waitForNodeAnnotation checks if the node object has the given annotation and waits for retry.Interval seconds and
-// returns an error if the annotation does not appear in that time frame.
-func (nc *nodeConfig) waitForNodeAnnotation(annotation string) error {
-	nodeName := nc.node.GetName()
-	var found bool
-	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
-		node, err := nc.k8sclientset.CoreV1().Nodes().Get(context.TODO(), nodeName, meta.GetOptions{})
-		if err != nil {
-			nc.log.V(1).Error(err, "unable to get associated node object")
-			return false, nil
-		}
-		_, found := node.Annotations[annotation]
-		if found {
-			// update node to avoid staleness
-			nc.node = node
-			return true, nil
-		}
-		return false, nil
-	})
-
-	if !found {
-		return errors.Wrapf(err, "timeout waiting for %s node annotation", annotation)
-	}
-	return nil
-}
-
 // newDrainHelper returns new drain.Helper instance
 func (nc *nodeConfig) newDrainHelper() *drain.Helper {
 	return &drain.Helper{
@@ -516,19 +438,9 @@ func (nc *nodeConfig) Deconfigure() error {
 		return errors.Wrapf(err, "unable to drain node %s", nc.node.GetName())
 	}
 
-	// Revert the changes we've made to the instance by removing services and deleting all installed files
+	// Revert all changes we've made to the instance by removing installed services, files, and the version annotation
 	if err := nc.Windows.Deconfigure(nc.wmcoNamespace, nodeConfigCache.apiServerEndpoint); err != nil {
 		return errors.Wrap(err, "error deconfiguring instance")
-	}
-	// Clear the version annotation from the node object to indicate the node is not configured
-	patchData, err := metadata.GenerateRemovePatch([]string{}, []string{metadata.VersionAnnotation})
-	if err != nil {
-		return errors.Wrapf(err, "error creating version annotation remove request")
-	}
-	_, err = nc.k8sclientset.CoreV1().Nodes().Patch(context.TODO(), nc.node.GetName(), kubeTypes.JSONPatchType,
-		patchData, meta.PatchOptions{})
-	if err != nil {
-		return errors.Wrapf(err, "error removing version annotation from node %s", nc.node.GetName())
 	}
 
 	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())

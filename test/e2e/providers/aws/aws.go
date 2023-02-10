@@ -129,7 +129,7 @@ func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 		SecurityGroups:     linuxWorkerSpec.SecurityGroups,
 		Subnet:             linuxWorkerSpec.Subnet,
 		Placement:          linuxWorkerSpec.Placement,
-		UserDataSecret:     &core.LocalObjectReference{Name: "windows-user-data"},
+		UserDataSecret:     &core.LocalObjectReference{Name: clusterinfo.UserDataSecretName},
 	}
 
 	rawBytes, err := json.Marshal(providerSpec)
