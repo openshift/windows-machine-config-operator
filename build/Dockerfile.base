@@ -34,18 +34,20 @@ WORKDIR /build/windows-machine-config-operator/hcsshim/
 COPY hcsshim/ .
 RUN GOOS=windows go build ./cmd/containerd-shim-runhcs-v1
 
-# Build kubelet
+# Build kube-log-runner
 WORKDIR /build/windows-machine-config-operator/kubelet/
 COPY kubelet/ .
 ENV KUBE_BUILD_PLATFORMS windows/amd64
-RUN make WHAT=cmd/kubelet
 RUN make WHAT=vendor/k8s.io/component-base/logs/kube-log-runner
 
+# Build kubelet
+WORKDIR /build/windows-machine-config-operator/
+COPY Makefile Makefile
+RUN make kubelet
+
 # Build kube-proxy
-WORKDIR /build/windows-machine-config-operator/kube-proxy/
-COPY kube-proxy/ .
-ENV KUBE_BUILD_PLATFORMS windows/amd64
-RUN make WHAT=cmd/kube-proxy
+COPY kube-proxy/ kube-proxy/
+RUN make kube-proxy
 
 # Build azure-cloud-node-manager
 WORKDIR /build/windows-machine-config-operator/cloud-provider-azure/
