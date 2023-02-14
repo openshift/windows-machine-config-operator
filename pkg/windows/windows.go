@@ -83,6 +83,8 @@ const (
 	KubeletConfigPath = K8sDir + "\\kubelet.conf"
 	// KubeletLog is the location of the kubelet log file
 	KubeletLog = KubeletLogDir + "\\kubelet.log"
+	// KubeProxyLog is the location of the kube-proxy log file
+	KubeProxyLog = KubeProxyLogDir + "\\kube-proxy.log"
 	// KubeProxyPath is the location of the kube-proxy exe
 	KubeProxyPath = K8sDir + "\\kube-proxy.exe"
 	// HybridOverlayPath is the location of the hybrid-overlay-node exe

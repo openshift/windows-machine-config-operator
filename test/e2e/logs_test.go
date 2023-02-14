@@ -22,17 +22,12 @@ import (
 func testNodeLogs(t *testing.T) {
 	// All these paths are relative to /var/log/
 	mandatoryLogs := []string{
-		"kube-proxy/kube-proxy.exe.INFO",
+		"kube-proxy/kube-proxy.log",
 		"hybrid-overlay/hybrid-overlay.log",
 		"kubelet/kubelet.log",
 		"containerd/containerd.log",
 		"wicd/windows-instance-config-daemon.exe.INFO",
 	}
-	optionalLogs := []string{
-		"kube-proxy/kube-proxy.exe.ERROR",
-		"kube-proxy/kube-proxy.exe.WARNING",
-	}
-
 	nodeArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes")
 	for _, node := range gc.allNodes() {
 		nodeDir := filepath.Join(nodeArtifacts, node.Name)
@@ -48,18 +43,6 @@ func testNodeLogs(t *testing.T) {
 					return true, nil
 				})
 				assert.NoError(t, err)
-			})
-		}
-		// Grab the optional logs for debugging purposes
-		for _, file := range optionalLogs {
-			// These logs aren't guaranteed to exist, so its better to ignore any error
-			_ = wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
-				err := retrieveLog(node.GetName(), file, nodeDir)
-				if err != nil {
-					log.Printf("unable to retrieve log %s from node %s: %s", file, node.GetName(), err)
-					return false, nil
-				}
-				return true, nil
 			})
 		}
 	}
