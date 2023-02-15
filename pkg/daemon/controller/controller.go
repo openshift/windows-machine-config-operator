@@ -24,6 +24,7 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"golang.org/x/sys/windows/svc"
@@ -153,7 +154,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken, watchNamesp
 	if err != nil {
 		return err
 	}
-	if err = sc.SetupWithManager(ctrlMgr); err != nil {
+	if err = sc.SetupWithManager(ctx, ctrlMgr); err != nil {
 		return err
 	}
 	klog.Info("Starting manager, awaiting events")
@@ -174,7 +175,7 @@ func NewServiceController(ctx context.Context, nodeName, watchNamespace string, 
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (sc *ServiceController) SetupWithManager(mgr ctrl.Manager) error {
+func (sc *ServiceController) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	nodePredicate := predicate.Funcs{
 		// A node's name will never change, so it is fine to use the name for node identification
 		// The node must have a desired-version annotation for it to be reconcilable
@@ -196,10 +197,17 @@ func (sc *ServiceController) SetupWithManager(mgr ctrl.Manager) error {
 	cmPredicate := predicate.NewPredicateFuncs(func(object client.Object) bool {
 		return strings.HasPrefix(object.GetName(), servicescm.NamePrefix)
 	})
+
+	// Keeping this on the longer side, as each reconciliation requires running each service's powershell scripts
+	// This value is based on CVO's resync period
+	reconcilePeriod := 2 * time.Minute
+	eventChan := newPeriodicEventGenerator(ctx, reconcilePeriod)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.Node{}, builder.WithPredicates(nodePredicate)).
 		Watches(&source.Kind{Type: &core.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode),
 			builder.WithPredicates(cmPredicate)).
+		Watches(&source.Channel{Source: eventChan}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode)).
 		Complete(sc)
 }
 
@@ -433,6 +441,26 @@ func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) 
 		}
 	}
 	return vars, nil
+}
+
+// newPeriodicEventGenerator returns a channel which will have an empty event sent on it at an interval specified by the
+// given period
+func newPeriodicEventGenerator(ctx context.Context, period time.Duration) <-chan event.GenericEvent {
+	eventChan := make(chan event.GenericEvent)
+	go func() {
+		ticker := time.NewTicker(period)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				close(eventChan)
+				return
+			case <-ticker.C:
+				eventChan <- event.GenericEvent{}
+			}
+		}
+	}()
+	return eventChan
 }
 
 // NewDirectClient creates and returns an authenticated client that reads directly from the API server.
