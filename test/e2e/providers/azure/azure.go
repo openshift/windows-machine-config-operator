@@ -18,7 +18,7 @@ const (
 	defaultCredentialsSecretName = "azure-cloud-credentials"
 	defaultImageOffer            = "WindowsServer"
 	defaultImagePublisher        = "MicrosoftWindowsServer"
-	defaultImageSKU              = "datacenter-core-20h2-with-containers-smalldisk"
+	defaultImageSKU              = "2019-Datacenter-with-Containers"
 	defaultImageVersion          = "latest"
 	defaultOSDiskSizeGB          = 128
 	defaultStorageAccountType    = "Premium_LRS"
