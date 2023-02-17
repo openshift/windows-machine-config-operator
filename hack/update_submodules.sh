@@ -25,6 +25,28 @@ function help() {
   echo "update_submodules.sh -m kubernetes -r release-4.9 master"
 }
 
+function generate_k8s_version_commit() {
+  local submodule=$1
+  cd "$submodule"
+  if ! git remote show upstream; then
+    git remote add upstream https://github.com/kubernetes/kubernetes
+  fi
+  git fetch upstream 'refs/tags/v1*:refs/tags/v1*'
+  # git describe --abbrev=7 returns vx.y.z-number_of_commits-hash. Remove the -number_of_commits-g and replace it
+  # with + to match the Linux kubelet version pattern
+  k8s_version=$(git describe --abbrev=7  | sed --expression="s|-.*-g|+|g")
+  cd ..
+  # Construct the Makefile variable KUBE(LET/-PROXY)_GIT_VERSION
+  local makefile_var="$(echo "$submodule" | tr '[:lower:]' '[:upper:]')_GIT_VERSION"
+  # Makefile has "KUBE(LET/-PROXY)_GIT_VERSION=vx.y.z+hash. Replace the KUBE(LET/-PROXY)_GIT_VERSION= with the new k8s
+  # version
+  sed -i "s|$makefile_var=v.*|$makefile_var=$k8s_version|g" Makefile
+  git add Makefile
+  if git commit -m "[build] Update $submodule version to $k8s_version" -m "This commit was generated using hack/update_submodules.sh"; then
+    echo "New Makefile commit for $submodule version $k8s_version"
+  fi
+}
+
 # Stages changes to the given submodule and makes a commit including those changes
 function generate_submodule_commit() {
   local submodule=$1
@@ -62,6 +84,9 @@ function update_submodules_for_branch() {
     # Update the submodule to the latest remote commit
     git submodule update --remote $submodule
     generate_submodule_commit $submodule
+    if [ "$submodule" = "kubelet" ] || [ "$submodule" = "kube-proxy" ] ; then
+      generate_k8s_version_commit "$submodule"
+    fi
   done
 }
 
