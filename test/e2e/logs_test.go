@@ -40,6 +40,15 @@ func testNodeLogs(t *testing.T) {
 						log.Printf("unable to retrieve log %s from node %s: %s", file, node.GetName(), err)
 						return false, nil
 					}
+					logInfo, err := os.Stat(filepath.Join(nodeDir, file))
+					if err != nil {
+						log.Printf("unable to get info for retrieved log %s from node %s: %s",
+							file, node.GetName(), err)
+						return false, nil
+					}
+					if logInfo.Size() == 0 {
+						return true, errors.Wrap(err, "log file should not be empty")
+					}
 					return true, nil
 				})
 				assert.NoError(t, err)
