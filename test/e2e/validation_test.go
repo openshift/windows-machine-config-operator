@@ -333,6 +333,7 @@ func (tc *testContext) runJob(name string, command []string) (string, error) {
 		Spec: batch.JobSpec{
 			Template: core.PodTemplateSpec{
 				Spec: core.PodSpec{
+					OS:                 &core.PodOS{Name: core.Linux},
 					HostNetwork:        true,
 					RestartPolicy:      core.RestartPolicyNever,
 					ServiceAccountName: tc.workloadNamespace,
