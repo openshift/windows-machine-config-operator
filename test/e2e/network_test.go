@@ -602,7 +602,7 @@ func (testCtx *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, con
 // createLinuxJob creates a job which will run the provided command with a ubi8 image
 func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.Job, error) {
 	linuxNodeSelector := map[string]string{"kubernetes.io/os": "linux"}
-	return tc.createJob(name, ubi8Image, command, linuxNodeSelector, []v1.Toleration{}, nil)
+	return tc.createJob(name, ubi8Image, command, linuxNodeSelector, []v1.Toleration{}, nil, &v1.PodOS{Name: v1.Linux})
 }
 
 // createWinCurlerJob creates a Job to curl Windows server at given IP address
@@ -626,14 +626,15 @@ func (tc *testContext) getWinCurlerCommand(winServerIP string) string {
 func (tc *testContext) createWindowsServerJob(name, pwshCommand string, affinity *v1.Affinity) (*batchv1.Job, error) {
 	windowsNodeSelector := map[string]string{"kubernetes.io/os": "windows"}
 	windowsTolerations := []v1.Toleration{{Key: "os", Value: "Windows", Effect: v1.TaintEffectNoSchedule}}
+	windowsOS := &v1.PodOS{Name: v1.Windows}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	command := []string{powerShellExe, "-command", pwshCommand}
-	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations, affinity)
+	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations, affinity, windowsOS)
 }
 
 // createJob creates a job on the cluster using the given parameters
 func (tc *testContext) createJob(name, image string, command []string, selector map[string]string,
-	tolerations []v1.Toleration, affinity *v1.Affinity) (*batchv1.Job, error) {
+	tolerations []v1.Toleration, affinity *v1.Affinity, os *v1.PodOS) (*batchv1.Job, error) {
 	jobsClient := tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -643,6 +644,7 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 			Template: v1.PodTemplateSpec{
 				Spec: v1.PodSpec{
 					Affinity:      affinity,
+					OS:            os,
 					RestartPolicy: v1.RestartPolicyNever,
 					Tolerations:   tolerations,
 					Containers: []v1.Container{
