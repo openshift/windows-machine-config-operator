@@ -202,6 +202,7 @@ func (tc *testContext) deployNOOPDaemonSet() (*apps.DaemonSet, error) {
 					Labels: map[string]string{"name": "noop-ds"},
 				},
 				Spec: core.PodSpec{
+					OS:          &core.PodOS{Name: core.Windows},
 					Tolerations: []core.Toleration{{Key: "os", Value: "Windows", Effect: "NoSchedule"}},
 					Containers: []core.Container{{
 						Name:    "sleep",
