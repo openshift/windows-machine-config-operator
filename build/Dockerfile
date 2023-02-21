@@ -25,9 +25,10 @@ COPY windows_exporter/ .
 RUN GOOS=windows ./promu build -v
 
 # Build containerd
-WORKDIR /build/windows-machine-config-operator/containerd/
-COPY containerd/ .
-RUN GOOS=windows make
+WORKDIR /build/windows-machine-config-operator/
+COPY containerd/ containerd/
+COPY Makefile Makefile
+RUN make containerd
 
 # Build containerd shim
 WORKDIR /build/windows-machine-config-operator/hcsshim/
@@ -42,7 +43,6 @@ RUN make WHAT=vendor/k8s.io/component-base/logs/kube-log-runner
 
 # Build kubelet
 WORKDIR /build/windows-machine-config-operator/
-COPY Makefile Makefile
 RUN make kubelet
 
 # Build kube-proxy
