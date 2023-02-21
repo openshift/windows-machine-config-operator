@@ -25,9 +25,10 @@ COPY windows_exporter/ .
 RUN GOOS=windows ./promu build -v
 
 # Build containerd
-WORKDIR /build/windows-machine-config-operator/containerd/
-COPY containerd/ .
-RUN GOOS=windows make
+WORKDIR /build/windows-machine-config-operator/
+COPY containerd/ containerd/
+COPY Makefile Makefile
+RUN make containerd
 
 # Build containerd shim
 WORKDIR /build/windows-machine-config-operator/hcsshim/
@@ -37,7 +38,6 @@ RUN GOOS=windows go build ./cmd/containerd-shim-runhcs-v1
 # Build kubelet
 WORKDIR /build/windows-machine-config-operator/
 COPY kubelet/ kubelet/
-COPY Makefile Makefile
 RUN make kubelet
 
 # Build kube-proxy
