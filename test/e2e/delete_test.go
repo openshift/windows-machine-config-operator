@@ -224,8 +224,10 @@ func (tc *testContext) deployNOOPDaemonSet() (*apps.DaemonSet, error) {
 
 // waitUntilDeploymentScaled will return nil if the daemonset is fully deployed across the Windows nodes
 func (tc *testContext) waitUntilDaemonsetScaled(name string, desiredReplicas int) error {
+	var ds *apps.DaemonSet
+	var err error
 	for i := 0; i < retryCount; i++ {
-		ds, err := tc.client.K8s.AppsV1().DaemonSets(tc.workloadNamespace).Get(context.TODO(), name, meta.GetOptions{})
+		ds, err = tc.client.K8s.AppsV1().DaemonSets(tc.workloadNamespace).Get(context.TODO(), name, meta.GetOptions{})
 		if err != nil {
 			return errors.Wrapf(err, "could not get daemonset %s", name)
 		}
@@ -234,5 +236,5 @@ func (tc *testContext) waitUntilDaemonsetScaled(name string, desiredReplicas int
 		}
 		time.Sleep(retryInterval)
 	}
-	return errors.Errorf("timed out waiting for daemonset %s to scale", name)
+	return errors.Errorf("timed out waiting for daemonset %s to scale, current status: %+v", name, ds.Status)
 }
