@@ -335,7 +335,7 @@ func (sc *ServiceController) expectedServiceCommand(expected servicescm.Service)
 			return "", err
 		}
 	}
-	if len(expected.PowershellPreScripts) > 0 {
+	if len(expected.PowershellVariablesInCommand) > 0 {
 		psVars, err = sc.resolvePowershellVariables(expected)
 		if err != nil {
 			return "", err
@@ -417,14 +417,12 @@ func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[s
 // replace the variable with
 func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) (map[string]string, error) {
 	vars := make(map[string]string)
-	for _, script := range svc.PowershellPreScripts {
-		out, err := sc.psCmdRunner.Run(script.Path)
+	for _, psVar := range svc.PowershellVariablesInCommand {
+		out, err := sc.psCmdRunner.Run(psVar.Path)
 		if err != nil {
-			return nil, errors.Wrapf(err, "could not resolve PowerShell variable %s", script.VariableName)
+			return nil, errors.Wrapf(err, "could not resolve PowerShell variable %s", psVar.Name)
 		}
-		if script.VariableName != "" {
-			vars[script.VariableName] = strings.TrimSpace(out)
-		}
+		vars[psVar.Name] = strings.TrimSpace(out)
 	}
 	return vars, nil
 }
