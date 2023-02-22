@@ -47,12 +47,11 @@ type NodeCmdArg struct {
 	NodeObjectJsonPath string `json:"nodeObjectJsonPath"`
 }
 
-// PowershellPreScript describes a PowerShell script to be ran and an optional variable to be populated
-type PowershellPreScript struct {
-	// VariableName is the name of a variable which should be replaced by the output of the script. An empty value will
-	// cause no variable replacement to occur, but the script will still be ran.
-	VariableName string `json:"variableName,omitempty"`
-	// Path is the location of a PowerShell script to be ran
+// PowershellCmdArg describes a PowerShell variable and how its value can be populated
+type PowershellCmdArg struct {
+	// Name is the variable name as it appears in commands
+	Name string `json:"name"`
+	// Path is the location of a PowerShell script whose output is the value of the variable
 	Path string `json:"path"`
 }
 
@@ -61,13 +60,13 @@ type Service struct {
 	// Name is the name of the Windows service
 	Name string `json:"name"`
 	// Command is the command that will launch the Windows service. This could potentially include strings whose values
-	// will be derived from NodeVariablesInCommand and PowershellPreScripts.
+	// will be derived from NodeVariablesInCommand and PowershellVariablesInCommand.
 	// Before the command is run on an instance, all node and PowerShell variables will be replaced by their values
 	Command string `json:"path"`
 	// NodeVariablesInCommand holds all variables in the service command whose values are sourced from a node object
 	NodeVariablesInCommand []NodeCmdArg `json:"nodeVariablesInCommand,omitempty"`
-	// PowershellPreScripts is a list of PowerShell scripts which must run successfully before the service is started
-	PowershellPreScripts []PowershellPreScript `json:"powershellPreScripts,omitempty"`
+	// PowershellVariablesInCommand holds all variables in the command whose values are sourced from a PowerShell script
+	PowershellVariablesInCommand []PowershellCmdArg `json:"powershellVariablesInCommand,omitempty"`
 	// Dependencies is a list of service names that this service is dependent on
 	Dependencies []string `json:"dependencies,omitempty"`
 	// Bootstrap is a boolean flag indicating whether this service should be handled as part of node bootstrapping
