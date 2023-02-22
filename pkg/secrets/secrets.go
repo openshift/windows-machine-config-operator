@@ -85,10 +85,9 @@ func generateUserDataWithPubKey(pubKey string) string {
 			New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $containerLogsPort -EdgeTraversalPolicy Allow
 			Set-Service -Name sshd -StartupType 'Automatic'
 			Start-Service sshd
-			$pubKeyConf = (Get-Content -path C:\ProgramData\ssh\sshd_config) -replace '#PubkeyAuthentication yes','PubkeyAuthentication yes'
-			$pubKeyConf | Set-Content -Path C:\ProgramData\ssh\sshd_config
- 			$passwordConf = (Get-Content -path C:\ProgramData\ssh\sshd_config) -replace '#PasswordAuthentication yes','PasswordAuthentication yes'
-			$passwordConf | Set-Content -Path C:\ProgramData\ssh\sshd_config
+			(Get-Content -path C:\ProgramData\ssh\sshd_config) | ForEach-Object {
+    			$_.replace('#PubkeyAuthentication yes','PubkeyAuthentication yes').replace('#PasswordAuthentication yes','PasswordAuthentication no')
+ 			} | Set-Content -path C:\ProgramData\ssh\sshd_config
 			$authorizedKeyFilePath = "$env:ProgramData\ssh\administrators_authorized_keys"
 			New-Item -Force $authorizedKeyFilePath
 			echo "` + pubKey + `"| Out-File $authorizedKeyFilePath -Encoding ascii
