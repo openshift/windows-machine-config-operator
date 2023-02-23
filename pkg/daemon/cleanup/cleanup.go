@@ -36,7 +36,7 @@ import (
 // Deconfigure removes an instance from the cluster. If preserveNode is true, the node object is not deleted.
 // If we are able to get the services ConfigMap tied to the desired version, all services defined in it are cleaned up.
 // TODO: Otherwise, perform cleanup based on a combination of the OpenShift managed tag and latest services ConfigMap.
-func Deconfigure(cfg *rest.Config, ctx context.Context, preserveNode bool, configMapNamespace string) error {
+func Deconfigure(cfg *rest.Config, ctx context.Context, preserveNode bool) error {
 	// Cannot use a cached client as no manager will be started to populate cache
 	directClient, err := controller.NewDirectClient(cfg)
 	if err != nil {
@@ -60,7 +60,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, preserveNode bool, confi
 		// Fetch the CM of the desired version
 		cm := &core.ConfigMap{}
 		err = directClient.Get(ctx,
-			client.ObjectKey{Namespace: configMapNamespace, Name: servicescm.NamePrefix + desiredVersion}, cm)
+			client.ObjectKey{Namespace: controller.WMCONamespace, Name: servicescm.NamePrefix + desiredVersion}, cm)
 		if err != nil {
 			return err
 		}

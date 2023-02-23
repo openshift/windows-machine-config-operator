@@ -35,7 +35,6 @@ var (
 	saToken      string
 	saCA         string
 	apiServerURL string
-	namespace    string
 )
 
 func init() {
@@ -45,10 +44,6 @@ func init() {
 	rootCmd.MarkPersistentFlagRequired("sa-ca")
 	rootCmd.PersistentFlags().StringVar(&apiServerURL, "api-server", "", "URL of API server")
 	rootCmd.MarkPersistentFlagRequired("api-server")
-	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "",
-		"The namespace that required cluster resources, such as the ConfigMap, will be located in. This is the "+
-			"namespace that WMCO is deployed in")
-	rootCmd.MarkPersistentFlagRequired("namespace")
 }
 
 func main() {

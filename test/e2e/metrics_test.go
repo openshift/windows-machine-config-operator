@@ -71,17 +71,18 @@ func testPrometheus(t *testing.T) {
 	require.NoError(t, err)
 
 	// check that service exists
-	_, err = testCtx.client.K8s.CoreV1().Services(wmcoNamespace).Get(context.TODO(),
+	_, err = testCtx.client.K8s.CoreV1().Services("openshift-windows-machine-config-operator").Get(context.TODO(),
 		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// check that SM existS
-	_, err = testCtx.client.Monitoring.ServiceMonitors(wmcoNamespace).Get(context.TODO(),
+	_, err = testCtx.client.Monitoring.ServiceMonitors(testCtx.namespace).Get(context.TODO(),
 		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err, "error getting service monitor")
 
 	// check that endpoints exists
-	windowsEndpoints, err := testCtx.client.K8s.CoreV1().Endpoints(wmcoNamespace).Get(context.TODO(),
+	windowsEndpoints, err := testCtx.client.K8s.CoreV1().Endpoints(
+		"openshift-windows-machine-config-operator").Get(context.TODO(),
 		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err)
 
@@ -151,7 +152,7 @@ func testWindowsPrometheusRules(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 	// test if PrometheusRule object exists in WMCO repo
-	promRule, err := tc.client.Monitoring.PrometheusRules(wmcoNamespace).Get(context.TODO(), prometheusRule, metav1.GetOptions{})
+	promRule, err := tc.client.Monitoring.PrometheusRules(tc.namespace).Get(context.TODO(), prometheusRule, metav1.GetOptions{})
 	require.NoError(t, err)
 	// test if rules specific to windows exist
 	require.Equal(t, windowsRuleName, promRule.Spec.Groups[0].Name)
@@ -259,7 +260,7 @@ func (tc *testContext) getPrometheusToken() (string, error) {
 // openshift-windows-machine-config-operator namespace if it is not present. If the label is applied, it restarts the
 // WMCO deployment so that WMCO is aware that monitoring is enabled.
 func (tc *testContext) ensureMonitoringIsEnabled() error {
-	namespace, err := tc.client.K8s.CoreV1().Namespaces().Get(context.TODO(), wmcoNamespace, metav1.GetOptions{})
+	namespace, err := tc.client.K8s.CoreV1().Namespaces().Get(context.TODO(), tc.namespace, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -267,7 +268,7 @@ func (tc *testContext) ensureMonitoringIsEnabled() error {
 	monitoringLabel := "openshift.io/cluster-monitoring"
 	value, ok := namespace.GetLabels()[monitoringLabel]
 	if !ok || value != "true" {
-		if _, err = tc.client.K8s.CoreV1().Namespaces().Patch(context.TODO(), wmcoNamespace, types.MergePatchType,
+		if _, err = tc.client.K8s.CoreV1().Namespaces().Patch(context.TODO(), tc.namespace, types.MergePatchType,
 			[]byte(fmt.Sprintf(`{"metadata":{"labels":{"%s":"%s"}}}`, monitoringLabel, "true")),
 			metav1.PatchOptions{}); err != nil {
 			return err

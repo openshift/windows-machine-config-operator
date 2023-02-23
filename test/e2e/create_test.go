@@ -88,7 +88,7 @@ func (tc *testContext) nodelessLogCollection(name, address string) error {
 
 // deleteWindowsInstanceConfigMap deletes the windows-instances configmap if it exists
 func (tc *testContext) deleteWindowsInstanceConfigMap() error {
-	err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Delete(context.TODO(), wiparser.InstanceConfigMap,
+	err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Delete(context.TODO(), wiparser.InstanceConfigMap,
 		metav1.DeleteOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return err
@@ -112,7 +112,7 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 		}
 		cm.Data[addr] = "username=" + tc.vmUsername()
 	}
-	_, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Create(context.TODO(), cm, metav1.CreateOptions{})
+	_, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Create(context.TODO(), cm, metav1.CreateOptions{})
 	if err != nil {
 		return errors.Wrap(err, "unable to create configmap")
 	}
@@ -121,7 +121,7 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 
 // validateWindowsInstanceConfigMap validates the windows-instance ConfigMap
 func (tc *testContext) validateWindowsInstanceConfigMap(expectedCount int) error {
-	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(),
+	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(),
 		wiparser.InstanceConfigMap, metav1.GetOptions{})
 	if err != nil {
 		return errors.Wrapf(err, "error retrieving ConfigMap: %s", wiparser.InstanceConfigMap)
@@ -208,7 +208,7 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 
 // byohLogCollection kicks off the collection of logs for instances listed in the windows-instances configmap
 func (tc *testContext) byohLogCollection() {
-	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(),
+	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(tc.namespace).Get(context.TODO(),
 		wiparser.InstanceConfigMap, metav1.GetOptions{})
 	if err != nil {
 		log.Printf("unable to collect logs, error retrieving instances ConfigMap: %v", err)

@@ -10,7 +10,7 @@ if [ "$COMMUNITY" = "true" ]; then
 fi
 
 # define namespace
-WMCO_DEPLOY_NAMESPACE=${WMCO_DEPLOY_NAMESPACE:="openshift-windows-machine-config-operator"}
+declare -r WMCO_DEPLOY_NAMESPACE=openshift-windows-machine-config-operator
 
 error-exit() {
     echo "Error: $*" >&2

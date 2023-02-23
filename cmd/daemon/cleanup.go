@@ -52,7 +52,7 @@ func runCleanupCmd(cmd *cobra.Command, args []string) {
 		klog.Exitf("error using service account to build config: %s", err.Error())
 	}
 	ctx := ctrl.SetupSignalHandler()
-	if err := cleanup.Deconfigure(cfg, ctx, preserveNode, namespace); err != nil {
+	if err := cleanup.Deconfigure(cfg, ctx, preserveNode); err != nil {
 		klog.Exitf(err.Error())
 	}
 }

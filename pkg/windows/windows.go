@@ -224,9 +224,9 @@ type Windows interface {
 	// Reinitialize re-initializes the Windows VM's SSH client
 	Reinitialize() error
 	// Bootstrap prepares the Windows instance and runs the WICD bootstrap command
-	Bootstrap(string, string, string, *Authentication) error
+	Bootstrap(string, string, *Authentication) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
-	ConfigureWICD(string, string, *Authentication) error
+	ConfigureWICD(string, *Authentication) error
 	// ConfigureKubeProxy ensures that the kube-proxy service is running
 	ConfigureKubeProxy() error
 	// EnsureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
@@ -458,7 +458,7 @@ func (vm *windows) Deconfigure() error {
 	return nil
 }
 
-func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, credentials *Authentication) error {
+func (vm *windows) Bootstrap(desiredVer, apiServerURL string, credentials *Authentication) error {
 	vm.log.Info("configuring")
 	if err := vm.EnsureRequiredServicesStopped(); err != nil {
 		return errors.Wrap(err, "unable to stop all services")
@@ -479,8 +479,8 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, cr
 	if err := vm.ensureWICDSecretContent(credentials); err != nil {
 		return err
 	}
-	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
-		wicdPath, desiredVer, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
+	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --api-server %s --sa-ca %s --sa-token %s",
+		wicdPath, desiredVer, apiServerURL, wicdCAFile, wicdTokenFile)
 	if out, err := vm.Run(wicdBootstrapCmd, true); err != nil {
 		vm.log.Info("failed to bootstrap node", "command", wicdBootstrapCmd, "output", out)
 		return err
@@ -519,12 +519,12 @@ func (vm *windows) configureContainerd() error {
 }
 
 // ConfigureWICD starts the Windows Instance Config Daemon service
-func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credentials *Authentication) error {
+func (vm *windows) ConfigureWICD(apiServerURL string, credentials *Authentication) error {
 	if err := vm.ensureWICDSecretContent(credentials); err != nil {
 		return err
 	}
-	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
-		wicdLogDir, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
+	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s --sa-token %s",
+		wicdLogDir, apiServerURL, wicdCAFile, wicdTokenFile)
 	wicdService, err := newService(wicdPath, wicdServiceName, wicdServiceArgs, nil)
 	if err != nil {
 		return errors.Wrapf(err, "error creating %s service object", wicdServiceName)

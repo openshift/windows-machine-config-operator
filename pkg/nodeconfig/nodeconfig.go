@@ -82,8 +82,6 @@ type nodeConfig struct {
 	additionalLabels map[string]string
 	// platformType holds the name of the platform where cluster is deployed
 	platformType configv1.PlatformType
-	// wmcoNamespace is the namespace WMCO is deployed to
-	wmcoNamespace string
 }
 
 // ErrWriter is a wrapper to enable error-level logging inside kubectl drainer implementation
@@ -110,7 +108,7 @@ func (ow OutWriter) Write(p []byte) (n int, err error) {
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
-func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort, wmcoNamespace string,
+func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
 	var err error
@@ -132,9 +130,8 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 	}
 
 	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, platformType: platformType,
-		wmcoNamespace: wmcoNamespace, clusterServiceCIDR: clusterServiceCIDR,
-		publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()), log: log, additionalLabels: additionalLabels,
-		additionalAnnotations: additionalAnnotations}, nil
+		clusterServiceCIDR: clusterServiceCIDR, publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()),
+		log: log, additionalLabels: additionalLabels, additionalAnnotations: additionalAnnotations}, nil
 }
 
 // Configure configures the Windows VM to make it a Windows worker node
@@ -153,8 +150,7 @@ func (nc *nodeConfig) Configure() error {
 	}
 
 	// Start all required services to bootstrap a node object using WICD
-	if err := nc.Windows.Bootstrap(version.Get(), nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace,
-		nodeConfigCache.credentials); err != nil {
+	if err := nc.Windows.Bootstrap(version.Get(), nodeConfigCache.apiServerEndpoint, nodeConfigCache.credentials); err != nil {
 		return errors.Wrap(err, "bootstrapping the Windows instance failed")
 	}
 
@@ -186,8 +182,7 @@ func (nc *nodeConfig) Configure() error {
 			return errors.Wrap(err, "unable to check if cloud controller owned by cloud controller manager")
 		}
 
-		if err := nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace,
-			nodeConfigCache.credentials); err != nil {
+		if err := nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, nodeConfigCache.credentials); err != nil {
 			return errors.Wrap(err, "configuring WICD failed")
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use

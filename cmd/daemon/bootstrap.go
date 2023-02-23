@@ -54,7 +54,7 @@ func runBootstrapCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		klog.Exitf("error using service account to build config: %s", err.Error())
 	}
-	sc, err := controller.NewServiceController(context.TODO(), "", namespace, controller.Options{Config: cfg})
+	sc, err := controller.NewServiceController(context.TODO(), "", controller.Options{Config: cfg})
 	if err != nil {
 		klog.Exitf("error creating Service Controller: %s", err.Error())
 	}

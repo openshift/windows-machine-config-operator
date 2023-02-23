@@ -142,26 +142,26 @@ fi
 
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
 # Run the creation tests of the Windows VMs
 printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 # Get logs for the creation tests
 printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
 get_WMCO_logs
 
 if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+  go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
   printf "\n####### Testing service reconciliation #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/service_reconciliation -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+  go test ./test/e2e/... -run=TestWMCO/service_reconciliation -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 fi
 
 if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   # Run the upgrade tests and skip deletion of the Windows VMs
   printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 
   # Run the reconfiguration test
   # The reconfiguration suite must be run directly before the deletion suite. This is because we do not
@@ -169,13 +169,13 @@ if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   # added/moved in between these two suites may fail.
   # This limitation will be removed with https://issues.redhat.com/browse/WINC-655
   printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION
 fi
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
 if ! $SKIP_NODE_DELETION; then
-  go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args --private-key-path=$KUBE_SSH_KEY_PATH --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+  go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args --private-key-path=$KUBE_SSH_KEY_PATH
   # Get logs on success before cleanup
   PRINT_UPGRADE=""
   if [[ "$TEST" = "upgrade" ]]; then

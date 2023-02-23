@@ -25,7 +25,6 @@ import (
 	openshiftClient "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
-	rbac "k8s.io/api/rbac/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
@@ -61,8 +60,6 @@ import (
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=delete;get;list;patch;watch
 //+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
-//+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=rolebindings,verbs=get;create;delete
-//+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=clusterrolebindings,verbs=get;create;delete
 
 const (
 	// BYOHLabel is a label that should be applied to all Windows nodes not associated with a Machine.
@@ -71,8 +68,6 @@ const (
 	UsernameAnnotation = "windowsmachineconfig.openshift.io/username"
 	// ConfigMapController is the name of this controller in logs and other outputs.
 	ConfigMapController = "configmap"
-	// wicdRBACResourceName is the name of the resources associated with WICD's RBAC permissions
-	wicdRBACResourceName = "windows-instance-config-daemon"
 )
 
 // ConfigMapReconciler reconciles a ConfigMap object
@@ -480,108 +475,6 @@ func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
 	r.log.Info("Deleted invalid resource", "ConfigMap",
 		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name})
 	return r.createServicesConfigMapOnBootup()
-}
-
-// EnsureWICDRBAC ensures the WICD RBAC resources exist as expected
-func (r *ConfigMapReconciler) EnsureWICDRBAC() error {
-	if err := r.ensureWICDRoleBinding(); err != nil {
-		return err
-	}
-	return r.ensureWICDClusterRoleBinding()
-}
-
-// ensureWICDRoleBinding ensures the WICD RoleBinding resource exists as expected.
-// Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
-func (r *ConfigMapReconciler) ensureWICDRoleBinding() error {
-	existingRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Get(context.TODO(), wicdRBACResourceName,
-		meta.GetOptions{})
-	if err != nil && !k8sapierrors.IsNotFound(err) {
-		return errors.Wrapf(err, "unable to get RoleBinding %s/%s", r.watchNamespace, wicdRBACResourceName)
-	}
-
-	expectedRB := &rbac.RoleBinding{
-		ObjectMeta: meta.ObjectMeta{
-			Name: wicdRBACResourceName,
-		},
-		RoleRef: rbac.RoleRef{
-			APIGroup: rbac.GroupName,
-			Kind:     "Role",
-			Name:     wicdRBACResourceName,
-		},
-		Subjects: []rbac.Subject{{
-			Kind:      rbac.ServiceAccountKind,
-			Name:      wicdRBACResourceName,
-			Namespace: r.watchNamespace,
-		}},
-	}
-	if err == nil {
-		// check if existing RoleBinding's contents are as expected, delete it if not
-		if existingRB.RoleRef == expectedRB.RoleRef &&
-			len(existingRB.Subjects) == len(expectedRB.Subjects) && existingRB.Subjects[0] == expectedRB.Subjects[0] {
-			return nil
-		}
-		err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Delete(context.TODO(), wicdRBACResourceName,
-			meta.DeleteOptions{})
-		if err != nil {
-			return errors.Wrapf(err, "unable to delete RoleBinding %s/%s", r.watchNamespace, wicdRBACResourceName)
-		}
-		r.log.Info("Deleted malformed resource", "RoleBinding",
-			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: existingRB.Name})
-	}
-	// create proper resource if it does not exist
-	_, err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Create(context.TODO(), expectedRB,
-		meta.CreateOptions{})
-	if err != nil {
-		return errors.Wrapf(err, "unable to create RoleBinding %s/%s", r.watchNamespace, wicdRBACResourceName)
-	}
-	r.log.Info("Created resource", "RoleBinding",
-		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: expectedRB.Name})
-	return nil
-}
-
-// ensureWICDClusterRoleBinding ensures the WICD ClusterRoleBinding resource exists as expected.
-// Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
-func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding() error {
-	existingCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Get(context.TODO(), wicdRBACResourceName,
-		meta.GetOptions{})
-	if err != nil && !k8sapierrors.IsNotFound(err) {
-		return err
-	}
-
-	expectedCRB := &rbac.ClusterRoleBinding{
-		ObjectMeta: meta.ObjectMeta{
-			Name: wicdRBACResourceName,
-		},
-		RoleRef: rbac.RoleRef{
-			APIGroup: rbac.GroupName,
-			Kind:     "ClusterRole",
-			Name:     wicdRBACResourceName,
-		},
-		Subjects: []rbac.Subject{{
-			Kind:      rbac.ServiceAccountKind,
-			Name:      wicdRBACResourceName,
-			Namespace: r.watchNamespace,
-		}},
-	}
-	if err == nil {
-		// check if existing ClusterRoleBinding's contents are as expected, delete it if not
-		if existingCRB.RoleRef == expectedCRB.RoleRef &&
-			len(existingCRB.Subjects) == len(expectedCRB.Subjects) && existingCRB.Subjects[0] == expectedCRB.Subjects[0] {
-			return nil
-		}
-		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(context.TODO(), wicdRBACResourceName,
-			meta.DeleteOptions{})
-		if err != nil {
-			return err
-		}
-		r.log.Info("Deleted malformed resource", "ClusterRoleBinding", existingCRB.Name)
-	}
-	// create proper resource if it does not exist
-	_, err = r.k8sclientset.RbacV1().ClusterRoleBindings().Create(context.TODO(), expectedCRB, meta.CreateOptions{})
-	if err == nil {
-		r.log.Info("Created resource", "ClusterRoleBinding", expectedCRB.Name)
-	}
-	return err
 }
 
 // isKubeAPIServerServingCAConfigMap returns true if the provided object matches the ConfigMap that contains the
