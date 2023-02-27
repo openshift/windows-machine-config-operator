@@ -196,7 +196,7 @@ func TestResolvePowershellVariables(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			c, err := NewServiceController(context.TODO(), "", Options{
+			c, err := NewServiceController(context.TODO(), "", wmcoNamespace, Options{
 				Client: clientfake.NewClientBuilder().Build(),
 				Mgr:    fake.NewTestMgr(nil),
 				cmdRunner: &fakePSCmdRunner{
