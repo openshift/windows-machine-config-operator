@@ -33,13 +33,13 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 		return nil, errors.Wrap(err, "could not determine kubelet service configuration spec")
 	}
 	services := &[]servicescm.Service{{
-		Name:                         windows.WindowsExporterServiceName,
-		Command:                      windows.WindowsExporterServiceCommand,
-		NodeVariablesInCommand:       nil,
-		PowershellVariablesInCommand: nil,
-		Dependencies:                 nil,
-		Bootstrap:                    false,
-		Priority:                     2,
+		Name:                   windows.WindowsExporterServiceName,
+		Command:                windows.WindowsExporterServiceCommand,
+		NodeVariablesInCommand: nil,
+		PowershellPreScripts:   nil,
+		Dependencies:           nil,
+		Bootstrap:              false,
+		Priority:               2,
 	},
 		containerdConfiguration(debug),
 		kubeletConfiguration,
@@ -67,9 +67,7 @@ func containerdConfiguration(debug bool) servicescm.Service {
 		Name:                   windows.ContainerdServiceName,
 		Command:                containerdServiceCmd,
 		NodeVariablesInCommand: nil,
-		PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
-			// Name is left blank as we just want this script to execute, without any service command replacements
-			Name: "",
+		PowershellPreScripts: []servicescm.PowershellPreScript{{
 			Path: fmt.Sprintf("%s -BinPath %s", windows.WinDefenderExclusionScriptRemotePath, windows.ContainerdPath),
 		}},
 		Dependencies: nil,
@@ -90,10 +88,10 @@ func azureCloudNodeManagerConfiguration() servicescm.Service {
 			Name:               "NODE_NAME",
 			NodeObjectJsonPath: "{.metadata.name}",
 		}},
-		PowershellVariablesInCommand: nil,
-		Dependencies:                 nil,
-		Bootstrap:                    false,
-		Priority:                     3,
+		PowershellPreScripts: nil,
+		Dependencies:         nil,
+		Bootstrap:            false,
+		Priority:             3,
 	}
 }
 
@@ -121,10 +119,10 @@ func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service
 				NodeObjectJsonPath: "{.metadata.name}",
 			},
 		},
-		PowershellVariablesInCommand: nil,
-		Dependencies:                 []string{windows.KubeletServiceName},
-		Bootstrap:                    false,
-		Priority:                     2,
+		PowershellPreScripts: nil,
+		Dependencies:         []string{windows.KubeletServiceName},
+		Bootstrap:            false,
+		Priority:             2,
 	}
 }
 
@@ -150,9 +148,9 @@ func kubeProxyConfiguration(debug bool) servicescm.Service {
 				NodeObjectJsonPath: fmt.Sprintf("{.metadata.annotations.%s}", sanitizedSubnetAnnotation),
 			},
 		},
-		PowershellVariablesInCommand: []servicescm.PowershellCmdArg{{
-			Name: "ENDPOINT_IP",
-			Path: windows.NetworkConfScriptPath,
+		PowershellPreScripts: []servicescm.PowershellPreScript{{
+			VariableName: "ENDPOINT_IP",
+			Path:         windows.NetworkConfScriptPath,
 		}},
 		Dependencies: []string{windows.HybridOverlayServiceName},
 		Bootstrap:    false,
@@ -167,17 +165,17 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 	if err != nil {
 		return servicescm.Service{}, err
 	}
-	var powershellVars []servicescm.PowershellCmdArg
+	var preScripts []servicescm.PowershellPreScript
 
 	hostnameOverrideCmd := getHostnameCmd(platform)
 	if hostnameOverrideCmd != "" {
 		hostnameOverrideArg := "--hostname-override=" + hostnameOverrideVar
-		hostnameOverridePowershellVar := servicescm.PowershellCmdArg{
-			Name: hostnameOverrideVar,
-			Path: hostnameOverrideCmd,
+		hostnameOverridePowershellVar := servicescm.PowershellPreScript{
+			VariableName: hostnameOverrideVar,
+			Path:         hostnameOverrideCmd,
 		}
 		kubeletArgs = append(kubeletArgs, hostnameOverrideArg)
-		powershellVars = append(powershellVars, hostnameOverridePowershellVar)
+		preScripts = append(preScripts, hostnameOverridePowershellVar)
 	}
 
 	kubeletServiceCmd := windows.KubeletPath
@@ -189,13 +187,13 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 		kubeletServiceCmd = fmt.Sprintf("%s --node-ip=%s", kubeletServiceCmd, NodeIPVar)
 	}
 	return servicescm.Service{
-		Name:                         windows.KubeletServiceName,
-		Command:                      kubeletServiceCmd,
-		Priority:                     1,
-		Bootstrap:                    true,
-		Dependencies:                 []string{windows.ContainerdServiceName},
-		PowershellVariablesInCommand: powershellVars,
-		NodeVariablesInCommand:       nil,
+		Name:                   windows.KubeletServiceName,
+		Command:                kubeletServiceCmd,
+		Priority:               1,
+		Bootstrap:              true,
+		Dependencies:           []string{windows.ContainerdServiceName},
+		PowershellPreScripts:   preScripts,
+		NodeVariablesInCommand: nil,
 	}, nil
 }
 
