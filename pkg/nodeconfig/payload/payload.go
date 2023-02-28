@@ -32,6 +32,12 @@ const (
 	GcpGetHostnameScriptName = "gcp-get-hostname.ps1"
 	// GcpGetValidHostnameScriptPath is the path of the PowerShell script that resolves the hostname for GCP instances
 	GcpGetValidHostnameScriptPath = payloadDirectory + "/powershell/" + GcpGetHostnameScriptName
+	// WinDefenderExclusionScriptName is the name of the PowerShell script that creates an exclusion for containerd if
+	// the Windows Defender Antivirus is active
+	WinDefenderExclusionScriptName = "windows-defender-exclusion.ps1"
+	// WinDefenderExclusionScriptPath is the path of the PowerShell script that creates an exclusion for containerd if
+	// the Windows Defender Antivirus is active
+	WinDefenderExclusionScriptPath = payloadDirectory + "/powershell/" + WinDefenderExclusionScriptName
 	// HNSPSModule is the path to the powershell module which defines various functions for dealing with Windows HNS
 	// networks
 	HNSPSModule = payloadDirectory + "/powershell/hns.psm1"

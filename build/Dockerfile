@@ -91,6 +91,7 @@ RUN make build-daemon
 #│   └── kube-proxy.exe
 #├── powershell/
 #│   ├── gcp-get-hostname.ps1
+#│   ├── windows-defender-exclusion.ps1
 #│   └── hns.psm1
 #├── windows_exporter.exe
 #└── windows-instance-config-daemon.exe
@@ -135,6 +136,7 @@ RUN chmod 0777 /payload/generated
 # Copy required powershell scripts
 WORKDIR /payload/powershell/
 COPY pkg/internal/gcp-get-hostname.ps1 .
+COPY pkg/internal/windows-defender-exclusion.ps1 .
 COPY pkg/internal/hns.psm1 .
 
 WORKDIR /
