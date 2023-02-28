@@ -76,7 +76,7 @@ func (tc *testContext) waitForKubeletCACertificateInNode(node *core.Node) error 
 		return err
 	}
 	// CA bundle location in Windows node. i.e. "C:\k\kubelet-ca.crt"
-	caBundlePath := windows.GetK8sDir() + nodeconfig.KubeletClientCAFilename
+	caBundlePath := windows.GetK8sDir() + "\\" + nodeconfig.KubeletClientCAFilename
 	// PowerShell command to fetch content in the file
 	command := fmt.Sprintf("Get-Content -Raw -Path %s", caBundlePath)
 	// wait retry.Interval and verify the CA bundle content, try if needed
