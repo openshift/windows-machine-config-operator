@@ -242,7 +242,7 @@ func (nc *nodeConfig) Configure() error {
 	// Stop the kubelet so that the node is marked NotReady in case of an error in configuration. We are stopping all
 	// the required services as they are interdependent and is safer to do so given the node is going to be NotReady.
 	if err != nil {
-		if err := nc.Windows.EnsureRequiredServicesStopped(); err != nil {
+		if err := nc.Windows.RunWICDCleanup(nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace); err != nil {
 			nc.log.Info("Unable to mark node as NotReady", "error", err)
 		}
 	}
@@ -511,10 +511,9 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	// Revert the changes we've made to the instance by removing services and deleting all installed files
-	if err := nc.Windows.Deconfigure(); err != nil {
+	if err := nc.Windows.Deconfigure(nc.wmcoNamespace, nodeConfigCache.apiServerEndpoint); err != nil {
 		return errors.Wrap(err, "error deconfiguring instance")
 	}
-
 	// Clear the version annotation from the node object to indicate the node is not configured
 	patchData, err := metadata.GenerateRemovePatch([]string{}, []string{metadata.VersionAnnotation})
 	if err != nil {
