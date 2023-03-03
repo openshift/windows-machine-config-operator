@@ -469,7 +469,30 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 	}
 	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
 		wicdLogDir, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
-	wicdService, err := newService(wicdPath, WicdServiceName, wicdServiceArgs, nil)
+
+	// if WICD crashes, attempt to restart WICD after 10, 30, and 60 seconds, and then every 2 minutes after that.
+	// reset this counter 5 min after a period with no crashes
+	recoveryActions := []recoveryAction{
+		{
+			actionType: serviceRestart,
+			delay:      10,
+		},
+		{
+			actionType: serviceRestart,
+			delay:      30,
+		},
+		{
+			actionType: serviceRestart,
+			delay:      60,
+		},
+		{
+			actionType: serviceRestart,
+			delay:      120,
+		},
+	}
+	// if WICD has not crashed in the past 5 minutes, reset the crash counter
+	recoveryPeriod := 300
+	wicdService, err := newService(wicdPath, WicdServiceName, wicdServiceArgs, nil, recoveryActions, recoveryPeriod)
 	if err != nil {
 		return errors.Wrapf(err, "error creating %s service object", WicdServiceName)
 	}
@@ -607,6 +630,9 @@ func (vm *windows) ensureServiceIsRunning(svc *service) error {
 	if err := vm.setServiceDescription(svc.name); err != nil {
 		return errors.Wrapf(err, "error setting description of the %s Windows service", svc.name)
 	}
+	if err := vm.setRecoveryActions(svc); err != nil {
+		return errors.Wrapf(err, "error setting recovery actions for the %s Windows service", svc.name)
+	}
 	if err := vm.startService(svc); err != nil {
 		return errors.Wrapf(err, "error starting %s Windows service", svc.name)
 	}
@@ -639,6 +665,22 @@ func (vm *windows) setServiceDescription(svcName string) error {
 	out, err := vm.Run(cmd, false)
 	if err != nil {
 		return errors.Wrapf(err, "failed to set service description with stdout %s", out)
+	}
+	return nil
+}
+
+func (vm *windows) setRecoveryActions(svc *service) error {
+	if len(svc.recoveryActions) == 0 {
+		return nil
+	}
+	actions := fmt.Sprintf("%s/%d", svc.recoveryActions[0].actionType, svc.recoveryActions[0].delay)
+	for _, action := range svc.recoveryActions[1:] {
+		actions = fmt.Sprintf("%s/%s/%d", actions, action.actionType, action.delay)
+	}
+	cmd := fmt.Sprintf("sc.exe failure %s reset= %d actions= %s", svc.name, svc.recoveryPeriod, actions)
+	out, err := vm.Run(cmd, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to set recovery actions with stdout: %s", out)
 	}
 	return nil
 }
