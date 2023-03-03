@@ -175,7 +175,8 @@ func testWindowsNodeDeletion(t *testing.T) {
 	testCtx.deleteWindowsInstanceConfigMap()
 
 	// Cleanup secrets created by us.
-	err = testCtx.client.K8s.CoreV1().Secrets("openshift-machine-api").Delete(context.TODO(), "windows-user-data", meta.DeleteOptions{})
+	err = testCtx.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Delete(context.TODO(),
+		clusterinfo.UserDataSecretName, meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete userData secret")
 
 	err = testCtx.client.K8s.CoreV1().Secrets(wmcoNamespace).Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})

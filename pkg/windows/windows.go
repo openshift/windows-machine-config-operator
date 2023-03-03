@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
@@ -61,8 +60,8 @@ const (
 	ContainerdLogPath = containerdLogDir + "\\containerd.log"
 	// ContainerdServiceName is containerd Windows service name
 	ContainerdServiceName = "containerd"
-	// wicdServiceName is the Windows service name for WICD
-	wicdServiceName = "windows-instance-config-daemon"
+	// WicdServiceName is the Windows service name for WICD
+	WicdServiceName = "windows-instance-config-daemon"
 	// wicdPath is the path to the WICD executable
 	wicdPath = K8sDir + "\\windows-instance-config-daemon.exe"
 	// windowsExporterPath is the location of the windows_exporter.exe
@@ -129,7 +128,7 @@ const (
 var (
 	// filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
 	filesToTransfer map[*payload.FileInfo]string
-	// RequiredServices is a list of Windows services installed by WMCO
+	// RequiredServices is a list of Windows services installed by WMCO. WICD owns all services aside from itself.
 	// The order of this slice matters due to service dependencies. If a service depends on another service, the
 	// dependent service should be placed before the service it depends on.
 	RequiredServices = []string{
@@ -137,11 +136,8 @@ var (
 		KubeProxyServiceName,
 		HybridOverlayServiceName,
 		KubeletServiceName,
-		wicdServiceName,
+		WicdServiceName,
 		ContainerdServiceName}
-	// RequiredServicesOwnedByWICD is the list of services owned by WICD which should be running on all Windows nodes.
-	RequiredServicesOwnedByWICD = []string{WindowsExporterServiceName, HybridOverlayServiceName, KubeProxyServiceName,
-		KubeletServiceName}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		remoteDir,
@@ -159,7 +155,7 @@ var (
 	}
 )
 
-// getFilesToTransfer returns the properly populated filesToTransfer map
+// getFilesToTransfer returns the properly populated filesToTransfer map. Note this does not include the WICD binary.
 func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 	if filesToTransfer != nil {
 		return filesToTransfer, nil
@@ -167,7 +163,6 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 	srcDestPairs := map[string]string{
 		payload.GcpGetValidHostnameScriptPath:  remoteDir,
 		payload.WinDefenderExclusionScriptPath: remoteDir,
-		payload.WICDPath:                       K8sDir,
 		payload.HybridOverlayPath:              K8sDir,
 		payload.HNSPSModule:                    remoteDir,
 		payload.WindowsExporterPath:            K8sDir,
@@ -233,8 +228,6 @@ type Windows interface {
 	Bootstrap(string, string, string, *Authentication) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, string, *Authentication) error
-	// ConfigureKubeProxy ensures that the kube-proxy service is running
-	ConfigureKubeProxy() error
 	// Deconfigure removes all files and networks created by WMCO and runs the WICD cleanup command.
 	Deconfigure(string, string) error
 	// RunWICDCleanup runs the WICD cleanup command that ensures all services configured by WICD are stopped.
@@ -249,8 +242,6 @@ type windows struct {
 	signer ssh.Signer
 	// interact is used to connect to and interact with the VM
 	interact connectivity
-	// vxlanPort is the custom VXLAN port
-	vxlanPort string
 	// instance contains information about the Windows instance to interact with
 	// A valid instance is configured with a network address that either is an IPv4 address or resolves to one.
 	instance *instance.Info
@@ -271,7 +262,6 @@ func New(clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.S
 	return &windows{
 			interact:               conn,
 			clusterDNS:             clusterDNS,
-			vxlanPort:              vxlanPort,
 			instance:               instanceInfo,
 			log:                    log,
 			defaultShellPowerShell: defaultShellPowershell(conn),
@@ -430,13 +420,24 @@ func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string) error
 
 func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, credentials *Authentication) error {
 	vm.log.Info("configuring")
-	// Make sure WICD service is not running before calling node bootstrap
+
+	// Make sure WICD service is not running before calling node cleanup and/or bootstrap
 	if err := vm.deconfigureWICD(); err != nil {
 		return err
 	}
-	if err := vm.ensureRequiredServicesStopped(); err != nil {
-		return errors.Wrap(err, "unable to stop all services")
+	// We have to ensure the WICD files exist separately before the rest of the files because we must ensure services
+	// are stopped and their files closed before modifying them.
+	if err := vm.ensureWICDExists(credentials); err != nil {
+		return err
 	}
+	if err := vm.ensureWICDSecretContent(credentials); err != nil {
+		return err
+	}
+	// Stop any services that may be running. This prevents the node being shown as Ready after a failed configuration.
+	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace); err != nil {
+		return errors.Wrap(err, "Unable to cleanup the Windows instance")
+	}
+
 	if err := vm.ensureHostNameAndContainersFeature(); err != nil {
 		return err
 	}
@@ -447,9 +448,6 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, cr
 		return errors.Wrap(err, "error transferring files to Windows VM")
 	}
 
-	if err := vm.ensureWICDSecretContent(credentials); err != nil {
-		return err
-	}
 	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
 		wicdPath, desiredVer, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
 	if out, err := vm.Run(wicdBootstrapCmd, true); err != nil {
@@ -466,39 +464,30 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 	}
 	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
 		wicdLogDir, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
-	wicdService, err := newService(wicdPath, wicdServiceName, wicdServiceArgs, nil)
+	wicdService, err := newService(wicdPath, WicdServiceName, wicdServiceArgs, nil)
 	if err != nil {
-		return errors.Wrapf(err, "error creating %s service object", wicdServiceName)
+		return errors.Wrapf(err, "error creating %s service object", WicdServiceName)
 	}
 	if err := vm.ensureServiceIsRunning(wicdService); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service has started running", wicdServiceName)
+		return errors.Wrapf(err, "error ensuring %s Windows service has started running", WicdServiceName)
 	}
-	vm.log.Info("configured", "service", wicdServiceName, "args", wicdServiceArgs)
-	return nil
-}
-
-func (vm *windows) ConfigureKubeProxy() error {
-	// TODO: Currently this function, and waiting for kube-proxy to be running, is required. kube-proxy is the final
-	//       Windows Service. WMCO still has to perform post-configuration steps such as applying the version
-	//       annotation, which indicates the the Node has been full configured. This function should be removed as part
-	//       of https://issues.redhat.com/browse/WINC-741, where WICD will take care of those steps.
-	vm.log.V(1).Info("waiting for kube-proxy to start running")
-	if err := vm.waitForServiceToRun(KubeProxyServiceName); err != nil {
-		return errors.Wrapf(err, "error waiting for %s Windows service to start running", KubeProxyServiceName)
-	}
+	vm.log.Info("configured", "service", WicdServiceName, "args", wicdServiceArgs)
 	return nil
 }
 
 // Interface helper methods
-// ensureRequiredServicesStopped ensures that all services that are needed to configure a VM are stopped
-func (vm *windows) ensureRequiredServicesStopped() error {
-	// TODO: WMCO no longer stops services started by WICD before calling WICD bootstrap command
-	//		 This code should be removed as part of: https://issues.redhat.com/browse/WINC-741
-	for _, svcName := range append(RequiredServices, AzureCloudNodeManagerServiceName) {
-		svc := &service{name: svcName}
-		if err := vm.ensureServiceNotRunning(svc); err != nil {
-			return errors.Wrapf(err, "could not stop service %s", svcName)
-		}
+
+// ensureWICDExists ensures the WICD executable exists. Creates the destination directory and binary file, if needed.
+func (vm *windows) ensureWICDExists(credentials *Authentication) error {
+	if _, err := vm.Run(mkdirCmd(K8sDir), false); err != nil {
+		return errors.Wrapf(err, "unable to create remote directory %s", K8sDir)
+	}
+	wicdFileInfo, err := payload.NewFileInfo(payload.WICDPath)
+	if err != nil {
+		return errors.Wrapf(err, "could not create FileInfo object for file %s", payload.WICDPath)
+	}
+	if err := vm.EnsureFile(wicdFileInfo, K8sDir); err != nil {
+		return errors.Wrapf(err, "error copying %s to %s ", wicdFileInfo.Path, K8sDir)
 	}
 	return nil
 }
@@ -795,48 +784,6 @@ func (vm *windows) startService(svc *service) error {
 	return nil
 }
 
-// waitForHNSNetworks waits for the OVN overlay HNS networks to be created until the timeout is reached
-func (vm *windows) waitForHNSNetworks() error {
-	var out string
-	var err error
-	for retries := 0; retries < retry.Count; retries++ {
-		out, err = vm.Run("Get-HnsNetwork", true)
-		if err != nil {
-			// retry
-			continue
-		}
-
-		if strings.Contains(out, BaseOVNKubeOverlayNetwork) &&
-			strings.Contains(out, OVNKubeOverlayNetwork) {
-			return nil
-		}
-		time.Sleep(retry.Interval)
-	}
-
-	// OVN overlay HNS networks were not found
-	vm.log.Info("Get-HnsNetwork", "output", out)
-	return errors.Wrap(err, "timeout waiting for OVN overlay HNS networks")
-}
-
-// waitForServiceToRun waits for the given service to be in RUNNING state
-// until the timeout is reached
-func (vm *windows) waitForServiceToRun(serviceName string) error {
-	var err error
-	for retries := 0; retries < retry.Count; retries++ {
-		serviceRunning, err := vm.isRunning(serviceName)
-		if err != nil {
-			return errors.Wrapf(err, "unable to check if %s Windows service is running", serviceName)
-		}
-		if serviceRunning {
-			return nil
-		}
-		time.Sleep(retry.Interval)
-	}
-
-	// service did not reach running state
-	return fmt.Errorf("timeout waiting for %s service to be in running state: %v", serviceName, err)
-}
-
 // newFileInfo returns a pointer to a FileInfo object created from the specified file on the Windows VM
 func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 	// Get-FileHash returns an object with multiple properties, we are interested in the `Hash` property
@@ -940,8 +887,8 @@ func (vm *windows) ensureWICDSecretContent(credentials *Authentication) error {
 
 // deconfigureWICD ensures the WICD service running on the Windows instance is removed
 func (vm *windows) deconfigureWICD() error {
-	if err := vm.ensureServiceIsRemoved(wicdServiceName); err != nil {
-		return errors.Wrapf(err, "error ensuring %s Windows service is removed", wicdServiceName)
+	if err := vm.ensureServiceIsRemoved(WicdServiceName); err != nil {
+		return errors.Wrapf(err, "error ensuring %s Windows service is removed", WicdServiceName)
 	}
 	return nil
 }

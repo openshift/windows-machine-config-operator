@@ -49,7 +49,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
-	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/services"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
@@ -179,15 +179,15 @@ func (sc *ServiceController) SetupWithManager(mgr ctrl.Manager) error {
 		// A node's name will never change, so it is fine to use the name for node identification
 		// The node must have a desired-version annotation for it to be reconcilable
 		CreateFunc: func(e event.CreateEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[metadata.DesiredVersionAnnotation] != ""
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			// Only process update events if the desired version has changed
 			return sc.nodeName == e.ObjectNew.GetName() &&
-				e.ObjectOld.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[nodeconfig.DesiredVersionAnnotation]
+				e.ObjectOld.GetAnnotations()[metadata.DesiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[metadata.DesiredVersionAnnotation]
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[nodeconfig.DesiredVersionAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[metadata.DesiredVersionAnnotation] != ""
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -205,7 +205,7 @@ func (sc *ServiceController) SetupWithManager(mgr ctrl.Manager) error {
 
 // mapToCurrentNode maps all events to the node associated with this Windows instance
 func (sc *ServiceController) mapToCurrentNode(_ client.Object) []reconcile.Request {
-	return []reconcile.Request{{types.NamespacedName{Name: sc.nodeName}}}
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: sc.nodeName}}}
 }
 
 // Reconcile fulfills the Reconciler interface
@@ -223,7 +223,7 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 
-	desiredVersion, present := node.Annotations[nodeconfig.DesiredVersionAnnotation]
+	desiredVersion, present := node.Annotations[metadata.DesiredVersionAnnotation]
 	if !present {
 		// node missing desired version annotation, don't requeue
 		return ctrl.Result{}, nil
@@ -246,6 +246,10 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	if err = sc.reconcileServices(cmData.Services); err != nil {
 		klog.Error(err)
 		return ctrl.Result{}, err
+	}
+	// Version annotation is the indicator that the node was fully configured by this version of the services ConfigMap
+	if err = metadata.ApplyVersionAnnotation(sc.ctx, sc.client, node, desiredVersion); err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "error updating version annotation on node %s", sc.nodeName)
 	}
 	return ctrl.Result{}, nil
 }
@@ -435,8 +439,7 @@ func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) 
 // It also returns the config and scheme used to created the client.
 func NewDirectClient(cfg *rest.Config) (client.Client, error) {
 	clientScheme := runtime.NewScheme()
-	err := clientgoscheme.AddToScheme(clientScheme)
-	if err = clientgoscheme.AddToScheme(clientScheme); err != nil {
+	if err := clientgoscheme.AddToScheme(clientScheme); err != nil {
 		return nil, err
 	}
 
