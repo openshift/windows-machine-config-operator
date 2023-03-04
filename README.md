@@ -256,6 +256,11 @@ It is recommended to use images from public registries or pre-pull the images in
 ### Trunk port
 WMCO does not support adding Windows nodes to a cluster through a trunk port. The only supported networking setup for adding Windows nodes is through an access port carrying the VLAN traffic.
 
+## Running Windows workloads
+Be sure to set the [OS field in the Pod spec](https://kubernetes.io/docs/concepts/workloads/pods/#pod-os) to Windows
+when deploying Windows workloads. This field is used to authoritatively identify the pod OS for validation. 
+In OpenShift, it is used when enforcing OS-specific pod security standards.
+
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
