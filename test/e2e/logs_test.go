@@ -79,7 +79,12 @@ func retrieveLog(nodeName, srcPath, destDir string) error {
 	cmd := exec.Command("oc", "adm", "node-logs", "--path="+srcPath, nodeName)
 	out, err := cmd.Output()
 	if err != nil {
-		return errors.Wrapf(err, "oc adm node-logs failed with output: %s", string(out))
+		var exitError *exec.ExitError
+		stderr := ""
+		if errors.As(err, exitError) {
+			stderr = string(exitError.Stderr)
+		}
+		return fmt.Errorf("oc adm node-logs failed with exit code %s and output: %s: %s", err, string(out), stderr)
 	}
 	// Save log files to the artifact directory
 	splitPath := strings.Split(srcPath, "/")
