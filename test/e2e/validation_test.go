@@ -22,7 +22,6 @@ import (
 	rbac "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
@@ -746,8 +745,6 @@ func testDependentServiceChanges(t *testing.T) {
 			out, err = tc.runPowerShellSSHJob("hybrid-overlay-change", changeCommand, addr)
 			require.NoError(t, err, "error changing hybrid-overlay command")
 
-			require.NoError(t, tc.triggerWICDReconciliation(&node), "error triggering reconciliation")
-
 			// Wait until hybrid-overlay-node is returned to correct config
 			err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 				out, err = tc.runPowerShellSSHJob("hybrid-overlay-query2", queryCommand, addr)
@@ -765,27 +762,6 @@ func testDependentServiceChanges(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
-}
-
-// TODO: Remove this function when https://issues.redhat.com/browse/WINC-736 is complete
-// triggerWICDReconciliation kicks off WICD instance reconciliation by changing the desiredVersionAnnotation to an
-// incorrect version, and then back to the correct version.
-func (tc *testContext) triggerWICDReconciliation(node *core.Node) error {
-	patchData := fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.DesiredVersionAnnotation,
-		"test")
-	_, err := tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
-		[]byte(patchData), meta.PatchOptions{})
-	if err != nil {
-		return errors.Wrap(err, "error patching node annotation")
-	}
-	patchData = fmt.Sprintf(`{"metadata":{"annotations":{"%s":"%s"}}}`, metadata.DesiredVersionAnnotation,
-		node.Annotations[metadata.DesiredVersionAnnotation])
-	_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.Name, types.MergePatchType,
-		[]byte(patchData), meta.PatchOptions{})
-	if err != nil {
-		return errors.Wrap(err, "error patching node annotation back to expected")
-	}
-	return nil
 }
 
 // logLevelRegex finds the loglevel argument and captures the log level itself
