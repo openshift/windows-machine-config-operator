@@ -9,6 +9,7 @@ WMCO_VERSION ?= 6.0.1
 # command in generate_k8s_version_commit() in hack/update_submodules.sh
 KUBELET_GIT_VERSION=v1.24.6+deccab3
 KUBE-PROXY_GIT_VERSION=v1.24.0+041f707
+CONTAINERD_GIT_VERSION=v1.6.16-3-g2d3127cbb
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "preview,fast,stable")
@@ -224,3 +225,7 @@ kubelet:
 .PHONY: kube-proxy
 kube-proxy:
 	KUBE_GIT_VERSION=$(KUBE-PROXY_GIT_VERSION) KUBE_BUILD_PLATFORMS=windows/amd64 make -C kube-proxy WHAT=cmd/kube-proxy
+
+.PHONY : containerd
+containerd:
+	GOOS=windows VERSION=$(CONTAINERD_GIT_VERSION) make -C containerd bin/containerd.exe
