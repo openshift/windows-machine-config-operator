@@ -27,16 +27,14 @@ COPY windows_exporter/ .
 RUN GOOS=windows ./promu build -v
 
 # Build kubelet
-WORKDIR /build/windows-machine-config-operator/kubelet/
-COPY kubelet/ .
-ENV KUBE_BUILD_PLATFORMS windows/amd64
-RUN make WHAT=cmd/kubelet
+WORKDIR /build/windows-machine-config-operator/
+COPY kubelet/ kubelet/
+COPY Makefile Makefile
+RUN make kubelet
 
 # Build kube-proxy
-WORKDIR /build/windows-machine-config-operator/kube-proxy/
-COPY kube-proxy/ .
-ENV KUBE_BUILD_PLATFORMS windows/amd64
-RUN make WHAT=cmd/kube-proxy
+COPY kube-proxy/ kube-proxy/
+RUN make kube-proxy
 
 # Build CNI plugins
 WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
@@ -53,7 +51,6 @@ COPY go.mod go.mod
 COPY go.sum go.sum
 COPY vendor vendor
 COPY .gitignore .gitignore
-COPY Makefile Makefile
 COPY build build
 COPY main.go .
 COPY controllers controllers
