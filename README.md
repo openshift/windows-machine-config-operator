@@ -1,4 +1,4 @@
-# Windows Machine Config Operator
+# Windows Machine Config operator
 
 ## Introduction
 The Windows Machine Config Operator configures Windows instances into nodes, enabling Windows container workloads to
