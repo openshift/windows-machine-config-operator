@@ -288,7 +288,7 @@ EOF
 }
 
 # Retrieves the Cloud Provider for the OpenShift Cluster
-provider="$(oc -n openshift-kube-apiserver get configmap config -o json | jq -r '.data."config.yaml"' | jq '.apiServerArguments."cloud-provider"' | jq -r '.[]')"
+platform="$(oc get infrastructure cluster -ojsonpath={.spec.platformSpec.type})"
 
 # Gets the Infrastructure Id for the cluster like `pmahajan-azure-68p9l-gv45m`
 infraID="$(oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster)"
@@ -300,21 +300,21 @@ region="$(oc get machines -n openshift-machine-api | grep -w "Running" | awk '{p
 az="$(oc get machines -n openshift-machine-api | grep -w "Running" | awk '{print $5}' | head -1)"
 
 # Creates/deletes a MachineSet for Cloud Provider
-case "$provider" in
-    aws)
-      ms=$(get_aws_ms $infraID $region $az $provider)
+case "$platform" in
+    AWS)
+      ms=$(get_aws_ms $infraID $region $az $platform)
     ;;
-    azure)
-      ms=$(get_azure_ms $infraID $region $az $provider)
+    Azure)
+      ms=$(get_azure_ms $infraID $region $az $platform)
     ;;
-    gce)
-      ms=$(get_gcp_ms $infraID $region $az $provider)
+    GCP)
+      ms=$(get_gcp_ms $infraID $region $az $platform)
     ;;
-    vsphere)
-      ms=$(get_vsphere_ms $infraID $provider)
+    VSphere)
+      ms=$(get_vsphere_ms $infraID $platform)
     ;;
     *)
-      error-exit "platform '$provider' is not yet supported by this script"
+      error-exit "platform '$platform' is not yet supported by this script"
     ;;
 esac
 
