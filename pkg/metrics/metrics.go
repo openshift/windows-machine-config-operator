@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 
 	"github.com/pkg/errors"
 	monclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
@@ -245,21 +246,29 @@ func (c *Config) Configure(ctx context.Context) error {
 	return nil
 }
 
-// validate will verify if cluster monitoring is enabled in the operator namespace.
-// If the label is not present, it will log and send warning events to the user.
+// validate will verify if cluster monitoring is enabled in the operator namespace. If the label is set to false or not
+// present, it will log and send warning events to the user. If the label holds a non-boolean value, returns an error.
 func (c *Config) validate(ctx context.Context) (bool, error) {
 	// validate if metrics label is added to namespace
 	wmcoNamespace, err := c.CoreV1().Namespaces().Get(ctx, c.namespace, metav1.GetOptions{})
 	if err != nil {
 		return false, errors.Wrap(err, "error getting operator namespace")
 	}
-	if wmcoNamespace.Labels["openshift.io/cluster-monitoring"] != "true" {
-		metricsEnabled = false
+
+	labelValue := false
+	// if the label exists, update value from default of false
+	if value, ok := wmcoNamespace.Labels["openshift.io/cluster-monitoring"]; ok {
+		labelValue, err = strconv.ParseBool(value)
+		if err != nil {
+			return false, errors.Wrap(err, "monitoring label must have a boolean value")
+		}
+	}
+	if !labelValue {
 		c.recorder.Eventf(wmcoNamespace, v1.EventTypeWarning, "labelValidationFailed",
 			"Cluster monitoring openshift.io/cluster-monitoring=true label is not enabled in %s namespace", c.namespace)
-		return false, nil
 	}
-	return true, nil
+	metricsEnabled = labelValue
+	return metricsEnabled, nil
 }
 
 // createEndpoint creates an endpoint object in the operator namespace.
