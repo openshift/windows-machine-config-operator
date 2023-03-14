@@ -60,6 +60,11 @@ COPY containernetworking-plugins/ .
 ENV CGO_ENABLED=0
 RUN ./build_windows.sh
 
+# Build csi-proxy
+WORKDIR /build/windows-machine-config-operator/csi-proxy
+COPY csi-proxy/ .
+RUN GOOS=windows make build
+
 WORKDIR /build/windows-machine-config-operator/
 # Copy files and directories needed to build the WMCO binary
 # Any new file added here should be reflected in `build/build.sh` if it dirties the git working tree.
@@ -135,6 +140,9 @@ WORKDIR /payload/cni/
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .
+
+WORKDIR /payload/csi-proxy/
+COPY --from=build /build/windows-machine-config-operator/csi-proxy/bin/csi-proxy.exe .
 
 # Create directory for generated files with open permissions, this allows WMCO to write to this directory
 RUN mkdir /payload/generated
