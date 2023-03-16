@@ -399,6 +399,7 @@ spec:
                 imagePullPolicy: IfNotPresent
                 name: manager
                 resources: {}
+              dnsPolicy: ClusterFirstWithHostNet
               hostNetwork: true
               nodeSelector:
                 node-role.kubernetes.io/master: ""
