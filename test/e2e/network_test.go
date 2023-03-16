@@ -36,7 +36,6 @@ func testNetwork(t *testing.T) {
 
 	t.Run("East West Networking", testEastWestNetworking)
 	t.Run("North south networking", testNorthSouthNetworking)
-	t.Run("Pod DNS Resolution", testPodDNSResolution)
 }
 
 var (
@@ -150,32 +149,19 @@ func testEastWestNetworking(t *testing.T) {
 					assert.NoError(t, err, "could not curl the Windows server")
 				})
 			}
+			t.Run("service DNS resolution", func(t *testing.T) {
+				serviceDNS := fmt.Sprintf("%s.%s.svc.cluster.local", intermediarySVC.GetName(),
+					intermediarySVC.GetNamespace())
+				nodeAffinity, err := getAffinityForNode(&node)
+				require.NoError(t, err)
+				curler, err := testCtx.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID)+"-dns-test",
+					serviceDNS, nodeAffinity)
+				require.NoError(t, err)
+				defer testCtx.deleteJob(curler.GetName())
+				assert.NoError(t, testCtx.waitUntilJobSucceeds(curler.GetName()))
+			})
 		})
 	}
-}
-
-// testPodDNSResolution test the DNS resolution in a Windows pod
-func testPodDNSResolution(t *testing.T) {
-	// This test has 25% failure rate in CI.  WINC-743 has been created to address
-	// this issue. Until we address WINC-743, this test has been temporarily
-	// disabled.
-	t.Skip("Pod DNS resolution test is disabled, pending flake investigation")
-	// create context
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-	// the following DNS resolution tests use curl.exe because nslookup tool is not present
-	// in the selected container image for the e2e tests. Ideally, we would use the native
-	// PowerShell cmdlet Resolve-DnsName, but it is not present either.
-	// TODO: Use a compatible container image for the e2e test suite that includes the
-	//  PowerShell cmdlet Resolve-DnsName.
-	winJob, err := testCtx.createWindowsServerJob("win-dns-tester",
-		// curl'ing with --head flag to fetch only the headers as a lightweight alternative
-		"curl.exe --head -k https://www.openshift.com",
-		nil)
-	require.NoError(t, err, "could not create Windows tester job")
-	defer testCtx.deleteJob(winJob.Name)
-	err = testCtx.waitUntilJobSucceeds(winJob.Name)
-	assert.NoError(t, err, "Windows tester job failed")
 }
 
 // collectDeploymentLogs collects logs of a deployment to the Artifacts directory
