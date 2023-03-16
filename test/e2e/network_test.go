@@ -151,6 +151,17 @@ func testEastWestNetworking(t *testing.T) {
 					assert.NoError(t, err, "could not curl the Windows server")
 				})
 			}
+			t.Run("service DNS resolution", func(t *testing.T) {
+				serviceDNS := fmt.Sprintf("%s.%s.svc.cluster.local", intermediarySVC.GetName(),
+					intermediarySVC.GetNamespace())
+				nodeAffinity, err := getAffinityForNode(&node)
+				require.NoError(t, err)
+				curler, err := testCtx.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID)+"-dns-test",
+					serviceDNS, nodeAffinity)
+				require.NoError(t, err)
+				defer testCtx.deleteJob(curler.GetName())
+				assert.NoError(t, testCtx.waitUntilJobSucceeds(curler.GetName()))
+			})
 		})
 	}
 }
