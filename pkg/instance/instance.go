@@ -3,9 +3,9 @@ package instance
 import (
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
+	"net"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
-	"github.com/openshift/windows-machine-config-operator/pkg/netutil"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
@@ -29,11 +29,11 @@ type Info struct {
 // NewInfo returns a new Info. newHostname being set means that the instance's hostname should be
 // changed. An empty value is a no-op.
 func NewInfo(address, username, newHostname string, setNodeIP bool, node *core.Node) (*Info, error) {
-	ipv4, err := netutil.ResolveToIPv4Address(address)
+	ip, err := net.ResolveIPAddr("ip4", address)
 	if err != nil {
 		return nil, errors.Wrapf(err, "invalid address %s, unable to create instance info", address)
 	}
-	return &Info{Address: address, IPv4Address: ipv4, Username: username, NewHostname: newHostname,
+	return &Info{Address: address, IPv4Address: ip.String(), Username: username, NewHostname: newHostname,
 		SetNodeIP: setNodeIP, Node: node}, nil
 }
 
