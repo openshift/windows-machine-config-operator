@@ -307,7 +307,7 @@ func matchesHostname(nodeName string, windowsInstances []*instance.Info,
 // findHostName returns the actual host name of the instance by running the 'hostname' command
 func findHostName(instanceInfo *instance.Info, instanceSigner ssh.Signer) (string, error) {
 	// We don't need to pass most args here as we just need to be able to run commands on the instance.
-	win, err := windows.New("", "", instanceInfo, instanceSigner)
+	win, err := windows.New("", instanceInfo, instanceSigner)
 	if err != nil {
 		return "", errors.Wrap(err, "error instantiating Windows instance")
 	}
