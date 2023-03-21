@@ -67,7 +67,6 @@ func NewCertificateSigningRequestsReconciler(mgr manager.Manager, clusterConfig 
 			log:                ctrl.Log.WithName("controllers").WithName(CSRController),
 			k8sclientset:       clientset,
 			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
-			vxlanPort:          "",
 			watchNamespace:     watchNamespace,
 			recorder:           mgr.GetEventRecorderFor(CSRController),
 		},

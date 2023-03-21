@@ -109,7 +109,7 @@ func (ow OutWriter) Write(p []byte) (n int, err error) {
 
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
-func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, vxlanPort, wmcoNamespace string,
+func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, wmcoNamespace string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
 	var err error
@@ -125,7 +125,7 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
-	win, err := windows.New(clusterDNS, vxlanPort, instanceInfo, signer)
+	win, err := windows.New(clusterDNS, instanceInfo, signer)
 	if err != nil {
 		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
