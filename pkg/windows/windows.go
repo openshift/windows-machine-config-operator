@@ -118,10 +118,8 @@ const (
 	ManagedTag = "OpenShift managed"
 	// containersFeatureName is the name of the Windows feature that is required to be enabled on the Windows instance.
 	containersFeatureName = "Containers"
-	// wicdCAFile is the name of the file that holds the WICD service account CA certificate
-	wicdCAFile = K8sDir + "\\sa-ca.crt"
-	// wicdTokenFile is the name of the file that holds the WICD service account secret token
-	wicdTokenFile = K8sDir + "\\sa-token"
+	// wicdKubeconfigPath is the path of the kubeconfig used by WICD
+	wicdKubeconfigPath = K8sDir + "\\wicd-kubeconfig"
 )
 
 var (
@@ -193,14 +191,6 @@ func GetK8sDir() string {
 	return K8sDir
 }
 
-// Authentication holds credential information used to communicate with a kubernetes cluster
-type Authentication struct {
-	// CaCert is the PEM-encoded certificate authority certificate
-	CaCert []byte
-	// Token is the bearer Token used to grant access to the cluster API server
-	Token []byte
-}
-
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
 type Windows interface {
 	// GetIPv4Address returns the IPv4 address of the associated instance.
@@ -224,14 +214,14 @@ type Windows interface {
 	// Reinitialize re-initializes the Windows VM's SSH client
 	Reinitialize() error
 	// Bootstrap prepares the Windows instance and runs the WICD bootstrap command
-	Bootstrap(string, string, string, *Authentication) error
+	Bootstrap(string, string, string) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
-	ConfigureWICD(string, string, *Authentication) error
+	ConfigureWICD(string, string) error
 	// Deconfigure removes all files and networks created by WMCO and runs the WICD cleanup command.
-	Deconfigure(string, string, *Authentication) error
+	Deconfigure(string, string) error
 	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
 	// services are also stopped
-	RunWICDCleanup(string, string, *Authentication) error
+	RunWICDCleanup(string, string) error
 }
 
 // windows implements the Windows interface
@@ -390,22 +380,18 @@ func (vm *windows) Reinitialize() error {
 	return nil
 }
 
-func (vm *windows) RunWICDCleanup(apiServerURL string, watchNamespace string, credentials *Authentication) error {
+func (vm *windows) RunWICDCleanup(watchNamespace, wicdKubeconfig string) error {
 	// Make sure WICD service is not running before calling node cleanup and/or bootstrap
 	if err := vm.deconfigureWICD(); err != nil {
 		return err
 	}
 	// We have to ensure the WICD files exist separately before the rest of the files because we must ensure services
 	// are stopped and their files closed before modifying them.
-	if err := vm.ensureWICDExists(); err != nil {
+	if err := vm.ensureWICDFilesExist(wicdKubeconfig); err != nil {
 		return err
 	}
-	if err := vm.ensureWICDSecretContent(credentials); err != nil {
-		return err
-	}
-
-	wicdCleanupCmd := fmt.Sprintf("%s cleanup --api-server %s --sa-ca %s --sa-token %s --namespace %s",
-		wicdPath, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
+	wicdCleanupCmd := fmt.Sprintf("%s cleanup --kubeconfig %s --namespace %s", wicdPath, wicdKubeconfigPath,
+		watchNamespace)
 	if out, err := vm.Run(wicdCleanupCmd, true); err != nil {
 		vm.log.Info("failed to cleanup node", "command", wicdCleanupCmd, "output", out)
 		return err
@@ -413,10 +399,10 @@ func (vm *windows) RunWICDCleanup(apiServerURL string, watchNamespace string, cr
 	return nil
 }
 
-func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string, credentials *Authentication) error {
+func (vm *windows) Deconfigure(watchNamespace, wicdKubeconfig string) error {
 	vm.log.Info("deconfiguring")
 
-	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace, credentials); err != nil {
+	if err := vm.RunWICDCleanup(watchNamespace, wicdKubeconfig); err != nil {
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
 	}
 	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
@@ -428,11 +414,11 @@ func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string, crede
 	return nil
 }
 
-func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, credentials *Authentication) error {
+func (vm *windows) Bootstrap(desiredVer, watchNamespace, wicdKubeconfigContents string) error {
 	vm.log.Info("configuring")
 
 	// Stop any services that may be running. This prevents the node being shown as Ready after a failed configuration.
-	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace, credentials); err != nil {
+	if err := vm.RunWICDCleanup(watchNamespace, wicdKubeconfigContents); err != nil {
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
 	}
 
@@ -446,8 +432,8 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, cr
 		return fmt.Errorf("error transferring files to Windows VM: %w", err)
 	}
 
-	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
-		wicdPath, desiredVer, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
+	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --kubeconfig %s --namespace %s",
+		wicdPath, desiredVer, wicdKubeconfigPath, watchNamespace)
 	if out, err := vm.Run(wicdBootstrapCmd, true); err != nil {
 		vm.log.Info("failed to bootstrap node", "command", wicdBootstrapCmd, "output", out)
 		return err
@@ -456,12 +442,12 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, cr
 }
 
 // ConfigureWICD starts the Windows Instance Config Daemon service
-func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credentials *Authentication) error {
-	if err := vm.ensureWICDSecretContent(credentials); err != nil {
+func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string) error {
+	if err := vm.ensureWICDFilesExist(wicdKubeconfigContents); err != nil {
 		return err
 	}
-	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
-		wicdLogDir, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
+	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --kubeconfig %s --namespace %s",
+		wicdLogDir, wicdKubeconfigPath, watchNamespace)
 
 	// if WICD crashes, attempt to restart WICD after 10, 30, and 60 seconds, and then every 2 minutes after that.
 	// reset this counter 5 min after a period with no crashes
@@ -498,8 +484,9 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 
 // Interface helper methods
 
-// ensureWICDExists ensures the WICD executable exists. Creates the destination directory and binary file, if needed.
-func (vm *windows) ensureWICDExists() error {
+// ensureWICDFilesExist ensures all files required for WICD to run exist. If needed, creates the destination directory,
+// WICD binary, and kubeconfig.
+func (vm *windows) ensureWICDFilesExist(wicdKubeconfig string) error {
 	if _, err := vm.Run(mkdirCmd(K8sDir), false); err != nil {
 		return fmt.Errorf("unable to create remote directory %s: %w", K8sDir, err)
 	}
@@ -510,7 +497,7 @@ func (vm *windows) ensureWICDExists() error {
 	if err := vm.EnsureFile(wicdFileInfo, K8sDir); err != nil {
 		return fmt.Errorf("error copying %s to %s: %w", wicdFileInfo.Path, K8sDir, err)
 	}
-	return nil
+	return vm.ensureWICDKubeconfig(wicdKubeconfig)
 }
 
 // ensureHostNameAndContainersFeature ensures hostname of the Windows VM matches the expected name
@@ -928,15 +915,10 @@ func (vm *windows) rebootAndReinitialize() error {
 	return nil
 }
 
-// ensureWICDSecretContent checks if the WICD CA cert and token files on the instance hold the expected values
-func (vm *windows) ensureWICDSecretContent(credentials *Authentication) error {
-	caDir, caFileName := SplitPath(wicdCAFile)
-	err := vm.EnsureFileContent(credentials.CaCert, caFileName, caDir)
-	if err != nil {
-		return err
-	}
-	tokenDir, tokenFileName := SplitPath(wicdTokenFile)
-	return vm.EnsureFileContent(credentials.Token, tokenFileName, tokenDir)
+// ensureWICDSecretContent ensures the WICD kubeconfig on the instance has the expected contents
+func (vm *windows) ensureWICDKubeconfig(contents string) error {
+	kcDir, kc := SplitPath(wicdKubeconfigPath)
+	return vm.EnsureFileContent([]byte(contents), kc, kcDir)
 }
 
 // deconfigureWICD ensures the WICD service running on the Windows instance is removed
@@ -969,8 +951,8 @@ func rmDirCmd(dirName string) string {
 
 // rmK8sFilesCmd() returns the PowerShell command to remove the k8sDir files excluding WICD files
 func rmK8sFilesCmd() string {
-	return fmt.Sprintf("if(Test-Path %s) {Get-ChildItem %s -Recurse -Exclude %s,%s,%s | Remove-Item -Force -Recurse}",
-		K8sDir, K8sDir, wicdPath, wicdTokenFile, wicdCAFile)
+	return fmt.Sprintf("if(Test-Path %s) {Get-ChildItem %s -Recurse -Exclude %s,%s | Remove-Item -Force -Recurse}",
+		K8sDir, K8sDir, wicdPath, wicdKubeconfigPath)
 }
 
 // getHNSNetworkCmd returns the Windows command to get HNS network by name
