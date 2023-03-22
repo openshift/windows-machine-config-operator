@@ -65,7 +65,7 @@ func runControllerCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 	klog.Info("service controller running")
-	if err := controller.RunController(ctx, apiServerURL, saCA, saToken, namespace); err != nil {
+	if err := controller.RunController(ctx, namespace, kubeconfig); err != nil {
 		klog.Error(err)
 		os.Exit(1)
 	}
