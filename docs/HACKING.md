@@ -1,104 +1,266 @@
-⚠⚠⚠ THIS IS A LIVING DOCUMENT AND LIKELY TO CHANGE QUICKLY ⚠⚠⚠
-
 # Hacking on the WMCO
-## Pre-requisites
-- [Cluster and OS pre-requisites](wmco-prerequisites.md)
-- [Install](https://sdk.operatorframework.io/docs/installation/) operator-sdk v1.15.0
-- The operator is written using operator-sdk [v1.15.0](https://github.com/operator-framework/operator-sdk/releases/tag/v1.15.0)
-  and has the same [pre-requisites](https://sdk.operatorframework.io/docs/installation/#prerequisites) as it does.
-- Git submodules need to be initialized and up to date before running the build command. Please refer to
-  [updating Git submodules](#updating-git-submodules).
-- Verify push/pull access to a container registry from where the cluster can pull image from.
 
-## User Workflows
+This guide will walk you through the workflows required to build, deploy, and test your changes on the Windows Machine
+Config Operator (WMCO).
 
-### I want to install an officially released version of WMCO on my OpenShift/OKD cluster
-* Instructions to install the community operator can be found in the [README](/README.md).
-  Customers with a Red Hat subscription should instead look at the [OpenShift docs.](https://docs.openshift.com/container-platform/latest/windows_containers/enabling-windows-container-workloads.html)
+## Cluster Configuration
 
-### I want to try the unreleased WMCO
-* [Build the operator](#build)
-* [Deploy the operator directly](#deploying-the-operator-directly)
+Before running tests, your cluster must be properly configured with the correct networking and be running the proper
+version of OpenShift for use with the version of WMCO you are testing against. For example, when testing a 4.10 release
+of the WMCO, your cluster should be running a 4.10 version of OpenShift.
+Changes made against master should be tested against the latest CI version of OpenShift.
 
-### I want to try the unreleased WMCO, and deploy it using OLM
-* [Build the operator](#build)
-* [Deploy the operator through OLM](#deploying-the-operator-through-olm)
+If you already have a configured cluster, move on to [Build](#build)
 
-### I want to try the unreleased WMCO, and deploy it mimicking the official deployment method
-* [Build the operator](#build)
-* [Generate bundle manifests](#generating-new-bundle-manifests)
-* [Build the bundle image](#creating-a-bundle-image)
-* [Build an operator index](#creating-a-new-operator-index)
-* [Create a CatalogSource using the index](https://docs.openshift.com/container-platform/latest/operators/admin/olm-managing-custom-catalogs.html#olm-creating-catalog-from-index_olm-managing-custom-catalogs)
-* [Follow the normal procedure to deploy an operator](https://docs.openshift.com/container-platform/latest/operators/admin/olm-adding-operators-to-cluster.html)
+### Pre-cluster checklist
+
+- Download the correct OpenShift installer
+  - [OpenShift Installer Mirror](<https://mirror.openshift.com/pub/openshift-v4/clients/ocp/>)
+  - [OpenShift Nightly Builds](<https://amd64.ocp.releases.ci.openshift.org/#4-dev-preview>)
+- [Initialize git submodules](<https://git-scm.com/book/en/v2/Git-Tools-Submodules>)
+- Verify push/pull access to [quay.io](<https://quay.io>)
+- Create an install-config.yaml
+  - [AWS](https://docs.openshift.com/container-platform/latest/installing/installing_aws/installing-aws-default.html)
+  - [GCP](https://docs.openshift.com/container-platform/latest/installing/installing_gcp/installing-gcp-default.html)
+  - [Azure](https://docs.openshift.com/container-platform/latest/installing/installing_azure/installing-azure-default.html)
+  - [vSphere](https://docs.openshift.com/container-platform/latest/installing/installing_vsphere/installing-vsphere-installer-provisioned.html)
+  - [None](https://docs.openshift.com/container-platform/latest/installing/installing_bare_metal/installing-bare-metal.html)
+- [Set Up OVNKubernetes networking](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/configuring-hybrid-networking.html)
 
 ## Build
-To build and push the operator image, execute:
+
+To manually build, see the subheading
+[below](#build-an-operator-image). To build and deploy automatically using the OLM hack script, jump ahead to
+[Deploy](#deploy-from-source). 
+If you want to build and deploy automatically using the e2e tests, jump ahead to 
+[running the e2e tests](#running-the-e2e-tests). 
+
+### Build an operator image
+
+If you want to deploy the operator manually without the OLM, you need to build an operator image that we can deploy to
+the cluster.
+From the top level of your WMCO directory, run
+
 ```shell script
-export OPERATOR_IMAGE=quay.io/<insert username>/wmco:$VERSION_TAG
-hack/olm.sh build
+podman build -t quay.io/<quay username>/wmco:<operator name> -f build/Dockerfile .
 ```
 
 Building the full WMCO image is a time consuming process given we are building all the submodules. If you are just
 changing WMCO and not the submodules, you can separately build the submodules as a base image and then just build the
 WMCO  image from this base image:
+
 ```shell script
 make base-img
 make wmco-img IMG=$OPERATOR_IMAGE
 ```
+
 `make base-img` will not push the base image as a push is not needed. `make wmco-img` will make and push the
 `$OPERATOR_IMAGE`
 
-## Development workflow
-With the Operator image built and pushed to a remote repository, the operator can be deployed either directly,
-or through OLM.
+### Push an operator image
 
-For each deployment method a kubeconfig for an OpenShift or OKD cluster must be exported
+Push your image to your container registry with podman
+
+`podman push quay.io/<quay username>/wmco:<operator name>`
+
+## Deploy from source 
+
+Before deploying, ensure your environment is properly configured.
+
+#### Set private key
+
+in order to SSH into the instance, you'll need to set the `KUBE_SSH_KEY_PATH` to your private key.
+
 ```shell script
-export KUBECONFIG=<path to kubeconfig>
+export KUBE_SSH_KEY_PATH=<path to pem>
 ```
 
-### Deploying the operator directly
+#### Set Image Name
+
+This is the name of the operator image that will be pushed to the container registry.
+
+```shell script
+export OPERATOR_IMAGE=quay.io/<quay username>/wmco:<identifying tag>
+```
+
+#### Set CI to false
+
+This is to tell the tests that this test isn't running in CI.
+
+```shell script
+export OPENSHIFT_CI=false
+```
+
+#### Set shared credentials file
+
+If you are running on AWS or GCP, set your shared credentials file.
+
+```shell script
+export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
+```
+
+```shell script 
+export GOOGLE_CREDENTIALS=<path to google credentials file>
+```
+
+#### Set KUBECONFIG
+
+To run tests, you should have a running cluster, and your KUBECONFIG set.
+
+```shell script
+export KUBECONFIG=<path to kubeconfig> 
+```
+
+The operator can now be deployed through one of these methods.
+- [Manually](#deploying-the-operator-manually)
+- [Using the OLM](#running-the-olm-hack-script)
+- [Using the e2e tests](#running-the-e2e-tests)
+- [Using the e2e tests on platform agnostic infrastructure](#running-e2e-tests-on-platform-agnostic-infrastructure)
+
+### Deploying the operator manually
+
 ```shell script
 make deploy IMG=$OPERATOR_IMAGE
 ```
+
 The above command will directly deploy all the resources required for the operator to run, as well as the WMCO pod.
+
+#### Cleaning up a manual deployment  
+
 To remove the installed resources:
+
 ```shell script
 make undeploy
 ```
 
-### Deploying the operator through OLM
+### Deploying using OLM 
+
+This command builds the operator image, pushes it to a remote repository and uses OLM to launch the operator.
+
 ```shell script
-hack/olm.sh run -k "<PRIVATE_KEY.PEM>"
+hack/olm.sh run -k KUBE_SSH_KEY_PATH
 ```
-Where `"<PRIVATE_KEY.PEM>"` is the private key which will be used to configure Windows nodes.
-This command builds the operator image, pushes it to remote repository and uses OLM to launch the operator. Executing
-the [Build](#build) step is not required.
+#### Cleaning up an OLM deployment
 
-In order to build the operator ignoring the existing build image cache, run the above command with the `-i` option.
-
-To clean-up the installation, use:
 ```shell script
 hack/olm.sh cleanup
 ```
+### Deploying using a custom CatalogSource
+#### Generate new bundle manifests
 
-### Running e2e tests on a cluster
-The following environment variables must be set:
+This step should be done in the case that changes have been made to any of the RBAC requirements, or if any changes
+were made to the files in config/.
+
+If the operator version needs to be changed, the `WMCO_VERSION` variable at the top of the repo's Makefile should
+be set to the new version.
+
+If the bundle channel needs to be changed, the `CHANNELS` and/or `DEFAULT_CHANNELS` variable within the Makefile
+should be changed to the desired values.
+
+New bundle manifests can then be generated with:
+
 ```shell script
-# SSH key to be used for creation of cloud-private-key secret
-export KUBE_SSH_KEY_PATH=<path to RSA type ssh key>
-export OPERATOR_IMAGE=quay.io/<insert username>/wmco:$VERSION_TAG
-export OPENSHIFT_CI=false
-# on AWS only:
-export AWS_SHARED_CREDENTIALS_FILE=<path to aws credentials file>
+make bundle
 ```
-Once the above variables are set, run the following script:
+
+Within the bundle manifests the `:latest` tag must be manually removed in order for the e2e tests to work.
+
+If you plan on building a bundle image using these bundle manifests, the image should be set to reflect where
+the WMCO was pushed to in the [build step](#Build an operator image)
+
 ```shell script
-hack/run-ci-e2e-test.sh
+make bundle IMG=$OPERATOR_IMAGE
+```
+
+#### Create a bundle image
+
+Once the manifests have been generated properly, you can run the following command in the root of this git repository:
+
+```shell script
+make bundle-build BUNDLE_IMG=<BUNDLE_REPOSITORY:$BUNDLE_TAG>
+```
+
+The variables in the command should be changed to match the container image repository you wish to store the bundle in.
+You can also change the channels based on the release status of the operator.
+This command should create a new bundle image. Bundle image and operator image are two different images.
+
+You should then push the newly created bundle image to the remote repository:
+
+```shell script
+podman push $BUNDLE_REPOSITORY:$BUNDLE_TAG
+```
+
+You should verify that the new bundle is valid:
+
+```shell script
+operator-sdk bundle validate $BUNDLE_REPOSITORY:$BUNDLE_TAG --image-builder podman
+```
+
+#### Creating a new operator index
+##### Prerequisites
+
+[opm](https://github.com/operator-framework/operator-registry/) has been installed on the build system.
+All [agnostic prerequisites](#agnostic-e2e-prerequisites) must be satisfied as well.
+
+An operator index is a collection of bundles. Creating one is required if you wish to deploy your operator on your own
+cluster.
+
+```shell script
+opm index add --bundles $BUNDLE_REPOSITORY:$BUNDLE_TAG --tag $INDEX_REPOSITORY:$INDEX_TAG --container-tool podman
+```
+
+You should then push the newly created index image to the remote repository:
+
+```shell script
+podman push $INDEX_REPOSITORY:$INDEX_TAG
+```
+
+#### Editing an existing operator index
+
+An existing operator index can have bundles added to it:
+
+```shell script
+opm index add --from-index $INDEX_REPOSITORY:$INDEX_TAG
+```
+
+and removed from it:
+
+```shell script
+opm index rm --from-index $INDEX_REPOSITORY:$INDEX_TAG
+```
+#### Create a CatalogSource using the index
+
+See the OpenShift docs found
+[here](https://docs.openshift.com/container-platform/latest/operators/admin/olm-managing-custom-catalogs.html#olm-creating-catalog-from-index_olm-managing-custom-catalogs)
+
+#### Create a subscription object 
+
+To use the custom CatalogSource you need to change the subscription object to reference the CatalogSource you are 
+introducing. See the docs 
+[here](https://docs.openshift.com/container-platform/4.5/operators/understanding/olm/olm-understanding-olm.html#olm-subscription_olm-understanding-olm)
+for an example subscription. 
+
+Edit your subscription yaml to match your CatalogSource. 
+For example, 
+```
+  source: < new catalogSource > 
+  sourceNamespace: < namespace where CatalogSource was deployed >
+```
+
+Apply the yaml to your cluster, which will deploy the WMCO. 
+
+## Running the e2e tests
+
+The e2e tests also automatically build and deploy the WMCO onto your cluster.
+
+The e2e tests can be run with the hack script `run-ci-e2e-test.sh`
+
+```shell script
+hack/run-ci-e2e-test.sh -t basic -m 1
 ```
 
 Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
+
 - `-s` to skip the deletion of Windows nodes that are created as part of test suite run
 - `-m` to represent the number of Windows instances to be configured by the Windows Machine controller
 - `-c` to represent the number of Windows instances to be configured by the ConfigMap controller
@@ -112,140 +274,83 @@ Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
 
 Example command to run the full test suite with 2 instances configured by the Windows Machine controller, and 1
 configured by the ConfigMap controller, skipping the deletion of all the nodes.
+
 ```shell script
 hack/run-ci-e2e-test.sh -s -m 2 -c 1
 ```
-Please note that you do not need to run `hack/olm.sh run` before `hack/run-ci-e2e-test.sh`.
 
-#### Running e2e tests on platform-agnostic infrastructure
+### Running e2e tests on platform-agnostic infrastructure
 
-To run the WMCO e2e tests on a bare metal or other platform-agnostic infrastructure (platform=none), where there
-is no cloud provider specification, the desired number of Windows instances must be provisioned beforehand, and the
-instance(s) information must be provided to the e2e test suite through the `WINDOWS_INSTANCES_DATA` environment
-variable.
+#### Agnostic e2e Prerequisites
+Please see the [BYOH](byoh-instance-pre-requisites.md) doc for info. 
 
-To deploy machines using the [infrastructure providers supported by WMCO](wmco-prerequisites.md#supported-cloud-providers-based-on-okdocp-version-and-wmco-version),
-refer to the specific provider documentation. See Windows instance [pre-requisites](https://github.com/openshift/windows-machine-config-operator/blob/master/docs/byoh-instance-pre-requisites.md).
+##### Specify number of Windows instances
 
-The information you need to collect from each Windows instance is:
-- the internal IP address
-- the Windows administrator username
+To run the WMCO e2e tests on a bare metal or other platform-agnostic infrastructure (platform=none), where there is no
+cloud provider specification, the desired number of Windows instances must be provisioned beforehand.
 
-Export `WINDOWS_INSTANCES_DATA` as an environment variable with the corresponding [windows-instances ConfigMap](https://github.com/openshift/windows-machine-config-operator#adding-instances)
-data section, and a new `windows-instances` ConfigMap will be created during the execution of the e2e test suite.
+##### Specify windows instances data
 
-For example:
-```shell
+Find the corresponding [windows-instances ConfigMap](https://github.com/openshift/windows-machine-config-operator#adding-instances)
+and export it as an environment variable. For example:
+
+```shell script
 export WINDOWS_INSTANCES_DATA='
 data:
   10.1.42.1: |-
     username=Administrator
 '
 ```
-where `10.1.42.1` is the IP address and `Administrator` is the Windows' administrator username of the Windows instance.
-
-After the `WINDOWS_INSTANCES_DATA` environment variable is set and exported you can run:
-```shell
-hack/run-ci-e2e-test.sh
-```
-
-## Bundling the Windows Machine Config Operator
-This directory contains resources related to installing the WMCO onto a cluster using OLM.
-
-### Generating new bundle manifests
-This step should be done in the case that changes have been made to any of the RBAC requirements, or if any changes
-were made to the files in config/.
-
-If the operator version needs to be changed, the `WMCO_VERSION` variable at the top of the repo's Makefile should
-be set to the new version.
-
-If the bundle channel needs to be changed, the `CHANNELS` and/or `DEFAULT_CHANNELS` variable within the Makefile
-should be changed to the desired values.
-
-New bundle manifests can then be generated with:
-```shell script
-make bundle
-```
-
-Within the bundle manifests the `:latest` tag must be manually removed in order for the e2e tests to work.
-
-If you plan on building a bundle image using these bundle manifests, the image should be set to reflect where
-the WMCO was pushed to in the [build step](#build)
-```shell script
-make bundle IMG=$OPERATOR_IMAGE
-```
-
-### Creating a bundle image
-You can skip this step if you want to run the operator for [developer testing purposes only](#development-workflow)
-
-Once the manifests have been generated properly, you can run the following command in the root of this git repository:
-```shell script
-make bundle-build BUNDLE_IMG=<BUNDLE_REPOSITORY:$BUNDLE_TAG>
-```
-The variables in the command should be changed to match the container image repository you wish to store the bundle in.
-You can also change the channels based on the release status of the operator.
-This command should create a new bundle image. Bundle image and operator image are two different images. 
-
-You should then push the newly created bundle image to the remote repository:
-```shell script
-podman push $BUNDLE_REPOSITORY:$BUNDLE_TAG
-```
-
-You should verify that the new bundle is valid:
-```shell script
-operator-sdk bundle validate $BUNDLE_REPOSITORY:$BUNDLE_TAG --image-builder podman
-```
-
-### Creating a new operator index
-
-#### Pre-requisites
-[opm](https://github.com/operator-framework/operator-registry/) has been installed on the build system.
-All previous [pre-requisites](#pre-requisites) must be satisfied as well.
-
-You can skip this step if you want to run the operator for [developer testing purposes only](#development-workflow)
-
-An operator index is a collection of bundles. Creating one is required if you wish to deploy your operator on your own
-cluster.
+#### Cleaning up e2e tests
+#### Delete Machinesets
 
 ```shell script
-opm index add --bundles $BUNDLE_REPOSITORY:$BUNDLE_TAG --tag $INDEX_REPOSITORY:$INDEX_TAG --container-tool podman
+oc delete machineset e2e -n openshift-machine-api
+oc delete machineset e2e-wm -n openshift-machine-api
+oc delete configmap windows-instances -n openshift-windows-machine-config-operator
 ```
 
-You should then push the newly created index image to the remote repository:
+##### Run the cleanup OLM script
+
+Clean up the artifacts by running the OLM hack script
+
 ```shell script
-podman push $INDEX_REPOSITORY:$INDEX_TAG
+hack/olm.sh cleanup
+oc delete ns wmco-test
 ```
 
-#### Editing an existing operator index
-An existing operator index can have bundles added to it:
-```shell script
-opm index add --from-index $INDEX_REPOSITORY:$INDEX_TAG
-```
-and removed from it:
-```shell script
-opm index rm --from-index $INDEX_REPOSITORY:$INDEX_TAG
-```
+## Deploy a workload 
 
-## Updating Git submodules
+If you are not running e2e tests, it is likely that you will want to deploy a workload to test your changes with.
+Find more information [here](custom-workload.md)
+
+## Updating git submodules 
+
 This project contains git submodules for the following components:
+<<<<<<< HEAD
 - windows-machine-config-bootstrapper
+=======
+
+>>>>>>> bd70beef ([docs] updates HACKING.md)
 - kubernetes
 - ovn-kubernetes
 - containernetworking-plugins
 - promu
 - windows_exporter
+- containerd 
+- hcsshim 
+- kube-proxy 
+- cloud-provider-azure 
 
-To update git submodules you can use the script hack/update_submodules.sh
+To update the git submodules you can use the script hack/update_submodules.sh
 Use the help command for up to date instructions:
+
 ```shell script
 hack/update_submodules.sh -h
 ```
 
-Alternatively, it can be done manually via:
-```shell script
-# To update all git submodules
-git submodule update --recursive
+## Preventing Windows Machines from being configured by WMCO
 
-# To update a specific submodule
-git submodule update --remote <path_to_submodule>
-```
+If the Machine spec has the label `windowsmachineconfig.openshift.io/ignore=true`, the Machine will be ignored by
+WMCO's Machine controller, and will not be configured into a Windows node. This can be helpful when debugging userdata
+changes.
