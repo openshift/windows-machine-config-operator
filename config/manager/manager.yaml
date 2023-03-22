@@ -25,6 +25,7 @@ spec:
       labels:
         name: windows-machine-config-operator
     spec:
+      dnsPolicy: ClusterFirstWithHostNet
       hostNetwork: true
       priorityClassName: system-cluster-critical
       containers:
