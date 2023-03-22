@@ -8,7 +8,7 @@ import (
 	core "k8s.io/api/core/v1"
 )
 
-func TestCreateBootstrapKubeconfig(t *testing.T) {
+func TestNewKubeConfigFromSecret(t *testing.T) {
 	testCases := []struct {
 		name         string
 		secret       *core.Secret
@@ -61,7 +61,7 @@ func TestCreateBootstrapKubeconfig(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			actualSpec, err := createBootstrapKubeconfig(test.secret)
+			actualSpec, err := newKubeconfigFromSecret(test.secret, "kubelet")
 			if test.expectedErr {
 				assert.Error(t, err)
 				return

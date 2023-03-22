@@ -264,12 +264,7 @@ func (nc *nodeConfig) createBootstrapFiles() error {
 	if err != nil {
 		return err
 	}
-	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(context.TODO(), mcoBootstrapSecret,
-		meta.GetOptions{})
-	if err != nil {
-		return err
-	}
-	filePathsToContents[windows.BootstrapKubeconfigPath], err = createBootstrapKubeconfig(bootstrapSecret)
+	filePathsToContents[windows.BootstrapKubeconfigPath], err = nc.generateBootstrapKubeconfig()
 	if err != nil {
 		return err
 	}
@@ -327,25 +322,32 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 	return filePathsToContents, nil
 }
 
-// createBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server
-func createBootstrapKubeconfig(bootstrapSecret *core.Secret) (string, error) {
-	// extract ca.crt and token data fields
-	caCert := bootstrapSecret.Data[core.ServiceAccountRootCAKey]
-	if caCert == nil {
-		return "", fmt.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
-			bootstrapSecret.GetName())
-	}
-	token := bootstrapSecret.Data[core.ServiceAccountTokenKey]
-	if token == nil {
-		return "", fmt.Errorf("unable to find %s token in secret %s", core.ServiceAccountTokenKey,
-			bootstrapSecret.GetName())
-	}
-	kubeconfig, err := generateKubeconfig(&windows.Authentication{CaCert: caCert, Token: token},
-		nodeConfigCache.apiServerEndpoint)
+// generateBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server
+func (nc *nodeConfig) generateBootstrapKubeconfig() (string, error) {
+	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(context.TODO(), mcoBootstrapSecret,
+		meta.GetOptions{})
 	if err != nil {
 		return "", err
 	}
-	kubeconfigData, err := json.Marshal(kubeconfig)
+	return newKubeconfigFromSecret(bootstrapSecret, "kubelet")
+}
+
+// newKubeconfigFromSecret returns the contents of a kubeconfig generated from the given service account token secret
+func newKubeconfigFromSecret(saSecret *core.Secret, username string) (string, error) {
+	// extract ca.crt and token data fields
+	caCert := saSecret.Data[core.ServiceAccountRootCAKey]
+	if caCert == nil {
+		return "", fmt.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
+			saSecret.GetName())
+	}
+	token := saSecret.Data[core.ServiceAccountTokenKey]
+	if token == nil {
+		return "", fmt.Errorf("unable to find %s token in secret %s", core.ServiceAccountTokenKey,
+			saSecret.GetName())
+	}
+	kc := generateKubeconfig(caCert, string(token), nodeConfigCache.apiServerEndpoint,
+		username)
+	kubeconfigData, err := json.Marshal(kc)
 	if err != nil {
 		return "", err
 	}
@@ -482,31 +484,31 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 }
 
 // generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret
-func generateKubeconfig(secret *windows.Authentication, apiServerURL string) (clientcmdv1.Config, error) {
+func generateKubeconfig(caCert []byte, token, apiServerURL, username string) clientcmdv1.Config {
 	kubeconfig := clientcmdv1.Config{
 		Clusters: []clientcmdv1.NamedCluster{{
 			Name: "local",
 			Cluster: clientcmdv1.Cluster{
 				Server:                   apiServerURL,
-				CertificateAuthorityData: secret.CaCert,
+				CertificateAuthorityData: caCert,
 			}},
 		},
 		AuthInfos: []clientcmdv1.NamedAuthInfo{{
-			Name: "kubelet",
+			Name: username,
 			AuthInfo: clientcmdv1.AuthInfo{
-				Token: string(secret.Token),
+				Token: token,
 			},
 		}},
 		Contexts: []clientcmdv1.NamedContext{{
-			Name: "kubelet",
+			Name: username,
 			Context: clientcmdv1.Context{
 				Cluster:  "local",
-				AuthInfo: "kubelet",
+				AuthInfo: username,
 			},
 		}},
-		CurrentContext: "kubelet",
+		CurrentContext: username,
 	}
-	return kubeconfig, nil
+	return kubeconfig
 }
 
 // generateKubeletConfiguration returns the configuration spec for the kubelet Windows service
