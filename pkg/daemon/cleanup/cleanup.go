@@ -20,8 +20,8 @@ package cleanup
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -42,7 +42,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	// Cannot use a cached client as no manager will be started to populate cache
 	directClient, err := controller.NewDirectClient(cfg)
 	if err != nil {
-		return errors.Wrap(err, "could not create authenticated client from service account")
+		return fmt.Errorf("could not create authenticated client from service account: %w", err)
 	}
 	addrs, err := controller.LocalInterfaceAddresses()
 	if err != nil {
@@ -57,7 +57,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 			// If no node is found, fetch the most recently created services ConfigMap for best effort cleanup
 			cm, err = servicescm.GetLatest(directClient, ctx, configMapNamespace)
 			if err != nil {
-				return errors.Wrapf(err, "cannot get latest services ConfigMap from namespace %s", configMapNamespace)
+				return fmt.Errorf("cannot get latest services ConfigMap from namespace %s: %w", configMapNamespace, err)
 			}
 			cmData, err = servicescm.Parse(cm.Data)
 			return err
@@ -65,7 +65,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		// Otherwise, fetch the ConfigMap tied to the node's desired version annotation
 		desiredVersion, present := node.Annotations[metadata.DesiredVersionAnnotation]
 		if !present {
-			return errors.Wrapf(err, "node %s missing desired version annotation", node.Name)
+			return fmt.Errorf("node %s missing desired version annotation", node.Name)
 		}
 		err = directClient.Get(ctx,
 			client.ObjectKey{Namespace: configMapNamespace, Name: servicescm.NamePrefix + desiredVersion}, cm)
@@ -111,7 +111,7 @@ func removeServices(svcMgr manager.Manager, services []servicescm.Service) error
 	}
 	klog.Infof("removed services: %q", servicesRemoved)
 	if len(failedRemovals) > 0 {
-		return errors.Errorf("%#v", failedRemovals)
+		return fmt.Errorf("%#v", failedRemovals)
 	}
 	return nil
 }

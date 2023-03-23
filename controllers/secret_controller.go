@@ -2,10 +2,10 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	oconfig "github.com/openshift/api/config/v1"
-	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -159,12 +159,12 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 			// Return and don't requeue
 			return reconcile.Result{}, nil
 		}
-		return reconcile.Result{}, errors.Wrapf(err, "unable to get secret %s", request.NamespacedName)
+		return reconcile.Result{}, fmt.Errorf("unable to get secret %s: %w", request.NamespacedName, err)
 	}
 	// Generate expected userData based on the existing private key
 	validUserData, err := secrets.GenerateUserData(r.platform, keySigner.PublicKey())
 	if err != nil {
-		return reconcile.Result{}, errors.Wrapf(err, "error generating %s secret", secrets.UserDataSecret)
+		return reconcile.Result{}, fmt.Errorf("error generating %s secret: %w", secrets.UserDataSecret, err)
 	}
 
 	userData := &core.Secret{}
@@ -197,7 +197,7 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 	nodes := &core.NodeList{}
 	err := r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
 	if err != nil {
-		return errors.Wrapf(err, "error getting node list")
+		return fmt.Errorf("error getting node list: %w", err)
 	}
 
 	// Modify annotations on nodes configured with the previous private key, if it has changed
@@ -218,7 +218,7 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 			// For BYOH nodes, update the username annotation and public key hash annotation using new private key
 			expectedUsernameAnnotation, err := r.getEncryptedUsername(ctx, node, privateKeyBytes)
 			if err != nil {
-				return errors.Wrapf(err, "unable to retrieve expected username annotation")
+				return fmt.Errorf("unable to retrieve expected username annotation: %w", err)
 			}
 
 			annotationsToApply = map[string]string{
@@ -233,7 +233,7 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 		}
 
 		if err := metadata.ApplyLabelsAndAnnotations(ctx, r.client, node, nil, annotationsToApply); err != nil {
-			return errors.Wrapf(err, "error updating annotations on node %s", node.GetName())
+			return fmt.Errorf("error updating annotations on node %s: %w", node.GetName(), err)
 		}
 		r.log.V(1).Info("patched node object", "node", node.GetName(), "patch", annotationsToApply)
 	}
@@ -242,7 +242,7 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 	r.log.Info("updating secret", "name", secrets.UserDataSecret)
 	err = r.client.Update(ctx, expected)
 	if err != nil {
-		return errors.Wrap(err, "error updating secret")
+		return fmt.Errorf("error updating secret: %w", err)
 	}
 	return nil
 }
@@ -253,7 +253,7 @@ func (r *SecretReconciler) getEncryptedUsername(ctx context.Context, node core.N
 	instancesConfigMap := &core.ConfigMap{}
 	if err := r.client.Get(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: wiparser.InstanceConfigMap}, instancesConfigMap); err != nil {
-		return "", errors.Wrap(err, "unable to get instance configmap")
+		return "", fmt.Errorf("unable to get instance configmap: %w", err)
 	}
 	instanceUsername, err := wiparser.GetNodeUsername(instancesConfigMap.Data, &node)
 	if err != nil {
@@ -261,7 +261,7 @@ func (r *SecretReconciler) getEncryptedUsername(ctx context.Context, node core.N
 	}
 	encryptedUsername, err := crypto.EncryptToJSONString(instanceUsername, key)
 	if err != nil {
-		return "", errors.Wrapf(err, "error encrypting node %s username", node.GetName())
+		return "", fmt.Errorf("error encrypting node %s username: %w", node.GetName(), err)
 	}
 	return encryptedUsername, nil
 }
@@ -271,25 +271,25 @@ func (r *SecretReconciler) RemoveInvalidAnnotationsFromLinuxNodes(config *rest.C
 	// create a new clientset as this function will be called before the manager's client is started
 	kc, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return errors.Wrap(err, "error creating kubernetes clientset")
+		return fmt.Errorf("error creating kubernetes clientset: %w", err)
 	}
 
 	nodes, err := kc.CoreV1().Nodes().List(context.TODO(), meta.ListOptions{LabelSelector: core.LabelOSStable + "=linux"})
 	if err != nil {
-		return errors.Wrap(err, "error getting Linux node list")
+		return fmt.Errorf("error getting Linux node list: %w", err)
 	}
 	// The public key hash was accidentally added to Linux nodes in WMCO 2.0 and must be removed.
 	// The `/` in the annotation key needs to be escaped in order to not be considered a "directory" in the path.
 	patchData, err := metadata.GenerateRemovePatch([]string{}, []string{nodeconfig.PubKeyHashAnnotation})
 	if err != nil {
-		return errors.Wrapf(err, "error creating public key annotation add request")
+		return fmt.Errorf("error creating public key annotation add request: %w", err)
 	}
 	for _, node := range nodes.Items {
 		if _, present := node.Annotations[nodeconfig.PubKeyHashAnnotation]; present == true {
 			_, err = kc.CoreV1().Nodes().Patch(context.TODO(), node.GetName(), kubeTypes.JSONPatchType,
 				patchData, meta.PatchOptions{})
 			if err != nil {
-				return errors.Wrapf(err, "error removing public key annotation from node %s", node.GetName())
+				return fmt.Errorf("error removing public key annotation from node %s: %w", node.GetName(), err)
 			}
 		}
 	}

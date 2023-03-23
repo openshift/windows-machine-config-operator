@@ -5,7 +5,6 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
-	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	client "k8s.io/client-go/kubernetes"
 
@@ -26,7 +25,7 @@ func New(clientset *clusterinfo.OpenShift) (*Provider, error) {
 
 // GenerateMachineSet is not supported for platform=none and throws an exception
 func (p *Provider) GenerateMachineSet(_ bool, replicas int32) (*mapi.MachineSet, error) {
-	return nil, errors.New("MachineSet generation not supported for platform=none")
+	return nil, fmt.Errorf("MachineSet generation not supported for platform=none")
 }
 
 // GetType returns the platform type for platform=none

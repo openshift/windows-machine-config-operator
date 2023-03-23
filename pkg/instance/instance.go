@@ -1,12 +1,12 @@
 package instance
 
 import (
-	"github.com/pkg/errors"
-	core "k8s.io/api/core/v1"
+	"fmt"
 	"net"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/version"
+	core "k8s.io/api/core/v1"
 )
 
 // Info represents a instance that is meant to be joined to the cluster
@@ -31,7 +31,7 @@ type Info struct {
 func NewInfo(address, username, newHostname string, setNodeIP bool, node *core.Node) (*Info, error) {
 	ip, err := net.ResolveIPAddr("ip4", address)
 	if err != nil {
-		return nil, errors.Wrapf(err, "invalid address %s, unable to create instance info", address)
+		return nil, fmt.Errorf("invalid address %s, unable to create instance info: %w", address, err)
 	}
 	return &Info{Address: address, IPv4Address: ip.String(), Username: username, NewHostname: newHostname,
 		SetNodeIP: setNodeIP, Node: node}, nil
