@@ -256,7 +256,7 @@ type windows struct {
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(clusterDNS, vxlanPort string, instanceInfo *instance.Info, signer ssh.Signer) (Windows, error) {
+func New(clusterDNS string, instanceInfo *instance.Info, signer ssh.Signer) (Windows, error) {
 	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
