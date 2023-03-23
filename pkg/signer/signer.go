@@ -1,7 +1,8 @@
 package signer
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
+
 	"golang.org/x/crypto/ssh"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -17,7 +18,7 @@ func Create(secret kubeTypes.NamespacedName, c client.Client) (ssh.Signer, error
 	}
 	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to parse private key")
+		return nil, fmt.Errorf("unable to parse private key: %w", err)
 	}
 	return signer, nil
 }

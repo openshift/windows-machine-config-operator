@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
-	"github.com/pkg/errors"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -30,7 +29,7 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 	ccmEnabled, debug bool) (*servicescm.Data, error) {
 	kubeletConfiguration, err := getKubeletServiceConfiguration(kubeletArgsFromIgnition, debug, platform)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not determine kubelet service configuration spec")
+		return nil, fmt.Errorf("could not determine kubelet service configuration spec: %w", err)
 	}
 	services := &[]servicescm.Service{{
 		Name:                   windows.WindowsExporterServiceName,
