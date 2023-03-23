@@ -124,7 +124,6 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 func RunController(ctx context.Context, apiServerURL, saCA, saToken, watchNamespace string) error {
 	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
 	if err != nil {
-		klog.Error(err)
 		return errors.Wrap(err, "error using service account to build config")
 	}
 	// This is a client that reads directly from the server, not a cached client. This is required to be used here, as
@@ -146,6 +145,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken, watchNamesp
 	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Namespace: watchNamespace,
 		Scheme:    directClient.Scheme(),
+		Logger:    klog.NewKlogr(),
 	})
 	if err != nil {
 		return errors.Wrap(err, "unable to start manager")
@@ -241,18 +241,15 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	var cm core.ConfigMap
 	if err := sc.client.Get(sc.ctx,
 		client.ObjectKey{Namespace: sc.watchNamespace, Name: servicescm.NamePrefix + desiredVersion}, &cm); err != nil {
-		klog.Error(err)
 		return ctrl.Result{}, err
 	}
 	cmData, err := servicescm.Parse(cm.Data)
 	if err != nil {
-		klog.Error(err)
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile state of Windows services with the ConfigMap data
 	if err = sc.reconcileServices(cmData.Services); err != nil {
-		klog.Error(err)
 		return ctrl.Result{}, err
 	}
 	// Version annotation is the indicator that the node was fully configured by this version of the services ConfigMap
