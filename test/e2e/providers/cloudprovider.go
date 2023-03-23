@@ -5,7 +5,6 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
-	"github.com/pkg/errors"
 
 	oc "github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	awsProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/aws"
@@ -25,11 +24,11 @@ type CloudProvider interface {
 func NewCloudProvider() (CloudProvider, error) {
 	openshift, err := oc.GetOpenShift()
 	if err != nil {
-		return nil, errors.Wrap(err, "Getting OpenShift client failed")
+		return nil, fmt.Errorf("getting OpenShift client failed: %w", err)
 	}
 	infra, err := openshift.GetInfrastructure()
 	if err != nil {
-		return nil, errors.Wrap(err, "Getting cloud provider type")
+		return nil, fmt.Errorf("getting cloud provider type: %w", err)
 	}
 	switch provider := infra.Status.PlatformStatus.Type; provider {
 	case config.AWSPlatformType:

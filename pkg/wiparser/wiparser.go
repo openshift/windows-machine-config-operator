@@ -2,9 +2,9 @@ package wiparser
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
@@ -24,18 +24,18 @@ func GetInstances(c client.Client, namespace string) ([]*instance.Info, error) {
 	err := c.Get(context.TODO(), kubeTypes.NamespacedName{Namespace: namespace,
 		Name: InstanceConfigMap}, configMap)
 	if err != nil && !k8sapierrors.IsNotFound(err) {
-		return nil, errors.Wrapf(err, "could not retrieve Windows instance ConfigMap %s",
-			InstanceConfigMap)
+		return nil, fmt.Errorf("could not retrieve Windows instance ConfigMap %s: %w",
+			InstanceConfigMap, err)
 	}
 
 	nodes := &core.NodeList{}
 	if err := c.List(context.TODO(), nodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
-		return nil, errors.Wrap(err, "error listing nodes")
+		return nil, fmt.Errorf("error listing nodes: %w", err)
 	}
 
 	windowsInstances, err := Parse(configMap.Data, nodes)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to parse instances from ConfigMap %s", configMap.Name)
+		return nil, fmt.Errorf("unable to parse instances from ConfigMap %s: %w", configMap.Name, err)
 	}
 	return windowsInstances, nil
 }
@@ -46,7 +46,7 @@ func GetInstances(c client.Client, namespace string) ([]*instance.Info, error) {
 // be nil.
 func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.Info, error) {
 	if nodes == nil {
-		return nil, errors.New("nodes cannot be nil")
+		return nil, fmt.Errorf("nodes cannot be nil")
 	}
 	instances := make([]*instance.Info, 0)
 	// Get information about the instances from each entry. The expected key/value format for each entry is:
@@ -54,7 +54,7 @@ func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.I
 	for address, data := range instancesData {
 		username, err := extractUsername(data)
 		if err != nil {
-			return instances, errors.Wrapf(err, "unable to get username for %s", address)
+			return instances, fmt.Errorf("unable to get username for %s: %w", address, err)
 		}
 
 		// Node is only guaranteed to be found when looking for its IP address
@@ -77,7 +77,7 @@ func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.I
 // GetNodeUsername retrieves the username associated with the given node from the instance ConfigMap data
 func GetNodeUsername(instancesData map[string]string, node *core.Node) (string, error) {
 	if node == nil {
-		return "", errors.New("cannot get username for nil node")
+		return "", fmt.Errorf("cannot get username for nil node")
 	}
 	// Find entry in ConfigMap that is associated to node via address
 	for _, address := range node.Status.Addresses {
@@ -85,14 +85,14 @@ func GetNodeUsername(instancesData map[string]string, node *core.Node) (string, 
 			return extractUsername(value)
 		}
 	}
-	return "", errors.Errorf("unable to find instance associated with node %s", node.GetName())
+	return "", fmt.Errorf("unable to find instance associated with node %s", node.GetName())
 }
 
 // extractUsername returns the username string from data in the form username=<username>
 func extractUsername(value string) (string, error) {
 	splitData := strings.SplitN(value, "=", 2)
 	if len(splitData) == 0 || splitData[0] != "username" {
-		return "", errors.New("data has an incorrect format")
+		return "", fmt.Errorf("data has an incorrect format")
 	}
 	return splitData[1], nil
 }

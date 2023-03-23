@@ -18,12 +18,12 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
 	openshiftClient "github.com/openshift/client-go/config/clientset/versioned"
-	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -85,13 +85,13 @@ type ConfigMapReconciler struct {
 func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) (*ConfigMapReconciler, error) {
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
-		return nil, errors.Wrap(err, "error creating kubernetes clientset")
+		return nil, fmt.Errorf("error creating kubernetes clientset: %w", err)
 	}
 
 	// Initialize prometheus configuration
 	pc, err := metrics.NewPrometheusNodeConfig(clientset, watchNamespace)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to initialize Prometheus configuration")
+		return nil, fmt.Errorf("unable to initialize Prometheus configuration: %w", err)
 	}
 
 	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
@@ -100,7 +100,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	}
 	ign, err := ignition.New(directClient)
 	if err != nil {
-		return nil, errors.Wrap(err, "error creating ignition object")
+		return nil, fmt.Errorf("error creating ignition object: %w", err)
 	}
 	argsFromIgnition, err := ign.GetKubeletArgs()
 	if err != nil {
@@ -108,16 +108,16 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	}
 	oc, err := openshiftClient.NewForConfig(mgr.GetConfig())
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to create openshift client-go client")
+		return nil, fmt.Errorf("unable to create openshift client-go client: %w", err)
 	}
 	ccmEnabled, err := cluster.IsCloudControllerOwnedByCCM(oc)
 	if err != nil {
-		return nil, errors.Wrap(err, "error determining if CCM owns cloud controller")
+		return nil, fmt.Errorf("error determining if CCM owns cloud controller: %w", err)
 	}
 	svcData, err := services.GenerateManifest(argsFromIgnition, clusterConfig.Network().VXLANPort(),
 		clusterConfig.Platform(), ccmEnabled, ctrl.Log.V(1).Enabled())
 	if err != nil {
-		return nil, errors.Wrap(err, "error generating expected Windows service state")
+		return nil, fmt.Errorf("error generating expected Windows service state: %w", err)
 	}
 
 	return &ConfigMapReconciler{
@@ -157,7 +157,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "unable to create signer from private key secret")
+		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
 
 	// Fetch the ConfigMap. The predicate will have filtered out any ConfigMaps that we should not reconcile
@@ -191,7 +191,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, r.reconcileKubeletClientCA(ctx, configMap)
 	default:
 		// Unexpected configmap, log and return no error so we don't requeue
-		r.log.Error(errors.New("Unexpected resource triggered reconcile"), "ConfigMap", req.NamespacedName)
+		r.log.Error(fmt.Errorf("unexpected resource triggered reconcile"), "ConfigMap", req.NamespacedName)
 	}
 	return ctrl.Result{}, nil
 }
@@ -228,7 +228,7 @@ func (r *ConfigMapReconciler) removeOutdatedServicesConfigMaps(ctx context.Conte
 
 	servicesConfigMaps, err := servicescm.List(r.client, ctx, r.watchNamespace)
 	if err != nil {
-		return errors.Wrapf(err, "unable to retrieve list of services ConfigMaps")
+		return fmt.Errorf("unable to retrieve list of services ConfigMaps: %w", err)
 	}
 	for _, cm := range servicesConfigMaps {
 		cmVersion := strings.TrimPrefix(cm.Name, servicescm.NamePrefix)
@@ -237,7 +237,7 @@ func (r *ConfigMapReconciler) removeOutdatedServicesConfigMaps(ctx context.Conte
 		}
 		// Remove any services ConfigMap tied to a WMCO version that no Windows nodes are at anymore
 		if err := r.client.Delete(ctx, &cm); err != nil {
-			return errors.Wrapf(err, "could not delete outdated services ConfigMap %s", cm.Name)
+			return fmt.Errorf("could not delete outdated services ConfigMap %s: %w", cm.Name, err)
 		}
 		r.log.Info("Deleted outdated resource", "ConfigMap",
 			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: cm.Name})
@@ -265,13 +265,13 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	nodes := &core.NodeList{}
 	err := r.client.List(ctx, nodes, client.MatchingLabels{BYOHLabel: "true", core.LabelOSStable: "windows"})
 	if err != nil {
-		return errors.Wrap(err, "error listing nodes")
+		return fmt.Errorf("error listing nodes: %w", err)
 	}
 
 	// Get the list of instances that are expected to be Nodes
 	instances, err := wiparser.Parse(windowsInstances.Data, nodes)
 	if err != nil {
-		return errors.Wrap(err, "unable to parse instances from ConfigMap")
+		return fmt.Errorf("unable to parse instances from ConfigMap: %w", err)
 	}
 
 	r.log.Info("processing", "instances in", wiparser.InstanceConfigMap)
@@ -283,12 +283,12 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 
 	// Ensure that only instances currently specified by the ConfigMap are joined to the cluster as nodes
 	if err = r.deconfigureInstances(instances, nodes); err != nil {
-		return errors.Wrap(err, "error removing undesired nodes from cluster")
+		return fmt.Errorf("error removing undesired nodes from cluster: %w", err)
 	}
 
 	// Once all the proper Nodes are in the cluster, configure the prometheus endpoints.
 	if err := r.prometheusNodeConfig.Configure(); err != nil {
-		return errors.Wrap(err, "unable to configure Prometheus")
+		return fmt.Errorf("unable to configure Prometheus: %w", err)
 	}
 	return nil
 }
@@ -309,7 +309,7 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instance.I
 		instanceInfo.SetNodeIP = r.platform == config.NonePlatformType
 		encryptedUsername, err := crypto.EncryptToJSONString(instanceInfo.Username, privateKeyBytes)
 		if err != nil {
-			return errors.Wrapf(err, "unable to encrypt username for instance %s", instanceInfo.Address)
+			return fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err)
 		}
 		err = r.ensureInstanceIsUpToDate(instanceInfo, map[string]string{BYOHLabel: "true", nodeconfig.WorkerLabel: ""},
 			map[string]string{UsernameAnnotation: encryptedUsername})
@@ -318,7 +318,7 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instance.I
 			// single reconcile call, as it simplifies error collection. The order the map is read from is
 			// psuedo-random, so the configuration effort for configurable hosts will not be blocked by a specific host
 			// that has issues with configuration.
-			return errors.Wrapf(err, "error configuring host with address %s", instanceInfo.Address)
+			return fmt.Errorf("error configuring host with address %s: %w", instanceInfo.Address, err)
 		}
 		r.recorder.Eventf(windowsInstances, core.EventTypeNormal, "InstanceSetup",
 			"Configured instance with address %s as a worker node", instanceInfo.Address)
@@ -339,7 +339,7 @@ func (r *ConfigMapReconciler) deconfigureInstances(instances []*instance.Info, n
 
 		// no instance found in the provided list, remove the node from the cluster
 		if err := r.deconfigureInstance(&node); err != nil {
-			return errors.Wrapf(err, "unable to deconfigure instance with node %s", node.GetName())
+			return fmt.Errorf("unable to deconfigure instance with node %s: %w", node.GetName(), err)
 		}
 		r.recorder.Eventf(windowsInstances, core.EventTypeNormal, "InstanceTeardown",
 			"Deconfigured node with addresses %v", node.Status.Addresses)
@@ -495,7 +495,7 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding() error {
 	existingRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Get(context.TODO(), wicdRBACResourceName,
 		meta.GetOptions{})
 	if err != nil && !k8sapierrors.IsNotFound(err) {
-		return errors.Wrapf(err, "unable to get RoleBinding %s/%s", r.watchNamespace, wicdRBACResourceName)
+		return fmt.Errorf("unable to get RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
 	}
 
 	expectedRB := &rbac.RoleBinding{
@@ -522,7 +522,7 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding() error {
 		err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Delete(context.TODO(), wicdRBACResourceName,
 			meta.DeleteOptions{})
 		if err != nil {
-			return errors.Wrapf(err, "unable to delete RoleBinding %s/%s", r.watchNamespace, wicdRBACResourceName)
+			return fmt.Errorf("unable to delete RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
 		}
 		r.log.Info("Deleted malformed resource", "RoleBinding",
 			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: existingRB.Name})
@@ -531,7 +531,7 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding() error {
 	_, err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Create(context.TODO(), expectedRB,
 		meta.CreateOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "unable to create RoleBinding %s/%s", r.watchNamespace, wicdRBACResourceName)
+		return fmt.Errorf("unable to create RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
 	}
 	r.log.Info("Created resource", "RoleBinding",
 		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: expectedRB.Name})

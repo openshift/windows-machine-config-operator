@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -10,7 +11,6 @@ import (
 	config "github.com/openshift/api/config/v1"
 	imageClient "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	"github.com/openshift/library-go/pkg/image/imageutil"
-	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -85,15 +85,15 @@ type testContext struct {
 func NewTestContext() (*testContext, error) {
 	oc, err := clusterinfo.GetOpenShift()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to initialize OpenShift client")
+		return nil, fmt.Errorf("failed to initialize OpenShift client: %w", err)
 	}
 	cloudProvider, err := providers.NewCloudProvider()
 	if err != nil {
-		return nil, errors.Wrap(err, "cloud provider creation failed")
+		return nil, fmt.Errorf("cloud provider creation failed: %w", err)
 	}
 	toolsImage, err := getOpenShiftToolsImage(oc.Images)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting debug image")
+		return nil, fmt.Errorf("error getting debug image: %w", err)
 	}
 
 	workloadNamespaceLabels := map[string]string{
@@ -123,11 +123,11 @@ func (tc *testContext) vmUsername() string {
 func getOpenShiftToolsImage(imageClient imageClient.ImageV1Interface) (string, error) {
 	imageStream, err := imageClient.ImageStreams("openshift").Get(context.TODO(), "tools", meta.GetOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "unable to get openshift/tools imagestream")
+		return "", fmt.Errorf("unable to get openshift/tools imagestream: %w", err)
 	}
 	image, _, _, _, err := imageutil.ResolveRecentPullSpecForTag(imageStream, "latest", false)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to get latest debug image from imagestream")
+		return "", fmt.Errorf("unable to get latest debug image from imagestream: %w", err)
 	}
 	return image, nil
 }

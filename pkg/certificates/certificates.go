@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,7 +33,7 @@ const (
 // MergeCAsConfigMaps merges the given CA ConfigMaps for the specified subject
 func MergeCAsConfigMaps(initialCAConfigMap, currentCAConfigMap *core.ConfigMap, subject string) ([]byte, error) {
 	if subject == "" {
-		return nil, errors.New("subject cannot be empty")
+		return nil, fmt.Errorf("subject cannot be empty")
 	}
 	// extract CAs from initial CA ConfigMap
 	initialCABytes, err := GetCAsFromConfigMap(initialCAConfigMap, CABundleKey)
@@ -52,7 +51,7 @@ func MergeCAsConfigMaps(initialCAConfigMap, currentCAConfigMap *core.ConfigMap, 
 	// check bundle length
 	if len(bundleCABytes) == 0 {
 		// this is an odd edge case
-		return nil, errors.New("CA bundle cannot be empty")
+		return nil, fmt.Errorf("CA bundle cannot be empty")
 	}
 	// merge initial with new bundle
 	bundleCABytes = mergeCABundles(initialCABytes, bundleCABytes, subject)
@@ -64,10 +63,10 @@ func MergeCAsConfigMaps(initialCAConfigMap, currentCAConfigMap *core.ConfigMap, 
 // Adapted from https://github.com/openshift/machine-config-operator/blob/1a9f70f333a2287c4a8f2e75cb37b94c7c7b2a20/pkg/operator/sync.go#L874
 func GetCAsFromConfigMap(configMap *core.ConfigMap, key string) ([]byte, error) {
 	if configMap == nil {
-		return nil, errors.New("configMap cannot be nil")
+		return nil, fmt.Errorf("configMap cannot be nil")
 	}
 	if key == "" {
-		return nil, errors.New("key cannot be empty")
+		return nil, fmt.Errorf("key cannot be empty")
 	}
 	if bd, bdok := configMap.BinaryData[key]; bdok {
 		return bd, nil
@@ -87,7 +86,7 @@ func GetCAsFromConfigMap(configMap *core.ConfigMap, key string) ([]byte, error) 
 // GetInitialCAConfigMap returns the ConfigMap that contains the initial CA certificates
 func GetInitialCAConfigMap(ctx context.Context, client client.Client) (*core.ConfigMap, error) {
 	if client == nil {
-		return nil, errors.New("client cannot be nil")
+		return nil, fmt.Errorf("client cannot be nil")
 	}
 	if ctx == nil {
 		ctx = context.TODO()
@@ -95,8 +94,8 @@ func GetInitialCAConfigMap(ctx context.Context, client client.Client) (*core.Con
 	initialCAConfigMap := &core.ConfigMap{}
 	if err := client.Get(ctx, kubeTypes.NamespacedName{Name: kubeAPIServerInitialCAConfigMapName,
 		Namespace: configNamespace}, initialCAConfigMap); err != nil {
-		return nil, errors.Wrapf(err, "error getting initial CA ConfigMap %s/%s",
-			configNamespace, kubeAPIServerInitialCAConfigMapName)
+		return nil, fmt.Errorf("error getting initial CA ConfigMap %s/%s: %w",
+			configNamespace, kubeAPIServerInitialCAConfigMapName, err)
 	}
 	return initialCAConfigMap, nil
 }
