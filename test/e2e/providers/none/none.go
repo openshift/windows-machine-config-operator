@@ -1,10 +1,14 @@
 package none
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
+	"github.com/pkg/errors"
+	core "k8s.io/api/core/v1"
+	client "k8s.io/client-go/kubernetes"
+
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
@@ -28,4 +32,12 @@ func (p *Provider) GenerateMachineSet(_ bool, replicas int32) (*mapi.MachineSet,
 // GetType returns the platform type for platform=none
 func (p *Provider) GetType() config.PlatformType {
 	return config.NonePlatformType
+}
+
+func (p *Provider) StorageSupport() bool {
+	return false
+}
+
+func (p *Provider) CreatePVC(_ client.Interface) (*core.PersistentVolumeClaim, error) {
+	return nil, fmt.Errorf("storage not supported on platform none")
 }

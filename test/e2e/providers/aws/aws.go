@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	client "k8s.io/client-go/kubernetes"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
@@ -142,4 +143,12 @@ func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 
 func (a *Provider) GetType() config.PlatformType {
 	return config.AWSPlatformType
+}
+
+func (a *Provider) StorageSupport() bool {
+	return false
+}
+
+func (a *Provider) CreatePVC(_ client.Interface) (*core.PersistentVolumeClaim, error) {
+	return nil, fmt.Errorf("storage not supported on AWS")
 }
