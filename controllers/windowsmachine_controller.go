@@ -95,7 +95,6 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 			log:                  ctrl.Log.WithName("controller").WithName(WindowsMachineController),
 			k8sclientset:         clientset,
 			clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
-			vxlanPort:            clusterConfig.Network().VXLANPort(),
 			recorder:             mgr.GetEventRecorderFor(WindowsMachineController),
 			watchNamespace:       watchNamespace,
 			prometheusNodeConfig: pc,

@@ -128,7 +128,6 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 			log:                  ctrl.Log.WithName("controllers").WithName(ConfigMapController),
 			watchNamespace:       watchNamespace,
 			recorder:             mgr.GetEventRecorderFor(ConfigMapController),
-			vxlanPort:            clusterConfig.Network().VXLANPort(),
 			prometheusNodeConfig: pc,
 			platform:             clusterConfig.Platform(),
 		},
