@@ -14,49 +14,49 @@ Import-Module -DisableNameChecking c:\k\hns.psm1
 
 $cni_template=@'
 {
-    "CniVersion":"0.2.0",
-    "Name":"OVNKubernetesHNSNetwork",
-    "Type":"win-overlay",
+    "cniVersion":"0.2.0",
+    "name":"OVNKubernetesHNSNetwork",
+    "type":"win-overlay",
     "apiVersion": 2,
-    "Capabilities":{
+    "capabilities":{
         "portMappings": true,
-        "Dns":true
+        "dns":true
     },
-    "Ipam":{
-        "Type":"host-local",
-        "Subnet":"ovn_host_subnet"
+    "ipam":{
+        "type":"host-local",
+        "subnet":"ovn_host_subnet"
     },
-    "Policies":[
+    "policies":[
     {
-        "Name": "EndpointPolicy",
-        "Value": {
-            "Type": "OutBoundNAT",
-            "Settings": {
-                "ExceptionList": [
+        "name": "EndpointPolicy",
+        "value": {
+            "type": "OutBoundNAT",
+            "settings": {
+                "exceptionList": [
                 "10.0.0.1/32"
                 ],
-                "DestinationPrefix": "",
-                "NeedEncap": false
+                "destinationPrefix": "",
+                "needEncap": false
             }
         }
     },
     {
-        "Name": "EndpointPolicy",
-        "Value": {
-            "Type": "SDNROUTE",
-            "Settings": {
-                "ExceptionList": [],
-                "DestinationPrefix": "10.0.0.1/32",
-                "NeedEncap": true
+        "name": "EndpointPolicy",
+        "value": {
+            "type": "SDNRoute",
+            "settings": {
+                "exceptionList": [],
+                "destinationPrefix": "10.0.0.1/32",
+                "needEncap": true
             }
         }
     },
     {
-        "Name": "EndpointPolicy",
-        "Value": {
-            "Type": "ProviderAddress",
-            "Settings": {
-                "ProviderAddress": "provider_address"
+        "name": "EndpointPolicy",
+        "value": {
+            "type": "ProviderAddress",
+            "settings": {
+                "providerAddress": "provider_address"
             }
         }
     }

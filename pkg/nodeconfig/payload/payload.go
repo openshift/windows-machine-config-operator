@@ -80,49 +80,49 @@ Import-Module -DisableNameChecking HNS_MODULE_PATH
 
 $cni_template=@'
 {
-    "CniVersion":"0.2.0",
-    "Name":"HNS_NETWORK",
-    "Type":"win-overlay",
+    "cniVersion":"0.2.0",
+    "name":"HNS_NETWORK",
+    "type":"win-overlay",
     "apiVersion": 2,
-    "Capabilities":{
+    "capabilities":{
         "portMappings": true,
-        "Dns":true
+        "dns":true
     },
-    "Ipam":{
-        "Type":"host-local",
-        "Subnet":"ovn_host_subnet"
+    "ipam":{
+        "type":"host-local",
+        "subnet":"ovn_host_subnet"
     },
-    "Policies":[
+    "policies":[
     {
-        "Name": "EndpointPolicy",
-        "Value": {
-            "Type": "OutBoundNAT",
-            "Settings": {
-                "ExceptionList": [
+        "name": "EndpointPolicy",
+        "value": {
+            "type": "OutBoundNAT",
+            "settings": {
+                "exceptionList": [
                 "SERVICE_NETWORK_CIDR"
                 ],
-                "DestinationPrefix": "",
-                "NeedEncap": false
+                "destinationPrefix": "",
+                "needEncap": false
             }
         }
     },
     {
-        "Name": "EndpointPolicy",
-        "Value": {
-            "Type": "SDNROUTE",
-            "Settings": {
-                "ExceptionList": [],
-                "DestinationPrefix": "SERVICE_NETWORK_CIDR",
-                "NeedEncap": true
+        "name": "EndpointPolicy",
+        "value": {
+            "type": "SDNRoute",
+            "settings": {
+                "exceptionList": [],
+                "destinationPrefix": "SERVICE_NETWORK_CIDR",
+                "needEncap": true
             }
         }
     },
     {
-        "Name": "EndpointPolicy",
-        "Value": {
-            "Type": "ProviderAddress",
-            "Settings": {
-                "ProviderAddress": "provider_address"
+        "name": "EndpointPolicy",
+        "value": {
+            "type": "ProviderAddress",
+            "settings": {
+                "providerAddress": "provider_address"
             }
         }
     }
