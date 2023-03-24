@@ -179,7 +179,7 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 // returns a tearDown func that must be executed to cleanup resources
 func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 	// create a Windows Webserver deployment
-	deployment, err := tc.deployWindowsWebServer("win-webserver", nil)
+	deployment, err := tc.deployWindowsWebServer("win-webserver", nil, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "error creating Windows Webserver deployment for upgrade test")
 	}
