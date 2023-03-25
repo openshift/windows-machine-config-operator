@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	client "k8s.io/client-go/kubernetes"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
@@ -93,4 +94,12 @@ func (p *Provider) newGCPProviderSpec() (*mapi.GCPMachineProviderSpec, error) {
 // GetType returns the GCP platform type
 func (p *Provider) GetType() config.PlatformType {
 	return config.GCPPlatformType
+}
+
+func (p *Provider) StorageSupport() bool {
+	return false
+}
+
+func (p *Provider) CreatePVC(_ client.Interface) (*core.PersistentVolumeClaim, error) {
+	return nil, fmt.Errorf("storage not supported on gcp")
 }
