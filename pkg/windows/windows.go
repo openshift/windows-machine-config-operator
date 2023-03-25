@@ -414,11 +414,11 @@ func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string) error
 	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace); err != nil {
 		return errors.Wrap(err, "Unable to cleanup the Windows instance")
 	}
-	if err := vm.removeDirectories(); err != nil {
-		return errors.Wrap(err, "unable to remove created directories")
-	}
 	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
 		return errors.Wrap(err, "unable to ensure HNS networks are removed")
+	}
+	if err := vm.removeDirectories(); err != nil {
+		return errors.Wrap(err, "unable to remove created directories")
 	}
 	return nil
 }
@@ -592,9 +592,23 @@ func (vm *windows) createDirectories() error {
 func (vm *windows) removeDirectories() error {
 	vm.log.Info("removing directories")
 	for _, dir := range RequiredDirectories {
+		if dir == K8sDir {
+			// Exclude WICD binary and credential files, used in the WICD cleanup cmd
+			// This allows us to retry reconciliation again in case of a failure here
+			// which will result in the WICD cleanup cmd being called.
+			if out, err := vm.Run(rmK8sFilesCmd(), true); err != nil {
+				return fmt.Errorf("unable to remove directory %s, out: %s, err: %s", dir, out, err)
+			}
+			continue
+		}
 		if out, err := vm.Run(rmDirCmd(dir), true); err != nil {
 			return fmt.Errorf("unable to remove directory %s, out: %s, err: %s", dir, out, err)
 		}
+	}
+	// Do a best effort deletion of k8sDir which now includes only the WICD related files
+	// At this point, we don't want to retry reconciliation again as the WICD files could have been deleted.
+	if out, err := vm.Run(rmDirCmd(K8sDir), true); err != nil {
+		vm.log.V(1).Error(err, "unable to remove directory", "dir", K8sDir, "out", out)
 	}
 	return nil
 }
@@ -958,6 +972,12 @@ func mkdirCmd(dirName string) string {
 // rmDirCmd returns the PowerShell command to recursively remove a directory if it exists
 func rmDirCmd(dirName string) string {
 	return fmt.Sprintf("if(Test-Path %s) {Remove-Item -Recurse -Force %s}", dirName, dirName)
+}
+
+// rmK8sFilesCmd() returns the PowerShell command to remove the k8sDir files excluding WICD files
+func rmK8sFilesCmd() string {
+	return fmt.Sprintf("if(Test-Path %s) {Get-ChildItem %s -Recurse -Exclude %s,%s,%s | Remove-Item -Force -Recurse}",
+		K8sDir, K8sDir, wicdPath, wicdTokenFile, wicdCAFile)
 }
 
 // getHNSNetworkCmd returns the Windows command to get HNS network by name
