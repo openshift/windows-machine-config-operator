@@ -2,6 +2,7 @@ package wiparser
 
 import (
 	"context"
+	"net"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -11,7 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
-	"github.com/openshift/windows-machine-config-operator/pkg/netutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 )
 
@@ -58,14 +58,14 @@ func Parse(instancesData map[string]string, nodes *core.NodeList) ([]*instance.I
 		}
 
 		// Node is only guaranteed to be found when looking for its IP address
-		resolvedAddress, err := netutil.ResolveToIPv4Address(address)
+		ip, err := net.ResolveIPAddr("ip4", address)
 		if err != nil {
 			return nil, err
 		}
 
 		// Create instance info with the associated node if the described instance has one.
 		// Address validation occurs upon construction.
-		instanceInfo, err := instance.NewInfo(address, username, "", false, nodeutil.FindByAddress(resolvedAddress, nodes))
+		instanceInfo, err := instance.NewInfo(address, username, "", false, nodeutil.FindByAddress(ip.String(), nodes))
 		if err != nil {
 			return nil, err
 		}
