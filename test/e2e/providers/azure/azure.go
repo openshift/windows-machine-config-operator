@@ -8,6 +8,9 @@ import (
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	core "k8s.io/api/core/v1"
+	storage "k8s.io/api/storage/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	client "k8s.io/client-go/kubernetes"
 
@@ -27,6 +30,8 @@ const (
 	// "unknown instance type: Standard_D4s_V3" on dev cluster instances.
 	// Use the instance type the other worker machines use.
 	defaultVMSize = "Standard_D2s_v3"
+	// storageClassName is the name of the StorageClass that will be created for tests
+	storageClassName = "e2e"
 )
 
 // Provider is a provider struct for testing Azure
@@ -87,19 +92,11 @@ func (p *Provider) newAzureMachineProviderSpec(location, zone string) (*mapi.Azu
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
 func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*mapi.MachineSet, error) {
-	// Inspect master-0 to get Azure Location and Zone
-	machines, err := p.oc.Machine.Machines(clusterinfo.MachineAPINamespace).Get(context.TODO(),
-		p.InfrastructureName+"-master-0", meta.GetOptions{})
+	// Create the Windows Machines in the same location and zone as another node in the cluster
+	masterProviderSpec, err := p.getExistingMachineProviderSpec()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)
+		return nil, err
 	}
-	masterProviderSpec := new(mapi.AzureMachineProviderSpec)
-	err = json.Unmarshal(machines.Spec.ProviderSpec.Value.Raw, masterProviderSpec)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal master-0 azure machine provider spec: %v", err)
-	}
-
-	// create new machine provider spec for deploying Windows node in the same Location and Zone as master-0
 	providerSpec, err := p.newAzureMachineProviderSpec(masterProviderSpec.Location, *masterProviderSpec.Zone)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new azure machine provider spec: %v", err)
@@ -113,14 +110,79 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withIgnoreLabel, ""), nil
 }
 
+// getExistingMachineProviderSpec returns the spec of the *-master-0 Machine. The same Machine will always be returned
+// for the sake of consistency.
+func (p *Provider) getExistingMachineProviderSpec() (*mapi.AzureMachineProviderSpec, error) {
+	// Inspect master-0 to get Azure Location and Zone
+	machine, err := p.oc.Machine.Machines(clusterinfo.MachineAPINamespace).Get(context.TODO(),
+		p.InfrastructureName+"-master-0", meta.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)
+	}
+	masterProviderSpec := new(mapi.AzureMachineProviderSpec)
+	err = json.Unmarshal(machine.Spec.ProviderSpec.Value.Raw, masterProviderSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal master-0 azure machine provider spec: %v", err)
+	}
+	return masterProviderSpec, nil
+}
+
 func (p *Provider) GetType() config.PlatformType {
 	return config.AzurePlatformType
 }
 
 func (p *Provider) StorageSupport() bool {
-	return false
+	return true
 }
 
-func (p *Provider) CreatePVC(_ client.Interface, _ string) (*core.PersistentVolumeClaim, error) {
-	return nil, fmt.Errorf("storage not supported on azure")
+// CreatePVC creates a PVC for a dynamically provisioned azure-file volume
+func (p *Provider) CreatePVC(client client.Interface, namespace string) (*core.PersistentVolumeClaim, error) {
+	// Use a StorageClass to allow for dynamic volume provisioning
+	// https://docs.openshift.com/container-platform/4.12/storage/dynamic-provisioning.html#about_dynamic-provisioning
+	sc, err := p.ensureStorageClass(client)
+	if err != nil {
+		return nil, fmt.Errorf("unable to ensure a usable StorageClass is created: %w", err)
+	}
+	pvcSpec := core.PersistentVolumeClaim{
+		ObjectMeta: meta.ObjectMeta{
+			GenerateName: "e2e-",
+		},
+		Spec: core.PersistentVolumeClaimSpec{
+			AccessModes: []core.PersistentVolumeAccessMode{core.ReadWriteMany},
+			Resources: core.ResourceRequirements{
+				Requests: core.ResourceList{core.ResourceStorage: resource.MustParse("2Gi")},
+			},
+			StorageClassName: &sc.Name,
+		},
+	}
+	return client.CoreV1().PersistentVolumeClaims(namespace).Create(context.TODO(), &pvcSpec, meta.CreateOptions{})
+}
+
+// ensureStorageClass ensures an azure-file storage class exists for use with in-tree storage
+func (p *Provider) ensureStorageClass(client client.Interface) (*storage.StorageClass, error) {
+	sc, err := client.StorageV1().StorageClasses().Get(context.TODO(), storageClassName, meta.GetOptions{})
+	if err == nil {
+		return sc, nil
+	} else if !k8sapierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("error getting storage class '%s': %w", storageClassName, err)
+	}
+
+	// get the location that this StorageClass will be usable in
+	masterProviderSpec, err := p.getExistingMachineProviderSpec()
+	if err != nil {
+		return nil, err
+	}
+	clusterLocation := masterProviderSpec.Location
+	volumeBinding := storage.VolumeBindingImmediate
+	reclaimPolicy := core.PersistentVolumeReclaimDelete
+	sc = &storage.StorageClass{
+		ObjectMeta: meta.ObjectMeta{
+			Name: storageClassName,
+		},
+		Provisioner:       "kubernetes.io/azure-file",
+		Parameters:        map[string]string{"location": clusterLocation, "skuName": "Standard_LRS"},
+		ReclaimPolicy:     &reclaimPolicy,
+		VolumeBindingMode: &volumeBinding,
+	}
+	return client.StorageV1().StorageClasses().Create(context.TODO(), sc, meta.CreateOptions{})
 }
