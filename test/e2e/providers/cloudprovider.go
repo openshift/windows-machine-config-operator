@@ -23,8 +23,9 @@ type CloudProvider interface {
 	GetType() config.PlatformType
 	// StorageSupport indicates if we support Windows storage on this provider
 	StorageSupport() bool
-	// CreatePVC creates a new PersistentVolumeClaim that can be used by a workload
-	CreatePVC(p client.Interface) (*core.PersistentVolumeClaim, error)
+	// CreatePVC creates a new PersistentVolumeClaim that can be used by a workload. The PVC will be created with
+	// the given client, in the given namespace.
+	CreatePVC(client.Interface, string) (*core.PersistentVolumeClaim, error)
 }
 
 // NewCloudProvider returns a CloudProvider interface or an error
