@@ -149,6 +149,6 @@ func (a *Provider) StorageSupport() bool {
 	return false
 }
 
-func (a *Provider) CreatePVC(_ client.Interface) (*core.PersistentVolumeClaim, error) {
+func (a *Provider) CreatePVC(_ client.Interface, _ string) (*core.PersistentVolumeClaim, error) {
 	return nil, fmt.Errorf("storage not supported on AWS")
 }
