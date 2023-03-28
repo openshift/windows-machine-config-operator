@@ -258,8 +258,10 @@ func testNorthSouthNetworking(t *testing.T) {
 	// If possible on this platform, add a PVC to the pod to ensure storage is working
 	var pvcVolumeSource *v1.PersistentVolumeClaimVolumeSource
 	if testCtx.CloudProvider.StorageSupport() {
-		pvc, err := testCtx.CloudProvider.CreatePVC(testCtx.client.K8s)
+		pvc, err := testCtx.CloudProvider.CreatePVC(testCtx.client.K8s, testCtx.workloadNamespace)
 		require.NoError(t, err)
+		defer testCtx.client.K8s.CoreV1().PersistentVolumeClaims(testCtx.workloadNamespace).Delete(context.TODO(),
+			pvc.GetName(), metav1.DeleteOptions{})
 		pvcVolumeSource = &v1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.GetName()}
 	}
 	for i := 0; i < deploymentRetries; i++ {
