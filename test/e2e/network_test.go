@@ -232,12 +232,6 @@ func testNorthSouthNetworking(t *testing.T) {
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
 
-	// Ignore the application ingress load balancer test for None and vSphere platforms as it has to be created manually
-	// https://docs.openshift.com/container-platform/4.9/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html
-	if testCtx.CloudProvider.GetType() == config.VSpherePlatformType ||
-		testCtx.CloudProvider.GetType() == config.NonePlatformType {
-		t.Skipf("NorthSouthNetworking test is disabled for platform %s", testCtx.CloudProvider.GetType())
-	}
 	// Require at least one node to test
 	require.NotEmpty(t, gc.allNodes())
 
@@ -262,6 +256,16 @@ func testNorthSouthNetworking(t *testing.T) {
 	require.NoError(t, err, "could not create Windows Server deployment")
 	defer testCtx.deleteDeployment(winServerDeployment.GetName())
 	testCtx.collectDeploymentLogs(winServerDeployment)
+
+	// Ignore the application ingress load balancer test for None and vSphere platforms as the load balancer
+	// has to be created manually.
+	// https://docs.openshift.com/container-platform/4.9/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html
+	// The deployments still should be created as their ability to be deployed with a PVC tests that persistent storage
+	// is working.
+	if testCtx.CloudProvider.GetType() == config.VSpherePlatformType ||
+		testCtx.CloudProvider.GetType() == config.NonePlatformType {
+		t.Skipf("NorthSouthNetworking test is disabled for platform %s", testCtx.CloudProvider.GetType())
+	}
 	// Assert that we can successfully GET the webserver
 	err = testCtx.getThroughLoadBalancer(winServerDeployment)
 	assert.NoError(t, err, "unable to GET the webserver through a load balancer")
