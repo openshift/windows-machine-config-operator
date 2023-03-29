@@ -65,7 +65,7 @@ func retrieveLog(nodeName, srcPath, destDir string) error {
 	if err != nil {
 		var exitError *exec.ExitError
 		stderr := ""
-		if errors.As(err, exitError) {
+		if errors.As(err, &exitError) {
 			stderr = string(exitError.Stderr)
 		}
 		return fmt.Errorf("oc adm node-logs failed with exit code %s and output: %s: %s", err, string(out), stderr)
