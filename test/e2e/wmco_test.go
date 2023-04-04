@@ -46,6 +46,7 @@ func TestWMCO(t *testing.T) {
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
 	t.Run("create", creationTestSuite)
 	t.Run("network", testNetwork)
+	t.Run("storage", testStorage)
 	t.Run("service reconciliation", testDependentServiceChanges)
 	t.Run("upgrade", upgradeTestSuite)
 	// The reconfigurationTestSuite must be run directly before the deletionTestSuite. This is because we do not

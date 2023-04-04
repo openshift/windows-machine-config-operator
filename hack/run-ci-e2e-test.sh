@@ -154,6 +154,8 @@ get_WMCO_logs
 if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
+  printf "\n####### Testing storage #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/storage -v -timeout=10m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
   printf "\n####### Testing service reconciliation #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/service_reconciliation -v -timeout=20m -args $BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE
 fi
