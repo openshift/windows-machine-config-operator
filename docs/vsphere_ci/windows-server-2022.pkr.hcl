@@ -134,12 +134,19 @@ build {
     script            = "scripts/install-updates.ps1"
   }
 
+  # Disable IPv6
+  provisioner "powershell" {
+    elevated_password = "${var.vm-elevated-password}"
+    elevated_user     = "${var.vm-elevated-user}"
+    script            = "scripts/disable-ipv6.ps1"
+  }
+
   # Restart again to apply the updates
   provisioner "windows-restart" {
     restart_timeout = "1h"
   }
 
-  # Pause to allow Windows to coalesce and executy a dummy command
+  # Pause to allow Windows to coalesce and execute a dummy command
   provisioner "powershell" {
     elevated_password = "${var.vm-elevated-password}"
     elevated_user     = "${var.vm-elevated-user}"
