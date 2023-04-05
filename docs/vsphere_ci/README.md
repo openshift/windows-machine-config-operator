@@ -30,13 +30,15 @@ Please ensure the `scripts` directory is present in the location where you are
 running Packer from and has the following files:
 
     - authorized_keys
-    - install-vm-tools.cmd
     - configure-vm-tools.ps1
-    - install-openssh.ps1
+    - disable-ipv6.ps1
     - install-firewall-rules.ps1
+    - install-openssh.ps1
     - install-updates.ps1
+    - install-vm-tools.cmd
+    - rename-computer.ps1
 
-In addition the `answer-file` directory is present at the same level as the `scripts` directory and has the following
+In addition, the `answer-file` directory is present at the same level as the `scripts` directory and has the following
 files:
 
     - autounattend.xml
@@ -48,19 +50,21 @@ deploying WMCO, this private key will be provided by the user in the form of a S
 
 The [autounattend.xml](scripts/autounattend.xml) file automates the Windows installation and  must be edited to update the
 value of `WindowsPassword` with a user provided password. autounattend.xml specifies that the following steps should
-occur after the basic install:
+occur after the basic installation:
 
 - Runs `install-vm-tools.cmd` script which installs VMWare tools
 - Runs `configure-vm-tools.ps1` script which configures VMWare tools
 - Runs `install-openssh.ps1` script which installs and configures OpenSSH Server
 
-Packer takes over after after the initial install and runs [provisioners](https://www.packer.io/docs/provisioners) that
+Packer takes over after the initial install and runs [provisioners](https://www.packer.io/docs/provisioners) that
 performs the following:
-- Runs `install-firewall-rules.ps1` script which configures the firewall rules
-- Runs `install-updates.ps1` script which installs the latest updates
+- Creates `C:\rename-computer.ps1` that will randomize the hostname on first boot
+- Runs `install-firewall-rules.ps1` to configure the firewall rules
+- Runs `install-updates.ps1` to install the latest updates
 - Reboot to apply the updates
-- Runs `install-updates.ps1` script again to ensure we are installing all updates as some Windows updates requires
+- Runs `install-updates.ps1` again to ensure we are installing all updates as some Windows updates requires
   reboots
+- Runs `disable-ipv6.ps1` to disable IPv6 at the OS level
 - Reboot again to apply the updates
 - Pauses to wait for the VM to coalesce
 
