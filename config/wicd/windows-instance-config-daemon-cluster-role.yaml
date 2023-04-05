@@ -12,3 +12,4 @@ rules:
       - watch
       - get
       - patch
+      - delete
