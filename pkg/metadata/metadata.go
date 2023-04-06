@@ -117,7 +117,6 @@ func RemoveVersionAnnotation(ctx context.Context, c client.Client, node core.Nod
 // WaitForVersionAnnotation checks if the node object has equivalent version and desiredVersion annotations.
 // Waits for retry.Interval seconds and returns an error if the version annotation does not appear in that time frame.
 func WaitForVersionAnnotation(ctx context.Context, c client.Client, nodeName string) error {
-	var found bool
 	node := &core.Node{}
 	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		err := c.Get(ctx, kubeTypes.NamespacedName{Name: nodeName}, node)
@@ -130,7 +129,7 @@ func WaitForVersionAnnotation(ctx context.Context, c client.Client, nodeName str
 		}
 		return node.Annotations[VersionAnnotation] == desiredVer, nil
 	})
-	if !found && err != nil {
+	if err != nil {
 		return fmt.Errorf("timeout waiting for %s and %s annotations to match on node %s: %w", VersionAnnotation,
 			DesiredVersionAnnotation, nodeName, err)
 	}
