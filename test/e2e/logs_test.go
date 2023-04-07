@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -47,7 +47,7 @@ func testNodeLogs(t *testing.T) {
 						return false, nil
 					}
 					if logInfo.Size() == 0 {
-						return true, errors.Wrap(err, "log file should not be empty")
+						return true, fmt.Errorf("log file should not be empty")
 					}
 					return true, nil
 				})
@@ -77,7 +77,7 @@ func retrieveLog(nodeName, srcPath, destDir string) error {
 	}
 	err = os.MkdirAll(filepath.Join(destDir, splitPath[0]), os.ModePerm)
 	if err != nil {
-		return errors.Wrap(err, "failed to create log directory")
+		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 	outputFile := filepath.Join(destDir, splitPath[0], filepath.Base(srcPath))
 	return ioutil.WriteFile(outputFile, out, os.ModePerm)

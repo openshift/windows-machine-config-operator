@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 	core "k8s.io/api/core/v1"
@@ -124,7 +123,7 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 func RunController(ctx context.Context, apiServerURL, saCA, saToken, watchNamespace string) error {
 	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
 	if err != nil {
-		return errors.Wrap(err, "error using service account to build config")
+		return fmt.Errorf("error using service account to build config: %w", err)
 	}
 	// This is a client that reads directly from the server, not a cached client. This is required to be used here, as
 	// the cached client, created by ctrl.NewManager() will not be functional until the manager is started.
@@ -139,7 +138,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken, watchNamesp
 	}
 	node, err := GetAssociatedNode(directClient, addrs)
 	if err != nil {
-		return errors.Wrap(err, "could not find node object associated with this instance")
+		return fmt.Errorf("could not find node object associated with this instance: %w", err)
 	}
 
 	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
@@ -148,7 +147,7 @@ func RunController(ctx context.Context, apiServerURL, saCA, saToken, watchNamesp
 		Logger:    klog.NewKlogr(),
 	})
 	if err != nil {
-		return errors.Wrap(err, "unable to start manager")
+		return fmt.Errorf("unable to start manager: %w", err)
 	}
 	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{Client: ctrlMgr.GetClient()})
 	if err != nil {
@@ -254,7 +253,7 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	}
 	// Version annotation is the indicator that the node was fully configured by this version of the services ConfigMap
 	if err = metadata.ApplyVersionAnnotation(sc.ctx, sc.client, node, desiredVersion); err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "error updating version annotation on node %s", sc.nodeName)
+		return ctrl.Result{}, fmt.Errorf("error updating version annotation on node %s: %w", sc.nodeName, err)
 	}
 	return ctrl.Result{}, nil
 }
@@ -264,7 +263,7 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 func (sc *ServiceController) reconcileServices(services []servicescm.Service) error {
 	existingSvcs, err := sc.GetServices()
 	if err != nil {
-		return errors.Wrap(err, "could not determine existing Windows services")
+		return fmt.Errorf("could not determine existing Windows services: %w", err)
 	}
 	for _, service := range services {
 		var winSvcObj winsvc.Service
@@ -329,7 +328,7 @@ func (sc *ServiceController) reconcileService(service winsvc.Service, expected s
 		}
 		err = service.UpdateConfig(config)
 		if err != nil {
-			return errors.Wrap(err, "error updating service config")
+			return fmt.Errorf("error updating service config: %w", err)
 		}
 	}
 	// always ensure service is started
@@ -385,7 +384,7 @@ func (sc *ServiceController) expectedServiceCommand(expected servicescm.Service)
 			}
 		}
 		if nodeIPValue == "" {
-			return "", errors.New("unable to find IPv4 address to use as Node IP for this instance")
+			return "", fmt.Errorf("unable to find IPv4 address to use as Node IP for this instance")
 		}
 		expectedCmd = strings.ReplaceAll(expectedCmd, services.NodeIPVar, nodeIPValue)
 	}
@@ -411,13 +410,13 @@ func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[s
 			return nil, err
 		}
 		if len(values) == 0 {
-			return nil, errors.Wrapf(err, "expected node value %s missing", nodeVar.NodeObjectJsonPath)
+			return nil, fmt.Errorf("expected node value %s missing", nodeVar.NodeObjectJsonPath)
 		}
 		if len(values) > 1 {
-			return nil, errors.Wrapf(err, "jsonpath %s returned too many results", nodeVar.NodeObjectJsonPath)
+			return nil, fmt.Errorf("jsonpath %s returned too many results", nodeVar.NodeObjectJsonPath)
 		}
 		if len(values[0]) != 1 || values[0][0].Kind() != reflect.String {
-			return nil, errors.Wrapf(err, "unexpected value type for %s", nodeVar.NodeObjectJsonPath)
+			return nil, fmt.Errorf("unexpected value type for %s", nodeVar.NodeObjectJsonPath)
 		}
 		vars[nodeVar.Name] = values[0][0].String()
 	}
@@ -431,7 +430,7 @@ func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) 
 	for _, script := range svc.PowershellPreScripts {
 		out, err := sc.psCmdRunner.Run(script.Path)
 		if err != nil {
-			return nil, errors.Wrapf(err, "could not resolve PowerShell variable %s", script.VariableName)
+			return nil, fmt.Errorf("could not resolve PowerShell variable %s: %w", script.VariableName, err)
 		}
 		if script.VariableName != "" {
 			vars[script.VariableName] = strings.TrimSpace(out)
@@ -530,7 +529,7 @@ func findNodeByAddress(nodes *core.NodeList, localAddrs []net.Addr) (*core.Node,
 			return node, nil
 		}
 	}
-	return nil, errors.New("unable to find associated node")
+	return nil, fmt.Errorf("unable to find associated node")
 }
 
 // slicesEquivalent returns true if the slices have the same content, or if they both have no content

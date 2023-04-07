@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -9,7 +10,6 @@ import (
 	oconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	mclient "github.com/openshift/client-go/machine/clientset/versioned/typed/machine/v1beta1"
-	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,18 +75,18 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 	// specifically being watched by controllers in the operator.
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
-		return nil, errors.Wrap(err, "error creating kubernetes clientset")
+		return nil, fmt.Errorf("error creating kubernetes clientset: %w", err)
 	}
 
 	machineClient, err := mclient.NewForConfig(mgr.GetConfig())
 	if err != nil {
-		return nil, errors.Wrap(err, "error creating machine client")
+		return nil, fmt.Errorf("error creating machine client: %w", err)
 	}
 
 	// Initialize prometheus configuration
 	pc, err := metrics.NewPrometheusNodeConfig(clientset, watchNamespace)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to initialize Prometheus configuration")
+		return nil, fmt.Errorf("unable to initialize Prometheus configuration: %w", err)
 	}
 
 	return &WindowsMachineReconciler{
@@ -191,14 +191,14 @@ func (r *WindowsMachineReconciler) isValidMachine(obj client.Object) bool {
 
 	// If this function is called on an object that equals nil, return false
 	if obj == nil {
-		r.log.Error(errors.New("Machine object cannot be nil"), "invalid Machine", "object", obj)
+		r.log.Error(fmt.Errorf("machine object cannot be nil"), "invalid Machine", "object", obj)
 		return false
 	}
 
 	var ok bool
 	machine, ok = obj.(*mapi.Machine)
 	if !ok {
-		r.log.Error(errors.New("unable to typecast object to Machine"), "invalid Machine", "object", obj)
+		r.log.Error(fmt.Errorf("unable to typecast object to Machine"), "invalid Machine", "object", obj)
 		return false
 	}
 	if machine.Status.Phase == nil {
@@ -239,7 +239,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret},
 		r.client)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "unable to get signer from secret %s", request.NamespacedName)
+		return ctrl.Result{}, fmt.Errorf("unable to get signer from secret %s: %w", request.NamespacedName, err)
 	}
 
 	// Fetch the Machine instance
@@ -282,7 +282,8 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 				log.Info("the node associated with this machine does not exist, no-op", "name", machine.GetName())
 				return ctrl.Result{}, nil
 			}
-			return ctrl.Result{}, errors.Wrapf(err, "could not get node associated with machine %s", machine.GetName())
+			return ctrl.Result{}, fmt.Errorf("could not get node associated with machine %s: %w", machine.GetName(),
+				err)
 		}
 
 		if _, present := node.Annotations[metadata.VersionAnnotation]; present {
@@ -292,7 +293,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 				log.Info("deleting machine")
 				deletionAllowed, err := r.isAllowedDeletion(machine)
 				if err != nil {
-					return ctrl.Result{}, errors.Wrapf(err, "unable to determine if Machine can be deleted")
+					return ctrl.Result{}, fmt.Errorf("unable to determine if Machine can be deleted: %w", err)
 				}
 				if !deletionAllowed {
 					log.Info("machine deletion restricted", "maxUnhealthyCount", maxUnhealthyCount)
@@ -308,7 +309,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 				// configure Prometheus when we have already configured Windows Nodes. This is required to update
 				// Endpoints object if it gets reverted when the operator pod restarts.
 				if err := r.prometheusNodeConfig.Configure(); err != nil {
-					return ctrl.Result{}, errors.Wrap(err, "unable to configure Prometheus")
+					return ctrl.Result{}, fmt.Errorf("unable to configure Prometheus: %w", err)
 				}
 				return ctrl.Result{}, nil
 			}
@@ -318,7 +319,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 		// configure Prometheus when a machine is not in `Running` or `Provisioned` phase. This configuration is
 		// required to update Endpoints object when Windows machines are being deleted.
 		if err := r.prometheusNodeConfig.Configure(); err != nil {
-			return ctrl.Result{}, errors.Wrap(err, "unable to configure Prometheus")
+			return ctrl.Result{}, fmt.Errorf("unable to configure Prometheus: %w", err)
 		}
 		// Machine is not in provisioned or running state, nothing we should do as of now
 		return ctrl.Result{}, nil
@@ -326,26 +327,26 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 
 	// validate userData secret
 	if err := r.validateUserData(); err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "error validating userData secret")
+		return ctrl.Result{}, fmt.Errorf("error validating userData secret: %w", err)
 	}
 
 	// Get the IP address associated with the Windows machine, if not error out to requeue again
 	ipAddress, err := getInternalIPAddress(machine.Status.Addresses)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "invalid machine %s", machine.Name)
+		return ctrl.Result{}, fmt.Errorf("invalid machine %s: %w", machine.Name, err)
 	}
 
 	// Get the instance ID associated with the Windows machine.
 	providerID := *machine.Spec.ProviderID
 	if len(providerID) == 0 {
-		return ctrl.Result{}, errors.Errorf("empty provider ID associated with machine %s", machine.Name)
+		return ctrl.Result{}, fmt.Errorf("empty provider ID associated with machine %s", machine.Name)
 	}
 	// Ex: aws:///us-east-1e/i-078285fdadccb2eaa
 	// We always want the last entry which is the instanceID, and the first which is the provider name.
 	providerTokens := strings.Split(providerID, "/")
 	instanceID := providerTokens[len(providerTokens)-1]
 	if len(instanceID) == 0 {
-		return ctrl.Result{}, errors.Errorf("unable to get instance ID from provider ID for machine %s", machine.Name)
+		return ctrl.Result{}, fmt.Errorf("unable to get instance ID from provider ID for machine %s", machine.Name)
 	}
 
 	log.Info("processing", "address", ipAddress)
@@ -368,7 +369,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 		"Machine %s configured successfully", machine.Name)
 	// configure Prometheus after a Windows machine is configured as a Node.
 	if err := r.prometheusNodeConfig.Configure(); err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "unable to configure Prometheus")
+		return ctrl.Result{}, fmt.Errorf("unable to configure Prometheus: %w", err)
 	}
 	return ctrl.Result{}, nil
 }
@@ -425,12 +426,12 @@ func (r *WindowsMachineReconciler) configureMachine(ipAddress, instanceID, machi
 	}
 	encryptedUsername, err := crypto.EncryptToJSONString(username, privateKeyBytes)
 	if err != nil {
-		return errors.Wrapf(err, "unable to encrypt username for instance %s", instanceInfo.Address)
+		return fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err)
 	}
 
 	if err := r.ensureInstanceIsUpToDate(instanceInfo, nil,
 		map[string]string{UsernameAnnotation: encryptedUsername}); err != nil {
-		return errors.Wrapf(err, "unable to configure instance %s", instanceID)
+		return fmt.Errorf("unable to configure instance %s: %w", instanceID, err)
 	}
 
 	return nil
@@ -440,14 +441,14 @@ func (r *WindowsMachineReconciler) configureMachine(ipAddress, instanceID, machi
 // key bytes.
 func (r *WindowsMachineReconciler) validateUserData() error {
 	if r.signer == nil {
-		return errors.New("signer must not be nil")
+		return fmt.Errorf("signer must not be nil")
 	}
 
 	userDataSecret := &core.Secret{}
 	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: secrets.UserDataSecret,
 		Namespace: cluster.MachineAPINamespace}, userDataSecret)
 	if err != nil {
-		return errors.Wrap(err, "could not find Windows userData secret in required namespace")
+		return fmt.Errorf("could not find Windows userData secret in required namespace: %w", err)
 	}
 
 	secretData := string(userDataSecret.Data["userData"][:])
@@ -456,7 +457,7 @@ func (r *WindowsMachineReconciler) validateUserData() error {
 		return err
 	}
 	if string(desiredUserDataSecret.Data["userData"][:]) != secretData {
-		return errors.Errorf("invalid content for userData secret")
+		return fmt.Errorf("invalid content for userData secret")
 	}
 	return nil
 }
@@ -465,21 +466,21 @@ func (r *WindowsMachineReconciler) validateUserData() error {
 // minHealthyCount
 func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) (bool, error) {
 	if len(machine.OwnerReferences) == 0 {
-		return false, errors.New("Machine has no owner reference")
+		return false, fmt.Errorf("machine has no owner reference")
 	}
 	machinesetName := machine.OwnerReferences[0].Name
 
 	machines, err := r.machineClient.Machines(cluster.MachineAPINamespace).List(context.TODO(),
 		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows"})
 	if err != nil {
-		return false, errors.Wrap(err, "cannot list Machines")
+		return false, fmt.Errorf("cannot list Machines: %w", err)
 	}
 
 	// get Windows MachineSet
 	windowsMachineSet, err := r.machineClient.MachineSets(cluster.MachineAPINamespace).Get(context.TODO(),
 		machinesetName, meta.GetOptions{})
 	if err != nil {
-		return false, errors.Wrap(err, "cannot get MachineSet")
+		return false, fmt.Errorf("cannot get MachineSet: %w", err)
 	}
 
 	// Allow deletion if there is only one machine in the Windows MachineSet
@@ -533,7 +534,7 @@ func (r *WindowsMachineReconciler) isWindowsMachineHealthy(machine *mapi.Machine
 func getInternalIPAddress(addresses []core.NodeAddress) (string, error) {
 	// Get the IP address associated with the Windows machine, if not error out to requeue again
 	if len(addresses) == 0 {
-		return "", errors.New("no IP addresses defined")
+		return "", fmt.Errorf("no IP addresses defined")
 	}
 	for _, address := range addresses {
 		// Only return the IPv4 address
@@ -541,5 +542,5 @@ func getInternalIPAddress(addresses []core.NodeAddress) (string, error) {
 			return address.Address, nil
 		}
 	}
-	return "", errors.New("no internal IP address associated")
+	return "", fmt.Errorf("no internal IP address associated")
 }
