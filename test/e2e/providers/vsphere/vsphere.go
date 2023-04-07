@@ -11,6 +11,9 @@ import (
 	mapi "github.com/openshift/api/machine/v1beta1"
 	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
+	storage "k8s.io/api/storage/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	client "k8s.io/client-go/kubernetes"
 
@@ -18,7 +21,10 @@ import (
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
 )
 
-const defaultCredentialsSecretName = "vsphere-cloud-credentials"
+const (
+	defaultCredentialsSecretName = "vsphere-cloud-credentials"
+	storageClassName             = "e2e"
+)
 
 // Provider is a provider struct for testing vSphere
 type Provider struct {
@@ -134,9 +140,50 @@ func (p *Provider) GetType() config.PlatformType {
 }
 
 func (p *Provider) StorageSupport() bool {
-	return false
+	return true
 }
 
-func (p *Provider) CreatePVC(_ client.Interface) (*core.PersistentVolumeClaim, error) {
-	return nil, fmt.Errorf("storage not supported on vSphere")
+// CreatePVC creates a PVC for a dynamically provisioned volume
+func (p *Provider) CreatePVC(client client.Interface, namespace string) (*core.PersistentVolumeClaim, error) {
+	// Use a StorageClass to allow for dynamic volume provisioning
+	// https://docs.openshift.com/container-platform/4.12/storage/dynamic-provisioning.html#about_dynamic-provisioning
+	sc, err := p.ensureStorageClass(client)
+	if err != nil {
+		return nil, fmt.Errorf("unable to ensure a usable StorageClass is created: %w", err)
+	}
+	pvcSpec := core.PersistentVolumeClaim{
+		ObjectMeta: meta.ObjectMeta{
+			GenerateName: "e2e-",
+		},
+		Spec: core.PersistentVolumeClaimSpec{
+			AccessModes: []core.PersistentVolumeAccessMode{core.ReadWriteOnce},
+			Resources: core.ResourceRequirements{
+				Requests: core.ResourceList{core.ResourceStorage: resource.MustParse("2Gi")},
+			},
+			StorageClassName: &sc.Name,
+		},
+	}
+	return client.CoreV1().PersistentVolumeClaims(namespace).Create(context.TODO(), &pvcSpec, meta.CreateOptions{})
+}
+
+// ensureStorageClass ensures a vsphere-volume NTFS storage class exists for use with in-tree storage
+func (p *Provider) ensureStorageClass(client client.Interface) (*storage.StorageClass, error) {
+	sc, err := client.StorageV1().StorageClasses().Get(context.TODO(), storageClassName, meta.GetOptions{})
+	if err == nil {
+		return sc, nil
+	} else if !k8sapierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("error getting storage class '%s': %w", storageClassName, err)
+	}
+	volumeBinding := storage.VolumeBindingImmediate
+	reclaimPolicy := core.PersistentVolumeReclaimDelete
+	sc = &storage.StorageClass{
+		ObjectMeta: meta.ObjectMeta{
+			Name: storageClassName,
+		},
+		Provisioner:       "kubernetes.io/vsphere-volume",
+		Parameters:        map[string]string{"fstype": "ntfs"},
+		ReclaimPolicy:     &reclaimPolicy,
+		VolumeBindingMode: &volumeBinding,
+	}
+	return client.StorageV1().StorageClasses().Create(context.TODO(), sc, meta.CreateOptions{})
 }

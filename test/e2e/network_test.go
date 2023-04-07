@@ -255,15 +255,8 @@ func testNorthSouthNetworking(t *testing.T) {
 	// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
 	// So trying multiple times
 	var winServerDeployment *appsv1.Deployment
-	// If possible on this platform, add a PVC to the pod to ensure storage is working
-	var pvcVolumeSource *v1.PersistentVolumeClaimVolumeSource
-	if testCtx.CloudProvider.StorageSupport() {
-		pvc, err := testCtx.CloudProvider.CreatePVC(testCtx.client.K8s)
-		require.NoError(t, err)
-		pvcVolumeSource = &v1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.GetName()}
-	}
 	for i := 0; i < deploymentRetries; i++ {
-		winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver", nil, pvcVolumeSource)
+		winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver", nil, nil)
 		if err == nil {
 			break
 		}

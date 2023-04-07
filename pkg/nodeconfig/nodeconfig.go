@@ -526,6 +526,8 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 			"SCTPSupport":                    true,
 			"ServiceNodeExclusion":           true,
 			"SupportPodPidsLimit":            true,
+			"CSIMigrationAzureFile":          false,
+			"CSIMigrationvSphere":            false,
 		},
 		ContainerLogMaxSize: "50Mi",
 		SystemReserved: map[string]string{
