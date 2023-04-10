@@ -283,7 +283,7 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	kubeletArgs, err := ign.GetKubeletArgs()
+	kubeletArgs, err := ign.GetKubeletArgs(nc.platformType == configv1.VSpherePlatformType)
 	if err != nil {
 		return nil, err
 	}
@@ -528,6 +528,7 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 			"SCTPSupport":                    true,
 			"ServiceNodeExclusion":           true,
 			"SupportPodPidsLimit":            true,
+			"CSIMigrationvSphere":            false,
 		},
 		ContainerLogMaxSize: "50Mi",
 		SystemReserved: map[string]string{

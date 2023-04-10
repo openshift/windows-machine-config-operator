@@ -102,7 +102,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, fmt.Errorf("error creating ignition object: %w", err)
 	}
-	argsFromIgnition, err := ign.GetKubeletArgs()
+	argsFromIgnition, err := ign.GetKubeletArgs(clusterConfig.Platform() == config.VSpherePlatformType)
 	if err != nil {
 		return nil, err
 	}
