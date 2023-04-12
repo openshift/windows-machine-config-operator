@@ -201,6 +201,7 @@ func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]stri
 	containerdEndpointValue := "npipe://./pipe/containerd-containerd"
 	certDirectory := "c:\\var\\lib\\kubelet\\pki\\"
 	windowsTaints := "os=Windows:NoSchedule"
+	windowsPriorityClass := "ABOVE_NORMAL_PRIORITY_CLASS"
 	// TODO: Removal of deprecated flags to be done in https://issues.redhat.com/browse/WINC-924
 	kubeletArgs := []string{
 		"--config=" + windows.KubeletConfigPath,
@@ -217,6 +218,10 @@ func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]stri
 		"--container-runtime=remote",
 		"--container-runtime-endpoint=" + containerdEndpointValue,
 		"--resolv-conf=",
+		// Allows the kubelet process to get more CPU time slices when compared to other processes running on the
+		// Windows host.
+		// See: https://kubernetes.io/docs/concepts/configuration/windows-resource-management/#resource-management-cpu
+		"--windows-priorityclass=" + windowsPriorityClass,
 	}
 
 	kubeletArgs = append(kubeletArgs, klogVerbosityArg(debug))
