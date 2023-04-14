@@ -304,9 +304,9 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instance.I
 	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
 		Namespace: r.watchNamespace}}
 	for _, instanceInfo := range instances {
-		// When platform type is none, kubelet will pick a random interface to use for the Node's IP. In that case we
+		// When platform type is none or Nutanix, kubelet will pick a random interface to use for the Node's IP. In that case we
 		// should override that with the IP that the user is providing via the ConfigMap.
-		instanceInfo.SetNodeIP = r.platform == config.NonePlatformType
+		instanceInfo.SetNodeIP = r.platform == config.NonePlatformType || r.platform == config.NutanixPlatformType
 		encryptedUsername, err := crypto.EncryptToJSONString(instanceInfo.Username, privateKeyBytes)
 		if err != nil {
 			return fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err)

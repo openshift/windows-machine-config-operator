@@ -363,6 +363,7 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, ig
 			machineStateTimeLimit = time.Minute * 20
 		}
 	}
+	log.Printf("waiting (timeout: %s) for %d Windows Machines to reach phase %q", machineStateTimeLimit.String(), machineCount, phase)
 
 	listOptions := metav1.ListOptions{LabelSelector: clusterinfo.MachineE2ELabel + "=true"}
 	if ignoreLabel {
