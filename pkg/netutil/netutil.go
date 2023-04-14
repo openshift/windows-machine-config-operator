@@ -1,9 +1,8 @@
 package netutil
 
 import (
+	"fmt"
 	"net"
-
-	"github.com/pkg/errors"
 )
 
 // ResolveToIPv4Address returns an IPv4 address associated with the given address. An error will be thrown if given
@@ -13,7 +12,7 @@ func ResolveToIPv4Address(address string) (string, error) {
 		// Address is either an IPv6 or IPv4 address
 		ipv4 := ip.To4()
 		if ipv4 == nil {
-			return "", errors.Errorf("not an IPv4 network address: %s", ip.String())
+			return "", fmt.Errorf("not an IPv4 network address: %s", ip.String())
 		}
 		return ipv4.String(), nil
 	}
@@ -21,7 +20,7 @@ func ResolveToIPv4Address(address string) (string, error) {
 	// DNS address in this case
 	ips, err := net.LookupIP(address)
 	if err != nil {
-		return "", errors.Wrapf(err, "lookup of address %s failed", address)
+		return "", fmt.Errorf("lookup of address %s failed: %w", address, err)
 	}
 	// Get first IPv4 address returned
 	for _, returnedIP := range ips {
@@ -29,5 +28,5 @@ func ResolveToIPv4Address(address string) (string, error) {
 			return returnedIP.String(), nil
 		}
 	}
-	return "", errors.Errorf("%s does not resolve to an IPv4 address", address)
+	return "", fmt.Errorf("%s does not resolve to an IPv4 address", address)
 }

@@ -3,7 +3,8 @@
 package winsvc
 
 import (
-	"github.com/pkg/errors"
+	"fmt"
+
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -25,7 +26,7 @@ func WaitForState(service Service, state svc.State) error {
 	return wait.PollImmediate(retry.WindowsAPIInterval, retry.ResourceChangeTimeout, func() (bool, error) {
 		status, err := service.Query()
 		if err != nil {
-			return false, errors.Wrap(err, "error querying service state")
+			return false, fmt.Errorf("error querying service state: %w", err)
 		}
 		return status.State == state, nil
 	})

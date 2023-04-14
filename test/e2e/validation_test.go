@@ -13,7 +13,6 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	operators "github.com/operator-framework/api/pkg/operators/v2"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	batch "k8s.io/api/batch/v1"
@@ -146,11 +145,11 @@ func (tc *testContext) getKubeletServiceBinPath(node *core.Node) (string, error)
 		"ConvertTo-Csv"
 	addr, err := controllers.GetAddress(node.Status.Addresses)
 	if err != nil {
-		return "", errors.Wrap(err, "error getting node address")
+		return "", fmt.Errorf("error getting node address: %w", err)
 	}
 	out, err := tc.runPowerShellSSHJob("kubelet-query", command, addr)
 	if err != nil {
-		return "", errors.Wrap(err, "error querying kubelet service")
+		return "", fmt.Errorf("error querying kubelet service: %w", err)
 	}
 	return out, nil
 }
@@ -182,7 +181,7 @@ func getWMCOVersion() (string, error) {
 	cmd := exec.Command(wmcoPath, "version")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", errors.Wrapf(err, "error running %s", cmd.String())
+		return "", fmt.Errorf("error running %s: %w", cmd.String(), err)
 	}
 	// out is formatted like:
 	// windows-machine-config-operator version: "5.0.0-1b759bf1-dirty", go version: "go1.17.5 linux/amd64"
@@ -222,7 +221,7 @@ func (tc *testContext) ensureTestRunnerSA() error {
 	_, err := tc.client.K8s.CoreV1().ServiceAccounts(tc.workloadNamespace).Create(context.TODO(), &sa,
 		meta.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return errors.Wrap(err, "unable to create SA")
+		return fmt.Errorf("unable to create SA: %w", err)
 	}
 	return nil
 }
@@ -244,7 +243,7 @@ func (tc *testContext) ensureTestRunnerRole() error {
 	}
 	_, err := tc.client.K8s.RbacV1().Roles(tc.workloadNamespace).Create(context.TODO(), &role, meta.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return errors.Wrap(err, "unable to create role")
+		return fmt.Errorf("unable to create role: %w", err)
 	}
 	return nil
 }
@@ -269,7 +268,7 @@ func (tc *testContext) ensureTestRunnerRoleBinding() error {
 	}
 	_, err := tc.client.K8s.RbacV1().RoleBindings(tc.workloadNamespace).Create(context.TODO(), &rb, meta.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return errors.Wrap(err, "unable to create role")
+		return fmt.Errorf("unable to create role: %w", err)
 	}
 	return nil
 }
@@ -277,13 +276,13 @@ func (tc *testContext) ensureTestRunnerRoleBinding() error {
 // sshSetup creates all the Kubernetes resources required to SSH into a Windows node
 func (tc *testContext) sshSetup() error {
 	if err := tc.ensureTestRunnerSA(); err != nil {
-		return errors.Wrap(err, "error ensuring SA created")
+		return fmt.Errorf("error ensuring SA created: %w", err)
 	}
 	if err := tc.ensureTestRunnerRole(); err != nil {
-		return errors.Wrap(err, "error ensuring Role created")
+		return fmt.Errorf("error ensuring Role created: %w", err)
 	}
 	if err := tc.ensureTestRunnerRoleBinding(); err != nil {
-		return errors.Wrap(err, "error ensuring RoleBinding created")
+		return fmt.Errorf("error ensuring RoleBinding created: %w", err)
 	}
 	return nil
 }
@@ -362,17 +361,17 @@ func (tc *testContext) runJob(name string, command []string) (string, error) {
 	jobsClient := tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace)
 	job, err := jobsClient.Create(context.TODO(), job, meta.CreateOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "error creating job")
+		return "", fmt.Errorf("error creating job: %w", err)
 	}
 
 	// Wait for the job to complete then gather and return the pod output
 	if err = tc.waitUntilJobSucceeds(job.GetName()); err != nil {
-		return "", errors.Wrap(err, "error waiting for job to succeed")
+		return "", fmt.Errorf("error waiting for job to succeed: %w", err)
 	}
 	labelSelector := "job-name=" + job.Name
 	logs, err := tc.getLogs(labelSelector)
 	if err != nil {
-		return "", errors.Wrap(err, "error getting logs from job pod")
+		return "", fmt.Errorf("error getting logs from job pod: %w", err)
 	}
 	return logs, nil
 }
@@ -386,13 +385,13 @@ func (tc *testContext) getWinServices(addr string) (map[string]winService, error
 		"ConvertTo-Csv -NoTypeInformation"
 	out, err := tc.runPowerShellSSHJob("get-windows-svc-list", command, addr)
 	if err != nil {
-		return nil, errors.Wrap(err, "error running SSH job")
+		return nil, fmt.Errorf("error running SSH job: %w", err)
 	}
 
 	// Remove the header and trailing whitespace from the command output
 	outSplit := strings.SplitAfterN(out, "\"Name\",\"State\",\"Description\"\r\n", 2)
 	if len(outSplit) != 2 {
-		return nil, errors.New("unexpected command output: " + out)
+		return nil, fmt.Errorf("unexpected command output: " + out)
 	}
 	trimmedList := strings.TrimSpace(outSplit[1])
 
@@ -403,7 +402,7 @@ func (tc *testContext) getWinServices(addr string) (map[string]winService, error
 		// Split into 3 substrings, Name, State, Description. The description can contain a comma, so SplitN is required
 		fields := strings.SplitN(line, ",", 3)
 		if len(fields) != 3 {
-			return nil, errors.New("expected comma separated values, found: " + line)
+			return nil, fmt.Errorf("expected comma separated values, found: " + line)
 		}
 		name := strings.Trim(fields[0], "\"")
 		state := strings.Trim(fields[1], "\"")
@@ -554,7 +553,7 @@ func (tc *testContext) testInvalidServicesCM(cmName string, expected *servicescm
 	// Try to retrieve newly created ConfigMap and validate its contents
 	_, err = tc.waitForValidWindowsServicesConfigMap(cmName, expected)
 	if err != nil {
-		return errors.Wrapf(err, "error waiting for valid ConfigMap %s", cmName)
+		return fmt.Errorf("error waiting for valid ConfigMap %s: %w", cmName, err)
 	}
 	return nil
 }
@@ -572,7 +571,7 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
 				// Retry if the Get() results in a IsNotFound error
 				return false, nil
 			}
-			return false, errors.Wrapf(err, "error retrieving ConfigMap: %s", cmName)
+			return false, fmt.Errorf("error retrieving ConfigMap: %s: %w", cmName, err)
 		}
 		// Here, we've retreived a ConfigMap but still need to ensure it is valid.
 		// If it's not valid, retry in hopes that WMCO will replace it with a valid one as expected.
@@ -583,7 +582,7 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
 		return true, nil
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "error waiting for ConfigMap %s/%s", wmcoNamespace, cmName)
+		return nil, fmt.Errorf("error waiting for ConfigMap %s/%s: %w", wmcoNamespace, cmName, err)
 	}
 	return configMap, nil
 }
@@ -600,10 +599,10 @@ func (tc *testContext) waitForServicesConfigMapDeletion(cmName string) error {
 		if apierrors.IsNotFound(err) {
 			return true, nil
 		}
-		return false, errors.Wrapf(err, "error retrieving ConfigMap: %s", cmName)
+		return false, fmt.Errorf("error retrieving ConfigMap: %s: %w", cmName, err)
 	})
 	if err != nil {
-		return errors.Wrapf(err, "error waiting for ConfigMap deletion %s/%s", wmcoNamespace, cmName)
+		return fmt.Errorf("error waiting for ConfigMap deletion %s/%s: %w", wmcoNamespace, cmName, err)
 	}
 	return nil
 }
@@ -647,7 +646,7 @@ func (tc *testContext) findNodeCSRs(nodeName string) ([]certificates.Certificate
 	csrs, err := tc.client.K8s.CertificatesV1().CertificateSigningRequests().List(context.TODO(),
 		meta.ListOptions{})
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get CSR list")
+		return nil, fmt.Errorf("unable to get CSR list: %w", err)
 	}
 	for _, c := range csrs.Items {
 		// In some cases, a CSR is left in pending state when a new CSR is created
@@ -690,7 +689,7 @@ func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatu
 		return specCheck && statusCheck, nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to verify condition type %s has state %s", operators.Upgradeable, expected)
+		return fmt.Errorf("failed to verify condition type %s has state %s: %w", operators.Upgradeable, expected, err)
 	}
 	return nil
 }
@@ -700,7 +699,7 @@ func (tc *testContext) getOperatorConditionName() (string, error) {
 	deployment, err := tc.client.K8s.AppsV1().Deployments(wmcoNamespace).Get(context.TODO(), resourceName,
 		meta.GetOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "error getting operator deployment")
+		return "", fmt.Errorf("error getting operator deployment: %w", err)
 	}
 	// Get the operator condition name using the deployment spec
 	for _, container := range deployment.Spec.Template.Spec.Containers {
@@ -713,7 +712,7 @@ func (tc *testContext) getOperatorConditionName() (string, error) {
 			}
 		}
 	}
-	return "", errors.Errorf("unable to get operatorCondition name from namespace %s", wmcoNamespace)
+	return "", fmt.Errorf("unable to get operatorCondition name from namespace %s", wmcoNamespace)
 }
 
 // testDependentServiceChanges tests that a Windows service which a running service is dependent on can be reconfigured
@@ -777,7 +776,7 @@ func changeHybridOverlayCommandVerbosity(in string) (string, error) {
 	}
 	originalLogLevel, err := strconv.Atoi(matches[1])
 	if err != nil {
-		return "", errors.Wrapf(err, "could not convert %s into int", matches[1])
+		return "", fmt.Errorf("could not convert %s into int: %w", matches[1], err)
 	}
 	var newLogLevel string
 	if originalLogLevel == 0 {

@@ -1,13 +1,13 @@
 package windows
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -63,7 +63,7 @@ func newSshConnectivity(username, ipAddress string, signer ssh.Signer, logger lo
 		log:       logger,
 	}
 	if err := c.init(); err != nil {
-		return nil, errors.Wrap(err, "error instantiating SSH client")
+		return nil, fmt.Errorf("error instantiating SSH client: %w", err)
 	}
 	return c, nil
 }
@@ -97,7 +97,7 @@ func (c *sshConnectivity) init() error {
 		return false, nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "unable to connect to Windows VM %s", c.ipAddress)
+		return fmt.Errorf("unable to connect to Windows VM %s: %w", c.ipAddress, err)
 	}
 	c.sshClient = sshClient
 	return nil
@@ -106,7 +106,7 @@ func (c *sshConnectivity) init() error {
 // run instantiates a new SSH session and runs the command on the VM and returns the combined stdout and stderr output
 func (c *sshConnectivity) run(cmd string) (string, error) {
 	if c.sshClient == nil {
-		return "", errors.New("run cannot be called with nil SSH client")
+		return "", fmt.Errorf("run cannot be called with nil SSH client")
 	}
 
 	session, err := c.sshClient.NewSession()
@@ -128,7 +128,7 @@ func (c *sshConnectivity) run(cmd string) (string, error) {
 // transfer uses FTP to copy from reader to the remote VM directory, creating the directory if needed
 func (c *sshConnectivity) transfer(reader io.Reader, filename, remoteDir string) error {
 	if c.sshClient == nil {
-		return errors.New("transfer cannot be called with nil SSH client")
+		return fmt.Errorf("transfer cannot be called with nil SSH client")
 	}
 
 	ftp, err := sftp.NewClient(c.sshClient)
@@ -141,18 +141,18 @@ func (c *sshConnectivity) transfer(reader io.Reader, filename, remoteDir string)
 		}
 	}()
 	if err := ftp.MkdirAll(remoteDir); err != nil {
-		return errors.Wrapf(err, "error creating remote directory %s", remoteDir)
+		return fmt.Errorf("error creating remote directory %s: %w", remoteDir, err)
 	}
 
 	remoteFile := remoteDir + "\\" + filename
 	dstFile, err := ftp.Create(remoteFile)
 	if err != nil {
-		return errors.Wrapf(err, "error initializing %s file on Windows VM", remoteFile)
+		return fmt.Errorf("error initializing %s file on Windows VM: %w", remoteFile, err)
 	}
 
 	_, err = io.Copy(dstFile, reader)
 	if err != nil {
-		return errors.Wrapf(err, "error copying %s to the Windows VM", filename)
+		return fmt.Errorf("error copying %s to the Windows VM: %w", filename, err)
 	}
 
 	// Forcefully close the file so that we can execute it later in the case of binaries

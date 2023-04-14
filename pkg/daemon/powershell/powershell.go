@@ -1,9 +1,8 @@
 package powershell
 
 import (
+	"fmt"
 	"os/exec"
-
-	"github.com/pkg/errors"
 )
 
 // CommandRunner runs a given powershell command
@@ -18,7 +17,7 @@ type commandRunner struct{}
 func (r *commandRunner) Run(cmd string) (string, error) {
 	out, err := exec.Command("powershell", "/c", cmd).CombinedOutput()
 	if err != nil {
-		return "", errors.Wrapf(err, "error running command with output %s", string(out))
+		return "", fmt.Errorf("error running command with output %s: %w", string(out), err)
 	}
 	return string(out), nil
 }
