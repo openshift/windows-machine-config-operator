@@ -6,12 +6,12 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"testing"
 
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -188,7 +188,7 @@ func generatePrivateKey() ([]byte, error) {
 	var keyData []byte
 	key, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
-		return nil, fmt.Errorf("error generating key: %w", err)
+		return nil, errors.Wrap(err, "error generating key")
 	}
 	var privateKey = &pem.Block{
 		Type:  "RSA PRIVATE KEY",
@@ -197,7 +197,7 @@ func generatePrivateKey() ([]byte, error) {
 	buf := bytes.NewBuffer(keyData)
 	err = pem.Encode(buf, privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("error encoding generated private key: %w", err)
+		return nil, errors.Wrap(err, "error encoding generated private key")
 	}
 	return buf.Bytes(), nil
 }
@@ -209,7 +209,7 @@ func generatePrivateKey() ([]byte, error) {
 // helps to validate this case.
 func generateBuggyEncryptedString(plaintext string, key []byte) (string, error) {
 	if key == nil {
-		return "", fmt.Errorf("encryption passphrase cannot be nil")
+		return "", errors.New("encryption passphrase cannot be nil")
 	}
 
 	// Prepare PGP block with a wrapper tag around the encrypted data
@@ -217,12 +217,12 @@ func generateBuggyEncryptedString(plaintext string, key []byte) (string, error) 
 	msgBuffer := bytes.NewBuffer(nil)
 	encoder, err := armor.Encode(msgBuffer, tag, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create armor block with tag %s: %w", tag, err)
+		return "", errors.Wrapf(err, "failed to create armor block with tag %s", tag)
 	}
 
 	writer, err := openpgp.SymmetricallyEncrypt(encoder, key, nil, nil)
 	if err != nil {
-		return "", fmt.Errorf("failure during encryption: %w", err)
+		return "", errors.Wrap(err, "failure during encryption")
 	}
 	_, err = writer.Write([]byte(plaintext))
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -185,7 +186,7 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 	for src, dest := range srcDestPairs {
 		f, err := payload.NewFileInfo(src)
 		if err != nil {
-			return nil, fmt.Errorf("could not create FileInfo object for file %s: %w", src, err)
+			return nil, errors.Wrapf(err, "could not create FileInfo object for file %s", src)
 		}
 		files[f] = dest
 	}
@@ -260,7 +261,7 @@ func New(clusterDNS string, instanceInfo *instance.Info, signer ssh.Signer) (Win
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
 	if err != nil {
-		return nil, fmt.Errorf("unable to setup VM %s sshConnectivity: %w", instanceInfo.Address, err)
+		return nil, errors.Wrapf(err, "unable to setup VM %s sshConnectivity", instanceInfo.Address)
 	}
 
 	return &windows{
@@ -300,7 +301,7 @@ func (vm *windows) EnsureFileContent(contents []byte, filename string, remoteDir
 	// check if the file exist with the expected content
 	fileExists, err := vm.FileExists(remotePath, checksum)
 	if err != nil {
-		return fmt.Errorf("error checking if file '%s' exists on the Windows VM: %w", remotePath, err)
+		return errors.Wrapf(err, "error checking if file '%s' exists on the Windows VM", remotePath)
 	}
 	if fileExists {
 		// The file already exists with the expected content, do nothing
@@ -308,7 +309,7 @@ func (vm *windows) EnsureFileContent(contents []byte, filename string, remoteDir
 	}
 	vm.log.V(1).Info("copy", "file content", filename, "remote dir", remoteDir)
 	if err := vm.interact.transfer(bytes.NewReader(contents), filename, remoteDir); err != nil {
-		return fmt.Errorf("unable to copy %s content to remote dir %s: %w", filename, remoteDir, err)
+		return errors.Wrapf(err, "unable to copy %s content to remote dir %s", filename, remoteDir)
 	}
 	return nil
 }
@@ -318,7 +319,7 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 	remotePath := remoteDir + "\\" + filepath.Base(file.Path)
 	fileExists, err := vm.FileExists(remotePath, file.SHA256)
 	if err != nil {
-		return fmt.Errorf("error checking if file '%s' exists on the Windows VM: %w", remotePath, err)
+		return errors.Wrapf(err, "error checking if file '%s' exists on the Windows VM", remotePath)
 	}
 	if fileExists {
 		// The file already exists with the expected content, do nothing
@@ -326,7 +327,7 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 	}
 	f, err := os.Open(file.Path)
 	if err != nil {
-		return fmt.Errorf("error opening %s file to be transferred: %w", file.Path, err)
+		return errors.Wrapf(err, "error opening %s file to be transferred", file.Path)
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -335,7 +336,7 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 	}()
 	vm.log.V(1).Info("copy", "local file", file.Path, "remote dir", remoteDir)
 	if err := vm.interact.transfer(f, filepath.Base(file.Path), remoteDir); err != nil {
-		return fmt.Errorf("unable to transfer %s to remote dir %s: %w", file.Path, remoteDir, err)
+		return errors.Wrapf(err, "unable to transfer %s to remote dir %s", file.Path, remoteDir)
 	}
 	return nil
 }
@@ -343,7 +344,7 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 func (vm *windows) FileExists(path, checksum string) (bool, error) {
 	out, err := vm.Run("Test-Path "+path, true)
 	if err != nil {
-		return false, fmt.Errorf("error checking if file %s exists: %w", path, err)
+		return false, errors.Wrapf(err, "error checking if file %s exists", path)
 	}
 	found := strings.TrimSpace(out) == "True"
 	// avoid checksum validation if not found or in lack of reference checksum
@@ -353,7 +354,7 @@ func (vm *windows) FileExists(path, checksum string) (bool, error) {
 	// file exist, compare checksum
 	remoteFile, err := vm.newFileInfo(path)
 	if err != nil {
-		return false, fmt.Errorf("error getting info on file '%s' on the Windows VM: %w", path, err)
+		return false, errors.Wrapf(err, "error getting info on file '%s' on the Windows VM", path)
 	}
 	if remoteFile.SHA256 == checksum {
 		vm.log.V(1).Info("file already exists on VM with expected content", "file", path)
@@ -381,7 +382,7 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 			!(strings.Contains(err.Error(), cmdExitNoStatus) && strings.HasSuffix(cmd, removeHNSCommand+";\"")) {
 			vm.log.Error(err, "error running", "cmd", cmd, "out", out)
 		}
-		return out, fmt.Errorf("error running %s: %w", cmd, err)
+		return out, errors.Wrapf(err, "error running %s", cmd)
 	}
 	vm.log.V(1).Info("run", "cmd", cmd, "out", out)
 	return out, nil
@@ -411,13 +412,13 @@ func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string) error
 		return err
 	}
 	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace); err != nil {
-		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
+		return errors.Wrap(err, "Unable to cleanup the Windows instance")
 	}
 	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
-		return fmt.Errorf("unable to ensure HNS networks are removed: %w", err)
+		return errors.Wrap(err, "unable to ensure HNS networks are removed")
 	}
 	if err := vm.removeDirectories(); err != nil {
-		return fmt.Errorf("unable to remove created directories: %w", err)
+		return errors.Wrap(err, "unable to remove created directories")
 	}
 	return nil
 }
@@ -439,17 +440,17 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, cr
 	}
 	// Stop any services that may be running. This prevents the node being shown as Ready after a failed configuration.
 	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace); err != nil {
-		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
+		return errors.Wrap(err, "Unable to cleanup the Windows instance")
 	}
 
 	if err := vm.ensureHostNameAndContainersFeature(); err != nil {
 		return err
 	}
 	if err := vm.createDirectories(); err != nil {
-		return fmt.Errorf("error creating directories on Windows VM: %w", err)
+		return errors.Wrap(err, "error creating directories on Windows VM")
 	}
 	if err := vm.transferFiles(); err != nil {
-		return fmt.Errorf("error transferring files to Windows VM: %w", err)
+		return errors.Wrap(err, "error transferring files to Windows VM")
 	}
 
 	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --api-server %s --sa-ca %s --sa-token %s --namespace %s",
@@ -493,10 +494,10 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 	recoveryPeriod := 300
 	wicdService, err := newService(wicdPath, WicdServiceName, wicdServiceArgs, nil, recoveryActions, recoveryPeriod)
 	if err != nil {
-		return fmt.Errorf("error creating %s service object: %w", WicdServiceName, err)
+		return errors.Wrapf(err, "error creating %s service object", WicdServiceName)
 	}
 	if err := vm.ensureServiceIsRunning(wicdService); err != nil {
-		return fmt.Errorf("error ensuring %s Windows service has started running: %w", WicdServiceName, err)
+		return errors.Wrapf(err, "error ensuring %s Windows service has started running", WicdServiceName)
 	}
 	vm.log.Info("configured", "service", WicdServiceName, "args", wicdServiceArgs)
 	return nil
@@ -507,14 +508,14 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 // ensureWICDExists ensures the WICD executable exists. Creates the destination directory and binary file, if needed.
 func (vm *windows) ensureWICDExists(credentials *Authentication) error {
 	if _, err := vm.Run(mkdirCmd(K8sDir), false); err != nil {
-		return fmt.Errorf("unable to create remote directory %s: %w", K8sDir, err)
+		return errors.Wrapf(err, "unable to create remote directory %s", K8sDir)
 	}
 	wicdFileInfo, err := payload.NewFileInfo(payload.WICDPath)
 	if err != nil {
-		return fmt.Errorf("could not create FileInfo object for file %s: %w", payload.WICDPath, err)
+		return errors.Wrapf(err, "could not create FileInfo object for file %s", payload.WICDPath)
 	}
 	if err := vm.EnsureFile(wicdFileInfo, K8sDir); err != nil {
-		return fmt.Errorf("error copying %s to %s: %w", wicdFileInfo.Path, K8sDir, err)
+		return errors.Wrapf(err, "error copying %s to %s ", wicdFileInfo.Path, K8sDir)
 	}
 	return nil
 }
@@ -542,7 +543,7 @@ func (vm *windows) ensureHostNameAndContainersFeature() error {
 	}
 	if !isContainersFeatureEnabled {
 		if err := vm.enableContainersWindowsFeature(); err != nil {
-			return fmt.Errorf("error enabling Windows Containers feature: %w", err)
+			return errors.Wrapf(err, "error enabling Windows Containers feature")
 		}
 		rebootNeeded = true
 	}
@@ -550,7 +551,7 @@ func (vm *windows) ensureHostNameAndContainersFeature() error {
 	// the change to take effect.
 	if rebootNeeded {
 		if err := vm.rebootAndReinitialize(); err != nil {
-			return fmt.Errorf("error restarting the Windows instance and reinitializing SSH connection: %w", err)
+			return errors.Wrapf(err, "error restarting the Windows instance and reinitializing SSH connection")
 		}
 	}
 
@@ -561,7 +562,7 @@ func (vm *windows) ensureHostNameAndContainersFeature() error {
 func (vm *windows) isHostNameChangeNeeded() (bool, error) {
 	out, err := vm.Run("hostname", true)
 	if err != nil {
-		return false, fmt.Errorf("error getting the host name, with stdout %s: %w", out, err)
+		return false, errors.Wrapf(err, "error getting the host name, with stdout %s", out)
 	}
 	return !strings.Contains(out, vm.instance.NewHostname), nil
 }
@@ -572,7 +573,7 @@ func (vm *windows) changeHostName() error {
 	out, err := vm.Run(changeHostNameCommand, true)
 	if err != nil {
 		vm.log.Info("changing host name failed", "command", changeHostNameCommand, "output", out)
-		return fmt.Errorf("changing host name failed: %w", err)
+		return errors.Wrap(err, "changing host name failed")
 	}
 	return nil
 }
@@ -581,7 +582,7 @@ func (vm *windows) changeHostName() error {
 func (vm *windows) createDirectories() error {
 	for _, dir := range RequiredDirectories {
 		if _, err := vm.Run(mkdirCmd(dir), false); err != nil {
-			return fmt.Errorf("unable to create remote directory %s: %w", dir, err)
+			return errors.Wrapf(err, "unable to create remote directory %s", dir)
 		}
 	}
 	return nil
@@ -617,11 +618,11 @@ func (vm *windows) transferFiles() error {
 	vm.log.Info("transferring files")
 	filesToTransfer, err := getFilesToTransfer()
 	if err != nil {
-		return fmt.Errorf("error getting list of files to transfer: %w", err)
+		return errors.Wrapf(err, "error getting list of files to transfer")
 	}
 	for src, dest := range filesToTransfer {
 		if err := vm.EnsureFile(src, dest); err != nil {
-			return fmt.Errorf("error copying %s to %s: %w", src.Path, dest, err)
+			return errors.Wrapf(err, "error copying %s to %s ", src.Path, dest)
 		}
 	}
 	return nil
@@ -632,22 +633,22 @@ func (vm *windows) transferFiles() error {
 func (vm *windows) ensureServiceIsRunning(svc *service) error {
 	serviceExists, err := vm.serviceExists(svc.name)
 	if err != nil {
-		return fmt.Errorf("error checking if %s Windows service exists: %w", svc.name, err)
+		return errors.Wrapf(err, "error checking if %s Windows service exists", svc.name)
 	}
 	// create service if it does not exist
 	if !serviceExists {
 		if err := vm.createService(svc); err != nil {
-			return fmt.Errorf("error creating %s Windows service: %w", svc.name, err)
+			return errors.Wrapf(err, "error creating %s Windows service", svc.name)
 		}
 	}
 	if err := vm.setServiceDescription(svc.name); err != nil {
-		return fmt.Errorf("error setting description of the %s Windows service: %w", svc.name, err)
+		return errors.Wrapf(err, "error setting description of the %s Windows service", svc.name)
 	}
 	if err := vm.setRecoveryActions(svc); err != nil {
-		return fmt.Errorf("error setting recovery actions for the %s Windows service: %w", svc.name, err)
+		return errors.Wrapf(err, "error setting recovery actions for the %s Windows service", svc.name)
 	}
 	if err := vm.startService(svc); err != nil {
-		return fmt.Errorf("error starting %s Windows service: %w", svc.name, err)
+		return errors.Wrapf(err, "error starting %s Windows service", svc.name)
 	}
 	return nil
 }
@@ -655,7 +656,7 @@ func (vm *windows) ensureServiceIsRunning(svc *service) error {
 // createService creates the service on the Windows VM
 func (vm *windows) createService(svc *service) error {
 	if svc == nil {
-		return fmt.Errorf("service object should not be nil")
+		return errors.New("service object should not be nil")
 	}
 	svcCreateCmd := fmt.Sprintf("sc.exe create %s binPath=\"%s %s\" start=auto", svc.name, svc.binaryPath,
 		svc.args)
@@ -666,7 +667,7 @@ func (vm *windows) createService(svc *service) error {
 
 	_, err := vm.Run(svcCreateCmd, false)
 	if err != nil {
-		return fmt.Errorf("failed to create service %s: %w", svc.name, err)
+		return errors.Wrapf(err, "failed to create service %s", svc.name)
 	}
 	return nil
 }
@@ -677,7 +678,7 @@ func (vm *windows) setServiceDescription(svcName string) error {
 	cmd := fmt.Sprintf("sc.exe description %s \"%s %s\"", svcName, ManagedTag, svcName)
 	out, err := vm.Run(cmd, false)
 	if err != nil {
-		return fmt.Errorf("failed to set service description with stdout %s: %w", out, err)
+		return errors.Wrapf(err, "failed to set service description with stdout %s", out)
 	}
 	return nil
 }
@@ -693,7 +694,7 @@ func (vm *windows) setRecoveryActions(svc *service) error {
 	cmd := fmt.Sprintf("sc.exe failure %s reset= %d actions= %s", svc.name, svc.recoveryPeriod, actions)
 	out, err := vm.Run(cmd, false)
 	if err != nil {
-		return fmt.Errorf("failed to set recovery actions with stdout: %s: %w", out, err)
+		return errors.Wrapf(err, "failed to set recovery actions with stdout: %s", out)
 	}
 	return nil
 }
@@ -701,12 +702,12 @@ func (vm *windows) setRecoveryActions(svc *service) error {
 // ensureServiceNotRunning stops a service if it exists and is running
 func (vm *windows) ensureServiceNotRunning(svc *service) error {
 	if svc == nil {
-		return fmt.Errorf("service object should not be nil")
+		return errors.New("service object should not be nil")
 	}
 
 	exists, err := vm.serviceExists(svc.name)
 	if err != nil {
-		return fmt.Errorf("error checking if service exists: %w", err)
+		return errors.Wrap(err, "error checking if service exists")
 	}
 	if !exists {
 		// service does not exist, therefore it is not running
@@ -715,13 +716,13 @@ func (vm *windows) ensureServiceNotRunning(svc *service) error {
 
 	running, err := vm.isRunning(svc.name)
 	if err != nil {
-		return fmt.Errorf("unable to check if service is running: %w", err)
+		return errors.Wrap(err, "unable to check if service is running")
 	}
 	if !running {
 		return nil
 	}
 	if err := vm.stopService(svc); err != nil {
-		return fmt.Errorf("unable to stop service: %w", err)
+		return errors.Wrap(err, "unable to stop service")
 	}
 	return nil
 
@@ -733,17 +734,17 @@ func (vm *windows) ensureServiceIsRemoved(svcName string) error {
 	// If the service is not installed, do nothing
 	exists, err := vm.serviceExists(svcName)
 	if err != nil {
-		return fmt.Errorf("error checking if %s Windows service exists: %w", svc.name, err)
+		return errors.Wrapf(err, "error checking if %s Windows service exists", svc.name)
 	}
 	if !exists {
 		return nil
 	}
 	// Make sure the service is stopped before we attempt to delete it
 	if err := vm.ensureServiceNotRunning(svc); err != nil {
-		return fmt.Errorf("error stopping %s Windows service: %w", svc.name, err)
+		return errors.Wrapf(err, "error stopping %s Windows service", svc.name)
 	}
 	if err := vm.deleteService(svc); err != nil {
-		return fmt.Errorf("error deleting %s Windows service: %w", svc.name, err)
+		return errors.Wrapf(err, "error deleting %s Windows service", svc.name)
 	}
 	vm.log.Info("deconfigured", "service", svc.name)
 	return nil
@@ -752,12 +753,12 @@ func (vm *windows) ensureServiceIsRemoved(svcName string) error {
 // stopService stops the service that was already running
 func (vm *windows) stopService(svc *service) error {
 	if svc == nil {
-		return fmt.Errorf("service object should not be nil")
+		return errors.New("service object should not be nil")
 	}
 	// Success here means that the stop has initiated, not necessarily completed
 	out, err := vm.Run("sc.exe stop "+svc.name, false)
 	if err != nil {
-		return fmt.Errorf("failed to stop %s service with output: %s: %w", svc.name, out, err)
+		return errors.Wrapf(err, "failed to stop %s service with output: %s", svc.name, out)
 	}
 
 	// Wait until the service has stopped
@@ -770,7 +771,7 @@ func (vm *windows) stopService(svc *service) error {
 		return !serviceRunning, nil
 	})
 	if err != nil {
-		return fmt.Errorf("error waiting for the %s service to stop: %w", svc.name, err)
+		return errors.Wrapf(err, "error waiting for the %s service to stop", svc.name)
 	}
 
 	return nil
@@ -779,13 +780,13 @@ func (vm *windows) stopService(svc *service) error {
 // deleteService deletes the specified Windows service
 func (vm *windows) deleteService(svc *service) error {
 	if svc == nil {
-		return fmt.Errorf("service object cannot be nil")
+		return errors.New("service object cannot be nil")
 	}
 
 	// Success here means that the stop has initiated, not necessarily completed
 	out, err := vm.Run("sc.exe delete "+svc.name, false)
 	if err != nil {
-		return fmt.Errorf("failed to delete %s service with output: %s: %w", svc.name, out, err)
+		return errors.Wrapf(err, "failed to delete %s service with output: %s", svc.name, out)
 	}
 
 	// Wait until the service is fully deleted
@@ -798,7 +799,7 @@ func (vm *windows) deleteService(svc *service) error {
 		return !exists, nil
 	})
 	if err != nil {
-		return fmt.Errorf("error waiting for the %s service to be deleted: %w", svc.name, err)
+		return errors.Wrapf(err, "error waiting for the %s service to be deleted", svc.name)
 	}
 
 	return nil
@@ -828,18 +829,18 @@ func (vm *windows) isRunning(serviceName string) (bool, error) {
 // startService starts a previously created Windows service
 func (vm *windows) startService(svc *service) error {
 	if svc == nil {
-		return fmt.Errorf("service object should not be nil")
+		return errors.New("service object should not be nil")
 	}
 	serviceRunning, err := vm.isRunning(svc.name)
 	if err != nil {
-		return fmt.Errorf("unable to check if %s Windows service is running: %w", svc.name, err)
+		return errors.Wrapf(err, "unable to check if %s Windows service is running", svc.name)
 	}
 	if serviceRunning {
 		return nil
 	}
 	out, err := vm.Run("sc.exe start "+svc.name, false)
 	if err != nil {
-		return fmt.Errorf("failed to start %s service with output: %s: %w", svc.name, out, err)
+		return errors.Wrapf(err, "failed to start %s service with output: %s", svc.name, out)
 	}
 	return nil
 }
@@ -850,7 +851,7 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 	command := "$out = Get-FileHash " + path + " -Algorithm SHA256; $out.Hash"
 	out, err := vm.Run(command, true)
 	if err != nil {
-		return nil, fmt.Errorf("error getting file hash: %w", err)
+		return nil, errors.Wrap(err, "error getting file hash")
 	}
 	// The returned hash will be in all caps with newline characters, doing ToLower() to
 	// make the output normalized with the go sha256 library
@@ -870,12 +871,12 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 			if err := vm.removeHNSNetwork(network); err != nil {
 				vm.log.V(1).Error(err, "error removing %s HNS network", "network", network)
 				if err := vm.Reinitialize(); err != nil {
-					return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
+					return false, errors.Wrapf(err, "error reinitializing VM after removing %s HNS network", network)
 				}
 				return false, nil
 			}
 			if err := vm.Reinitialize(); err != nil {
-				return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
+				return false, errors.Wrapf(err, "error reinitializing VM after removing %s HNS network", network)
 			}
 			out, err := vm.Run(getHNSNetworkCmd(network), true)
 			if err != nil {
@@ -885,7 +886,7 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 			return !strings.Contains(out, network), nil
 		})
 		if err != nil {
-			return fmt.Errorf("failed ensuring %s HNS network is removed: %w", network, err)
+			return errors.Wrapf(err, "failed ensuring %s HNS network is removed", network)
 		}
 	}
 	return nil
@@ -896,7 +897,7 @@ func (vm *windows) removeHNSNetwork(networkName string) error {
 	cmd := getHNSNetworkCmd(networkName) + " | Remove-HnsNetwork;"
 	// PowerShell returns error waiting without exit status or signal error when the networks are removed.
 	if out, err := vm.Run(cmd, true); err != nil && !strings.Contains(err.Error(), cmdExitNoStatus) {
-		return fmt.Errorf("failed to remove %s HNS network with output: %s: %w", networkName, out, err)
+		return errors.Wrapf(err, "failed to remove %s HNS network with output: %s", networkName, out)
 	}
 	return nil
 }
@@ -906,8 +907,8 @@ func (vm *windows) enableContainersWindowsFeature() error {
 	command := "Install-WindowsFeature -Name " + containersFeatureName
 	out, err := vm.Run(command, true)
 	if err != nil {
-		return fmt.Errorf("failed to enable required Windows feature: %s with output: %s: %w",
-			containersFeatureName, out, err)
+		return errors.Wrapf(err, "failed to enable required Windows feature: %s with output: %s",
+			containersFeatureName, out)
 	}
 	return nil
 }
@@ -917,7 +918,7 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 	command := "Get-WindowsOptionalFeature -FeatureName " + containersFeatureName + " -Online"
 	out, err := vm.Run(command, true)
 	if err != nil {
-		return false, fmt.Errorf("failed to get Windows feature: %s: %w", containersFeatureName, err)
+		return false, errors.Wrapf(err, "failed to get Windows feature: %s", containersFeatureName)
 	}
 	return strings.Contains(out, "Enabled"), nil
 }
@@ -925,11 +926,11 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 // rebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
 func (vm *windows) rebootAndReinitialize() error {
 	if _, err := vm.Run("Restart-Computer -Force", true); err != nil {
-		return fmt.Errorf("error rebooting the Windows VM: %w", err)
+		return errors.Wrapf(err, "error rebooting the Windows VM")
 	}
 	// Reinitialize the SSH connection after the VM reboot
 	if err := vm.Reinitialize(); err != nil {
-		return fmt.Errorf("error reinitializing SSH connection after VM reboot: %w", err)
+		return errors.Wrap(err, "error reinitializing SSH connection after VM reboot")
 	}
 	return nil
 }
@@ -948,7 +949,7 @@ func (vm *windows) ensureWICDSecretContent(credentials *Authentication) error {
 // deconfigureWICD ensures the WICD service running on the Windows instance is removed
 func (vm *windows) deconfigureWICD() error {
 	if err := vm.ensureServiceIsRemoved(WicdServiceName); err != nil {
-		return fmt.Errorf("error ensuring %s Windows service is removed: %w", WicdServiceName, err)
+		return errors.Wrapf(err, "error ensuring %s Windows service is removed", WicdServiceName)
 	}
 	return nil
 }

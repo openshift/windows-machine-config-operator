@@ -2,11 +2,11 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"net"
 
 	"github.com/go-logr/logr"
 	config "github.com/openshift/api/config/v1"
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
@@ -53,7 +53,7 @@ type instanceReconciler struct {
 // specified annotations and/or labels applied to it.
 func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Info, labelsToApply, annotationsToApply map[string]string) error {
 	if instanceInfo == nil {
-		return fmt.Errorf("instance cannot be nil")
+		return errors.New("instance cannot be nil")
 	}
 
 	// Instance is up to date, do nothing
@@ -67,7 +67,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		instanceInfo, r.signer, labelsToApply, annotationsToApply, r.platform)
 	if err != nil {
-		return fmt.Errorf("failed to create new nodeconfig: %w", err)
+		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
 
 	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
@@ -89,7 +89,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, error) {
 	usernameAnnotation := node.Annotations[UsernameAnnotation]
 	if usernameAnnotation == "" {
-		return nil, fmt.Errorf("node is missing valid username annotation")
+		return nil, errors.New("node is missing valid username annotation")
 	}
 	addr, err := GetAddress(node.Status.Addresses)
 	if err != nil {
@@ -104,7 +104,7 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, 
 	}
 	username, err := crypto.DecryptFromJSONString(usernameAnnotation, privateKeyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("unable to decrypt username annotation for node %s: %w", node.Name, err)
+		return nil, errors.Wrapf(err, "unable to decrypt username annotation for node %s", node.Name)
 	}
 
 	return instance.NewInfo(addr, username, "", false, node)
@@ -114,12 +114,12 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, 
 func (r *instanceReconciler) updateKubeletCA(node core.Node, contents []byte) error {
 	winInstance, err := r.instanceFromNode(&node)
 	if err != nil {
-		return fmt.Errorf("error creating instance for node %s: %w", node.Name, err)
+		return errors.Wrapf(err, "error creating instance for node %s", node.Name)
 	}
 	nodeConfig, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR,
 		r.watchNamespace, winInstance, r.signer, nil, nil, r.platform)
 	if err != nil {
-		return fmt.Errorf("error creating nodeConfig for instance %s: %w", winInstance.Address, err)
+		return errors.Wrapf(err, "error creating nodeConfig for instance %s", winInstance.Address)
 	}
 	r.log.Info("updating kubelet CA client certificates in", "node", node.Name)
 	return nodeConfig.UpdateKubeletClientCA(contents)
@@ -142,13 +142,13 @@ func (r *instanceReconciler) reconcileKubeletClientCA(ctx context.Context, bundl
 	// fetch all Windows nodes (Machine and BYOH instances)
 	winNodes := &core.NodeList{}
 	if err = r.client.List(ctx, winNodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
-		return fmt.Errorf("error listing Windows nodes: %w", err)
+		return errors.Wrap(err, "error listing Windows nodes")
 	}
 	r.log.V(1).Info("processing", "node count", len(winNodes.Items))
 	// loop Windows nodes and trigger kubelet CA update
 	for _, winNode := range winNodes.Items {
 		if err := r.updateKubeletCA(winNode, kubeAPIServerServingCABytes); err != nil {
-			return fmt.Errorf("error updating kubelet CA certificate in node %s: %w", winNode.Name, err)
+			return errors.Wrapf(err, "error updating kubelet CA certificate in node %s", winNode.Name)
 		}
 	}
 	return nil
@@ -166,27 +166,27 @@ func GetAddress(addresses []core.NodeAddress) (string, error) {
 			return addr.Address, nil
 		}
 	}
-	return "", fmt.Errorf("no usable address")
+	return "", errors.New("no usable address")
 }
 
 // deconfigureInstance deconfigures the instance associated with the given node, removing the node from the cluster.
 func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	instance, err := r.instanceFromNode(node)
 	if err != nil {
-		return fmt.Errorf("unable to create instance object from node: %w", err)
+		return errors.Wrap(err, "unable to create instance object from node")
 	}
 
 	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		instance, r.signer, nil, nil, r.platform)
 	if err != nil {
-		return fmt.Errorf("failed to create new nodeconfig: %w", err)
+		return errors.Wrap(err, "failed to create new nodeconfig")
 	}
 
 	if err = nc.Deconfigure(); err != nil {
 		return err
 	}
 	if err = r.client.Delete(context.TODO(), instance.Node); err != nil {
-		return fmt.Errorf("error deleting node %s: %w", instance.Node.GetName(), err)
+		return errors.Wrapf(err, "error deleting node %s", instance.Node.GetName())
 	}
 	return nil
 }

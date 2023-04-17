@@ -9,6 +9,7 @@ import (
 	ignCfg "github.com/coreos/ignition/v2/config/v3_2"
 	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfg "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	"github.com/pkg/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -53,7 +54,7 @@ func New(c client.Client) (*Ignition, error) {
 
 	configuration, report, err := ignCfg.Parse(renderedWorker.Spec.Config.Raw)
 	if err != nil || report.IsFatal() {
-		return nil, fmt.Errorf("failed to parse MachineConfig ignition: %v\nReport: %v", err, report)
+		return nil, errors.Errorf("failed to parse MachineConfig ignition: %v\nReport: %v", err, report)
 	}
 	ign := &Ignition{
 		config: configuration,
@@ -78,11 +79,11 @@ func (ign *Ignition) GetKubeletArgs() (map[string]string, error) {
 		}
 	}
 	if kubeletUnit.Contents == nil {
-		return nil, fmt.Errorf("ignition missing kubelet systemd unit file")
+		return nil, errors.Errorf("ignition missing kubelet systemd unit file")
 	}
 	argsFromIgnition, err := parseKubeletArgs(*kubeletUnit.Contents)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing kubelet systemd unit args: %w", err)
+		return nil, errors.Wrap(err, "error parsing kubelet systemd unit args")
 	}
 	return argsFromIgnition, nil
 }
@@ -104,7 +105,7 @@ func getLatestRenderedWorker(machineConfigs []mcfg.MachineConfig) (*mcfg.Machine
 			return &mc, nil
 		}
 	}
-	return nil, fmt.Errorf("rendered worker MachineConfig not found")
+	return nil, errors.New("rendered worker MachineConfig not found")
 }
 
 // parseKubeletArgs parses a systemd unit file, returning the kubelet args WMCO is interested in

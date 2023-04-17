@@ -3,9 +3,9 @@ package metrics
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strconv"
 
+	"github.com/pkg/errors"
 	monclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -79,15 +79,15 @@ func NewPrometheusNodeConfig(clientset *kubernetes.Clientset, watchNamespace str
 // NewConfig creates a new instance for Config  to be used by the caller.
 func NewConfig(mgr manager.Manager, cfg *rest.Config, namespace string) (*Config, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("config should not be nil")
+		return nil, errors.New("config should not be nil")
 	}
 	oclient, err := k8sclient.NewForConfig(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("error creating config client: %w", err)
+		return nil, errors.Wrap(err, "error creating config client")
 	}
 	mclient, err := monclient.NewForConfig(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("error creating monitoring client: %w", err)
+		return nil, errors.Wrap(err, "error creating monitoring client")
 	}
 	return &Config{Clientset: oclient,
 		MonitoringV1Client: mclient,
@@ -118,15 +118,12 @@ func (pc *PrometheusNodeConfig) syncMetricsEndpoint(nodeEndpointAdressess []v1.E
 	// convert patch data to bytes
 	patchDataBytes, err := json.Marshal(patchData)
 	if err != nil {
-		return fmt.Errorf("unable to get patch data in bytes: %w", err)
+		return errors.Wrap(err, "unable to get patch data in bytes")
 	}
 
 	_, err = pc.k8sclientset.CoreV1().Endpoints(pc.namespace).
 		Patch(context.TODO(), WindowsMetricsResource, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to sync metrics endpoints: %w", err)
-	}
-	return nil
+	return errors.Wrap(err, "unable to sync metrics endpoints")
 }
 
 // Configure patches the endpoint object to reflect the current list Windows nodes.
@@ -140,14 +137,14 @@ func (pc *PrometheusNodeConfig) Configure() error {
 	nodes, err := pc.k8sclientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{LabelSelector: nodeconfig.WindowsOSLabel,
 		FieldSelector: "spec.unschedulable=false"})
 	if err != nil {
-		return fmt.Errorf("could not get Windows nodes: %w", err)
+		return errors.Wrap(err, "could not get Windows nodes")
 	}
 
 	// get Metrics Endpoints object
 	endpoints, err := pc.k8sclientset.CoreV1().Endpoints(pc.namespace).Get(context.TODO(),
 		WindowsMetricsResource, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("could not get metrics endpoints %v: %w", WindowsMetricsResource, err)
+		return errors.Wrapf(err, "could not get metrics endpoints %v", WindowsMetricsResource)
 	}
 
 	if !isEndpointsValid(nodes, endpoints) {
@@ -155,7 +152,7 @@ func (pc *PrometheusNodeConfig) Configure() error {
 		windowsIPList := getNodeEndpointAddresses(nodes)
 		// sync metrics endpoints object with the current list of addresses
 		if err := pc.syncMetricsEndpoint(windowsIPList); err != nil {
-			return fmt.Errorf("error updating endpoints object with list of endpoint addresses: %w", err)
+			return errors.Wrap(err, "error updating endpoints object with list of endpoint addresses")
 		}
 	}
 	log.Info("Prometheus configured", "endpoints", WindowsMetricsResource, "port", Port, "name", PortName)
@@ -222,7 +219,7 @@ func (c *Config) Configure(ctx context.Context) error {
 	// validate if cluster monitoring is enabled in the operator namespace
 	enabled, err := c.validate(ctx)
 	if err != nil {
-		return fmt.Errorf("error validating cluster monitoring label: %s", err)
+		return errors.Wrap(err, "error validating cluster monitoring label")
 	}
 	// Create Metrics Endpoint object only if monitoring is enabled
 	if !enabled {
@@ -234,17 +231,17 @@ func (c *Config) Configure(ctx context.Context) error {
 	existingEndpoint, err := c.CoreV1().Endpoints(c.namespace).Get(ctx, WindowsMetricsResource, metav1.GetOptions{})
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("error retrieving %s endpoint: %w", WindowsMetricsResource, err)
+			return errors.Wrapf(err, "error retrieving %s endpoint", WindowsMetricsResource)
 		}
 	} else {
 		subsets = existingEndpoint.Subsets
 		err = c.CoreV1().Endpoints(c.namespace).Delete(ctx, WindowsMetricsResource, metav1.DeleteOptions{})
 		if err != nil {
-			return fmt.Errorf("error deleting %s endpoint: %w", WindowsMetricsResource, err)
+			return errors.Wrapf(err, "error deleting %s endpoint", WindowsMetricsResource)
 		}
 	}
 	if err := c.createEndpoint(subsets); err != nil {
-		return fmt.Errorf("error creating metrics Endpoint: %w", err)
+		return errors.Wrap(err, "error creating metrics Endpoint")
 	}
 	return nil
 }
@@ -255,7 +252,7 @@ func (c *Config) validate(ctx context.Context) (bool, error) {
 	// validate if metrics label is added to namespace
 	wmcoNamespace, err := c.CoreV1().Namespaces().Get(ctx, c.namespace, metav1.GetOptions{})
 	if err != nil {
-		return false, fmt.Errorf("error getting operator namespace: %w", err)
+		return false, errors.Wrap(err, "error getting operator namespace")
 	}
 
 	labelValue := false
@@ -263,7 +260,7 @@ func (c *Config) validate(ctx context.Context) (bool, error) {
 	if value, ok := wmcoNamespace.Labels["openshift.io/cluster-monitoring"]; ok {
 		labelValue, err = strconv.ParseBool(value)
 		if err != nil {
-			return false, fmt.Errorf("monitoring label must have a boolean value: %w", err)
+			return false, errors.Wrap(err, "monitoring label must have a boolean value")
 		}
 	}
 	if !labelValue {
@@ -295,7 +292,7 @@ func (c *Config) createEndpoint(subsets []v1.EndpointSubset) error {
 	_, err := c.CoreV1().Endpoints(c.namespace).Create(context.TODO(),
 		newEndpoint, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("error creating metrics Endpoint: %w", err)
+		return errors.Wrap(err, "error creating metrics Endpoint")
 	}
 	return nil
 }

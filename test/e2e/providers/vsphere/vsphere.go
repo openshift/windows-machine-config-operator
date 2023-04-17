@@ -3,9 +3,10 @@ package vsphere
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
+
+	"github.com/pkg/errors"
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
@@ -75,22 +76,22 @@ func (p *Provider) getWorkspaceFromExistingMachineSet() (*mapi.Workspace, error)
 		p.InfrastructureName}
 	machineSets, err := p.oc.Machine.MachineSets(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get machinesets: %w", err)
+		return nil, errors.Wrap(err, "unable to get machinesets")
 	}
 
 	if len(machineSets.Items) == 0 {
-		return nil, fmt.Errorf("no matching machinesets found")
+		return nil, errors.Wrap(err, "no matching machinesets found")
 	}
 
 	machineSet := machineSets.Items[0]
 	providerSpecRaw := machineSet.Spec.Template.Spec.ProviderSpec.Value
 	if providerSpecRaw == nil || providerSpecRaw.Raw == nil {
-		return nil, fmt.Errorf("no provider spec found")
+		return nil, errors.Wrap(err, "no provider spec found")
 	}
 	var providerSpec mapi.VSphereMachineProviderSpec
 	err = json.Unmarshal(providerSpecRaw.Raw, &providerSpec)
 	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal providerSpec: %w", err)
+		return nil, errors.Wrap(err, "unable to unmarshal providerSpec")
 	}
 
 	return providerSpec.Workspace, nil
@@ -116,12 +117,12 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 	// create new machine provider spec for deploying Windows node
 	providerSpec, err := p.newVSphereMachineProviderSpec()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new vSphere machine provider spec: %w", err)
+		return nil, errors.Wrap(err, "failed to create new vSphere machine provider spec")
 	}
 
 	rawProviderSpec, err := json.Marshal(providerSpec)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal vSphere machine provider spec: %w", err)
+		return nil, errors.Wrap(err, "failed to marshal vSphere machine provider spec")
 	}
 
 	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withIgnoreLabel, ""), nil

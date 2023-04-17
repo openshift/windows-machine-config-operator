@@ -2,11 +2,11 @@ package crypto
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"strings"
 
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 )
@@ -39,19 +39,19 @@ func DecryptFromJSONString(encryptedData string, key []byte) (string, error) {
 // encrypt creates an encrypted block of text from a plaintext message using the given key
 func encrypt(plaintext string, key []byte) (string, error) {
 	if key == nil {
-		return "", fmt.Errorf("encryption passphrase cannot be nil")
+		return "", errors.New("encryption passphrase cannot be nil")
 	}
 
 	// Prepare PGP block with a wrapper tag around the encrypted data
 	msgBuffer := bytes.NewBuffer(nil)
 	encoder, err := armor.Encode(msgBuffer, tag, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create armor block with tag %s: %w", tag, err)
+		return "", errors.Wrapf(err, "failed to create armor block with tag %s", tag)
 	}
 
 	writer, err := openpgp.SymmetricallyEncrypt(encoder, key, nil, nil)
 	if err != nil {
-		return "", fmt.Errorf("failure during encryption: %w", err)
+		return "", errors.Wrap(err, "failure during encryption")
 	}
 	_, err = writer.Write([]byte(plaintext))
 	if err != nil {
@@ -75,7 +75,7 @@ func encrypt(plaintext string, key []byte) (string, error) {
 // decrypt converts encrypted contents to plaintext using the given key as a passphrase
 func decrypt(encrypted string, key []byte) (string, error) {
 	if key == nil {
-		return "", fmt.Errorf("decryption passphrase cannot be empty")
+		return "", errors.New("decryption passphrase cannot be empty")
 	}
 	// As we trim and remove unnecessary characters during encrypt call, we need to
 	// insert them back to encrypted string to get original value.
@@ -90,7 +90,7 @@ func decrypt(encrypted string, key []byte) (string, error) {
 	msgBuffer := bytes.NewBuffer([]byte(encrypted))
 	armorBlock, err := armor.Decode(msgBuffer)
 	if err != nil {
-		return "", fmt.Errorf("unable to process given data %s: %w", encrypted, err)
+		return "", errors.Wrapf(err, "unable to process given data %s", encrypted)
 	}
 
 	msgBody, err := readMessage(armorBlock.Body, key)
@@ -99,7 +99,7 @@ func decrypt(encrypted string, key []byte) (string, error) {
 	}
 	plainTextBytes, err := ioutil.ReadAll(msgBody)
 	if err != nil {
-		return "", fmt.Errorf("unable to parse decrypted data into a readable value: %w", err)
+		return "", errors.Wrap(err, "unable to parse decrypted data into a readable value")
 	}
 	return string(plainTextBytes), nil
 }
@@ -111,14 +111,14 @@ func readMessage(reader io.Reader, key []byte) (io.Reader, error) {
 	attempted := false
 	promptFunction := func(keys []openpgp.Key, symmetric bool) ([]byte, error) {
 		if attempted {
-			return nil, fmt.Errorf("invalid passphrase supplied")
+			return nil, errors.New("invalid passphrase supplied")
 		}
 		attempted = true
 		return key, nil
 	}
 	message, err := openpgp.ReadMessage(reader, nil, promptFunction, nil)
 	if err != nil {
-		return nil, fmt.Errorf("unable to decrypt message using given key: %w", err)
+		return nil, errors.Wrap(err, "unable to decrypt message using given key")
 	}
 	return message.UnverifiedBody, nil
 }

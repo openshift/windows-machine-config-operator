@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/version"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -97,7 +98,7 @@ type Data struct {
 func NewData(services *[]Service, files *[]FileInfo) (*Data, error) {
 	cmData := &Data{*services, *files}
 	if err := cmData.validate(); err != nil {
-		return nil, fmt.Errorf("unable to create services ConfigMap data object: %w", err)
+		return nil, errors.Wrap(err, "unable to create services ConfigMap data object")
 	}
 	return cmData, nil
 }
@@ -109,7 +110,7 @@ func GetLatest(c client.Client, ctx context.Context, namespace string) (*core.Co
 		return nil, err
 	}
 	if len(servicesCMs) == 0 {
-		return nil, fmt.Errorf("no services ConfigMaps found in namespace %s", namespace)
+		return nil, errors.Errorf("no services ConfigMaps found in namespace %s", namespace)
 	}
 	// sort with most recently created first
 	sort.Slice(servicesCMs, func(i, j int) bool {
@@ -165,12 +166,12 @@ func Generate(name, namespace string, data *Data) (*core.ConfigMap, error) {
 // Returns error if the given data is invalid in structure
 func Parse(dataFromCM map[string]string) (*Data, error) {
 	if len(dataFromCM) != 2 {
-		return nil, fmt.Errorf("services ConfigMap should have exactly 2 keys")
+		return nil, errors.New("services ConfigMap should have exactly 2 keys")
 	}
 
 	value, ok := dataFromCM[servicesKey]
 	if !ok {
-		return nil, fmt.Errorf("expected key %s does not exist", servicesKey)
+		return nil, errors.Errorf("expected key %s does not exist", servicesKey)
 	}
 	services := &[]Service{}
 	if err := json.Unmarshal([]byte(value), services); err != nil {
@@ -179,7 +180,7 @@ func Parse(dataFromCM map[string]string) (*Data, error) {
 
 	value, ok = dataFromCM[filesKey]
 	if !ok {
-		return nil, fmt.Errorf("expected key %s does not exist", filesKey)
+		return nil, errors.Errorf("expected key %s does not exist", filesKey)
 	}
 	files := &[]FileInfo{}
 	if err := json.Unmarshal([]byte(value), files); err != nil {
@@ -215,20 +216,20 @@ func (cmData *Data) validate() error {
 func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 	// Validate services
 	if len(cmData.Services) != len(expected.Services) {
-		return fmt.Errorf("unexpected number of services")
+		return errors.New("Unexpected number of services")
 	}
 	for _, expectedSvc := range expected.Services {
 		if !expectedSvc.isPresentAndCorrect(cmData.Services) {
-			return fmt.Errorf("required service %s is not present with expected configuration", expectedSvc.Name)
+			return errors.Errorf("Required service %s is not present with expected configuration", expectedSvc.Name)
 		}
 	}
 	// Validate files
 	if len(cmData.Files) != len(expected.Files) {
-		return fmt.Errorf("unexpected number of files")
+		return errors.New("Unexpected number of files")
 	}
 	for _, expectedFile := range expected.Files {
 		if !expectedFile.isPresentAndCorrect(cmData.Files) {
-			return fmt.Errorf("required file %s is not present as expected", expectedFile.Path)
+			return errors.Errorf("Required file %s is not present as expected", expectedFile.Path)
 		}
 	}
 	return nil
@@ -270,10 +271,10 @@ func validateDependencies(services []Service) error {
 
 	for _, bootstrapSvc := range bootstrapServices {
 		if len(bootstrapSvc.NodeVariablesInCommand) > 0 {
-			return fmt.Errorf("bootstrap service %s cannot require node variables in command", bootstrapSvc.Name)
+			return errors.Errorf("bootstrap service %s cannot require node variables in command", bootstrapSvc.Name)
 		}
 		if bootstrapSvc.hasDependency(nonBootstrapServices) {
-			return fmt.Errorf("bootstrap service %s cannot depend on non-bootstrap service", bootstrapSvc.Name)
+			return errors.Errorf("bootstrap service %s cannot depend on non-bootstrap service", bootstrapSvc.Name)
 		}
 	}
 
@@ -310,7 +311,7 @@ func validateCycles(services []Service) error {
 		// Check if helper has already been called on this service to prevent duplicate calls
 		if _, seen := state[svc.Name]; !seen {
 			if svc.hasCycle(servicesMap, state) {
-				return fmt.Errorf("invalid cyclical chain in %s service's dependencies", svc.Name)
+				return errors.Errorf("invalid cyclical chain in %s service's dependencies", svc.Name)
 			}
 		}
 	}
@@ -353,14 +354,14 @@ func validatePriorities(services []Service) error {
 	for _, svc := range services {
 		if svc.Bootstrap {
 			if nonBootstrapSeen {
-				return fmt.Errorf("bootstrap service %s priority must be higher than all controller services",
+				return errors.Errorf("bootstrap service %s priority must be higher than all controller services",
 					svc.Name)
 			}
 			lastBootstrapPriority = int(svc.Priority)
 		} else {
 			// corner case if two adjacent bootstrap and controller services have the same priority
 			if int(svc.Priority) == lastBootstrapPriority {
-				return fmt.Errorf("controller service %s priority must not overlap with any bootstrap service",
+				return errors.Errorf("controller service %s priority must not overlap with any bootstrap service",
 					svc.Name)
 			}
 			nonBootstrapSeen = true

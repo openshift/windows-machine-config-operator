@@ -7,6 +7,7 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
+	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -36,7 +37,7 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 	}
 	rawSpec, err := json.Marshal(gcpSpec)
 	if err != nil {
-		return nil, fmt.Errorf("error marshalling gcp provider spec: %w", err)
+		return nil, errors.Wrap(err, "error marshalling gcp provider spec")
 	}
 	return machineset.New(rawSpec, p.InfrastructureName, replicas, withIgnoreLabel, p.InfrastructureName+"-"), nil
 }

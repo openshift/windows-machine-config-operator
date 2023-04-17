@@ -11,12 +11,12 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"net"
 	"reflect"
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	certificates "k8s.io/api/certificates/v1"
 	core "k8s.io/api/core/v1"
@@ -65,7 +65,7 @@ type Approver struct {
 func NewApprover(client client.Client, clientSet *kubernetes.Clientset, csr *certificates.CertificateSigningRequest,
 	log logr.Logger, recorder record.EventRecorder, watchNamespace string) (*Approver, error) {
 	if client == nil || csr == nil || clientSet == nil {
-		return nil, fmt.Errorf("kubernetes client, clientSet or CSR should not be nil")
+		return nil, errors.New("kubernetes client, clientSet or CSR should not be nil")
 	}
 	return &Approver{client,
 		clientSet,
@@ -78,13 +78,12 @@ func NewApprover(client client.Client, clientSet *kubernetes.Clientset, csr *cer
 // Approve approves a CSR by updating its status conditions to true if it is a valid CSR
 func (a *Approver) Approve() error {
 	if a.k8sclientset == nil {
-		return fmt.Errorf("kubernetes clientSet should not be nil")
+		return errors.New("Kubernetes clientSet should not be nil")
 	}
 
-	if valid, err := a.validateCSRContents(); !valid && err != nil {
+	if valid, err := a.validateCSRContents(); !valid {
 		// if the validation fails and error returned is nil, returns nil
-		return fmt.Errorf("could not validate contents for approval of CSR: %s: %w", a.csr.Name, err)
-
+		return errors.Wrapf(err, "could not validate contents for approval of CSR: %s", a.csr.Name)
 	}
 
 	a.csr.Status.Conditions = append(a.csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
@@ -110,19 +109,19 @@ func (a *Approver) Approve() error {
 func (a *Approver) validateCSRContents() (bool, error) {
 	parsedCSR, err := ParseCSR(a.csr.Spec.Request)
 	if err != nil {
-		return false, fmt.Errorf("error parsing CSR: %s: %w", a.csr.Name, err)
+		return false, errors.Wrapf(err, "error parsing CSR: %s", a.csr.Name)
 	}
 
 	nodeName := strings.TrimPrefix(parsedCSR.Subject.CommonName, NodeUserNamePrefix)
 	if nodeName == "" {
-		return false, fmt.Errorf("CSR %s subject name does not contain the required node user prefix: %s",
+		return false, errors.Errorf("CSR %s subject name does not contain the required node user prefix: %s",
 			a.csr.Name, NodeUserNamePrefix)
 	}
 
 	// lookup the node name against the instance configMap addresses/host names
 	valid, err := a.validateNodeName(nodeName)
 	if err != nil {
-		return false, fmt.Errorf("error validating node name %s for CSR: %s: %w", nodeName, a.csr.Name, err)
+		return false, errors.Wrapf(err, "error validating node name %s for CSR: %s", nodeName, a.csr.Name)
 	}
 	// CSR is not from a BYOH Windows instance, don't return error to avoid requeue, instead log if it is invalid
 	// as it might be from a linux node.
@@ -141,13 +140,13 @@ func (a *Approver) validateCSRContents() (bool, error) {
 		err := a.client.Get(context.TODO(), kubeTypes.NamespacedName{Namespace: a.namespace,
 			Name: nodeName}, node)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("unable to get node %s: %w", nodeName, err)
+			return false, errors.Wrapf(err, "unable to get node %s", nodeName)
 		} else if err == nil {
-			return false, fmt.Errorf("%s node already exists, cannot validate CSR: %s", nodeName, a.csr.Name)
+			return false, errors.Wrapf(err, "%s node already exists, cannot validate CSR: %s", nodeName, a.csr.Name)
 		}
 	} else {
 		if err := a.validateKubeletServingCSR(parsedCSR); err != nil {
-			return false, fmt.Errorf("unable to validate kubelet serving CSR: %s: %w", a.csr.Name, err)
+			return false, errors.Wrapf(err, "unable to validate kubelet serving CSR: %s", a.csr.Name)
 		}
 	}
 	return true, nil
@@ -160,12 +159,12 @@ func (a *Approver) validateNodeName(nodeName string) (bool, error) {
 	// Get the list of instances that are expected to be Nodes
 	windowsInstances, err := wiparser.GetInstances(a.client, a.namespace)
 	if err != nil {
-		return false, fmt.Errorf("unable to retrieve Windows instances: %w", err)
+		return false, errors.Wrapf(err, "unable to retrieve Windows instances")
 	}
 	// check if the node name matches the lookup of any of the instance addresses
 	hasEntry, err := matchesDNS(nodeName, windowsInstances)
 	if err != nil {
-		return false, fmt.Errorf("unable to map node name to the addresses of Windows instances: %w", err)
+		return false, errors.Wrap(err, "unable to map node name to the addresses of Windows instances")
 	}
 	if hasEntry {
 		return true, nil
@@ -181,12 +180,12 @@ func (a *Approver) validateWithHostName(nodeName string, windowsInstances []*ins
 	instanceSigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: a.namespace,
 		Name: secrets.PrivateKeySecret}, a.client)
 	if err != nil {
-		return false, fmt.Errorf("unable to create signer from private key secret: %w", err)
+		return false, errors.Wrap(err, "unable to create signer from private key secret")
 	}
 	// check if the node name matches any of the instances host names
 	hasEntry, err := matchesHostname(nodeName, windowsInstances, instanceSigner)
 	if err != nil {
-		return false, fmt.Errorf("unable to map node name to the host names of Windows instances: %w", err)
+		return false, errors.Wrap(err, "unable to map node name to the host names of Windows instances")
 	}
 	if !hasEntry {
 		// CSR is not from a BYOH instance
@@ -198,7 +197,7 @@ func (a *Approver) validateWithHostName(nodeName string, windowsInstances []*ins
 		a.recorder.Eventf(a.csr, core.EventTypeWarning, "NodeNameValidationFailed",
 			"node name %s does not comply with naming rules defined in RFC1123: "+
 				"Requirements for internet hosts", nodeName)
-		return false, fmt.Errorf("node name %s should comply with naming rules defined in RFC1123: "+
+		return false, errors.Errorf("node name %s should comply with naming rules defined in RFC1123: "+
 			"Requirements for internet hosts", nodeName)
 	}
 	return true, nil
@@ -207,7 +206,7 @@ func (a *Approver) validateWithHostName(nodeName string, windowsInstances []*ins
 // validateKubeletServingCSR validates a kubelet serving CSR for its contents
 func (a *Approver) validateKubeletServingCSR(parsedCsr *x509.CertificateRequest) error {
 	if a.csr == nil || parsedCsr == nil {
-		return fmt.Errorf("CSR or request should not be nil")
+		return errors.New("CSR or request should not be nil")
 	}
 	// kubeletServerUsages contains the permitted key usages from a kubelet-serving signer
 	kubeletServerUsages := []certificates.KeyUsage{
@@ -218,17 +217,17 @@ func (a *Approver) validateKubeletServingCSR(parsedCsr *x509.CertificateRequest)
 
 	// Check groups, we need at least: system:nodes, system:authenticated
 	if len(a.csr.Spec.Groups) < 2 {
-		return fmt.Errorf("CSR %s contains invalid number of groups: %d", a.csr.Name,
+		return errors.Errorf("CSR %s contains invalid number of groups: %d", a.csr.Name,
 			len(a.csr.Spec.Groups))
 	}
 	groups := sets.NewString(a.csr.Spec.Groups...)
 	if !groups.HasAll(nodeGroup, systemPrefix) {
-		return fmt.Errorf("CSR %s does not contain required groups", a.csr.Name)
+		return errors.Errorf("CSR %s does not contain required groups", a.csr.Name)
 	}
 
 	// Check usages include: digital signature, key encipherment and server auth
 	if !hasUsages(a.csr, kubeletServerUsages) {
-		return fmt.Errorf("CSR %s does not contain required usages", a.csr.Name)
+		return errors.Errorf("CSR %s does not contain required usages", a.csr.Name)
 	}
 
 	var hasOrg bool
@@ -239,7 +238,7 @@ func (a *Approver) validateKubeletServingCSR(parsedCsr *x509.CertificateRequest)
 		}
 	}
 	if !hasOrg {
-		return fmt.Errorf("CSR %s does not contain required subject organization", a.csr.Name)
+		return errors.Errorf("CSR %s does not contain required subject organization", a.csr.Name)
 	}
 	return nil
 }
@@ -294,8 +293,8 @@ func matchesHostname(nodeName string, windowsInstances []*instance.Info,
 	for _, instanceInfo := range windowsInstances {
 		hostName, err := findHostName(instanceInfo, instanceSigner)
 		if err != nil {
-			return false, fmt.Errorf("unable to find host name for instance with address %s: %w",
-				instanceInfo.Address, err)
+			return false, errors.Wrapf(err, "unable to find host name for instance with address %s",
+				instanceInfo.Address)
 		}
 		// check if the instance host name matches node name
 		if strings.Contains(hostName, nodeName) {
@@ -310,12 +309,12 @@ func findHostName(instanceInfo *instance.Info, instanceSigner ssh.Signer) (strin
 	// We don't need to pass most args here as we just need to be able to run commands on the instance.
 	win, err := windows.New("", instanceInfo, instanceSigner)
 	if err != nil {
-		return "", fmt.Errorf("error instantiating Windows instance: %w", err)
+		return "", errors.Wrap(err, "error instantiating Windows instance")
 	}
 	// get the instance host name  by running hostname command on remote VM
 	hostName, err := win.Run("hostname", true)
 	if err != nil {
-		return "", fmt.Errorf("error getting the host name, with stdout %s: %w", hostName, err)
+		return "", errors.Wrapf(err, "error getting the host name, with stdout %s", hostName)
 	}
 	return hostName, nil
 }
@@ -328,7 +327,7 @@ func matchesDNS(nodeName string, windowsInstances []*instance.Info) (bool, error
 		if parseAddr := net.ParseIP(instanceInfo.Address); parseAddr != nil {
 			dnsAddresses, err := net.LookupAddr(instanceInfo.Address)
 			if err != nil {
-				return false, fmt.Errorf("failed to lookup DNS for IP %s: %w", instanceInfo.Address, err)
+				return false, errors.Wrapf(err, "failed to lookup DNS for IP %s", instanceInfo.Address)
 			}
 			for _, dns := range dnsAddresses {
 				if strings.Contains(dns, nodeName) {
@@ -347,12 +346,12 @@ func matchesDNS(nodeName string, windowsInstances []*instance.Info) (bool, error
 // ParseCSR extracts the CSR from the API object and decodes it.
 func ParseCSR(csr []byte) (*x509.CertificateRequest, error) {
 	if len(csr) == 0 {
-		return nil, fmt.Errorf("CSR request spec should not be empty")
+		return nil, errors.New("CSR request spec should not be empty")
 	}
 	// extract PEM from request object
 	block, _ := pem.Decode(csr)
 	if block == nil || block.Type != "CERTIFICATE REQUEST" {
-		return nil, fmt.Errorf("PEM block type must be CERTIFICATE REQUEST")
+		return nil, errors.New("PEM block type must be CERTIFICATE REQUEST")
 	}
 	return x509.ParseCertificateRequest(block.Bytes)
 }

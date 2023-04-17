@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	oconfig "github.com/openshift/api/config/v1"
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,7 +33,7 @@ func GetPrivateKey(secret kubeTypes.NamespacedName, c client.Client) ([]byte, er
 	}
 	privateKey, ok := privateKeySecret.Data[PrivateKeySecretKey]
 	if !ok {
-		return []byte{}, fmt.Errorf("cloud-private-key missing 'private-key.pem' secret")
+		return []byte{}, errors.New("cloud-private-key missing 'private-key.pem' secret")
 	}
 	return privateKey, nil
 }
@@ -41,7 +42,7 @@ func GetPrivateKey(secret kubeTypes.NamespacedName, c client.Client) ([]byte, er
 func GenerateUserData(platformType oconfig.PlatformType, publicKey ssh.PublicKey) (*core.Secret, error) {
 	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
 	if pubKeyBytes == nil {
-		return nil, fmt.Errorf("failed to retrieve public key using signer")
+		return nil, errors.Errorf("failed to retrieve public key using signer")
 	}
 	userData := processTags(platformType, generateUserDataWithPubKey(string(pubKeyBytes[:])))
 	// sshd service is started to create the default sshd_config file. This file is modified
