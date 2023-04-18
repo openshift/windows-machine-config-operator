@@ -464,10 +464,6 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 
 // getWindowsServerContainerImage gets the appropriate WindowsServer image based on the cloud provider
 func (tc *testContext) getWindowsServerContainerImage() string {
-	if tc.CloudProvider.GetType() == config.AWSPlatformType {
-		// On AWS we are currently testing 2019
-		return "mcr.microsoft.com/powershell:lts-nanoserver-1809"
-	}
 	// the default container image must be compatible with Windows Server 2022
 	return "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 }

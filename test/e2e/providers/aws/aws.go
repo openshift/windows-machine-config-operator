@@ -68,12 +68,12 @@ func getLatestWindowsAMI(region string) (string, error) {
 		return "", err
 	}
 	// This filter will grab all ami's that match the exact name. The '?' indicate any character will match.
-	// The ami's will have the name format: Windows_Server-2019-English-Full-ContainersLatest-2022.01.19
+	// The ami's will have the name format: Windows_Server-2022-English-Core-Base-YYYY.MM.DD
 	// so the question marks will match the date of creation
 	// The image obtained by using windowsAMIFilterValue is compatible with the test container image -
-	// "mcr.microsoft.com/powershell:lts-nanoserver-1809".
+	// "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022".
 	// If the windowsAMIFilterValue changes, the test container image also needs to be changed.
-	windowsAMIFilterValue := "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+	windowsAMIFilterValue := "Windows_Server-2022-English-Core-Base-????.??.??"
 	searchFilter := ec2.Filter{Name: aws.String("name"), Values: []*string{&windowsAMIFilterValue}}
 
 	describedImages, err := ec2Client.DescribeImages(&ec2.DescribeImagesInput{
