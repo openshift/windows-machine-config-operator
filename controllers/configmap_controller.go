@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -48,6 +49,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/services"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
@@ -73,16 +75,22 @@ const (
 	ConfigMapController = "configmap"
 	// wicdRBACResourceName is the name of the resources associated with WICD's RBAC permissions
 	wicdRBACResourceName = "windows-instance-config-daemon"
+	// proxyCertsConfigMap is the name of the ConfigMap that holds the trusted CA bundle for a cluster-wide proxy
+	proxyCertsConfigMap = "trusted-ca"
+	// injectionRequestLabel is used to allow CNO to inject the trusted CA bundle when the global Proxy resource changes
+	injectionRequestLabel = "config.openshift.io/inject-trusted-cabundle"
 )
 
 // ConfigMapReconciler reconciles a ConfigMap object
 type ConfigMapReconciler struct {
 	instanceReconciler
 	servicesManifest *servicescm.Data
+	proxyEnabled     bool
 }
 
 // NewConfigMapReconciler returns a pointer to a ConfigMapReconciler
-func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) (*ConfigMapReconciler, error) {
+func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string,
+	proxyEnabled bool) (*ConfigMapReconciler, error) {
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return nil, fmt.Errorf("error creating kubernetes clientset: %w", err)
@@ -132,6 +140,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 			platform:             clusterConfig.Platform(),
 		},
 		servicesManifest: svcData,
+		proxyEnabled:     proxyEnabled,
 	}, nil
 }
 
@@ -164,8 +173,8 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 	// so it is safe to assume that all ConfigMaps being reconciled are one of:
 	// 1. windows-instances, describing hosts that need to be present in the cluster.
 	// 2. windows-services, describing expected configuration of WMCO-managed services on all Windows instances
-	// 3. kube-apiserver-to-kubelet-client-ca, contains the CA for the kubelet to recognize the kube-apiserver
-	// client certificate
+	// 3. kube-apiserver-to-kubelet-client-ca, contains the CA for the kubelet to recognize the kube-apiserver client cert
+	// 4. trusted-ca, where CNO will publish user-provided certs when there is an active cluster-wide proxy
 	configMap := &core.ConfigMap{}
 	if err := r.client.Get(ctx, req.NamespacedName, configMap); err != nil {
 		if !k8sapierrors.IsNotFound(err) {
@@ -178,6 +187,10 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 				return ctrl.Result{}, err
 			}
 		}
+		if req.NamespacedName.Name == proxyCertsConfigMap {
+			// Create the trusted CA ConfigMap as it is not present
+			return ctrl.Result{}, r.createProxyCertsCM(ctx)
+		}
 	}
 
 	r.log.V(1).Info("Reconciling", "ConfigMap", req.NamespacedName)
@@ -189,6 +202,8 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
 	case certificates.KubeAPIServerServingCAConfigMapName:
 		return ctrl.Result{}, r.reconcileKubeletClientCA(ctx, configMap)
+	case proxyCertsConfigMap:
+		return ctrl.Result{}, r.reconcileProxyCertsCM(ctx, configMap)
 	default:
 		// Unexpected configmap, log and return no error so we don't requeue
 		r.log.Error(fmt.Errorf("unexpected resource triggered reconcile"), "ConfigMap", req.NamespacedName)
@@ -416,10 +431,11 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// isValidConfigMap returns true if the ConfigMap object is the InstanceConfigMap
+// isValidConfigMap returns true if the ConfigMap object is the InstanceConfigMap or a WMCO-managed ConfigMap
 func (r *ConfigMapReconciler) isValidConfigMap(o client.Object) bool {
 	return o.GetNamespace() == r.watchNamespace &&
-		(o.GetName() == wiparser.InstanceConfigMap || o.GetName() == servicescm.Name)
+		(o.GetName() == wiparser.InstanceConfigMap || o.GetName() == servicescm.Name ||
+			(r.proxyEnabled && o.GetName() == proxyCertsConfigMap))
 }
 
 // createServicesConfigMap creates a valid ServicesConfigMap and returns it
@@ -479,6 +495,55 @@ func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
 	r.log.Info("Deleted invalid resource", "ConfigMap",
 		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name})
 	return r.createServicesConfigMapOnBootup()
+}
+
+// createProxyCertsCM creates the trusted CA ConfigMap with the expected spec
+func (r *ConfigMapReconciler) createProxyCertsCM(ctx context.Context) error {
+	trustedCA := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: proxyCertsConfigMap, Namespace: r.watchNamespace,
+		Labels: map[string]string{injectionRequestLabel: "true"}}}
+	_, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Create(context.TODO(), trustedCA, meta.CreateOptions{})
+	if err != nil {
+		return err
+	}
+	r.log.Info("Created", "ConfigMap", kubeTypes.NamespacedName{Namespace: trustedCA.Namespace, Name: trustedCA.Name})
+	return nil
+}
+
+// reconcileProxyCertsCM ensures the trusted CA ConfigMap has the expected injection request. Patches the object if not.
+func (r *ConfigMapReconciler) reconcileProxyCertsCM(ctx context.Context, trustedCA *core.ConfigMap) error {
+	if trustedCA.GetLabels()[injectionRequestLabel] == "true" {
+		// ConfigMap exists as expected, nothing to do
+		return nil
+	}
+	var labelPatch = []*patch.JSONPatch{
+		patch.NewJSONPatch("add", "/metadata/labels", map[string]string{injectionRequestLabel: "true"}),
+	}
+	patchData, err := json.Marshal(labelPatch)
+	if err != nil {
+		return fmt.Errorf("unable to generate patch request body for label %s: %w", injectionRequestLabel, err)
+	}
+
+	if _, err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Patch(context.TODO(), proxyCertsConfigMap,
+		kubeTypes.JSONPatchType, patchData, meta.PatchOptions{}); err != nil {
+		return fmt.Errorf("unable to apply patch %s to resource %s/%s: %w", patchData, r.watchNamespace,
+			proxyCertsConfigMap, err)
+	}
+	r.log.Info("Patched", "ConfigMap", kubeTypes.NamespacedName{Namespace: trustedCA.Namespace, Name: trustedCA.Name})
+	return nil
+}
+
+// EnsureTrustedCAConfigMapExists ensures the trusted CA ConfigMap exists as expected.
+// Creates it if it doesn't exist, patches it if it exists with improper spec.
+func (r *ConfigMapReconciler) EnsureTrustedCAConfigMapExists() error {
+	trustedCA, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Get(context.TODO(), proxyCertsConfigMap,
+		meta.GetOptions{})
+	if err != nil {
+		if !k8sapierrors.IsNotFound(err) {
+			return err
+		}
+		return r.createProxyCertsCM(context.TODO())
+	}
+	return r.reconcileProxyCertsCM(context.TODO(), trustedCA)
 }
 
 // EnsureWICDRBAC ensures the WICD RBAC resources exist as expected
