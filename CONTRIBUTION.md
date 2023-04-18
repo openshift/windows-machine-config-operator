@@ -1,45 +1,33 @@
 # How to contribute
 
 Windows Machine Config Operator is Apache 2.0 licensed and accepts contributions via GitHub pull requests. This
-document outlines some of the conventions on commit message formatting and other resources to help get contributions into the project.  
+document outlines some of the conventions on commit message formatting and other resources to help get
+contributions into the project.  
 
+## New Contributor guide
 
-## Reporting bugs and creating issues
+To get an overview of what the WMCO does, please take a look at the [README](README.md) first. In order to
+work with the codebase, you'll need to understand a few basic git concepts. Follow the steps below to set up your
+environment to get started.
 
-If any part of the project has bugs or documentation mistakes, please let us know by opening a
-[Jira issue](https://jira.coreos.com/projects/WINC/summary)
+- [Fork the repository on GitHub.](https://docs.github.com/en/get-started/quickstart/fork-a-repo)
+- [Clone the forked repository outside your go path](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository)
+- [Create a topic branch, branched off of master.](https://www.atlassian.com/git/tutorials/using-branches)
+- [Make commits of logical units as you work](https://github.com/git-guides/git-commit)
 
-## Contribution flow
+## Before opening a pull request
 
-This is an outline of what a contributor's workflow looks like:
+Thank you for contributing to the Windows Machine Config Operator!
 
-- Fork the repository on GitHub.
-- Clone the forked repository outside your go path, or refer to the [Kubernetes repo's example](https://github.com/kubernetes/community/blob/master/contributors/guide/github-workflow.md#2-clone-fork-to-local-storage).
-- Create a topic branch, branched off of master.
-- Make commits of logical units. A commit should typically add a feature or fix a bug, but never both at the same
-time. Vendor commits should always be separate.
-- A PR should consist of a set of logically connected commits to the issue that makes it easy to review and should not 
-follow your personal development flow.
-- Make sure commit messages are in the proper format (see below).
-- Push changes in a topic branch to a personal fork of the repository.
-- To make sure that your topic branch is in sync with the remote master branch,
-follow a [rebase workflow](https://www.atlassian.com/git/tutorials/merging-vs-rebasing).
-- Submit a pull request to openshift/windows-machine-config-operator (see PR workflow below).
-- The PR must receive one `/lgtm` and one `/approve` comments from the maintainers of the project.
+Before opening a pull request, be sure that your changes have been tested, documented, and checked for style. Once
+you think your PR is ready for review, be sure to check that you have
 
-Thanks for contributing!
-
-### Format of the pull request (PR)
-
-- The PR header for a feature should be prefixed with the Jira issue. Example: `WINC-123:`
-- The PR header for a bug should be prefixed with the Jira Bug identifier. Example: `OCPBUGS-123:`
-- Correctly prefixing the PR header will automatically associate the PR with the Jira issue or bug.
-  - In the case of bug fix PRs, this will also automatically transition the associated Jira bug.
-    - Opening the PR: `ASSIGNED` --> `POST`
-    - PR merges: `POST` --> `MODIFIED`
-    - `MODIFIED` to the `ON_QA` transition will have to be done manually by the PR author.
-    - PR closes without merging, the Jira bug transitions back to NEW status.
-- The individual commit messages should not be prefixed.
+- [Fetched from upstream WMCO](https://docs.github.com/en/get-started/using-git/getting-changes-from-a-remote-repository#fetching-changes-from-a-remote-repository)
+- [Rebased your changes against your root branch](https://www.atlassian.com/git/tutorials/merging-vs-rebasing)
+- [Run the tests locally](docs/HACKING.md)
+- Linted your changes with ```make lint```
+- Ensured error messages are a single line
+- Updated relevant documentation if your PR changes user functionality  
 
 ### Format of the commit message
 
@@ -53,42 +41,114 @@ The format can be described more formally as follows:
 <BLANK LINE>
 <why this change was made>
 <BLANK LINE>
-<footer>
+<Footer>
 ```
-Example for a sample feature:
-```
-[docs] Add the Guidlines
 
-Cupcake ipsum dolor sit. Amet tart cheesecake tiramisu chocolate cake topping.
-Icing ice cream sweet roll. Biscuit dragée toffee wypas.
+A real world example would look like
+
+```
+[docs] Add the guidelines
+
+The contribution guidelines were not aligned with current practices. Update the
+guidelines and reorganize it to bring it up to date.
 
 Follow-up to Id5e7cbb1.
 ```
 
-The first line is the subject and should be no longer than 50 characters, the second line is always blank, and other
-lines should be wrapped at 80 characters. This allows the message to be easier to read on GitHub as well as in various
-git tools.
+The subject should be no longer than 50 characters, and the body should be no longer than 80 characters. There are some
+[githooks](https://github.com/jorisroovers/gitlint) you can install that can help enforce these style requirements.
 
-If it is a bug fix commit, the bug identifier should be mentioned in the commit message as `Fixes OCPBUGS-123` in a separate
-line.
+## Opening a pull request
 
-### PR workflow
+Once you are done with the pre-PR checklist, push your changes and create a pull request!
 
-- Before submitting a PR
-  - Format your code and fix all the spelling/grammatical mistakes.
-  - Limit the column length of the code and the comments within the code to 120 characters.
-  - Error messages within the code should be limited to a single line.
-  - Update the documentation if your PR is introducing or changing user facing functionality.
-  - Ensure each PR commit compiles and all unit and e2e tests pass on your local machine.
-    - PRs that have vendor commits are an exception to this rule.
-- Following are the things you should keep in mind once you open a PR:
-  - Add a hold as soon as you open the PR by commenting `/hold`
-  - Wait for comments from at least 2 reviewers before pushing changes.
-  Open comments in the meanwhile can be worked on locally.
-  - PR comments should be addressed in new commits. Before final approval, they have to be squashed.
-  - If PR has multiple commits, changes requested should eventually be squashed into the original commit where the
-  change was requested before cancelling the hold. Each commit in the final PR before merge should pass the tests and be
-  usable. (see below)
-  - Once the PR is approved, remove the hold by commenting `/hold cancel` to merge the PR
+### Format of the pull request
+
+#### Title
+
+When creating your pull request, you should prefix it with the Jira issue, followed by the subsystem name in brackets. It
+should follow the format
+
+```WINC|OCPBUGS-<number>: [<subsystem>] <title>```
+
+For example, a docs PR would look like
+
+```WINC-959: [docs] reorganizes readme```
+
+In doing this, you’ll be linking your PR to the Jira ticket for tracking.
+
+In the case of bug fix PRs, this will also automatically transition the associated Jira bug.
+
+- Opening the PR: `ASSIGNED` --> `POST`
+- PR merges: `POST` --> `MODIFIED`
+- `MODIFIED` to the `ON_QA` transition will have to be done manually by the PR author.
+- PR closes without merging, the Jira bug transitions back to NEW status.
+
+If you have no Jira issue or are not a Red Hat employee, your title should simply follow the format `[<subsystem>] <title>`.
+
+If your work is linked to a GitHub issue, add `Fixes #<issue>` in the comment.
+
+### Open as draft
+
+The WMCO team opens pull requests as drafts before they are reviewed in order to prevent the tests from running right away
+[Open your PR as a draft](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request)
+before requesting reviews.
+
+## Merging a pull request
+
+Once your PR is open, you'll need at least two reviewers te get it merged.
+
+### Moving your PR out of draft
+
+Before moving your PR out of draft, you must have at least one /lgtm and one /approve on the PR.
+Once you have both, you are free to move it out of draft status by clicking the "ready for review" button
+in your PR interface. This will let your tests start running, and if they pass, your PR will merge automatically.
+
+### Respond to failing tests
+
+If your PR is experiencing a test failure that you believe to be a flake, feel free to run a retest.
+When retesting, be sure to add a link to the failing test, and a snippet of what caused the failure.
+The format should be
+
+```
+/retest-required
+
+<explanation of the error>
+<reason for retest>
+<prow.ci.openshift.org link>
+
+<log snippet of the failure>
+```
+
+Once your tests are passing, and your PR has an approval and a LGTM label, the CI should merge it automatically.
 
 ![Sample PR life-cycle](/images/PR-workflow.png)
+
+## Backports
+
+When backporting changes, use the openshift-cherrypick-robot whenever possible to auto-generate backports.
+Once your PR has merged, go to the PR and comment `/cherry-pick <release>` with whatever 
+[supported](https://access.redhat.com/support/policy/updates/openshift#windows)
+releases you want to backport to.
+
+## Backporting bugfixes
+
+Bugfixes should be backported to all 
+[supported versions](https://access.redhat.com/support/policy/updates/openshift#windows).
+Once your bugfix is merged, go to the merged PR and comment
+`/cherry-pick <release>`
+to trigger the openshift-cherrypick-robot and create an automated backport.
+If you have multiple versions you need to backport to, go to each generated backport and run the
+`/cherry-pick <release>` on that instead of master. This ensures the Jira bugs are linked properly.
+
+If for example your PR to master needed to be backported to 4.11, 4.10, and 4.9, you would create an automatic
+backport against 4.11, go to that generated backport, and from there run `/cherry-pick 4.10`. Then, from
+your 4.10 backport you would generate a backport for 4.9.
+
+If the cherry pick bot fails, you will have to make your cherry picks manually, and execute
+/jira cherry-pick OCBUGS-<number> in the manual PR to create the Jira associations.
+
+## Reporting bugs and creating issues
+
+If any part of the project has bugs or documentation mistakes, please let us know by opening a
+[GitHub issue](https://github.com/openshift/windows-machine-config-operator/issues)
