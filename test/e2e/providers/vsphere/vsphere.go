@@ -3,15 +3,16 @@ package vsphere
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 
-	"github.com/pkg/errors"
-
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
+	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	client "k8s.io/client-go/kubernetes"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
@@ -130,4 +131,12 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 
 func (p *Provider) GetType() config.PlatformType {
 	return config.VSpherePlatformType
+}
+
+func (p *Provider) StorageSupport() bool {
+	return false
+}
+
+func (p *Provider) CreatePVC(_ client.Interface) (*core.PersistentVolumeClaim, error) {
+	return nil, fmt.Errorf("storage not supported on vSphere")
 }
