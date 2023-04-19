@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/api/core/v1"
@@ -100,11 +101,11 @@ func (tc *testContext) configureUpgradeTest() error {
 	// tamper version annotation on all nodes
 	machineNodes, err := tc.listFullyConfiguredWindowsNodes(false)
 	if err != nil {
-		return fmt.Errorf("error getting list of fully configured Machine nodes: %w", err)
+		return errors.Wrap(err, "error getting list of fully configured Machine nodes")
 	}
 	byohNodes, err := tc.listFullyConfiguredWindowsNodes(true)
 	if err != nil {
-		return fmt.Errorf("error getting list of fully configured BYOH nodes: %w", err)
+		return errors.Wrap(err, "error getting list of fully configured BYOH nodes")
 	}
 
 	for _, node := range append(machineNodes, byohNodes...) {
@@ -180,20 +181,20 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 	// create a Windows Webserver deployment
 	deployment, err := tc.deployWindowsWebServer("win-webserver", nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating Windows Webserver deployment for upgrade test: %w", err)
+		return nil, errors.Wrap(err, "error creating Windows Webserver deployment for upgrade test")
 	}
 	// create a clusterIP service which can be used to reach the Windows webserver
 	intermediarySVC, err := tc.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
 	if err != nil {
 		_ = tc.deleteDeployment(deployment.Name)
-		return nil, fmt.Errorf("error creating service for deployment %s: %w", deployment.Name, err)
+		return nil, errors.Wrapf(err, "error creating service for deployment %s", deployment.Name)
 	}
 	// create a Job object that continuously curls the webserver every 5 seconds.
 	testerJob, err := tc.createLinuxCurlerJob(windowsWorkloadTesterJob, intermediarySVC.Spec.ClusterIP, true)
 	if err != nil {
 		_ = tc.deleteDeployment(deployment.Name)
 		_ = tc.deleteService(intermediarySVC.Name)
-		return nil, fmt.Errorf("error creating linux job %s: %w", windowsWorkloadTesterJob, err)
+		return nil, errors.Wrapf(err, "error creating linux job %s", windowsWorkloadTesterJob)
 	}
 	// return a cleanup func
 	return func() {

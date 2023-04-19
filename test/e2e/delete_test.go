@@ -9,6 +9,7 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apps "k8s.io/api/apps/v1"
@@ -35,12 +36,12 @@ func (tc *testContext) clearWindowsInstanceConfigMap() error {
 	cm, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), wiparser.InstanceConfigMap,
 		meta.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("error retrieving windows-instances ConfigMap: %w", err)
+		return errors.Wrap(err, "error retrieving windows-instances ConfigMap")
 	}
 	cm.Data = map[string]string{}
 	_, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Update(context.TODO(), cm, meta.UpdateOptions{})
 	if err != nil {
-		return fmt.Errorf("error clearing windows-instances ConfigMap data: %w", err)
+		return errors.Wrap(err, "error clearing windows-instances ConfigMap data")
 	}
 	return nil
 }
@@ -91,7 +92,7 @@ func (tc *testContext) checkDirsDoNotExist(address string) (bool, error) {
 	command += "exit 0"
 	out, err := tc.runPowerShellSSHJob("check-win-dirs", command, address)
 	if err != nil {
-		return false, fmt.Errorf("error confirming directories do not exist %s: %w", out, err)
+		return false, errors.Wrapf(err, "error confirming directories do not exist %s", out)
 	}
 	return !strings.Contains(out, "exists"), nil
 }
@@ -102,7 +103,7 @@ func (tc *testContext) checkNetworksRemoved(address string) (bool, error) {
 	command := "Get-HnsNetwork; Get-HnsEndpoint"
 	out, err := tc.runPowerShellSSHJob("check-hns-networks", command, address)
 	if err != nil {
-		return false, fmt.Errorf("error confirming networks are removed %s: %w", out, err)
+		return false, errors.Wrapf(err, "error confirming networks are removed %s", out)
 	}
 	return !(strings.Contains(out, windows.BaseOVNKubeOverlayNetwork) ||
 		strings.Contains(out, windows.OVNKubeOverlayNetwork) ||
@@ -216,7 +217,7 @@ func (tc *testContext) deployNOOPDaemonSet() (*apps.DaemonSet, error) {
 	created, err := tc.client.K8s.AppsV1().DaemonSets(tc.workloadNamespace).Create(context.TODO(), &ds,
 		meta.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("error creating daemonset %v: %w", ds, err)
+		return nil, errors.Wrapf(err, "error creating daemonset %v", ds)
 	}
 	return created, nil
 }
@@ -228,12 +229,12 @@ func (tc *testContext) waitUntilDaemonsetScaled(name string, desiredReplicas int
 	for i := 0; i < retryCount; i++ {
 		ds, err = tc.client.K8s.AppsV1().DaemonSets(tc.workloadNamespace).Get(context.TODO(), name, meta.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("could not get daemonset %s: %w", name, err)
+			return errors.Wrapf(err, "could not get daemonset %s", name)
 		}
 		if int(ds.Status.NumberAvailable) == desiredReplicas {
 			return nil
 		}
 		time.Sleep(retryInterval)
 	}
-	return fmt.Errorf("timed out waiting for daemonset %s to scale, current status: %+v", name, ds.Status)
+	return errors.Errorf("timed out waiting for daemonset %s to scale, current status: %+v", name, ds.Status)
 }

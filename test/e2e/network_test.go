@@ -13,6 +13,7 @@ import (
 	"time"
 
 	config "github.com/openshift/api/config/v1"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -207,12 +208,12 @@ func (tc *testContext) collectDeploymentLogs(deployment *appsv1.Deployment) {
 // getLogs uses a label selector and returns the logs associated with each pod
 func (tc *testContext) getLogs(podLabelSelector string) (string, error) {
 	if podLabelSelector == "" {
-		return "", fmt.Errorf("pod label selector is empty")
+		return "", errors.Errorf("pod label selector is empty")
 	}
 	pods, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: podLabelSelector})
 	if err != nil {
-		return "", fmt.Errorf("error getting pod list: %w", err)
+		return "", errors.Wrap(err, "error getting pod list")
 	}
 	if len(pods.Items) == 0 {
 		return "", fmt.Errorf("expected at least 1 pod and found 0")
@@ -222,12 +223,12 @@ func (tc *testContext) getLogs(podLabelSelector string) (string, error) {
 		logStream, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).GetLogs(pod.Name,
 			&v1.PodLogOptions{}).Stream(context.TODO())
 		if err != nil {
-			return "", fmt.Errorf("error getting pod logs: %w", err)
+			return "", errors.Wrap(err, "error getting pod logs")
 		}
 		podLogs, err := ioutil.ReadAll(logStream)
 		if err != nil {
 			logStream.Close()
-			return "", fmt.Errorf("error reading pod logs: %w", err)
+			return "", errors.Wrap(err, "error reading pod logs")
 		}
 		// appending the pod logs onto the existing logs
 		logs += fmt.Sprintf("%s: %s\n", pod.Name, podLogs)
@@ -272,12 +273,12 @@ func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) erro
 	// Create a load balancer svc to expose the webserver
 	loadBalancer, err := tc.createService(webserver.Name, v1.ServiceTypeLoadBalancer, *webserver.Spec.Selector)
 	if err != nil {
-		return fmt.Errorf("could not create load balancer for Windows Server: %w", err)
+		return errors.Wrap(err, "could not create load balancer for Windows Server")
 	}
 	defer tc.deleteService(loadBalancer.Name)
 	loadBalancer, err = tc.waitForLoadBalancerIngress(loadBalancer.Name)
 	if err != nil {
-		return fmt.Errorf("error waiting for load balancer ingress: %w", err)
+		return errors.Wrap(err, "error waiting for load balancer ingress")
 	}
 
 	// Try and read from the webserver through the load balancer.
@@ -289,7 +290,7 @@ func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) erro
 	} else if loadBalancer.Status.LoadBalancer.Ingress[0].IP != "" {
 		locator = loadBalancer.Status.LoadBalancer.Ingress[0].IP
 	} else {
-		return fmt.Errorf("load balancer ingress object is empty")
+		return errors.New("load balancer ingress object is empty")
 	}
 	resp, err := retryGET("http://" + locator)
 	if err != nil {
@@ -426,13 +427,13 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 			"$response.OutputStream.Write($buffer, 0, $buffer.Length); $response.Close(); };"}
 	winServerDeployment, err := tc.createWindowsServerDeployment(name, winServerCommand, affinity)
 	if err != nil {
-		return nil, fmt.Errorf("could not create Windows deployment: %w", err)
+		return nil, errors.Wrapf(err, "could not create Windows deployment")
 	}
 	// Wait until the server is ready to be queried
 	err = tc.waitUntilDeploymentScaled(winServerDeployment.Name)
 	if err != nil {
 		tc.deleteDeployment(winServerDeployment.Name)
-		return nil, fmt.Errorf("deployment was unable to scale: %w", err)
+		return nil, errors.Wrapf(err, "deployment was unable to scale")
 	}
 	return winServerDeployment, nil
 }
@@ -453,7 +454,7 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 		return "", err
 	}
 	if len(podList.Items) != 1 {
-		return "", fmt.Errorf("expected one pod matching %s, but found %d", selectorString,
+		return "", errors.Errorf("expected one pod matching %s, but found %d", selectorString,
 			len(podList.Items))
 	}
 
@@ -543,7 +544,7 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 	// Create Deployment
 	deploy, err := deploymentsClient.Create(context.TODO(), deployment, metav1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("could not create deployment: %w", err)
+		return nil, errors.Wrapf(err, "could not create deployment")
 	}
 	return deploy, err
 }
@@ -558,7 +559,7 @@ func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 			name,
 			metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("could not get deployment for %s: %w", name, err)
+			return errors.Wrapf(err, "could not get deployment for %s", name)
 		}
 		if *deployment.Spec.Replicas == deployment.Status.AvailableReplicas {
 			return nil
@@ -568,7 +569,7 @@ func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 		time.Sleep(2 * time.Minute)
 	}
 	events, _ := tc.getPodEvents(name)
-	return fmt.Errorf("timed out waiting for deployment %v to scale: %v", deployment, events)
+	return errors.Errorf("timed out waiting for deployment %v to scale: %v", deployment, events)
 }
 
 // getPodEvents gets all events for any pod with the input in its name. Used for debugging purposes
@@ -703,13 +704,13 @@ func (tc *testContext) waitUntilJobSucceeds(name string) error {
 		if job.Status.Failed > 0 {
 			tc.writePodLogs(labelSelector)
 			events, _ := tc.getPodEvents(name)
-			return fmt.Errorf("job %v failed: %v", job, events)
+			return errors.Errorf("job %v failed: %v", job, events)
 		}
 		time.Sleep(retryInterval)
 	}
 	tc.writePodLogs(labelSelector)
 	events, _ := tc.getPodEvents(name)
-	return fmt.Errorf("job %v timed out: %v", job, events)
+	return errors.Errorf("job %v timed out: %v", job, events)
 }
 
 // writePodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts dir

@@ -7,12 +7,12 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"testing"
 
 	config "github.com/openshift/api/config/v1"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -30,11 +30,11 @@ import (
 func (tc *testContext) getExpectedKeyPair() ([]byte, ssh.PublicKey, error) {
 	privateKey, err := tc.getCloudPrivateKey()
 	if err != nil {
-		return nil, nil, fmt.Errorf("error retrieving private key: %w", err)
+		return nil, nil, errors.Wrap(err, "error retrieving private key")
 	}
 	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to parse private key: %w", err)
+		return nil, nil, errors.Wrapf(err, "unable to parse private key")
 	}
 
 	return privateKey, signer.PublicKey(), nil
@@ -45,12 +45,12 @@ func (tc *testContext) getCloudPrivateKey() ([]byte, error) {
 	privateKeySecret, err := tc.client.K8s.CoreV1().Secrets(wmcoNamespace).Get(context.TODO(),
 		secrets.PrivateKeySecret, meta.GetOptions{})
 	if err != nil {
-		return []byte{}, fmt.Errorf("failed to retrieve cloud private key secret: %w", err)
+		return []byte{}, errors.Wrapf(err, "failed to retrieve cloud private key secret")
 	}
 
 	privateKeyBytes := privateKeySecret.Data[secrets.PrivateKeySecretKey][:]
 	if privateKeyBytes == nil {
-		return []byte{}, fmt.Errorf("failed to retrieve private key using cloud private key secret")
+		return []byte{}, errors.New("failed to retrieve private key using cloud private key secret")
 	}
 	return privateKeyBytes, nil
 }
@@ -116,7 +116,7 @@ func (tc *testContext) waitForNewMachineNodes() error {
 	for _, newNode := range gc.machineNodes {
 		for _, oldNode := range oldNodes {
 			if newNode.GetName() == oldNode {
-				return fmt.Errorf("node %s is not a new Node", oldNode)
+				return errors.Wrapf(err, "node %s is not a new Node", oldNode)
 			}
 		}
 	}
@@ -186,7 +186,7 @@ func generatePrivateKey() ([]byte, error) {
 	var keyData []byte
 	key, err := rsa.GenerateKey(rand.Reader, 1024)
 	if err != nil {
-		return nil, fmt.Errorf("error generating key: %w", err)
+		return nil, errors.Wrap(err, "error generating key")
 	}
 	var privateKey = &pem.Block{
 		Type:  "RSA PRIVATE KEY",
@@ -195,7 +195,7 @@ func generatePrivateKey() ([]byte, error) {
 	buf := bytes.NewBuffer(keyData)
 	err = pem.Encode(buf, privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("error encoding generated private key: %w", err)
+		return nil, errors.Wrap(err, "error encoding generated private key")
 	}
 	return buf.Bytes(), nil
 }
@@ -204,19 +204,19 @@ func generatePrivateKey() ([]byte, error) {
 // namespaces
 func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 	if err := tc.ensurePrivateKeyDeleted(); err != nil {
-		return fmt.Errorf("error ensuring any existing private key is removed: %w", err)
+		return errors.Wrap(err, "error ensuring any existing private key is removed")
 	}
 	var keyData []byte
 	var err error
 	if useKnownKey {
 		keyData, err = ioutil.ReadFile(gc.privateKeyPath)
 		if err != nil {
-			return fmt.Errorf("unable to read private key data from file %s: %w", gc.privateKeyPath, err)
+			return errors.Wrapf(err, "unable to read private key data from file %s", gc.privateKeyPath)
 		}
 	} else {
 		keyData, err = generatePrivateKey()
 		if err != nil {
-			return fmt.Errorf("error generating private key: %w", err)
+			return errors.Wrap(err, "error generating private key")
 		}
 	}
 
@@ -232,7 +232,7 @@ func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 	for _, ns := range []string{wmcoNamespace, tc.workloadNamespace} {
 		_, err := tc.client.K8s.CoreV1().Secrets(ns).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
 		if err != nil {
-			return fmt.Errorf("could not create private key secret in namespace %s: %w", ns, err)
+			return errors.Wrapf(err, "could not create private key secret in namespace %s", ns)
 		}
 	}
 	return nil
@@ -243,7 +243,7 @@ func (tc *testContext) ensurePrivateKeyDeleted() error {
 	for _, ns := range []string{wmcoNamespace, tc.workloadNamespace} {
 		err := tc.client.K8s.CoreV1().Secrets(ns).Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("could not delete private key secret in namespace %s: %w", ns, err)
+			return errors.Wrapf(err, "could not delete private key secret in namespace %s", ns)
 		}
 	}
 	return nil

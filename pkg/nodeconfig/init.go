@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
+	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -53,21 +54,21 @@ func init() {
 func discoverKubeAPIServerEndpoint() (string, error) {
 	cfg, err := crclientcfg.GetConfig()
 	if err != nil {
-		return "", fmt.Errorf("unable to get config to talk to kubernetes api server: %w", err)
+		return "", errors.Wrap(err, "unable to get config to talk to kubernetes api server")
 	}
 
 	client, err := clientset.NewForConfig(cfg)
 	if err != nil {
-		return "", fmt.Errorf("unable to get client from the given config: %w", err)
+		return "", errors.Wrap(err, "unable to get client from the given config")
 	}
 
 	host, err := client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("unable to get cluster infrastructure resource: %w", err)
+		return "", errors.Wrap(err, "unable to get cluster infrastructure resource")
 	}
 	// get API server internal url of format https://api-int.abc.devcluster.openshift.com:6443
 	if host.Status.APIServerInternalURL == "" {
-		return "", fmt.Errorf("could not get host name for the kubernetes api server")
+		return "", errors.Wrap(err, "could not get host name for the kubernetes api server")
 	}
 	return host.Status.APIServerInternalURL, nil
 }
@@ -76,22 +77,22 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 func getWICDCredentials() (*windows.Authentication, error) {
 	cfg, err := crclientcfg.GetConfig()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get config to talk to kubernetes api server: %w", err)
+		return nil, errors.Wrap(err, "unable to get config to talk to kubernetes api server")
 	}
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get client from the given config: %w", err)
+		return nil, errors.Wrap(err, "unable to get client from the given config")
 	}
 
 	operatorNamespaceVar := "WATCH_NAMESPACE"
 	wmcoNamespace, found := os.LookupEnv(operatorNamespaceVar)
 	if !found {
-		return nil, fmt.Errorf("operator namespace must be set in %s", operatorNamespaceVar)
+		return nil, errors.Errorf("operator namespace must be set in %s", operatorNamespaceVar)
 	}
 
 	secrets, err := client.CoreV1().Secrets(wmcoNamespace).List(context.TODO(), meta.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("error listing secrets in namespace %s: %w", wmcoNamespace, err)
+		return nil, errors.Wrapf(err, "error listing secrets in namespace %s", wmcoNamespace)
 	}
 	tokenSecretPrefix := "windows-instance-config-daemon-token-"
 	var filteredSecrets []core.Secret
@@ -101,16 +102,15 @@ func getWICDCredentials() (*windows.Authentication, error) {
 		}
 	}
 	if len(filteredSecrets) != 1 {
-		return nil, fmt.Errorf("expected 1 secret with '%s' prefix, found %d", tokenSecretPrefix,
-			len(filteredSecrets))
+		return nil, fmt.Errorf("expected 1 secret with '%s' prefix, found %d", tokenSecretPrefix, len(filteredSecrets))
 	}
 	caCert := filteredSecrets[0].Data[core.ServiceAccountRootCAKey]
 	if len(caCert) == 0 {
-		return nil, fmt.Errorf("WICD ServiceAccount %s data not found", core.ServiceAccountRootCAKey)
+		return nil, errors.Errorf("WICD ServiceAccount %s data not found", core.ServiceAccountRootCAKey)
 	}
 	token := filteredSecrets[0].Data[core.ServiceAccountTokenKey]
 	if len(token) == 0 {
-		return nil, fmt.Errorf("WICD ServiceAccount %s data not found", core.ServiceAccountTokenKey)
+		return nil, errors.Errorf("WICD ServiceAccount %s data not found", core.ServiceAccountTokenKey)
 	}
 	return &windows.Authentication{CaCert: caCert, Token: token}, nil
 }

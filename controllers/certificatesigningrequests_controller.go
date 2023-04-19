@@ -18,8 +18,8 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/pkg/errors"
 	certificates "k8s.io/api/certificates/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -58,7 +58,7 @@ type certificateSigningRequestsReconciler struct {
 func NewCertificateSigningRequestsReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) (*certificateSigningRequestsReconciler, error) {
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
-		return nil, fmt.Errorf("error creating kubernetes clientset: %w", err)
+		return nil, errors.Wrap(err, "error creating kubernetes clientset")
 	}
 
 	return &certificateSigningRequestsReconciler{
@@ -118,14 +118,14 @@ func (r *certificateSigningRequestsReconciler) reconcileCSR(ctx context.Context,
 		csrApprover, err := csr.NewApprover(r.client, r.k8sclientset, certificateSigningRequest, r.log, r.recorder,
 			r.watchNamespace)
 		if err != nil {
-			return fmt.Errorf("could not create WMCO CSR Approver: %w", err)
+			return errors.Wrapf(err, "could not create WMCO CSR Approver")
 		}
 
 		return csrApprover.Approve()
 	})
 	if err != nil {
 		// Max retries were hit, or unrelated issue like permissions or a network error
-		return fmt.Errorf("WMCO CSR Approver could not approve CSR %s: %w", certificateSigningRequest.Name, err)
+		return errors.Wrapf(err, "WMCO CSR Approver could not approve CSR %s", certificateSigningRequest.Name)
 	}
 	return nil
 }

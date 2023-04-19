@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
@@ -114,7 +115,7 @@ func checkTargetNodes(windowsEndpoints *core.Endpoints) error {
 			}
 		}
 		if !foundNode {
-			return fmt.Errorf("target node not found in Endpoints object")
+			return errors.New("target node not found in Endpoints object ")
 		}
 	}
 

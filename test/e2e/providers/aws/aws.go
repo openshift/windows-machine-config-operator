@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
+	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -31,7 +32,7 @@ type Provider struct {
 func New(oc *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*Provider, error) {
 	ami, err := getLatestWindowsAMI(infraStatus.PlatformStatus.AWS.Region)
 	if err != nil {
-		return nil, fmt.Errorf("error choosing AMI: %w", err)
+		return nil, errors.Wrap(err, "error choosing AMI")
 	}
 	return &Provider{
 		oc:                   oc,
@@ -55,7 +56,7 @@ func newEC2Client(region string) (*ec2.EC2, error) {
 		Region:      aws.String(region),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error initializing aws session: %w", err)
+		return nil, errors.Wrap(err, "error initializing aws session")
 	}
 	return ec2.New(awsSession, aws.NewConfig()), nil
 }

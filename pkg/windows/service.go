@@ -1,6 +1,6 @@
 package windows
 
-import "fmt"
+import "github.com/pkg/errors"
 
 type recoveryActionType string
 
@@ -36,7 +36,7 @@ type service struct {
 func newService(binaryPath, name, args string, dependencies []string, recoveryActions []recoveryAction,
 	recoveryPeriod int) (*service, error) {
 	if binaryPath == "" || name == "" {
-		return nil, fmt.Errorf("can't instantiate a service with incomplete service parameters")
+		return nil, errors.Errorf("can't instantiate a service with incomplete service parameters")
 	}
 	return &service{
 		binaryPath:      binaryPath,

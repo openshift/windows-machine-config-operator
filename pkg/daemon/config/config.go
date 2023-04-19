@@ -19,9 +19,9 @@ limitations under the License.
 package config
 
 import (
-	"fmt"
 	"io/ioutil"
 
+	"github.com/pkg/errors"
 	"k8s.io/client-go/rest"
 	certutil "k8s.io/client-go/util/cert"
 )
@@ -30,10 +30,10 @@ import (
 func FromServiceAccount(apiServerURL, caFile, tokenFile string) (*rest.Config, error) {
 	token, err := ioutil.ReadFile(tokenFile)
 	if err != nil {
-		return nil, fmt.Errorf("error reading token file %s: %w", tokenFile, err)
+		return nil, errors.Wrapf(err, "error reading token file %s", tokenFile)
 	}
 	if _, err := certutil.NewPool(caFile); err != nil {
-		return nil, fmt.Errorf("error loading CA config file %s: %w", caFile, err)
+		return nil, errors.Wrapf(err, "error loading CA config file %s", caFile)
 	}
 	tlsClientConfig := rest.TLSClientConfig{CAFile: caFile}
 

@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"io/ioutil"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // Payload files
@@ -166,7 +168,7 @@ type FileInfo struct {
 func NewFileInfo(path string) (*FileInfo, error) {
 	contents, err := ioutil.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("could not get contents of file: %w", err)
+		return nil, errors.Wrap(err, "could not get contents of file")
 	}
 	return &FileInfo{
 		Path:   path,

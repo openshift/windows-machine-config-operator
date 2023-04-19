@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
+	"github.com/pkg/errors"
 	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
@@ -114,19 +115,19 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 	var err error
 
 	if err = cluster.ValidateCIDR(clusterServiceCIDR); err != nil {
-		return nil, fmt.Errorf("error receiving valid CIDR value for "+
-			"creating new node config: %w", err)
+		return nil, errors.Wrap(err, "error receiving valid CIDR value for "+
+			"creating new node config")
 	}
 
 	clusterDNS, err := cluster.GetDNS(clusterServiceCIDR)
 	if err != nil {
-		return nil, fmt.Errorf("error getting cluster DNS from service CIDR: %s: %w", clusterServiceCIDR, err)
+		return nil, errors.Wrapf(err, "error getting cluster DNS from service CIDR: %s", clusterServiceCIDR)
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
 	win, err := windows.New(clusterDNS, instanceInfo, signer)
 	if err != nil {
-		return nil, fmt.Errorf("error instantiating Windows instance from VM: %w", err)
+		return nil, errors.Wrap(err, "error instantiating Windows instance from VM")
 	}
 
 	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, platformType: platformType,
@@ -154,14 +155,14 @@ func (nc *nodeConfig) Configure() error {
 	// Start all required services to bootstrap a node object using WICD
 	if err := nc.Windows.Bootstrap(wmcoVersion, nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace,
 		nodeConfigCache.credentials); err != nil {
-		return fmt.Errorf("bootstrapping the Windows instance failed: %w", err)
+		return errors.Wrap(err, "bootstrapping the Windows instance failed")
 	}
 
 	// Perform rest of the configuration with the kubelet running
 	err := func() error {
 		// populate node object in nodeConfig in the case of a new Windows instance
 		if err := nc.setNode(false); err != nil {
-			return fmt.Errorf("error getting node object: %w", err)
+			return errors.Wrap(err, "error getting node object")
 		}
 
 		// Make a best effort to cordon the node until it is fully configured
@@ -177,33 +178,33 @@ func (nc *nodeConfig) Configure() error {
 		}
 		if err := metadata.ApplyLabelsAndAnnotations(context.TODO(), nc.client, *nc.node, nc.additionalLabels,
 			annotationsToApply); err != nil {
-			return fmt.Errorf("error updating public key hash and additional annotations on node %s: %w",
-				nc.node.GetName(), err)
+			return errors.Wrapf(err, "error updating public key hash and additional annotations on node %s",
+				nc.node.GetName())
 		}
 
 		ownedByCCM, err := isCloudControllerOwnedByCCM()
 		if err != nil {
-			return fmt.Errorf("unable to check if cloud controller owned by cloud controller manager: %w", err)
+			return errors.Wrap(err, "unable to check if cloud controller owned by cloud controller manager")
 		}
 
 		if err := nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace,
 			nodeConfigCache.credentials); err != nil {
-			return fmt.Errorf("configuring WICD failed: %w", err)
+			return errors.Wrap(err, "configuring WICD failed")
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
 		if err := metadata.ApplyDesiredVersionAnnotation(context.TODO(), nc.client, *nc.node, wmcoVersion); err != nil {
-			return fmt.Errorf("error updating desired version annotation on node %s: %w", nc.node.GetName(), err)
+			return errors.Wrapf(err, "error updating desired version annotation on node %s", nc.node.GetName())
 		}
 
 		// Wait for version annotation. This prevents uncordoning the node until all node services and networks are up
 		if err := metadata.WaitForVersionAnnotation(context.TODO(), nc.client, nc.node.Name); err != nil {
-			return fmt.Errorf("error waiting for proper %s annotation for node %s: %w", metadata.VersionAnnotation,
-				nc.node.GetName(), err)
+			return errors.Wrapf(err, "error waiting for proper %s annotation for node %s", metadata.VersionAnnotation,
+				nc.node.GetName())
 		}
 
 		// Now that the node has been fully configured, update the node object in nodeConfig once more
 		if err := nc.setNode(false); err != nil {
-			return fmt.Errorf("error getting node object: %w", err)
+			return errors.Wrap(err, "error getting node object")
 		}
 
 		// If we deploy on Azure with CCM support, we have to explicitly remove the cloud taint, because cloud node
@@ -218,13 +219,13 @@ func (nc *nodeConfig) Configure() error {
 				Effect: core.TaintEffectNoSchedule,
 			}
 			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
-				return fmt.Errorf("error excluding cloud taint on node %s: %w", nc.node.GetName(), err)
+				return errors.Wrapf(err, "error excluding cloud taint on node %s", nc.node.GetName())
 			}
 		}
 
 		// Uncordon the node now that it is fully configured
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, false); err != nil {
-			return fmt.Errorf("error uncordoning the node %s: %w", nc.node.GetName(), err)
+			return errors.Wrapf(err, "error uncordoning the node %s", nc.node.GetName())
 		}
 
 		nc.log.Info("instance has been configured as a worker node", "version",
@@ -299,11 +300,11 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 	for _, ignFile := range ign.GetFiles() {
 		if _, ok := filesToTransfer[ignFile.Node.Path]; ok {
 			if ignFile.Contents.Source == nil {
-				return nil, fmt.Errorf("could not process %s: File is empty", ignFile.Node.Path)
+				return nil, errors.Errorf("could not process %s: File is empty", ignFile.Node.Path)
 			}
 			contents, err := dataurl.DecodeString(*ignFile.Contents.Source)
 			if err != nil {
-				return nil, fmt.Errorf("could not decode %s: %w", ignFile.Node.Path, err)
+				return nil, errors.Wrapf(err, "could not decode %s", ignFile.Node.Path)
 			}
 			fileName := filepath.Base(ignFile.Node.Path)
 			filePathsToContents[windows.K8sDir+"\\"+fileName] = string(contents.Data)
@@ -317,12 +318,12 @@ func createBootstrapKubeconfig(bootstrapSecret *core.Secret) (string, error) {
 	// extract ca.crt and token data fields
 	caCert := bootstrapSecret.Data[core.ServiceAccountRootCAKey]
 	if caCert == nil {
-		return "", fmt.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
+		return "", errors.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
 			bootstrapSecret.GetName())
 	}
 	token := bootstrapSecret.Data[core.ServiceAccountTokenKey]
 	if token == nil {
-		return "", fmt.Errorf("unable to find %s token in secret %s", core.ServiceAccountTokenKey,
+		return "", errors.Errorf("unable to find %s token in secret %s", core.ServiceAccountTokenKey,
 			bootstrapSecret.GetName())
 	}
 	kubeconfig, err := generateKubeconfig(&windows.Authentication{CaCert: caCert, Token: token},
@@ -364,12 +365,12 @@ func createKubeletConf(clusterServiceCIDR string) (string, error) {
 func isCloudControllerOwnedByCCM() (bool, error) {
 	cfg, err := crclientcfg.GetConfig()
 	if err != nil {
-		return false, fmt.Errorf("unable to get config to talk to kubernetes api server: %w", err)
+		return false, errors.Wrap(err, "unable to get config to talk to kubernetes api server")
 	}
 
 	client, err := clientset.NewForConfig(cfg)
 	if err != nil {
-		return false, fmt.Errorf("unable to get client from the given config: %w", err)
+		return false, errors.Wrap(err, "unable to get client from the given config")
 	}
 
 	return cluster.IsCloudControllerOwnedByCCM(client)
@@ -404,10 +405,7 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 		}
 		return false, nil
 	})
-	if err != nil {
-		return fmt.Errorf("unable to find node with address %s: %w", instanceAddress, err)
-	}
-	return nil
+	return errors.Wrapf(err, "unable to find node with address %s", instanceAddress)
 }
 
 // newDrainHelper returns new drain.Helper instance
@@ -434,15 +432,15 @@ func (nc *nodeConfig) Deconfigure() error {
 	// Cordon and drain the Node before we interact with the instance
 	drainHelper := nc.newDrainHelper()
 	if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
-		return fmt.Errorf("unable to cordon node %s: %w", nc.node.GetName(), err)
+		return errors.Wrapf(err, "unable to cordon node %s", nc.node.GetName())
 	}
 	if err := drain.RunNodeDrain(drainHelper, nc.node.GetName()); err != nil {
-		return fmt.Errorf("unable to drain node %s: %w", nc.node.GetName(), err)
+		return errors.Wrapf(err, "unable to drain node %s", nc.node.GetName())
 	}
 
 	// Revert all changes we've made to the instance by removing installed services, files, and the version annotation
 	if err := nc.Windows.Deconfigure(nc.wmcoNamespace, nodeConfigCache.apiServerEndpoint); err != nil {
-		return fmt.Errorf("error deconfiguring instance: %w", err)
+		return errors.Wrap(err, "error deconfiguring instance")
 	}
 
 	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/pkg/errors"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
@@ -50,7 +51,7 @@ func (l *fakeServiceList) remove(name string) error {
 	defer l.m.Unlock()
 	_, exists := l.svcs[name]
 	if !exists {
-		return fmt.Errorf("service does not exist")
+		return errors.New("service does not exist")
 	}
 	delete(l.svcs, name)
 	return nil
@@ -81,7 +82,7 @@ func (t *testMgr) Disconnect() error {
 func (t *testMgr) CreateService(name, exepath string, config mgr.Config, args ...string) (winsvc.Service, error) {
 	// Throw an error if the service already exists
 	if _, ok := t.svcList.read(name); ok {
-		return nil, fmt.Errorf("service already exists")
+		return nil, errors.New("service already exists")
 	}
 	config.BinaryPathName = exepath
 	service := FakeService{
@@ -121,7 +122,7 @@ func (t *testMgr) DeleteService(name string) error {
 	}
 	// Ensure service is stopped before deleting
 	if err := t.EnsureServiceState(winSvc, svc.Stopped); err != nil {
-		return fmt.Errorf("failed to stop service %q: %w", name, err)
+		return errors.Wrapf(err, "failed to stop service %q", name)
 	}
 	return t.svcList.remove(name)
 }
@@ -129,7 +130,7 @@ func (t *testMgr) DeleteService(name string) error {
 func (t *testMgr) EnsureServiceState(service winsvc.Service, state svc.State) error {
 	status, err := service.Query()
 	if err != nil {
-		return fmt.Errorf("error querying service state: %w", err)
+		return errors.Wrap(err, "error querying service state")
 	}
 	if status.State == state {
 		return nil
@@ -149,11 +150,11 @@ func (t *testMgr) EnsureServiceState(service winsvc.Service, state svc.State) er
 		for _, dependentServiceName := range dependentServices {
 			dependentSvc, err := t.OpenService(dependentServiceName)
 			if err != nil {
-				return fmt.Errorf("error opening dependent service %s: %w", dependentServiceName, err)
+				return fmt.Errorf("error opening dependent service %s", dependentServiceName)
 			}
 			err = t.EnsureServiceState(dependentSvc, svc.Stopped)
 			if err != nil {
-				return fmt.Errorf("unable to stop dependent service %s: %w", dependentServiceName, err)
+				return errors.Wrapf(err, "unable to stop dependent service %s", dependentServiceName)
 			}
 		}
 

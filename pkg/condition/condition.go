@@ -3,11 +3,11 @@ package condition
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"sync"
 
 	operators "github.com/operator-framework/api/pkg/operators/v2"
+	"github.com/pkg/errors"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -154,8 +154,8 @@ func get(c client.Client, watchNamespace string) (*operators.OperatorCondition, 
 	opCond := &operators.OperatorCondition{}
 	err := c.Get(context.TODO(), types.NamespacedName{Namespace: watchNamespace, Name: opCondName}, opCond)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get OperatorCondition CR %s from namespace %s: %w",
-			opCondName, watchNamespace, err)
+		return nil, errors.Wrapf(err, "unable to get OperatorCondition CR %s from namespace %s",
+			opCondName, watchNamespace)
 	}
 	return opCond, nil
 }
@@ -167,10 +167,10 @@ func patch(c client.Client, opCond *operators.OperatorCondition, newCond meta.Co
 	patchData, err := json.Marshal([]*patcher.JSONPatch{
 		patcher.NewJSONPatch("add", "/spec/conditions", []meta.Condition{newCond})})
 	if err != nil {
-		return fmt.Errorf("unable to generate patch request body for Condition %v: %w", newCond, err)
+		return errors.Wrapf(err, "unable to generate patch request body for Condition %v", newCond)
 	}
 	if err = c.Patch(context.TODO(), opCond, client.RawPatch(types.JSONPatchType, patchData)); err != nil {
-		return fmt.Errorf("unable to apply patch %s to OperatorCondition %s: %w", patchData, opCond.GetName(), err)
+		return errors.Wrapf(err, "unable to apply patch %s to OperatorCondition %s", patchData, opCond.GetName())
 	}
 	return nil
 }
@@ -185,7 +185,7 @@ func wait(c client.Client, watchNamespace, condType string, expectedStatus meta.
 		return Validate(opCond.Status.Conditions, condType, expectedStatus), nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to verify condition type %s has status %s: %w", condType, expectedStatus, err)
+		return errors.Wrapf(err, "failed to verify condition type %s has status %s", condType, expectedStatus)
 	}
 	return nil
 }

@@ -3,11 +3,11 @@
 package manager
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"unsafe"
 
+	"github.com/pkg/errors"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -87,15 +87,15 @@ func (m *manager) DeleteService(name string) error {
 		if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
 			return nil
 		}
-		return fmt.Errorf("failed to open service %q: %w", name, err)
+		return errors.Wrapf(err, "failed to open service %q", name)
 	}
 	defer service.Close()
 	// Ensure service is stopped before deleting
 	if err = m.EnsureServiceState(service, svc.Stopped); err != nil {
-		return fmt.Errorf("failed to stop service %q: %w", name, err)
+		return errors.Wrapf(err, "failed to stop service %q", name)
 	}
 	if err = service.Delete(); err != nil {
-		return fmt.Errorf("failed to delete service %q: %w", name, err)
+		return errors.Wrapf(err, "failed to delete service %q", name)
 	}
 	return nil
 }
@@ -103,7 +103,7 @@ func (m *manager) DeleteService(name string) error {
 func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) error {
 	status, err := service.Query()
 	if err != nil {
-		return fmt.Errorf("error querying service state: %w", err)
+		return errors.Wrap(err, "error querying service state")
 	}
 	if status.State == state {
 		return nil
@@ -123,17 +123,17 @@ func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) er
 		}
 		dependentServices, err := m.listDependentServices(winSvc.Handle)
 		if err != nil {
-			return fmt.Errorf("error finding dependent services: %w", err)
+			return errors.Wrap(err, "error finding dependent services")
 		}
 		for _, dependentServiceName := range dependentServices {
 			dependentSvc, err := m.OpenService(dependentServiceName)
 			if err != nil {
-				return fmt.Errorf("error opening dependent service %s: %w", dependentServiceName, err)
+				return fmt.Errorf("error opening dependent service %s", dependentServiceName)
 			}
 			defer dependentSvc.Close()
 			err = m.EnsureServiceState(dependentSvc, svc.Stopped)
 			if err != nil {
-				return fmt.Errorf("unable to stop dependent service %s: %w", dependentServiceName, err)
+				return errors.Wrapf(err, "unable to stop dependent service %s", dependentServiceName)
 			}
 		}
 		if err := m.stopServiceAndProcess(winSvc); err != nil {
@@ -150,7 +150,7 @@ func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) er
 func (m *manager) stopServiceAndProcess(winSvc *mgr.Service) error {
 	status, err := winSvc.Query()
 	if err != nil {
-		return fmt.Errorf("error querying service: %w", err)
+		return errors.Wrap(err, "error querying service")
 	}
 	var pHandle windows.Handle
 	// A value of 0 indicates that no process is running
@@ -158,7 +158,7 @@ func (m *manager) stopServiceAndProcess(winSvc *mgr.Service) error {
 		pHandle, err = windows.OpenProcess(windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_INFORMATION, false,
 			status.ProcessId)
 		if err != nil {
-			return fmt.Errorf("unable to open service's associated process: %w", err)
+			return errors.Wrap(err, "unable to open service's associated process")
 		}
 		defer windows.CloseHandle(pHandle)
 	}
@@ -170,7 +170,7 @@ func (m *manager) stopServiceAndProcess(winSvc *mgr.Service) error {
 		if err = waitForProcessToStop(pHandle); err != nil {
 			// Terminate the process if it does not exit on its own
 			if err = windows.TerminateProcess(pHandle, uint32(1)); err != nil {
-				return fmt.Errorf("error terminating stalled process: %w", err)
+				return errors.Wrap(err, "error terminating stalled process")
 			}
 		}
 	}
@@ -202,7 +202,7 @@ func (m *manager) listDependentServices(serviceHandle windows.Handle) ([]string,
 			break
 		}
 		if err != windows.ERROR_MORE_DATA {
-			return nil, fmt.Errorf("received unexpected error from enumDependentServicesSyscall: %w", err)
+			return nil, errors.Wrapf(err, "received unexpected error from enumDependentServicesSyscall")
 		}
 		if bytesNeeded <= uint32(len(serviceBuffer)) {
 			return nil, err
@@ -256,7 +256,7 @@ func waitForProcessToStop(process windows.Handle) error {
 		var exitCode uint32
 		if err := windows.GetExitCodeProcess(process, &exitCode); err != nil {
 			// unexpected error, most likely related to permissions
-			return false, fmt.Errorf("error getting process exit code: %w", err)
+			return false, errors.Wrap(err, "error getting process exit code")
 		}
 		// STATUS_PENDING indicates the process has not exited, keep retrying.
 		if exitCode == uint32(windows.STATUS_PENDING) {
