@@ -59,6 +59,7 @@ func creationTestSuite(t *testing.T) {
 	t.Run("Node Logs", testNodeLogs)
 	t.Run("Metrics validation", testMetrics)
 	t.Run("UserData validation", testUserData)
+	t.Run("Kubelet priority class validation", testKubeletPriorityClass)
 }
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
