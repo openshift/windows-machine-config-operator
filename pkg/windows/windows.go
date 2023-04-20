@@ -426,7 +426,7 @@ func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, cr
 	}
 	// We have to ensure the WICD files exist separately before the rest of the files because we must ensure services
 	// are stopped and their files closed before modifying them.
-	if err := vm.ensureWICDExists(credentials); err != nil {
+	if err := vm.ensureWICDExists(); err != nil {
 		return err
 	}
 	if err := vm.ensureWICDSecretContent(credentials); err != nil {
@@ -500,7 +500,7 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 // Interface helper methods
 
 // ensureWICDExists ensures the WICD executable exists. Creates the destination directory and binary file, if needed.
-func (vm *windows) ensureWICDExists(credentials *Authentication) error {
+func (vm *windows) ensureWICDExists() error {
 	if _, err := vm.Run(mkdirCmd(K8sDir), false); err != nil {
 		return fmt.Errorf("unable to create remote directory %s: %w", K8sDir, err)
 	}
