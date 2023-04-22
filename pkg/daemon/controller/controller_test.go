@@ -4,7 +4,7 @@ package controller
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"net"
 	"testing"
 
@@ -34,7 +34,7 @@ type fakePSCmdRunner struct {
 func (f *fakePSCmdRunner) Run(cmd string) (string, error) {
 	result, present := f.results[cmd]
 	if !present {
-		return "", errors.New("bad command")
+		return "", fmt.Errorf("bad command")
 	}
 	return result, nil
 }
@@ -703,7 +703,7 @@ func getAllFakeServices(svcMgr manager.Manager) (map[string]fake.FakeService, er
 		}
 		fakeService, ok := winService.(*fake.FakeService)
 		if !ok {
-			return nil, errors.New("this function should only be ran against a fake service manager")
+			return nil, fmt.Errorf("this function should only be ran against a fake service manager")
 		}
 		fakeServices[winServiceName] = *fakeService
 	}

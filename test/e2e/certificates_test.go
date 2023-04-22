@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
@@ -93,12 +92,12 @@ func (tc *testContext) waitForKubeletCACertificateInNode(node *core.Node) error 
 		cm, err := tc.client.K8s.CoreV1().ConfigMaps(certificates.KubeApiServerOperatorNamespace).Get(context.TODO(),
 			certificates.KubeAPIServerServingCAConfigMapName, meta.GetOptions{})
 		if err != nil {
-			return false, errors.Wrap(err, "error getting kubelet client CA ConfigMap")
+			return false, fmt.Errorf("error getting kubelet client CA ConfigMap: %w", err)
 		}
 		// parse bundle from ConfigMap
 		kubeletCABytes, err := certificates.GetCAsFromConfigMap(cm, certificates.CABundleKey)
 		if err != nil {
-			return false, errors.Wrap(err, "error parsing CA bundle from ConfigMap")
+			return false, fmt.Errorf("error parsing CA bundle from ConfigMap: %w", err)
 		}
 		kubeletCAString := strings.TrimSpace(string(kubeletCABytes))
 		found := strings.Contains(bundleContent, kubeletCAString)
