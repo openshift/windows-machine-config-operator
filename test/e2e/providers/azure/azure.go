@@ -16,13 +16,13 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 const (
 	defaultCredentialsSecretName = "azure-cloud-credentials"
 	defaultImageOffer            = "WindowsServer"
 	defaultImagePublisher        = "MicrosoftWindowsServer"
-	defaultImageSKU              = "2022-datacenter-smalldisk"
 	defaultImageVersion          = "latest"
 	defaultOSDiskSizeGB          = 128
 	defaultStorageAccountType    = "Premium_LRS"
@@ -51,7 +51,7 @@ func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureSta
 }
 
 // newAzureMachineProviderSpec returns an AzureMachineProviderSpec generated from the inputs, or an error
-func (p *Provider) newAzureMachineProviderSpec(location, zone string) (*mapi.AzureMachineProviderSpec, error) {
+func (p *Provider) newAzureMachineProviderSpec(location, zone string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
 	return &mapi.AzureMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
 			APIVersion: "azureproviderconfig.openshift.io/v1beta1",
@@ -71,7 +71,7 @@ func (p *Provider) newAzureMachineProviderSpec(location, zone string) (*mapi.Azu
 		Image: mapi.Image{
 			Publisher: defaultImagePublisher,
 			Offer:     defaultImageOffer,
-			SKU:       defaultImageSKU,
+			SKU:       getImageSKU(windowsServerVersion),
 			Version:   defaultImageVersion,
 		},
 		OSDisk: mapi.OSDisk{
@@ -91,13 +91,16 @@ func (p *Provider) newAzureMachineProviderSpec(location, zone string) (*mapi.Azu
 }
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
-func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*mapi.MachineSet, error) {
 	// Create the Windows Machines in the same location and zone as another node in the cluster
 	masterProviderSpec, err := p.getExistingMachineProviderSpec()
 	if err != nil {
 		return nil, err
 	}
-	providerSpec, err := p.newAzureMachineProviderSpec(masterProviderSpec.Location, *masterProviderSpec.Zone)
+
+	// create new machine provider spec for deploying Windows node in the same Location and Zone as master-0
+	providerSpec, err := p.newAzureMachineProviderSpec(masterProviderSpec.Location, *masterProviderSpec.Zone,
+		windowsServerVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new azure machine provider spec: %v", err)
 	}
@@ -185,4 +188,17 @@ func (p *Provider) ensureStorageClass(client client.Interface) (*storage.Storage
 		VolumeBindingMode: &volumeBinding,
 	}
 	return client.StorageV1().StorageClasses().Create(context.TODO(), sc, meta.CreateOptions{})
+}
+
+// getImageSKU returns the SKU based on the Windows Server version
+func getImageSKU(windowsServerVersion windows.ServerVersion) string {
+	switch windowsServerVersion {
+	case windows.Server2019:
+		// 2019 images without the containers feature pre-installed cannot be used due to
+		// https://issues.redhat.com/browse/OCPBUGS-13244
+		return "2019-datacenter-with-containers-smalldisk"
+	case windows.Server2022:
+	default:
+	}
+	return "2022-datacenter-smalldisk"
 }
