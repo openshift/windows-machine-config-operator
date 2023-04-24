@@ -15,6 +15,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 const defaultCredentialsSecretName = "vsphere-cloud-credentials"
@@ -113,7 +114,11 @@ func getNetwork() string {
 }
 
 // GenerateMachineSet generates the MachineSet object which is vSphere provider specific
-func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*mapi.MachineSet, error) {
+	if windowsServerVersion != windows.Server2022 {
+		return nil, fmt.Errorf("vSphere does not support Windows Server %s", windowsServerVersion)
+	}
+
 	// create new machine provider spec for deploying Windows node
 	providerSpec, err := p.newVSphereMachineProviderSpec()
 	if err != nil {

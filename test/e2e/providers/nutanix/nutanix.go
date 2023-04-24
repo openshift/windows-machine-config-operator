@@ -14,6 +14,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 type Provider struct {
@@ -30,7 +31,11 @@ func New(oc *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*
 }
 
 // GenerateMachineSet generates a Windows MachineSet which is Nutanix provider specific
-func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*machinev1beta1.MachineSet, error) {
+func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*machinev1beta1.MachineSet, error) {
+	if windowsServerVersion != windows.Server2022 {
+		return nil, fmt.Errorf("Windows Server %s is not available in Nutanix CI", windowsServerVersion)
+	}
+
 	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-machine-role=worker"}
 	machines, err := a.oc.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
 	if err != nil {
@@ -46,8 +51,7 @@ func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 		return nil, fmt.Errorf("failed to unmarshal raw machine provider spec: %v", err)
 	}
 
-	// The Windows image named "nutanix-windows-server" was pre-uploaded to the Nutanix CI prism-central.
-	// This image has "Windows Server 2022" type.
+	// The Windows Server 2022 image named "nutanix-windows-server" was pre-uploaded to the Nutanix CI prism-central
 	winImageName := "nutanix-windows-server"
 	winImageIdentifier := machinev1.NutanixResourceIdentifier{
 		Type: machinev1.NutanixIdentifierName,

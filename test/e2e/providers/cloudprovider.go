@@ -15,10 +15,13 @@ import (
 	noneProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/none"
 	nutanixProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/nutanix"
 	vSphereProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 type CloudProvider interface {
-	GenerateMachineSet(bool, int32) (*mapi.MachineSet, error)
+	// GenerateMachineSet generates provider specific Windows Server version MachineSet with the given replicas and
+	// the ignore label if the boolean is set
+	GenerateMachineSet(bool, int32, windows.ServerVersion) (*mapi.MachineSet, error)
 	// GetType returns the cloud provider type ex: AWS, Azure etc
 	GetType() config.PlatformType
 	// StorageSupport indicates if we support Windows storage on this provider
