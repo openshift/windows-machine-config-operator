@@ -9,6 +9,7 @@ import (
 	client "k8s.io/client-go/kubernetes"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 // Provider is a provider struct for testing platform=none
@@ -24,7 +25,7 @@ func New(clientset *clusterinfo.OpenShift) (*Provider, error) {
 }
 
 // GenerateMachineSet is not supported for platform=none and throws an exception
-func (p *Provider) GenerateMachineSet(_ bool, replicas int32) (*mapi.MachineSet, error) {
+func (p *Provider) GenerateMachineSet(_ bool, replicas int32, version windows.ServerVersion) (*mapi.MachineSet, error) {
 	return nil, fmt.Errorf("MachineSet generation not supported for platform=none")
 }
 

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"log"
 	"os"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func TestWMCO(t *testing.T) {
 
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
-
+	log.Printf("Testing against Windows Server %s\n", testCtx.windowsServerVersion)
 	// Create the namespace test resources can be deployed in, as well as required resources within said namespace.
 	require.NoError(t, testCtx.ensureNamespace(testCtx.workloadNamespace, testCtx.workloadNamespaceLabels), "error creating test namespace")
 	require.NoError(t, testCtx.sshSetup(), "unable to setup SSH requirements")

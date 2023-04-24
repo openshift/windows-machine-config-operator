@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
+	e2e_windows "github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 const (
@@ -292,8 +293,7 @@ func (tc *testContext) sshSetup() error {
 func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, error) {
 	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022.
 	powershellDefaultCommand := command
-	if tc.CloudProvider.GetType() == config.VSpherePlatformType ||
-		tc.CloudProvider.GetType() == config.GCPPlatformType || tc.CloudProvider.GetType() == config.AzurePlatformType {
+	if tc.windowsServerVersion == e2e_windows.Server2022 {
 		powershellDefaultCommand = strings.ReplaceAll(command, "\\\"", "\"")
 	}
 

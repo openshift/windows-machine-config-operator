@@ -328,7 +328,7 @@ func (tc *testContext) uninstallWindowsDefender(machine *mapi.Machine) error {
 
 // createWindowsMachineSet creates given number of Windows Machines.
 func (tc *testContext) createWindowsMachineSet(replicas int32, ignoreLabel bool) (*mapi.MachineSet, error) {
-	machineSet, err := tc.CloudProvider.GenerateMachineSet(ignoreLabel, replicas)
+	machineSet, err := tc.CloudProvider.GenerateMachineSet(ignoreLabel, replicas, tc.windowsServerVersion)
 	if err != nil {
 		return nil, err
 	}
