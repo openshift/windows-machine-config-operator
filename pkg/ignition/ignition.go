@@ -69,7 +69,7 @@ func (ign *Ignition) GetFiles() []ignCfgTypes.File {
 }
 
 // GetKubeletArgs returns a set of arguments for kubelet.exe, as specified in the ignition file
-func (ign *Ignition) GetKubeletArgs() (map[string]string, error) {
+func (ign *Ignition) GetKubeletArgs(useVSphereInTreeStorage bool) (map[string]string, error) {
 	var kubeletUnit ignCfgTypes.Unit
 	for _, unit := range ign.config.Systemd.Units {
 		if unit.Name == kubeletSystemdName {
@@ -83,6 +83,15 @@ func (ign *Ignition) GetKubeletArgs() (map[string]string, error) {
 	argsFromIgnition, err := parseKubeletArgs(*kubeletUnit.Contents)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing kubelet systemd unit args: %w", err)
+	}
+	// Special casing for vSphere to disable CSI Migration. These args have the potential to be either set to this, or
+	// not, depending on if the cluster was upgraded from 4.12 or if it is a fresh 4.13 install.
+	// See: https://github.com/openshift/machine-config-operator/pull/3655
+	// Because in-tree storage is the only option for Windows in 4.13 vSphere clusters, these values should always be
+	// set to this if the cluster platform is vSphere.
+	if useVSphereInTreeStorage {
+		argsFromIgnition[CloudProviderOption] = "vsphere"
+		argsFromIgnition[CloudConfigOption] = "/etc/kubernetes/cloud.conf"
 	}
 	return argsFromIgnition, nil
 }
