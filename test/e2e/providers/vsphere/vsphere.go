@@ -22,7 +22,7 @@ import (
 
 const (
 	defaultCredentialsSecretName = "vsphere-cloud-credentials"
-	storageClassName             = "e2e"
+	storageClassName             = "ntfs"
 )
 
 // Provider is a provider struct for testing vSphere
@@ -152,12 +152,13 @@ func (p *Provider) CreatePVC(client client.Interface, namespace string) (*core.P
 	}
 	pvcSpec := core.PersistentVolumeClaim{
 		ObjectMeta: meta.ObjectMeta{
-			GenerateName: "e2e-",
+			GenerateName: storageClassName + "-",
 		},
 		Spec: core.PersistentVolumeClaimSpec{
 			AccessModes: []core.PersistentVolumeAccessMode{core.ReadWriteOnce},
 			Resources: core.ResourceRequirements{
-				Requests: core.ResourceList{core.ResourceStorage: resource.MustParse("2Gi")},
+				// Request a small, arbitrary amount of storage
+				Requests: core.ResourceList{core.ResourceStorage: resource.MustParse("512Mi")},
 			},
 			StorageClassName: &sc.Name,
 		},
