@@ -3,7 +3,7 @@
 package fake
 
 import (
-	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -224,7 +224,7 @@ func serviceListsEqual(m1, m2 map[string]winsvc.Service) (bool, error) {
 	for m1ServiceName, m1Service := range m1 {
 		m1FakeService, ok := m1Service.(*FakeService)
 		if !ok {
-			return false, errors.New("service not castable to *FakeService")
+			return false, fmt.Errorf("service not castable to *FakeService")
 		}
 		m2Service, present := m2[m1ServiceName]
 		if !present {
@@ -232,7 +232,7 @@ func serviceListsEqual(m1, m2 map[string]winsvc.Service) (bool, error) {
 		}
 		m2FakeService, ok := m2Service.(*FakeService)
 		if !ok {
-			return false, errors.New("service not castable to *FakeService")
+			return false, fmt.Errorf("service not castable to *FakeService")
 		}
 		// Differences in the serviceList pointers will cause DeepEqual() to return false, so make a copy of each
 		// service and set the serviceList pointer to nil

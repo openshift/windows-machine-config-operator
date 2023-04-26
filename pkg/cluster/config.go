@@ -11,7 +11,6 @@ import (
 	oconfig "github.com/openshift/api/config/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
-	"github.com/pkg/errors"
 	"golang.org/x/mod/semver"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -84,32 +83,32 @@ func NewConfig(restConfig *rest.Config) (Config, error) {
 	// get OpenShift API config client.
 	oclient, err := configclient.NewForConfig(restConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not create config clientset")
+		return nil, fmt.Errorf("could not create config clientset: %w", err)
 	}
 
 	// get OpenShift API operator client
 	operatorClient, err := operatorv1.NewForConfig(restConfig)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not create operator clientset")
+		return nil, fmt.Errorf("could not create operator clientset: %w", err)
 	}
 
 	// get cluster network configurations
 	network, err := networkConfigurationFactory(oclient, operatorClient)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting cluster network")
+		return nil, fmt.Errorf("error getting cluster network: %w", err)
 	}
 
 	// get the platform type here
 	infra, err := oclient.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting cluster network")
+		return nil, fmt.Errorf("error getting cluster network: %w", err)
 	}
 	platformStatus := infra.Status.PlatformStatus
 	if platformStatus == nil {
-		return nil, errors.New("error getting infrastructure status")
+		return nil, fmt.Errorf("error getting infrastructure status")
 	}
 	if len(platformStatus.Type) == 0 {
-		return nil, errors.New("error getting platform type")
+		return nil, fmt.Errorf("error getting platform type")
 	}
 	return &config{
 		oclient:        oclient,
@@ -124,14 +123,14 @@ func NewConfig(restConfig *rest.Config) (Config, error) {
 func (c *config) validateK8sVersion() error {
 	versionInfo, err := c.oclient.Discovery().ServerVersion()
 	if err != nil {
-		return errors.Wrap(err, "error retrieving server version ")
+		return fmt.Errorf("error retrieving server version: %w", err)
 	}
 	// split the version in the form Major.Minor. For e.g v1.18.0-rc.1 -> v1.18
 	clusterBaseVersion := semver.MajorMinor(versionInfo.GitVersion)
 	// Convert base version to float and add 1 to Minor version
 	baseVersion, err := strconv.ParseFloat(strings.TrimPrefix(baseK8sVersion, "v"), 64)
 	if err != nil {
-		return errors.Wrapf(err, "error converting %s k8s version to float", baseK8sVersion)
+		return fmt.Errorf("error converting %s k8s version to float: %w", baseK8sVersion, err)
 	}
 	maxK8sVersion := fmt.Sprintf("v%.2f", baseVersion+0.01)
 
@@ -140,7 +139,7 @@ func (c *config) validateK8sVersion() error {
 		return nil
 	}
 
-	return errors.Errorf("Unsupported server version: %v. Supported versions are %v.x to %v.x", versionInfo.GitVersion,
+	return fmt.Errorf("unsupported server version: %v. Supported versions are %v.x to %v.x", versionInfo.GitVersion,
 		baseK8sVersion, maxK8sVersion)
 }
 
@@ -149,10 +148,10 @@ func (c *config) validateK8sVersion() error {
 func (c *config) Validate() error {
 	err := c.validateK8sVersion()
 	if err != nil {
-		return errors.Wrap(err, "error validating k8s version")
+		return fmt.Errorf("error validating k8s version: %w", err)
 	}
 	if err = c.network.Validate(); err != nil {
-		return errors.Wrap(err, "error validating network configuration")
+		return fmt.Errorf("error validating network configuration: %w", err)
 	}
 	return nil
 }
@@ -175,24 +174,24 @@ type ovnKubernetes struct {
 func networkConfigurationFactory(oclient configclient.Interface, operatorClient operatorv1.OperatorV1Interface) (Network, error) {
 	network, err := getNetworkType(oclient)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting cluster network type")
+		return nil, fmt.Errorf("error getting cluster network type: %w", err)
 	}
 
 	// retrieve serviceCIDR using cluster config required for cni configurations
 	serviceCIDR, err := getServiceNetworkCIDR(oclient)
 	if err != nil || serviceCIDR == "" {
-		return nil, errors.Wrap(err, "error getting service network CIDR")
+		return nil, fmt.Errorf("error getting service network CIDR: %w", err)
 	}
 
 	// retrieve the VXLAN port using cluster config
 	vxlanPort, err := getVXLANPort(operatorClient)
 	if err != nil {
-		return nil, errors.Wrap(err, "error getting the custom vxlan port")
+		return nil, fmt.Errorf("error getting the custom vxlan port: %w", err)
 	}
 
 	clusterNetworkCfg, err := NewClusterNetworkCfg(serviceCIDR, vxlanPort)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error getting cluster network config")
+		return nil, fmt.Errorf("error getting cluster network config: %w", err)
 	}
 	switch network {
 	case ovnKubernetesNetwork:
@@ -204,14 +203,14 @@ func networkConfigurationFactory(oclient configclient.Interface, operatorClient 
 			clusterNetworkCfg,
 		}, nil
 	default:
-		return nil, errors.Errorf("%s : network type not supported", network)
+		return nil, fmt.Errorf("%s : network type not supported", network)
 	}
 }
 
 // NewClusterNetworkCfg assigns a serviceCIDR value and returns a pointer to the clusterNetworkCfg struct
 func NewClusterNetworkCfg(serviceCIDR, vxlanPort string) (*clusterNetworkCfg, error) {
 	if serviceCIDR == "" {
-		return nil, errors.Errorf("can't instantiate cluster network config" +
+		return nil, fmt.Errorf("can't instantiate cluster network config" +
 			"with empty service CIDR value")
 	}
 	return &clusterNetworkCfg{
@@ -235,16 +234,16 @@ func (ovn *ovnKubernetes) Validate() error {
 	// check if hybrid overlay is enabled for the cluster
 	networkCR, err := ovn.operatorClient.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
-		return errors.Wrap(err, "error getting cluster network.operator object")
+		return fmt.Errorf("error getting cluster network.operator object: %w", err)
 	}
 
 	defaultNetwork := networkCR.Spec.DefaultNetwork
 	if defaultNetwork.OVNKubernetesConfig == nil || defaultNetwork.OVNKubernetesConfig.HybridOverlayConfig == nil {
-		return errors.New("cluster is not configured for OVN hybrid networking")
+		return fmt.Errorf("cluster is not configured for OVN hybrid networking")
 	}
 
 	if len(networkCR.Spec.DefaultNetwork.OVNKubernetesConfig.HybridOverlayConfig.HybridClusterNetwork) == 0 {
-		return errors.New("invalid OVN hybrid networking configuration")
+		return fmt.Errorf("invalid OVN hybrid networking configuration")
 	}
 	return nil
 }
@@ -254,7 +253,7 @@ func getNetworkType(oclient configclient.Interface) (string, error) {
 	// Get the cluster network object so that we can find the network type
 	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "error getting cluster network object")
+		return "", fmt.Errorf("error getting cluster network object: %w", err)
 	}
 	return networkCR.Spec.NetworkType, nil
 }
@@ -264,15 +263,14 @@ func getServiceNetworkCIDR(oclient configclient.Interface) (string, error) {
 	// Get the cluster network object so that we can find the service network
 	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "error getting cluster network object")
+		return "", fmt.Errorf("error getting cluster network object: %w", err)
 	}
 	if len(networkCR.Spec.ServiceNetwork) == 0 {
-		return "", errors.Wrapf(err, "error getting cluster service CIDR,"+
-			"received empty value for service networks")
+		return "", fmt.Errorf("error getting cluster service CIDR," + "received empty value for service networks")
 	}
 	serviceCIDR := networkCR.Spec.ServiceNetwork[0]
-	if ValidateCIDR(serviceCIDR) != nil {
-		return "", errors.Wrapf(err, "invalid cluster service CIDR %s", serviceCIDR)
+	if err := ValidateCIDR(serviceCIDR); err != nil {
+		return "", fmt.Errorf("invalid cluster service CIDR: %w", err)
 	}
 	return serviceCIDR, nil
 }
@@ -283,7 +281,7 @@ func getVXLANPort(operatorClient operatorv1.OperatorV1Interface) (string, error)
 	// Get the cluster network object so that we can find the service network
 	networkCR, err := operatorClient.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
-		return "", errors.Wrap(err, "error getting cluster network object")
+		return "", fmt.Errorf("error getting cluster network object: %w", err)
 	}
 	var vxlanPort *uint32
 	if networkCR.Spec.DefaultNetwork.OVNKubernetesConfig != nil &&
@@ -299,7 +297,7 @@ func getVXLANPort(operatorClient operatorv1.OperatorV1Interface) (string, error)
 func ValidateCIDR(cidr string) error {
 	_, _, err := net.ParseCIDR(cidr)
 	if err != nil || cidr == "" {
-		return errors.Wrapf(err, "received invalid CIDR value %s", cidr)
+		return fmt.Errorf("received invalid CIDR value %s: %w", cidr, err)
 	}
 	return nil
 }
@@ -327,7 +325,7 @@ func GetDNS(subnet string) (string, error) {
 func IsCloudControllerOwnedByCCM(oclient configclient.Interface) (bool, error) {
 	co, err := oclient.ConfigV1().ClusterOperators().Get(context.TODO(), clusterCloudControllerManagerOperatorName, meta.GetOptions{})
 	if err != nil {
-		return false, errors.Wrap(err, "unable to get cluster operator resource")
+		return false, fmt.Errorf("unable to get cluster operator resource: %w", err)
 	}
 
 	// If there is no condition, we assume that CCM doesn't own the Cloud Controllers

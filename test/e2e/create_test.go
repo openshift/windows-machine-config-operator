@@ -13,7 +13,6 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/api/core/v1"
@@ -108,13 +107,13 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 	for _, machine := range machines.Items {
 		addr, err := controllers.GetAddress(machine.Status.Addresses)
 		if err != nil {
-			return errors.Wrap(err, "unable to get usable address")
+			return fmt.Errorf("unable to get usable address: %w", err)
 		}
 		cm.Data[addr] = "username=" + tc.vmUsername()
 	}
 	_, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Create(context.TODO(), cm, metav1.CreateOptions{})
 	if err != nil {
-		return errors.Wrap(err, "unable to create configmap")
+		return fmt.Errorf("unable to create configmap: %w", err)
 	}
 	return nil
 }
@@ -124,12 +123,12 @@ func (tc *testContext) validateWindowsInstanceConfigMap(expectedCount int) error
 	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(),
 		wiparser.InstanceConfigMap, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "error retrieving ConfigMap: %s", wiparser.InstanceConfigMap)
+		return fmt.Errorf("error retrieving ConfigMap: %s: %w", wiparser.InstanceConfigMap, err)
 	}
 	// check instance count
 	actualCount := len(windowsInstances.Data)
 	if actualCount != expectedCount {
-		return errors.Wrapf(err, "invalid BYOH instance count: %v, expected: %v", actualCount, expectedCount)
+		return fmt.Errorf("invalid BYOH instance count: %v, expected: %v", actualCount, expectedCount)
 	}
 	// TODO: Validate windowsInstances.Data (See https://issues.redhat.com/browse/WINC-671)
 	// ConfigMap is valid, return no error
@@ -231,25 +230,26 @@ func (tc *testContext) byohLogCollection() {
 func (tc *testContext) provisionBYOHConfigMapWithMachineSet() error {
 	_, err := tc.createWindowsMachineSet(gc.numberOfBYOHNodes, true)
 	if err != nil {
-		return errors.Wrap(err, "failed to create Windows MachineSet")
+		return fmt.Errorf("failed to create Windows MachineSet: %w", err)
 	}
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfBYOHNodes), "Provisioned", true)
 	if err != nil {
-		return errors.Wrap(err, "Machines did not reach expected state")
+		return fmt.Errorf("machines did not reach expected state: %w", err)
 	}
 	// Change the default shell to PowerShell for the first BYOH VM. We expect there to be BYOH VMs with either
 	// cmd or PowerShell as the default shell, so getting a mix of both, either between different BYOH VMs, or with the
 	// VMs spun up for the Machine testing is important.
 	err = tc.setPowerShellDefaultShell(&machines.Items[0])
 	if err != nil {
-		return errors.Wrapf(err, "unable to change default shell of machine %s", machines.Items[0].GetName())
+		return fmt.Errorf("unable to change default shell of machine %s: %w", machines.Items[0].GetName(), err)
 	}
 	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
 		// By default the Windows Defender antivirus is running on VMs in the test suite. Disable it for a BYOH node to
 		// validate instances are able to be configured into Nodes regardless of the Windows Defender antivirus status.
 		err = tc.uninstallWindowsDefender(&machines.Items[0])
 		if err != nil {
-			return errors.Wrapf(err, "unable to uninstall Windows Defender on machine %s", machines.Items[0].GetName())
+			return fmt.Errorf("unable to uninstall Windows Defender on machine %s: %w", machines.Items[0].GetName(),
+				err)
 		}
 	}
 	return tc.createWindowsInstanceConfigMap(machines)
@@ -270,13 +270,14 @@ func (tc *testContext) disableClusterMachineApprover() error {
 	patchData, err := json.Marshal([]*patch.JSONPatch{
 		patch.NewJSONPatch("add", "/spec/overrides", []config.ComponentOverride{nodeCSRApproverOverride})})
 	if err != nil {
-		return errors.Wrapf(err, "unable to generate patch request body for CVO override: %v", nodeCSRApproverOverride)
+		return fmt.Errorf("unable to generate patch request body for CVO override: %v: %w", nodeCSRApproverOverride,
+			err)
 	}
 
 	_, err = tc.client.Config.ConfigV1().ClusterVersions().Patch(context.TODO(), "version", types.JSONPatchType,
 		patchData, metav1.PatchOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "unable to apply patch %s to ClusterVersion", patchData)
+		return fmt.Errorf("unable to apply patch %s to ClusterVersion: %w", patchData, err)
 	}
 
 	// Scale the Cluster Machine Approver Deployment to 0
@@ -320,7 +321,7 @@ func (tc *testContext) uninstallWindowsDefender(machine *mapi.Machine) error {
 	command := "Uninstall-WindowsFeature -Name Windows-Defender; Restart-Computer -Force"
 	_, err = tc.runPowerShellSSHJob("uninstall-windows-defender", command, addr)
 	if err != nil {
-		return errors.Wrap(err, "failed to uninstall Windows Defender antivirus")
+		return fmt.Errorf("failed to uninstall Windows Defender antivirus: %w", err)
 	}
 	return nil
 }
@@ -346,7 +347,7 @@ func (tc *testContext) deleteMachineSet(ms *mapi.MachineSet) error {
 // TODO: Have this function take in a list of Windows Machines to wait for https://issues.redhat.com/browse/WINC-620
 func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, ignoreLabel bool) (*mapi.MachineList, error) {
 	if machineCount == 0 && phase != "" {
-		return nil, errors.New("expected phase to be to be an empty string if machineCount is 0")
+		return nil, fmt.Errorf("expected phase to be to be an empty string if machineCount is 0")
 	}
 
 	var machines *mapi.MachineList
@@ -452,7 +453,7 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 
 	privKey, pubKey, err := tc.getExpectedKeyPair()
 	if err != nil {
-		return errors.Wrap(err, "error getting the expected public/private key pair")
+		return fmt.Errorf("error getting the expected public/private key pair: %w", err)
 	}
 	pubKeyAnnotation := nodeconfig.CreatePubKeyHashAnnotation(pubKey)
 
@@ -570,7 +571,7 @@ func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, 
 	nodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(),
 		metav1.ListOptions{LabelSelector: labelSelector})
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to list nodes")
+		return nil, fmt.Errorf("unable to list nodes: %w", err)
 	}
 	var windowsNodes []v1.Node
 	for _, node := range nodes.Items {
@@ -587,13 +588,13 @@ func (tc *testContext) listFullyConfiguredWindowsNodes(isBYOH bool) ([]v1.Node, 
 func (tc *testContext) scaleDeployment(namespace, name, selector string, expectedPodCount *int32) error {
 	deployment, err := tc.client.K8s.AppsV1().Deployments(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "error getting deployment %s/%s", namespace, name)
+		return fmt.Errorf("error getting deployment %s/%s: %w", namespace, name, err)
 	}
 
 	deployment.Spec.Replicas = expectedPodCount
 	_, err = tc.client.K8s.AppsV1().Deployments(namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
 	if err != nil {
-		return errors.Wrapf(err, "error updating deployment %s/%s", namespace, name)
+		return fmt.Errorf("error updating deployment %s/%s: %w", namespace, name, err)
 	}
 
 	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
@@ -601,12 +602,12 @@ func (tc *testContext) scaleDeployment(namespace, name, selector string, expecte
 		pods, err := tc.client.K8s.CoreV1().Pods(namespace).List(context.TODO(),
 			metav1.ListOptions{LabelSelector: selector})
 		if err != nil {
-			return false, errors.Wrapf(err, "error listing pods for deployment %s/%s", namespace, name)
+			return false, fmt.Errorf("error listing pods for deployment %s/%s: %w", namespace, name, err)
 		}
 		return len(pods.Items) == int(*expectedPodCount), nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "error waiting for deployment %s/%s to be scaled", namespace, name)
+		return fmt.Errorf("error waiting for deployment %s/%s to be scaled: %w", namespace, name, err)
 	}
 	return nil
 }
