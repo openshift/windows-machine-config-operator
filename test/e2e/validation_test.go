@@ -324,6 +324,9 @@ func (tc *testContext) runJob(name string, command []string) (string, error) {
 	// Create a job which runs the provided command via SSH
 	keyMountDir := "/private-key"
 	keyMode := int32(0600)
+	// default OpenShift security recommendations for Linux pods
+	runAsNonRoot := true
+	allowPrivilegeEscalation := false
 	job := &batch.Job{
 		ObjectMeta: meta.ObjectMeta{
 			GenerateName: name + "-job-",
@@ -331,6 +334,12 @@ func (tc *testContext) runJob(name string, command []string) (string, error) {
 		Spec: batch.JobSpec{
 			Template: core.PodTemplateSpec{
 				Spec: core.PodSpec{
+					SecurityContext: &core.PodSecurityContext{
+						RunAsNonRoot: &runAsNonRoot,
+						SeccompProfile: &core.SeccompProfile{
+							Type: "RuntimeDefault",
+						},
+					},
 					OS:                 &core.PodOS{Name: core.Linux},
 					HostNetwork:        true,
 					RestartPolicy:      core.RestartPolicyNever,
@@ -345,6 +354,12 @@ func (tc *testContext) runJob(name string, command []string) (string, error) {
 								Name:      "private-key",
 								MountPath: keyMountDir,
 							}},
+							SecurityContext: &core.SecurityContext{
+								AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+								Capabilities: &core.Capabilities{
+									Drop: []core.Capability{"ALL"},
+								},
+							},
 						},
 					},
 					Volumes: []core.Volume{{Name: "private-key", VolumeSource: core.VolumeSource{
