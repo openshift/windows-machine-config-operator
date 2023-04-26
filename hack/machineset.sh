@@ -6,7 +6,8 @@
 # USAGE
 #    machineset.sh
 # OPTIONS
-#    $1      Action       (Optional) apply/delete the MachineSet
+#    -w                      Windows Server version (optional) 2019 or 2022. Default: 2022
+#    $1/$2 (if -w is used)   Action                 (optional) apply/delete the MachineSet
 # PREREQUISITES
 #    oc                   to fetch cluster info and apply/delete MachineSets on the cluster(cluster should be logged in)
 #    aws                  to fetch Windows AMI id for AWS platform (only required for clusters running on AWS)
@@ -14,8 +15,6 @@ set -euo pipefail
 
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/hack/common.sh
-
-ACTION=${1:-}
 
 # get_spec returns the template yaml common for all cloud providers
 get_spec() {
@@ -69,7 +68,7 @@ EOF
 # get_aws_ms creates a MachineSet for AWS Cloud Provider
 get_aws_ms() {
 
-  if [ "$#" -lt 4 ]; then
+  if [ "$#" -lt 5 ]; then
     error-exit incorrect parameter count for get_aws_ms $#
   fi
 
@@ -77,9 +76,15 @@ get_aws_ms() {
   local region=$2
   local az=$3
   local provider=$4
+  local winver=$5
+
+  local filter="Windows_Server-2022-English-Core-Base-????.??.??"
+  if [ "$winver" == "2019" ]; then
+    filter="Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+  fi
 
   # get the AMI id for the Windows VM
-  ami_id=$(aws ec2 describe-images --region ${region} --filters "Name=name,Values=Windows_Server-2019*English*Full*Containers*" "Name=is-public,Values=true" --query "reverse(sort_by(Images, &CreationDate))[*].{name: Name, id: ImageId}" --output json | jq -r '.[0].id')
+  ami_id=$(aws ec2 describe-images --region "${region}" --filters "Name=name,Values=$filter" "Name=is-public, Values=true" --query "reverse(sort_by(Images, &CreationDate))[*].{name: Name, id: ImageId}" --output json | jq -r '.[0].id')
   if [ -z "$ami_id" ]; then
         error-exit "unable to find AMI ID for Windows Server 2019 1809"
   fi
@@ -127,7 +132,7 @@ EOF
 # get_azure_ms creates a MachineSet for Azure Cloud Provider
 get_azure_ms() {
 
-  if [ "$#" -lt 4 ]; then
+  if [ "$#" -lt 5 ]; then
     error-exit incorrect parameter count for get_azure_ms $#
   fi
 
@@ -135,6 +140,14 @@ get_azure_ms() {
   local region=$2
   local az=$3
   local provider=$4
+  local winver=$5
+
+  local sku="2022-datacenter-smalldisk"
+  if [ "$winver" == "2019" ]; then
+		# 2019 images without the containers feature pre-installed cannot be used due to
+		# https://issues.redhat.com/browse/OCPBUGS-13244
+    sku="2019-datacenter-with-containers-smalldisk"
+  fi
 
   cat <<EOF
 $(get_spec $infraID $az $provider)
@@ -148,7 +161,7 @@ $(get_spec $infraID $az $provider)
             offer: WindowsServer
             publisher: MicrosoftWindowsServer
             resourceID: ""
-            sku: 2022-datacenter
+            sku: $sku
             version: latest
           kind: AzureMachineProviderSpec
           location: ${region}
@@ -175,7 +188,7 @@ EOF
 
 # get_gcp_ms creates a MachineSet for Google Cloud Platform
 get_gcp_ms() {
-  if [ "$#" -lt 4 ]; then
+  if [ "$#" -lt 5 ]; then
     error-exit incorrect parameter count for get_gcp_ms $#
   fi
 
@@ -183,6 +196,13 @@ get_gcp_ms() {
   local region=$2
   local az=$3
   local provider=$4
+  local winver=$5
+
+  local image="projects/windows-cloud/global/images/family/windows-2022-core"
+  if [ "$winver" == "2019" ]; then
+    image="projects/windows-cloud/global/images/family/windows-2019-core"
+  fi
+
   # For GCP the zone field returns the region + zone, like: `us-central1-a`.
   # Installer created MachineSets only append the `-a` portion, so we should do the same.
   local az_suffix=$(echo $az |awk -F "-" '{print $NF}')
@@ -200,7 +220,7 @@ $(get_spec $infraID $az_suffix $provider)
           disks:
           - autoDelete: true
             boot: true
-            image: projects/windows-cloud/global/images/family/windows-2022-core
+            image: $image
             sizeGb: 128
             type: pd-ssd
           kind: GCPMachineProviderSpec
@@ -286,6 +306,33 @@ $(get_spec $infraID "" $provider)
 EOF
 }
 
+winver="2022"
+while getopts ":w:" opt; do
+  case ${opt} in
+    w ) # Windows Server version to use in the MachineSet. Defaults to 2022. Other option is 2019.
+      winver="$OPTARG"
+      if [[ ! "$winver" =~ 2019|2022$ ]]; then
+        echo "Invalid -w option $winver. Valid options are 2019 or 2022"
+        exit 1
+      fi
+      ;;
+    \? )
+      echo "Usage: $0 -w <2019/2022> apply/delete"
+      exit 0
+      ;;
+  esac
+done
+
+# Remove all options parsed by getopts
+shift $((OPTIND -1))
+ACTION=${1:-}
+
+if [ -n "$ACTION" ]; then
+  if [[ ! "$ACTION" =~ ^apply|delete$ ]]; then
+    error-exit "Action (1st parameter) must be \"apply\" or \"delete\""
+  fi
+fi
+
 # Retrieves the Cloud Provider for the OpenShift Cluster
 platform="$(oc get infrastructure cluster -ojsonpath={.spec.platformSpec.type})"
 
@@ -301,13 +348,13 @@ az="$(oc get machines -n openshift-machine-api | grep -w "Running" | awk '{print
 # Creates/deletes a MachineSet for Cloud Provider
 case "$platform" in
     AWS)
-      ms=$(get_aws_ms $infraID $region $az $platform)
+      ms=$(get_aws_ms $infraID $region $az $platform $winver)
     ;;
     Azure)
-      ms=$(get_azure_ms $infraID $region $az $platform)
+      ms=$(get_azure_ms $infraID $region $az $platform $winver)
     ;;
     GCP)
-      ms=$(get_gcp_ms $infraID $region $az $platform)
+      ms=$(get_gcp_ms $infraID $region $az $platform $winver)
     ;;
     VSphere)
       ms=$(get_vsphere_ms $infraID $platform)
@@ -319,11 +366,7 @@ esac
 
 # If action like apply/delete is provided, directly apply the MachineSet else create a yaml file
 if [ -n "$ACTION" ]; then
-  if [[ ! "$ACTION" =~ ^apply|delete$ ]]; then
-      echo "$ms" > MachineSet.yaml
-      error-exit "Action (1st parameter) must be \"apply\" or \"delete\". Creating a yaml file"
-  fi
-  echo "$ms" | oc $ACTION -n openshift-machine-api -f -
+  echo "$ms" | oc "$ACTION" -n openshift-machine-api -f -
 else
   echo "$ms" > MachineSet.yaml
 fi
