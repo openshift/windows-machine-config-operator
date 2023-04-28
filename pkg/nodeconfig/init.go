@@ -65,11 +65,11 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("unable to get cluster infrastructure resource: %w", err)
 	}
-	// get API server internal url of format https://api-int.abc.devcluster.openshift.com:6443
-	if host.Status.APIServerInternalURL == "" {
+	// get API server internal url of format https://api.abc.devcluster.openshift.com:6443
+	if host.Status.APIServerURL == "" {
 		return "", fmt.Errorf("could not get host name for the kubernetes api server")
 	}
-	return host.Status.APIServerInternalURL, nil
+	return host.Status.APIServerURL, nil
 }
 
 // getWICDCredentials returns the CA cert and access token associated with the WICD service account
