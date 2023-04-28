@@ -13,6 +13,7 @@ import (
 	azureProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/azure"
 	gcpProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/gcp"
 	noneProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/none"
+	nutanixProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/nutanix"
 	vSphereProvider "github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
 )
 
@@ -46,6 +47,8 @@ func NewCloudProvider() (CloudProvider, error) {
 		return gcpProvider.New(openshift, &infra.Status), nil
 	case config.VSpherePlatformType:
 		return vSphereProvider.New(openshift, &infra.Status)
+	case config.NutanixPlatformType:
+		return nutanixProvider.New(openshift, &infra.Status)
 	case config.NonePlatformType:
 		return noneProvider.New(openshift)
 	default:

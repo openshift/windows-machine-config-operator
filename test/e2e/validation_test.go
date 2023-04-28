@@ -324,7 +324,9 @@ func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, er
 	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022.
 	powershellDefaultCommand := command
 	if tc.CloudProvider.GetType() == config.VSpherePlatformType ||
-		tc.CloudProvider.GetType() == config.GCPPlatformType || tc.CloudProvider.GetType() == config.AzurePlatformType {
+		tc.CloudProvider.GetType() == config.GCPPlatformType ||
+		tc.CloudProvider.GetType() == config.AzurePlatformType ||
+		tc.CloudProvider.GetType() == config.NutanixPlatformType {
 		powershellDefaultCommand = strings.ReplaceAll(command, "\\\"", "\"")
 	}
 

@@ -245,6 +245,7 @@ func testNorthSouthNetworking(t *testing.T) {
 	// Ignore the application ingress load balancer test for None and vSphere platforms as it has to be created manually
 	// https://docs.openshift.com/container-platform/4.9/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html
 	if testCtx.CloudProvider.GetType() == config.VSpherePlatformType ||
+		testCtx.CloudProvider.GetType() == config.NutanixPlatformType ||
 		testCtx.CloudProvider.GetType() == config.NonePlatformType {
 		t.Skipf("NorthSouthNetworking test is disabled for platform %s", testCtx.CloudProvider.GetType())
 	}
