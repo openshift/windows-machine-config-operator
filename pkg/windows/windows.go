@@ -233,9 +233,10 @@ type Windows interface {
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, string, *Authentication) error
 	// Deconfigure removes all files and networks created by WMCO and runs the WICD cleanup command.
-	Deconfigure(string, string) error
-	// RunWICDCleanup runs the WICD cleanup command that ensures all services configured by WICD are stopped.
-	RunWICDCleanup(string, string) error
+	Deconfigure(string, string, *Authentication) error
+	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
+	// services are also stopped
+	RunWICDCleanup(string, string, *Authentication) error
 }
 
 // windows implements the Windows interface
@@ -394,7 +395,20 @@ func (vm *windows) Reinitialize() error {
 	return nil
 }
 
-func (vm *windows) RunWICDCleanup(apiServerURL string, watchNamespace string) error {
+func (vm *windows) RunWICDCleanup(apiServerURL string, watchNamespace string, credentials *Authentication) error {
+	// Make sure WICD service is not running before calling node cleanup and/or bootstrap
+	if err := vm.deconfigureWICD(); err != nil {
+		return err
+	}
+	// We have to ensure the WICD files exist separately before the rest of the files because we must ensure services
+	// are stopped and their files closed before modifying them.
+	if err := vm.ensureWICDExists(); err != nil {
+		return err
+	}
+	if err := vm.ensureWICDSecretContent(credentials); err != nil {
+		return err
+	}
+
 	wicdCleanupCmd := fmt.Sprintf("%s cleanup --api-server %s --sa-ca %s --sa-token %s --namespace %s",
 		wicdPath, apiServerURL, wicdCAFile, wicdTokenFile, watchNamespace)
 	if out, err := vm.Run(wicdCleanupCmd, true); err != nil {
@@ -404,13 +418,10 @@ func (vm *windows) RunWICDCleanup(apiServerURL string, watchNamespace string) er
 	return nil
 }
 
-func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string) error {
+func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string, credentials *Authentication) error {
 	vm.log.Info("deconfiguring")
 
-	if err := vm.deconfigureWICD(); err != nil {
-		return err
-	}
-	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace); err != nil {
+	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace, credentials); err != nil {
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
 	}
 	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
@@ -425,20 +436,8 @@ func (vm *windows) Deconfigure(watchNamespace string, apiServerURL string) error
 func (vm *windows) Bootstrap(desiredVer, apiServerURL, watchNamespace string, credentials *Authentication) error {
 	vm.log.Info("configuring")
 
-	// Make sure WICD service is not running before calling node cleanup and/or bootstrap
-	if err := vm.deconfigureWICD(); err != nil {
-		return err
-	}
-	// We have to ensure the WICD files exist separately before the rest of the files because we must ensure services
-	// are stopped and their files closed before modifying them.
-	if err := vm.ensureWICDExists(credentials); err != nil {
-		return err
-	}
-	if err := vm.ensureWICDSecretContent(credentials); err != nil {
-		return err
-	}
 	// Stop any services that may be running. This prevents the node being shown as Ready after a failed configuration.
-	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace); err != nil {
+	if err := vm.RunWICDCleanup(apiServerURL, watchNamespace, credentials); err != nil {
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
 	}
 
@@ -505,7 +504,7 @@ func (vm *windows) ConfigureWICD(apiServerURL, watchNamespace string, credential
 // Interface helper methods
 
 // ensureWICDExists ensures the WICD executable exists. Creates the destination directory and binary file, if needed.
-func (vm *windows) ensureWICDExists(credentials *Authentication) error {
+func (vm *windows) ensureWICDExists() error {
 	if _, err := vm.Run(mkdirCmd(K8sDir), false); err != nil {
 		return fmt.Errorf("unable to create remote directory %s: %w", K8sDir, err)
 	}
