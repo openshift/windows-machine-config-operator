@@ -7,11 +7,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 )
 
 // These test functions have been created to define the expected behavior of the structs mocking the Windows

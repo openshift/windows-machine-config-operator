@@ -11,12 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 )
 
 const (
