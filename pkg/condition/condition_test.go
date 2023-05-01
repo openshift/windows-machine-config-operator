@@ -3,9 +3,8 @@ package condition
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	operators "github.com/operator-framework/api/pkg/operators/v2"
+	"github.com/stretchr/testify/assert"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

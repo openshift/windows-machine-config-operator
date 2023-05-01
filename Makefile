@@ -181,6 +181,10 @@ lint:
 	hack/lint-gofmt.sh
 	hack/verify-vendor.sh
 
+.PHONY: imports
+imports: ## Organize imports in go files using goio
+	go run ./vendor/github.com/go-imports-organizer/goio
+
 .PHONY: unit
 unit:
 	hack/unit.sh ${GO_MOD_FLAGS}

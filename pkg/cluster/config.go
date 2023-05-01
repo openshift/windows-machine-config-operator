@@ -11,11 +11,12 @@ import (
 	oconfig "github.com/openshift/api/config/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
-	"github.com/openshift/windows-machine-config-operator/version"
 	"golang.org/x/mod/semver"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/openshift/windows-machine-config-operator/version"
 )
 
 //+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures;clusterversions,verbs=get
