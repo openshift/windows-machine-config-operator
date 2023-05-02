@@ -17,6 +17,22 @@ error-exit() {
     exit 1
 }
 
+# Accepts one argument, the WMCO version.
+get_OCP_version() {
+  if [ "$#" -ne 1 ]; then
+    echo incorrect parameter count for get_OCP_version $#
+    return 1
+  fi
+  local WMCO_VERSION=$1
+  local OCP_VER_MAJOR=4
+  local WMCO_VER_MAJOR=${WMCO_VERSION:0:1}
+  # OCP 4.6 maps to WMCO 1.y.z making the WMCO major version always five
+  # versions behind OCP Y version
+  local DIFFERENCE=5
+  local OCP_VER_MINOR=$(($DIFFERENCE+$WMCO_VER_MAJOR))
+  echo $OCP_VER_MAJOR.$OCP_VER_MINOR
+}
+
 get_operator_sdk() {
   # Download the operator-sdk binary only if it is not already available
   # We do not validate the version of operator-sdk if it is available already
