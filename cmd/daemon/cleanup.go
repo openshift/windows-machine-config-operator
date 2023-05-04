@@ -20,11 +20,11 @@ package main
 
 import (
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/cleanup"
-	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
 )
 
 var (
@@ -42,9 +42,9 @@ func init() {
 }
 
 func runCleanupCmd(cmd *cobra.Command, args []string) {
-	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		klog.Exitf("error using service account to build config: %s", err.Error())
+		klog.Exitf("error building config: %s", err.Error())
 	}
 	ctx := ctrl.SetupSignalHandler()
 	if err := cleanup.Deconfigure(cfg, ctx, namespace); err != nil {

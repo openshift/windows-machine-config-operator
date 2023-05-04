@@ -32,19 +32,13 @@ var (
 		Long: "The Windows Instance Config Daemon performs multiple functions related to maintaining the expected " +
 			"state of a Windows Node.",
 	}
-	saToken      string
-	saCA         string
-	apiServerURL string
-	namespace    string
+	kubeconfig string
+	namespace  string
 )
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&saToken, "sa-token", "", "Path to service account token file")
-	rootCmd.MarkPersistentFlagRequired("sa-token")
-	rootCmd.PersistentFlags().StringVar(&saCA, "sa-ca", "", "Path to service account CA file")
-	rootCmd.MarkPersistentFlagRequired("sa-ca")
-	rootCmd.PersistentFlags().StringVar(&apiServerURL, "api-server", "", "URL of API server")
-	rootCmd.MarkPersistentFlagRequired("api-server")
+	rootCmd.PersistentFlags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig with required permissions")
+	rootCmd.MarkPersistentFlagRequired("kubeconfig")
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "",
 		"The namespace that required cluster resources, such as the ConfigMap, will be located in. This is the "+
 			"namespace that WMCO is deployed in")
