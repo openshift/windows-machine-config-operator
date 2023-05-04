@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
@@ -103,7 +102,7 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.Secret{}, privateKeyPredicate).
-		Watches(&source.Kind{Type: &core.Secret{}}, handler.EnqueueRequestsFromMapFunc(r.mapToPrivateKeySecret),
+		Watches(&core.Secret{}, handler.EnqueueRequestsFromMapFunc(r.mapToPrivateKeySecret),
 			mappingPredicate).
 		Complete(r)
 }
@@ -297,7 +296,7 @@ func (r *SecretReconciler) RemoveInvalidAnnotationsFromLinuxNodes(config *rest.C
 }
 
 // mapToPrivateKeySecret is a mapping function that will always return a request for the cloud private key secret
-func (r *SecretReconciler) mapToPrivateKeySecret(_ client.Object) []reconcile.Request {
+func (r *SecretReconciler) mapToPrivateKeySecret(_ context.Context, _ client.Object) []reconcile.Request {
 	return []reconcile.Request{
 		{NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret}},
 	}

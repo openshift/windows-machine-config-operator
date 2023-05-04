@@ -38,7 +38,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
@@ -377,14 +376,14 @@ func hasAssociatedInstance(nodeAddresses []core.NodeAddress, instances []*instan
 }
 
 // mapToInstancesConfigMap fulfills the MapFn type, while always returning a request to the windows-instance ConfigMap
-func (r *ConfigMapReconciler) mapToInstancesConfigMap(_ client.Object) []reconcile.Request {
+func (r *ConfigMapReconciler) mapToInstancesConfigMap(_ context.Context, _ client.Object) []reconcile.Request {
 	return []reconcile.Request{{
 		NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: wiparser.InstanceConfigMap},
 	}}
 }
 
 // mapToServicesConfigMap fulfills the MapFn type, while always returning a request to the windows-services ConfigMap
-func (r *ConfigMapReconciler) mapToServicesConfigMap(_ client.Object) []reconcile.Request {
+func (r *ConfigMapReconciler) mapToServicesConfigMap(_ context.Context, _ client.Object) []reconcile.Request {
 	return []reconcile.Request{{
 		NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name},
 	}}
@@ -409,9 +408,9 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.ConfigMap{}, builder.WithPredicates(configMapPredicate)).
-		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapToInstancesConfigMap),
+		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapToInstancesConfigMap),
 			builder.WithPredicates(outdatedWindowsNodePredicate(true))).
-		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
+		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
 			builder.WithPredicates(windowsNodeVersionChangePredicate())).
 		Complete(r)
 }
