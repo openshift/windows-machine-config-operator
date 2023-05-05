@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,13 +158,8 @@ func testWindowsNodeDeletion(t *testing.T) {
 	// Phase is ignored during deletion, in this case we are just waiting for Machines to be deleted.
 	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", false)
 	require.NoError(t, err, "Machine controller Windows machine deletion failed")
-
-	// TODO: Currently on vSphere it is impossible to delete a Machine after its node has been deleted.
-	//       This special casing should be removed as part of https://issues.redhat.com/browse/WINC-635
-	if testCtx.GetType() != config.VSpherePlatformType {
-		_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", true)
-		require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
-	}
+	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", true)
+	require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
 
 	// Test if prometheus configuration is updated to have no node entries in the endpoints object
 	t.Run("Prometheus configuration", testPrometheus)
