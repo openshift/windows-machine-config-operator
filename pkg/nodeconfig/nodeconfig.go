@@ -563,12 +563,7 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		KubeAPIBurst:          100,
 		SerializeImagePulls:   &falseBool,
 		FeatureGates: map[string]bool{
-			"LegacyNodeRoleBehavior":         false,
-			"NodeDisruptionExclusion":        true,
 			"RotateKubeletServerCertificate": true,
-			"SCTPSupport":                    true,
-			"ServiceNodeExclusion":           true,
-			"SupportPodPidsLimit":            true,
 		},
 		ContainerLogMaxSize: "50Mi",
 		SystemReserved: map[string]string{
