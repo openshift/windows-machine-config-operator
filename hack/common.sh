@@ -33,6 +33,93 @@ get_OCP_version() {
   echo $OCP_VER_MAJOR.$OCP_VER_MINOR
 }
 
+check_git_branch() {
+  # Return if the working branch is dirty
+  if ! git diff --quiet; then
+    echo "branch dirty, exiting to not overwrite work"
+    return 1
+  fi
+}
+
+# This function creates a git branch for automating commits
+# Takes n arguments
+# 1st arg: the branch name prefix, such as submodule-update
+# args [2, n]: the versions to branch from
+# usage: create_git_branch_list submodule-update release-4.10 release-4.12 release-4.13
+create_git_branch_list() {
+  if [ "$#" -lt 2 ]; then
+    echo incorrect parameter count for create_git_branch_list $#
+    return 1
+  fi
+
+  branch_name_prefix=$1
+  new_branch_list=()
+
+  # skip the first argument because that's the branch ID
+  shift
+  for branch in "$@"; do
+    new_branch="$branch-$branch_name_prefix-$(date +%m-%d)"
+    new_branch_list+=($new_branch)
+  done
+  echo "${new_branch_list[@]}"
+}
+
+# This function switches the current git branch, and deletes branches with duplicate names.
+# takes 2 arguments
+# the base branch, and the branch that is going to be created
+# usage: switch_git_branch master new_branch_name
+switch_git_branch() {
+  if [ "$#" -lt 2 ]; then
+    echo incorrect parameter count for switch_git_branch $#
+    return 1
+  fi
+  local base_branch=$1
+  local new_branch=$2
+
+  if git branch -D $new_branch; then
+    echo "Deleted branch $new_branch"
+  fi
+  git checkout $base_branch -b $new_branch
+} 
+
+# This function adds files and generates a commit message 
+# takes n arguments
+# 1st arg: the commit message to add to the commits 
+# args [2, n]: the directories to add to the commit 
+# usage: generate_commit "good commit message" hack bundle 
+generate_commit() {
+  if [ "$#" -lt 2 ]; then
+    echo incorrect parameter count for generate_commit $#
+    return 1
+  fi
+
+  local commit_message="$1"
+  shift
+  for directory in "$@"; do
+    git add $directory
+  done
+
+  # Commit changes if there are any
+  git commit -m "$commit_message"
+}
+
+# This function displays a message to remind the user to push their changes. 
+# takes 1 arg
+# 1st arg: the list of branches to display 
+# usage: display_push_message ${new_branch_list[@]}
+display_push_message() {
+  new_branch_list=("$@")
+  echo "****"
+  echo "New branches created:"
+  echo "    [${new_branch_list[@]}]"
+  echo ""
+  echo "For each branch, you may push to your fork and create a PR against openshift/windows-machine-config-operator"
+  echo "example:"
+  echo "# assumes you have your fork set as the remote 'origin'"
+  echo "git push origin ${new_branch_list[0]}"
+
+}
+
 get_operator_sdk() {
   # Download the operator-sdk binary only if it is not already available
   # We do not validate the version of operator-sdk if it is available already

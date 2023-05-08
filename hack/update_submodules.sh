@@ -123,30 +123,25 @@ if [ ! -z "$remote_branch" ]; then
   fi
 fi
 
-# Return if the working branch is dirty
-if ! git diff --quiet; then
-  echo "branch dirty, exiting to not overwrite work"
-  exit 1
-fi
 
-# For each branch that the user gives (master, release-4.7), create a new branch based off it,
-# with commits updating the submodules
+WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
+source $WMCO_ROOT/hack/common.sh
+
+# Check if branch is dirty, and exit if it is
+check_git_branch
 initial_branch=$(git branch --show-current)
-new_branch_list=()
-for branch in "$@"; do
-  new_branch="$branch-submodule-update-$(date +%m-%d)"
-  update_submodules_for_branch "$branch" "$new_branch" "$modulelist" "$remote_branch"
-  new_branch_list+=($new_branch)
+
+# creates a list of branches to be created
+new_branch_list=$(create_git_branch_list submodule-update $@)
+
+# counter to sync the generated branch list with the arguments
+i=1
+for new_branch in $new_branch_list; do
+  update_submodules_for_branch "${!i}" "$new_branch" "$modulelist" "$remote_branch"
+  i=$((i+1))
 done
 
 # Return to initial branch
 git checkout $initial_branch
-echo "****"
-echo "New branches created:"
-echo "    [${new_branch_list[@]}]"
-echo ""
-echo "For each branch, you may push to your fork and create a PR against openshift/windows-machine-config-operator"
-echo "example:"
-echo "# assumes you have your fork set as the remote 'origin'"
-echo "git push origin ${new_branch_list[0]}"
 
+display_push_message "${new_branch_list[@]}"
