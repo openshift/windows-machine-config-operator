@@ -576,6 +576,7 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 			"ephemeral-storage": "1Gi",
 			"memory":            "1Gi",
 		},
+		ContainerRuntimeEndpoint: "npipe://./pipe/containerd-containerd",
 	}
 }
 

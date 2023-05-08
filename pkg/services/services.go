@@ -216,7 +216,6 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 
 // generateKubeletArgs returns the kubelet args required during initial kubelet start up
 func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]string, error) {
-	containerdEndpointValue := "npipe://./pipe/containerd-containerd"
 	certDirectory := "c:\\var\\lib\\kubelet\\pki\\"
 	windowsTaints := "os=Windows:NoSchedule"
 	windowsPriorityClass := "ABOVE_NORMAL_PRIORITY_CLASS"
@@ -231,8 +230,6 @@ func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]stri
 		// Windows nodes.
 		"--register-with-taints=" + windowsTaints,
 		"--node-labels=" + nodeconfig.WindowsOSLabel,
-		"--container-runtime=remote",
-		"--container-runtime-endpoint=" + containerdEndpointValue,
 		"--resolv-conf=",
 		// Allows the kubelet process to get more CPU time slices when compared to other processes running on the
 		// Windows host.
