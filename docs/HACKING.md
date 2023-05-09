@@ -328,15 +328,16 @@ Find more information [here](custom-workload.md)
 
 This project contains git submodules for the following components:
 
+- cloud-provider-azure
+- containerd
+- containernetworking-plugins
+- csi-proxy
+- hcsshim
+- kube-proxy
 - kubernetes
 - ovn-kubernetes
-- containernetworking-plugins
 - promu
 - windows_exporter
-- containerd 
-- hcsshim 
-- kube-proxy 
-- cloud-provider-azure 
 
 To update the git submodules you can use the script hack/update_submodules.sh
 Use the help command for up to date instructions:

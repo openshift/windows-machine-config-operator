@@ -60,6 +60,11 @@ COPY containernetworking-plugins/ .
 ENV CGO_ENABLED=0
 RUN ./build_windows.sh
 
+# Build csi-proxy
+WORKDIR /build/windows-machine-config-operator/csi-proxy
+COPY csi-proxy/ .
+RUN GOOS=windows make build
+
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 LABEL stage=base
 
@@ -90,3 +95,6 @@ WORKDIR /payload/cni/
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .
+
+WORKDIR /payload/csi-proxy/
+COPY --from=build /build/windows-machine-config-operator/csi-proxy/bin/csi-proxy.exe .
