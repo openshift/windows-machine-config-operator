@@ -46,6 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
@@ -105,8 +106,12 @@ type ServiceController struct {
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
-func (sc *ServiceController) Bootstrap(desiredVersion string) error {
+func Bootstrap(desiredVersion string) error {
 	var cm core.ConfigMap
+	sc, err := controller.NewServiceController(context.TODO(), "", namespace, controller.Options{Config: cfg})
+	if err != nil {
+		klog.Exitf("error creating Service Controller: %s", err.Error())
+	}
 	err := sc.client.Get(sc.ctx,
 		client.ObjectKey{Namespace: sc.watchNamespace, Name: servicescm.NamePrefix + desiredVersion}, &cm)
 	if err != nil {
