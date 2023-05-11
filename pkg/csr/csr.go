@@ -47,6 +47,31 @@ const (
 	systemPrefix       = "system:authenticated"
 )
 
+var (
+	// kubeletClientUsages contains the permitted key usages from a kube-apiserver-client-kubelet signer
+	kubeletClientUsages = []certificates.KeyUsage{
+		certificates.UsageKeyEncipherment,
+		certificates.UsageDigitalSignature,
+		certificates.UsageClientAuth,
+	}
+	// kubeletClientUsagesNoRSA contains the permitted client usages when kubelet is given a non-RSA key
+	kubeletClientUsagesNoRSA = []certificates.KeyUsage{
+		certificates.UsageDigitalSignature,
+		certificates.UsageClientAuth,
+	}
+	// kubeletServerUsages contains the permitted key usages from a kubelet-serving signer
+	kubeletServerUsages = []certificates.KeyUsage{
+		certificates.UsageKeyEncipherment,
+		certificates.UsageDigitalSignature,
+		certificates.UsageServerAuth,
+	}
+	// kubeletServerUsagesNoRSA contains the permitted server usages when kubelet is given a non-RSA key
+	kubeletServerUsagesNoRSA = []certificates.KeyUsage{
+		certificates.UsageDigitalSignature,
+		certificates.UsageServerAuth,
+	}
+)
+
 // Approver holds the information required to approve a node CSR
 type Approver struct {
 	// client is the cache client
@@ -209,13 +234,6 @@ func (a *Approver) validateKubeletServingCSR(parsedCsr *x509.CertificateRequest)
 	if a.csr == nil || parsedCsr == nil {
 		return fmt.Errorf("CSR or request should not be nil")
 	}
-	// kubeletServerUsages contains the permitted key usages from a kubelet-serving signer
-	kubeletServerUsages := []certificates.KeyUsage{
-		certificates.UsageKeyEncipherment,
-		certificates.UsageDigitalSignature,
-		certificates.UsageServerAuth,
-	}
-
 	// Check groups, we need at least: system:nodes, system:authenticated
 	if len(a.csr.Spec.Groups) < 2 {
 		return fmt.Errorf("CSR %s contains invalid number of groups: %d", a.csr.Name,
@@ -226,8 +244,8 @@ func (a *Approver) validateKubeletServingCSR(parsedCsr *x509.CertificateRequest)
 		return fmt.Errorf("CSR %s does not contain required groups", a.csr.Name)
 	}
 
-	// Check usages include: digital signature, key encipherment and server auth
-	if !hasUsages(a.csr, kubeletServerUsages) {
+	// Check usages, the list can include: digital signature, key encipherment and server auth
+	if !hasUsages(a.csr, kubeletServerUsages) && !hasUsages(a.csr, kubeletServerUsagesNoRSA) {
 		return fmt.Errorf("CSR %s does not contain required usages", a.csr.Name)
 	}
 
@@ -247,20 +265,14 @@ func (a *Approver) validateKubeletServingCSR(parsedCsr *x509.CertificateRequest)
 // isNodeClientCert returns true if the CSR is from a  kube-apiserver-client-kubelet signer
 // reference: https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/#kubernetes-signers
 func (a *Approver) isNodeClientCert(x509cr *x509.CertificateRequest) bool {
-	// kubeletClientUsages contains the permitted key usages from a kube-apiserver-client-kubelet signer
-	kubeletClientUsages := []certificates.KeyUsage{
-		certificates.UsageKeyEncipherment,
-		certificates.UsageDigitalSignature,
-		certificates.UsageClientAuth,
-	}
 	if !reflect.DeepEqual([]string{nodeGroup}, x509cr.Subject.Organization) {
 		return false
 	}
 	if (len(x509cr.DNSNames) > 0) || (len(x509cr.EmailAddresses) > 0) || (len(x509cr.IPAddresses) > 0) {
 		return false
 	}
-	// Check usages include: digital signature, key encipherment and client auth
-	if !hasUsages(a.csr, kubeletClientUsages) {
+	// Check usages, the list can include: digital signature, key encipherment and client auth
+	if !hasUsages(a.csr, kubeletClientUsages) && !hasUsages(a.csr, kubeletClientUsagesNoRSA) {
 		return false
 	}
 	return true
@@ -268,10 +280,7 @@ func (a *Approver) isNodeClientCert(x509cr *x509.CertificateRequest) bool {
 
 // hasUsages verifies if the required usages exist in the CSR spec
 func hasUsages(csr *certificates.CertificateSigningRequest, usages []certificates.KeyUsage) bool {
-	if csr == nil {
-		return false
-	}
-	if len(usages) != len(csr.Spec.Usages) {
+	if csr == nil || len(csr.Spec.Usages) < 2 {
 		return false
 	}
 	usageMap := map[certificates.KeyUsage]struct{}{}
