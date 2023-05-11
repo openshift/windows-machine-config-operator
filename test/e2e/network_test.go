@@ -21,6 +21,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 // testNetwork runs all the cluster and node network tests
@@ -463,11 +465,13 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	return podList.Items[0].Status.PodIP, nil
 }
 
-// getWindowsServerContainerImage gets the appropriate WindowsServer image based on the cloud provider
+// getWindowsServerContainerImage gets the appropriate WindowsServer image based on the OS version
 func (tc *testContext) getWindowsServerContainerImage() string {
-	if tc.CloudProvider.GetType() == config.AWSPlatformType {
-		// On AWS we are currently testing 2019
+	switch tc.windowsServerVersion {
+	case windows.Server2019:
 		return "mcr.microsoft.com/powershell:lts-nanoserver-1809"
+	case windows.Server2022:
+	default:
 	}
 	// the default container image must be compatible with Windows Server 2022
 	return "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
