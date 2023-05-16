@@ -107,7 +107,7 @@ RUN make build-daemon
 #├── windows_exporter.exe
 #└── windows-instance-config-daemon.exe
 
-FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=operator
 
 WORKDIR /payload/
