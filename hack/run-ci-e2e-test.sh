@@ -89,24 +89,22 @@ fi
 
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"false"}
 
-# OPERATOR_IMAGE defines where the WMCO image to test with is located. If $OPERATOR_IMAGE is already set, use its value.
-# Setting $OPERATOR_IMAGE is required for local testing.
-# In CI $OPERATOR_IMAGE environment variable is declared through a dependency in test references declared at
-# https://github.com/openshift/release/tree/master/ci-operator/step-registry/windows/e2e/operator/test
-if [[ -z "$OPERATOR_IMAGE" ]]; then
-  error-exit "The OPERATOR_IMAGE environment variable was not found."
-fi
-
 # generate the WMCO binary if we are not running the test through CI. This binary is used to validate WMCO version
 # while running the validation test. For CI, we use different `wmcoPath` based on how we generate the container image.
 if [[ "$OPENSHIFT_CI" != "true" ]]; then
   make build
 fi
 
-# Setup and run the operator
-# Spinning up a cluster is a long operation and operator deployment through this method has been prone to transient
-# errors. Retrying WMCO deployment allows us to save time in CI.
-if ! [[ "$OPENSHIFT_CI" = "true" &&  "$TEST" = "upgrade" ]]; then
+# Setup and run the operator if it is not already deployed
+if  ! oc get deploy/windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE > /dev/null; then
+  # OPERATOR_IMAGE defines where the WMCO image to test with is located. If $OPERATOR_IMAGE is already set, use its value.
+  # Setting $OPERATOR_IMAGE is required for local testing.
+  # In CI $OPERATOR_IMAGE environment variable is declared through a dependency in test references declared at
+  # https://github.com/openshift/release/tree/master/ci-operator/step-registry/windows/e2e/operator/test
+  if [[ -z "$OPERATOR_IMAGE" ]]; then
+    error-exit "The OPERATOR_IMAGE environment variable was not found."
+  fi
+
   retries=0
   while ! run_WMCO $OSDK
   do
