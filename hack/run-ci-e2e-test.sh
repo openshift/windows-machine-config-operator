@@ -28,7 +28,6 @@ source $WMCO_ROOT/hack/common.sh
 MACHINE_NODE_COUNT_OPTION=""
 BYOH_NODE_COUNT_OPTION=""
 SKIP_NODE_DELETION=""
-WMCO_PATH_OPTION=""
 
 export CGO_ENABLED=0
 
@@ -56,9 +55,6 @@ while getopts ":m:c:b:st:w:" opt; do
       ;;
     s ) # process option for skipping deleting Windows VMs created by test suite
       SKIP_NODE_DELETION="true"
-      ;;
-    b ) # path to the WMCO binary, used for version validation
-      WMCO_PATH_OPTION="-wmco-path=$OPTARG"
       ;;
     t ) # test to run. Defaults to all. Other options are basic and upgrade.
       TEST=$OPTARG
@@ -88,12 +84,6 @@ if ! [[ "$OPENSHIFT_CI" == "true" &&  "$TEST" = "upgrade" ]]; then
 fi
 
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"false"}
-
-# generate the WMCO binary if we are not running the test through CI. This binary is used to validate WMCO version
-# while running the validation test. For CI, we use different `wmcoPath` based on how we generate the container image.
-if [[ "$OPENSHIFT_CI" != "true" ]]; then
-  make build
-fi
 
 # Setup and run the operator if it is not already deployed
 if  ! oc get deploy/windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE > /dev/null; then
@@ -146,7 +136,7 @@ echo "Testing against Windows Server $WIN_VER"
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
 
-GO_TEST_ARGS="$BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH $WMCO_PATH_OPTION --wmco-namespace=$WMCO_DEPLOY_NAMESPACE --windows-server-version=$WIN_VER"
+GO_TEST_ARGS="$BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH --wmco-namespace=$WMCO_DEPLOY_NAMESPACE --windows-server-version=$WIN_VER"
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
 go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $GO_TEST_ARGS
