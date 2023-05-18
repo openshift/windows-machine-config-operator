@@ -129,6 +129,14 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 		return nil, fmt.Errorf("error instantiating Windows instance from VM: %w", err)
 	}
 
+	// initialize the cache now if it failed to initialize
+	if nodeConfigCache.apiServerEndpoint == "" {
+		nodeConfigCache.apiServerEndpoint, err = discoverKubeAPIServerEndpoint()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, platformType: platformType,
 		wmcoNamespace: wmcoNamespace, clusterServiceCIDR: clusterServiceCIDR,
 		publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()), log: log, additionalLabels: additionalLabels,
