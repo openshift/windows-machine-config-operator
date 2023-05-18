@@ -48,9 +48,7 @@ type winService struct {
 }
 
 // testKubeletPriorityClass tests if kubelet priority class is set to "AboveNormal"
-func testKubeletPriorityClass(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
+func (tc *testContext) testKubeletPriorityClass(t *testing.T) {
 	requiredPriorityClass := "AboveNormal"
 
 	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
@@ -80,9 +78,7 @@ func (tc *testContext) getKubeletPriorityClass(node *core.Node) (string, error) 
 
 // testNodeMetadata tests if all nodes have a worker label and are annotated with the version of
 // the currently deployed WMCO
-func testNodeMetadata(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
+func (tc *testContext) testNodeMetadata(t *testing.T) {
 	operatorVersion, err := getWMCOVersion()
 	require.NoError(t, err, "could not get WMCO version")
 
@@ -127,9 +123,7 @@ func testNodeMetadata(t *testing.T) {
 }
 
 // testNodeIPArg tests that the node-ip kubelet arg is set only when platform type == none
-func testNodeIPArg(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
+func (tc *testContext) testNodeIPArg(t *testing.T) {
 	nodeIPArg := "--node-ip"
 
 	// Nodes configured from Machines should never have the node-ip arg set
@@ -225,7 +219,7 @@ func getWMCOVersion() (string, error) {
 }
 
 // testNodeTaint tests if the Windows node has the Windows taint
-func testNodeTaint(t *testing.T) {
+func (tc *testContext) testNodeTaint(t *testing.T) {
 	// windowsTaint is the taint that needs to be applied to the Windows node
 	windowsTaint := core.Taint{
 		Key:    "os",
@@ -445,9 +439,7 @@ func (tc *testContext) getWinServices(addr string) (map[string]winService, error
 }
 
 // testExpectedServicesRunning tests that for each node all the expected services are running
-func testExpectedServicesRunning(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
+func (tc *testContext) testExpectedServicesRunning(t *testing.T) {
 	expectedSvcs, err := tc.expectedWindowsServices(windows.RequiredServices)
 	require.NoError(t, err)
 	for _, node := range gc.allNodes() {
@@ -492,10 +484,7 @@ func (tc *testContext) expectedWindowsServices(alwaysRequiredSvcs []string) (map
 
 // testServicesConfigMap tests multiple aspects of expected functionality for the services ConfigMap
 // 1. It exists on operator startup 2. It is re-created when deleted 3. It is recreated if invalid contents are detected
-func testServicesConfigMap(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testServicesConfigMap(t *testing.T) {
 	operatorVersion, err := getWMCOVersion()
 	require.NoError(t, err)
 	servicesConfigMapName := servicescm.NamePrefix + operatorVersion
@@ -639,14 +628,12 @@ func (tc *testContext) waitForServicesConfigMapDeletion(cmName string) error {
 }
 
 // testCSRApproval tests if the BYOH CSR's have been approved by WMCO CSR approver
-func testCSRApproval(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
+func (tc *testContext) testCSRApproval(t *testing.T) {
 	if gc.numberOfBYOHNodes == 0 {
 		t.Skip("BYOH CSR approval testing disabled")
 	}
 	for _, node := range gc.byohNodes {
-		csrs, err := testCtx.findNodeCSRs(node.GetName())
+		csrs, err := tc.findNodeCSRs(node.GetName())
 		require.NotEqual(t, len(csrs), 0, "could not find BYOH node CSR's")
 		require.NoError(t, err, "could not find BYOH node CSR's")
 
@@ -666,7 +653,7 @@ func testCSRApproval(t *testing.T) {
 
 	// Scale the Cluster Machine Approver deployment back to 1.
 	expectedPodCount := int32(1)
-	err = testCtx.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
+	err := tc.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
 		&expectedPodCount)
 	require.NoError(t, err, "failed to scale up Cluster Machine Approver pods")
 }

@@ -43,38 +43,38 @@ const (
 )
 
 func creationTestSuite(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
 	// The order of tests here are important. Any node object related tests should be run only after
 	// testWindowsNodeCreation as that initializes the node objects in the global context.
-	if !t.Run("Creation", testWindowsNodeCreation) {
+	if !t.Run("Creation", tc.testWindowsNodeCreation) {
 		// No point in running the other tests if creation failed
 		return
 	}
-	t.Run("Node Metadata", testNodeMetadata)
-	t.Run("Services ConfigMap validation", testServicesConfigMap)
-	t.Run("Services running", testExpectedServicesRunning)
-	t.Run("NodeIP Arg", testNodeIPArg)
-	t.Run("NodeTaint validation", testNodeTaint)
-	t.Run("CSR Validation", func(t *testing.T) { testCSRApproval(t) })
-	t.Run("Certificates", testCertificates)
-	t.Run("Node Logs", testNodeLogs)
-	t.Run("Metrics validation", testMetrics)
-	t.Run("UserData validation", testUserData)
-	t.Run("Kubelet priority class validation", testKubeletPriorityClass)
+	t.Run("Node Metadata", tc.testNodeMetadata)
+	t.Run("Services ConfigMap validation", tc.testServicesConfigMap)
+	t.Run("Services running", tc.testExpectedServicesRunning)
+	t.Run("NodeIP Arg", tc.testNodeIPArg)
+	t.Run("NodeTaint validation", tc.testNodeTaint)
+	t.Run("CSR Validation", tc.testCSRApproval)
+	t.Run("Certificates", tc.testCertificates)
+	t.Run("Node Logs", tc.testNodeLogs)
+	t.Run("Metrics validation", tc.testMetrics)
+	t.Run("UserData validation", tc.testUserData)
+	t.Run("Kubelet priority class validation", tc.testKubeletPriorityClass)
 }
 
 // testWindowsNodeCreation tests the Windows node creation in the cluster
-func testWindowsNodeCreation(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
+func (tc *testContext) testWindowsNodeCreation(t *testing.T) {
 	// Create a private key secret with the known private key.
-	require.NoError(t, testCtx.createPrivateKeySecret(true), "could not create known private key secret")
+	require.NoError(t, tc.createPrivateKeySecret(true), "could not create known private key secret")
 
-	t.Run("Machine controller", testCtx.testMachineConfiguration)
+	t.Run("Machine controller", tc.testMachineConfiguration)
 	// BYOH creation must occur after the Machine creation, as the MachineConfiguration tests change the private key
 	// multiple times, and BYOH doesnt have the functionality of rotating keys on the VMs. This would result in BYOH
 	// failing the pub key annotation validation as it compares the current private key secret with the annotation.
 	// TODO: Remove this dependency by rotating keys as part of https://issues.redhat.com/browse/WINC-655
-	t.Run("ConfigMap controller", testCtx.testBYOHConfiguration)
+	t.Run("ConfigMap controller", tc.testBYOHConfiguration)
 }
 
 // nodelessLogCollection runs a job which will print to stdout all logs in /var/log on the given instance

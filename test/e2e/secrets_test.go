@@ -66,10 +66,7 @@ func (tc *testContext) getUserDataContents() (string, error) {
 }
 
 // testUserData tests if the userData created in the 'openshift-machine-api' namespace is valid
-func testUserData(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testUserData(t *testing.T) {
 	_, pubKey, err := tc.getExpectedKeyPair()
 	require.NoError(t, err, "error getting the expected public/private key pair")
 	userData, err := tc.getUserDataContents()
@@ -81,9 +78,6 @@ func testUserData(t *testing.T) {
 
 // testUserDataTamper tests if userdata reverts to previous value if updated
 func (tc *testContext) testUserDataTamper(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
-
 	validUserDataSecret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(),
 		secrets.UserDataSecret, meta.GetOptions{})
 	require.NoError(t, err, "could not find Windows userData secret in required namespace")

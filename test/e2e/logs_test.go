@@ -19,7 +19,7 @@ import (
 
 // testNodeLogs ensures that all required log files were created, and copies them to the test's artifact directory
 // It also tests that 'oc adm node-logs' works with the nodes created by WMCO.
-func testNodeLogs(t *testing.T) {
+func (tc *testContext) testNodeLogs(t *testing.T) {
 	// All these paths are relative to /var/log/
 	mandatoryLogs := []string{
 		"kube-proxy/kube-proxy.exe.INFO",
