@@ -26,18 +26,15 @@ const (
 	windowsRuleName     = "windows.rules"
 )
 
-func testMetrics(t *testing.T) {
-	t.Run("Windows Exporter configuration validation", testWindowsExporter)
-	t.Run("Prometheus configuration validation", testPrometheus)
-	t.Run("Windows Prometheus rules validation", testWindowsPrometheusRules)
-	t.Run("Windows Node resource usage info validation", testNodeResourceUsage)
+func (tc *testContext) testMetrics(t *testing.T) {
+	t.Run("Windows Exporter configuration validation", tc.testWindowsExporter)
+	t.Run("Prometheus configuration validation", tc.testPrometheus)
+	t.Run("Windows Prometheus rules validation", tc.testWindowsPrometheusRules)
+	t.Run("Windows Node resource usage info validation", tc.testNodeResourceUsage)
 }
 
 // testWindowsExporter deploys Linux pod and tests that it can communicate with Windows node's metrics port
-func testWindowsExporter(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testWindowsExporter(t *testing.T) {
 	// Need at least one Windows node to run these tests, throwing error if this condition is not met
 	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
 
@@ -53,35 +50,32 @@ func testWindowsExporter(t *testing.T) {
 			require.Greaterf(t, len(winNodeInternalIP), 0, "test requires Windows node %s to have internal IP",
 				winNode.Name)
 
-			linuxCurlerJob, err := testCtx.createLinuxCurlerJob(strings.ToLower(winNode.Status.NodeInfo.MachineID),
+			linuxCurlerJob, err := tc.createLinuxCurlerJob(strings.ToLower(winNode.Status.NodeInfo.MachineID),
 				fmt.Sprintf("http://%s:%d/%s", winNodeInternalIP, int(metrics.Port), metrics.PortName), false)
 			require.NoError(t, err, "could not create Linux job")
 			// delete the job created
-			defer testCtx.deleteJob(linuxCurlerJob.Name)
+			defer tc.deleteJob(linuxCurlerJob.Name)
 
-			err = testCtx.waitUntilJobSucceeds(linuxCurlerJob.Name)
+			err = tc.waitUntilJobSucceeds(linuxCurlerJob.Name)
 			assert.NoError(t, err, "could not curl the Windows VM metrics endpoint from a linux container")
 		})
 	}
 }
 
 // testPrometheus tests if Prometheus is configured to scrape metrics endpoints
-func testPrometheus(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testPrometheus(t *testing.T) {
 	// check that service exists
-	_, err = testCtx.client.K8s.CoreV1().Services(wmcoNamespace).Get(context.TODO(),
+	_, err := tc.client.K8s.CoreV1().Services(wmcoNamespace).Get(context.TODO(),
 		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// check that SM existS
-	_, err = testCtx.client.Monitoring.ServiceMonitors(wmcoNamespace).Get(context.TODO(),
+	_, err = tc.client.Monitoring.ServiceMonitors(wmcoNamespace).Get(context.TODO(),
 		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err, "error getting service monitor")
 
 	// check that endpoints exists
-	windowsEndpoints, err := testCtx.client.K8s.CoreV1().Endpoints(wmcoNamespace).Get(context.TODO(),
+	windowsEndpoints, err := tc.client.K8s.CoreV1().Endpoints(wmcoNamespace).Get(context.TODO(),
 		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err)
 
@@ -147,9 +141,7 @@ type Metric struct {
 
 // testWindowsPrometheusRules tests if prometheus rules specific to Windows are defined by WMCO
 // It also tests the Prometheus queries by sending http requests to Prometheus server.
-func testWindowsPrometheusRules(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
+func (tc *testContext) testWindowsPrometheusRules(t *testing.T) {
 	// test if PrometheusRule object exists in WMCO repo
 	promRule, err := tc.client.Monitoring.PrometheusRules(wmcoNamespace).Get(context.TODO(), prometheusRule, metav1.GetOptions{})
 	require.NoError(t, err)
@@ -286,10 +278,7 @@ func (tc *testContext) ensureMonitoringIsEnabled() error {
 }
 
 // testNodeResourceUsage ensures information on available resources is retrievable from Windows nodes
-func testNodeResourceUsage(t *testing.T) {
-	_, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testNodeResourceUsage(t *testing.T) {
 	// Need at least one Windows node to run these tests, throwing error if this condition is not met
 	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
 

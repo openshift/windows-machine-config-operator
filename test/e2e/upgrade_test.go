@@ -33,50 +33,47 @@ const (
 
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
 func upgradeTestSuite(t *testing.T) {
-	testCtx, err := NewTestContext()
+	tc, err := NewTestContext()
 	require.NoError(t, err)
 
 	// test if Windows workloads are running by creating a Job that curls the workloads continuously.
-	cleanupWorkloadAndTester, err := testCtx.deployWindowsWorkloadAndTester()
+	cleanupWorkloadAndTester, err := tc.deployWindowsWorkloadAndTester()
 	require.NoError(t, err, "error deploying Windows workloads")
 	defer cleanupWorkloadAndTester()
 
 	// apply configuration steps before running the upgrade tests
-	err = testCtx.configureUpgradeTest()
+	err = tc.configureUpgradeTest()
 	require.NoError(t, err, "error configuring upgrade")
 
 	// get current Windows node state
 	// TODO: waitForWindowsNodes currently loads nodes into global context, so we need this (even though BYOH
 	// 		 nodes are not being upgraded/tested here). Remove as part of https://issues.redhat.com/browse/WINC-620
-	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
+	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
 	require.NoError(t, err, "wrong number of Machine controller nodes found")
-	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
 	require.NoError(t, err, "wrong number of ConfigMap controller nodes found")
 
-	t.Run("Operator version upgrade", testUpgradeVersion)
+	t.Run("Operator version upgrade", tc.testUpgradeVersion)
 }
 
 // testUpgradeVersion tests the upgrade scenario of the operator. The node version annotation is changed when
 // the operator is shut-down. The function tests if the operator on restart deletes the machines and recreates
 // them on version annotation mismatch.
-func testUpgradeVersion(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testUpgradeVersion(t *testing.T) {
 	// Test the node metadata and if the version annotation corresponds to the current operator version
-	testNodeMetadata(t)
+	tc.testNodeMetadata(t)
 	// Test if prometheus is reconfigured with ip addresses of newly configured nodes
-	testPrometheus(t)
+	tc.testPrometheus(t)
 
 	// Ensure outdated ConfigMap is not retrievable
 	t.Run("Outdated services ConfigMap removal", func(t *testing.T) {
-		err = testCtx.waitForServicesConfigMapDeletion(servicescm.NamePrefix + outdatedVersion)
+		err := tc.waitForServicesConfigMapDeletion(servicescm.NamePrefix + outdatedVersion)
 		assert.NoError(t, err, "failed to ensure outdated services ConfigMap is removed after operator upgrade")
 	})
 
 	// TODO: Fix matching label for jobs. See https://issues.redhat.com/browse/WINC-673
 	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
-	pods, err := testCtx.client.K8s.CoreV1().Pods(testCtx.workloadNamespace).List(context.TODO(),
+	pods, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(),
 		metav1.ListOptions{FieldSelector: "status.phase=Failed",
 			LabelSelector: "job-name=" + windowsWorkloadTesterJob + "-job"})
 
