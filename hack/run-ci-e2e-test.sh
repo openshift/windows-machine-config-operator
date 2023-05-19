@@ -166,6 +166,8 @@ if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
   go test ./test/e2e/... -run=TestWMCO/storage -v -timeout=10m -args $GO_TEST_ARGS
   printf "\n####### Testing service reconciliation #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/service_reconciliation -v -timeout=20m -args $GO_TEST_ARGS
+  printf "\n####### Testing cluster-wide proxy #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/cluster-wide_proxy -v -timeout=10m -args $GO_TEST_ARGS
 fi
 
 if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,18 @@ const (
 	// MachineAPINamespace is the name of the namespace in which machine objects and userData secret is created.
 	MachineAPINamespace = "openshift-machine-api"
 )
+
+var (
+	// ClusterWideProxyVars is a map of the global egress proxy variables and values from WMCO's environment
+	ClusterWideProxyVars map[string]string
+)
+
+// init runs once, initializing global variables
+func init() {
+	// OLM restarts the operator when the global cluster proxy config changes so these values will always be up-to-date
+	// at start time. We never expect a user to update these values via editing the operator pod spec
+	ClusterWideProxyVars = getProxyVars()
+}
 
 // Network interface contains methods to interact with cluster network objects
 type Network interface {
@@ -339,4 +352,26 @@ func IsCloudControllerOwnedByCCM(oclient configclient.Interface) (bool, error) {
 	}
 
 	return ownedByCCM, nil
+}
+
+// getProxyVars returns a map of the cluster-wide proxy variables and values.
+// These are injected by OLM automatically to all its managed operators.
+func getProxyVars() map[string]string {
+	// proxyEnvVars is a list of the supported proxy-related environment variables
+	proxyEnvVars := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
+
+	proxyVars := make(map[string]string, len(proxyEnvVars))
+	for _, envVar := range proxyEnvVars {
+		// read settings from the WMCO container's environment
+		value, found := os.LookupEnv(envVar)
+		if found {
+			proxyVars[envVar] = value
+		}
+	}
+	return proxyVars
+}
+
+// IsProxyEnabled returns whether a global egress proxy is active in the cluster
+func IsProxyEnabled() bool {
+	return len(ClusterWideProxyVars) > 0
 }

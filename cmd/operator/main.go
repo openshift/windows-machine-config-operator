@@ -196,7 +196,8 @@ func main() {
 		setupLog.Error(err, "error removing invalid annotations from Linux nodes")
 	}
 
-	configMapReconciler, err := controllers.NewConfigMapReconciler(mgr, clusterConfig, watchNamespace)
+	proxyEnabled := cluster.IsProxyEnabled()
+	configMapReconciler, err := controllers.NewConfigMapReconciler(mgr, clusterConfig, watchNamespace, proxyEnabled)
 	if err != nil {
 		setupLog.Error(err, "unable to create ConfigMap reconciler")
 		os.Exit(1)
@@ -243,6 +244,15 @@ func main() {
 	if err := configMapReconciler.EnsureWICDRBAC(); err != nil {
 		setupLog.Error(err, "error ensuring WICD RBAC resources exist", "namespace", watchNamespace)
 		os.Exit(1)
+	}
+
+	// If proxy is enabled, disabled, or edited during WMCO runtime, the WMCO pod will be restarted by OLM. This could
+	// happen in the middle of node configuration, at which the controllers will reconcile once the WMCO pod restarts
+	if proxyEnabled {
+		if err := configMapReconciler.EnsureTrustedCAConfigMapExists(); err != nil {
+			setupLog.Error(err, "error ensuring trusted CA ConfigMap exists", "namespace", watchNamespace)
+			os.Exit(1)
+		}
 	}
 
 	setupLog.Info("starting manager")
