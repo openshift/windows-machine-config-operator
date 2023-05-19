@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
@@ -128,13 +127,13 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&mapi.Machine{}, builder.WithPredicates(machinePredicate)).
-		Watches(&source.Kind{Type: &core.Node{}}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToMachine),
+		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapNodeToMachine),
 			builder.WithPredicates(outdatedWindowsNodePredicate(false))).
 		Complete(r)
 }
 
 // mapNodeToMachine maps the given Windows node to its associated Machine
-func (r *WindowsMachineReconciler) mapNodeToMachine(object client.Object) []reconcile.Request {
+func (r *WindowsMachineReconciler) mapNodeToMachine(_ context.Context, object client.Object) []reconcile.Request {
 	node := core.Node{}
 
 	// If for some reason this mapper is called on an object which is not a Node, return

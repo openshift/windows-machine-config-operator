@@ -40,6 +40,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -102,6 +103,7 @@ type ServiceController struct {
 	nodeName       string
 	watchNamespace string
 	psCmdRunner    powershell.CommandRunner
+	ctrl           controller.Controller
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
@@ -204,14 +206,14 @@ func (sc *ServiceController) SetupWithManager(ctx context.Context, mgr ctrl.Mana
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.Node{}, builder.WithPredicates(nodePredicate)).
-		Watches(&source.Kind{Type: &core.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode),
+		Watches(&core.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode),
 			builder.WithPredicates(cmPredicate)).
-		Watches(&source.Channel{Source: eventChan}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode)).
+		WatchesRawSource(&source.Channel{Source: eventChan}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode)).
 		Complete(sc)
 }
 
 // mapToCurrentNode maps all events to the node associated with this Windows instance
-func (sc *ServiceController) mapToCurrentNode(_ client.Object) []reconcile.Request {
+func (sc *ServiceController) mapToCurrentNode(_ context.Context, _ client.Object) []reconcile.Request {
 	return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: sc.nodeName}}}
 }
 

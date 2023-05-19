@@ -538,6 +538,7 @@ func generateKubeconfig(caCert []byte, token, apiServerURL, username string) cli
 func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfiguration {
 	// default numeric values chosen based on the OpenShift kubelet config recommendations for Linux worker nodes
 	falseBool := false
+	trueBool := true
 	kubeAPIQPS := int32(50)
 	return kubeletconfig.KubeletConfiguration{
 		TypeMeta: meta.TypeMeta{
@@ -562,13 +563,9 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		KubeAPIQPS:            &kubeAPIQPS,
 		KubeAPIBurst:          100,
 		SerializeImagePulls:   &falseBool,
+		EnableSystemLogQuery:  &trueBool,
 		FeatureGates: map[string]bool{
-			"LegacyNodeRoleBehavior":         false,
-			"NodeDisruptionExclusion":        true,
 			"RotateKubeletServerCertificate": true,
-			"SCTPSupport":                    true,
-			"ServiceNodeExclusion":           true,
-			"SupportPodPidsLimit":            true,
 		},
 		ContainerLogMaxSize: "50Mi",
 		SystemReserved: map[string]string{
@@ -576,6 +573,7 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 			"ephemeral-storage": "1Gi",
 			"memory":            "1Gi",
 		},
+		ContainerRuntimeEndpoint: "npipe://./pipe/containerd-containerd",
 	}
 }
 
