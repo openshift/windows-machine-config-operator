@@ -3,7 +3,6 @@ package e2e
 import (
 	"context"
 	"log"
-	"os"
 	"testing"
 	"time"
 
@@ -25,11 +24,6 @@ func TestWMCO(t *testing.T) {
 	gc.numberOfBYOHNodes = int32(numberOfBYOHNodes)
 	require.NotEmpty(t, privateKeyPath, "private-key-path is not set")
 	gc.privateKeyPath = privateKeyPath
-	// When the OPENSHIFT_CI env var is set to true, the test is running within CI
-	if inCI := os.Getenv("OPENSHIFT_CI"); inCI == "true" {
-		// In the CI container the WMCO binary will be found here
-		wmcoPath = "/usr/local/bin/windows-machine-config-operator"
-	}
 
 	testCtx, err := NewTestContext()
 	require.NoError(t, err)
