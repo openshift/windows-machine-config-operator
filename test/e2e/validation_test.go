@@ -46,6 +46,37 @@ type winService struct {
 	description string
 }
 
+// testKubeletPriorityClass tests if kubelet priority class is set to "AboveNormal"
+func testKubeletPriorityClass(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+	requiredPriorityClass := "AboveNormal"
+
+	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
+	for _, node := range gc.allNodes() {
+		t.Run(node.Name, func(t *testing.T) {
+			out, err := tc.getKubeletPriorityClass(&node)
+			require.NoError(t, err, "error getting kubelet priority class")
+			assert.Containsf(t, out, requiredPriorityClass, "node %s missing required kubelet priority class",
+				node.GetName())
+		})
+	}
+}
+
+// getKubeletPriorityClass returns the priority class of the kubelet service
+func (tc *testContext) getKubeletPriorityClass(node *core.Node) (string, error) {
+	command := "Get-Process kubelet | Select-Object PriorityClass"
+	addr, err := controllers.GetAddress(node.Status.Addresses)
+	if err != nil {
+		return "", fmt.Errorf("error getting node address: %w", err)
+	}
+	out, err := tc.runPowerShellSSHJob("kubelet-priority-class-query", command, addr)
+	if err != nil {
+		return "", fmt.Errorf("error querying kubelet service for priority class: %w", err)
+	}
+	return out, nil
+}
+
 // testNodeMetadata tests if all nodes have a worker label and are annotated with the version of
 // the currently deployed WMCO
 func testNodeMetadata(t *testing.T) {
