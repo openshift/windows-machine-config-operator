@@ -130,9 +130,7 @@ func (p *Provider) CreatePVC(_ client.Interface, _ string) (*core.PersistentVolu
 func getImageSKU(windowsServerVersion windows.ServerVersion) string {
 	switch windowsServerVersion {
 	case windows.Server2019:
-		// 2019 images without the containers feature pre-installed cannot be used due to
-		// https://issues.redhat.com/browse/OCPBUGS-13244
-		return "2019-datacenter-with-containers-smalldisk"
+		return "2019-datacenter-smalldisk"
 	case windows.Server2022:
 	default:
 	}
