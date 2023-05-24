@@ -898,7 +898,7 @@ func (vm *windows) removeHNSNetwork(networkName string) error {
 
 // enableContainersWindowsFeature enables the required Windows Containers feature on the Windows instance.
 func (vm *windows) enableContainersWindowsFeature() error {
-	command := "Install-WindowsFeature -Name " + containersFeatureName
+	command := "$ProgressPreference='SilentlyContinue'; Install-WindowsFeature -Name " + containersFeatureName
 	out, err := vm.Run(command, true)
 	if err != nil {
 		return fmt.Errorf("failed to enable required Windows feature: %s with output: %s: %w",
