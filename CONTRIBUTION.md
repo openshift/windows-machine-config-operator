@@ -26,6 +26,7 @@ you think your PR is ready for review, be sure to check that you have
 - [Rebased your changes against your root branch](https://www.atlassian.com/git/tutorials/merging-vs-rebasing)
 - [Run the tests locally](docs/HACKING.md)
 - Linted your changes with ```make lint```
+  - Fixed any import issues found by running ```make imports```
 - Ensured error messages are a single line
 - Updated relevant documentation if your PR changes user functionality  
 
