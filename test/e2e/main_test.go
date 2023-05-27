@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 var (
@@ -30,6 +31,8 @@ var (
 	wmcoPath string
 	// wmcoNamespace is the namespace WMCO is deployed to
 	wmcoNamespace string
+	// windowsServerVersion is the Windows Server version to test against
+	windowsServerVersion windows.ServerVersion
 	// gc is the global context across the test suites.
 	gc = globalContext{}
 )
@@ -79,6 +82,9 @@ type testContext struct {
 	// toolsImage is the image specified by the  openshift/tools ImageStream, and is the same image used by `oc debug`.
 	// This image is available on all OpenShift Clusters, and has SSH pre-installed.
 	toolsImage string
+	// windowsServerVersion is the Windows Server version used in the e2e test suite.
+	// If unset or empty, Windows Server 2022 is assumed for Machine and container images.
+	windowsServerVersion windows.ServerVersion
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -87,6 +93,7 @@ func NewTestContext() (*testContext, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OpenShift client: %w", err)
 	}
+
 	cloudProvider, err := providers.NewCloudProvider()
 	if err != nil {
 		return nil, fmt.Errorf("cloud provider creation failed: %w", err)
@@ -106,7 +113,7 @@ func NewTestContext() (*testContext, error) {
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
 		CloudProvider: cloudProvider, workloadNamespace: "wmco-test", workloadNamespaceLabels: workloadNamespaceLabels,
-		toolsImage: toolsImage}, nil
+		windowsServerVersion: windowsServerVersion, toolsImage: toolsImage}, nil
 }
 
 // vmUsername returns the name of the user which can be used to log into each Windows instance
@@ -145,6 +152,19 @@ func TestMain(m *testing.M) {
 		"Namespace that WMCO is deployed to")
 	flag.StringVar(&privateKeyPath, "private-key-path", "",
 		"path of the private key file used to configure the Windows node")
+	flag.Func("windows-server-version", "Windows Server version to test. "+
+		"Supported versions: 2019 or 2022 (default 2022)",
+		func(value string) error {
+			if len(value) == 0 {
+				windowsServerVersion = windows.Server2022
+				return nil
+			}
+			windowsServerVersion = windows.ServerVersion(value)
+			if !windows.IsSupported(windowsServerVersion) {
+				return fmt.Errorf("windows server version %s is not supported", windowsServerVersion)
+			}
+			return nil
+		})
 	flag.Parse()
 
 	os.Exit(m.Run())
