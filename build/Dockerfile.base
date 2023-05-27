@@ -65,7 +65,7 @@ WORKDIR /build/windows-machine-config-operator/csi-proxy
 COPY csi-proxy/ .
 RUN GOOS=windows make build
 
-FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=base
 
 WORKDIR /payload/
