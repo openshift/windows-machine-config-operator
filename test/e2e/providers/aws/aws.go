@@ -19,25 +19,19 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/machineset"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 type Provider struct {
 	oc *clusterinfo.OpenShift
 	*config.InfrastructureStatus
-	// imageID is the AMI which will be used when creating VMs
-	imageID string
 }
 
 // New returns a new Provider
 func New(oc *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*Provider, error) {
-	ami, err := getLatestWindowsAMI(infraStatus.PlatformStatus.AWS.Region)
-	if err != nil {
-		return nil, fmt.Errorf("error choosing AMI: %w", err)
-	}
 	return &Provider{
 		oc:                   oc,
 		InfrastructureStatus: infraStatus,
-		imageID:              ami,
 	}, nil
 }
 
@@ -61,19 +55,25 @@ func newEC2Client(region string) (*ec2.EC2, error) {
 	return ec2.New(awsSession, aws.NewConfig()), nil
 }
 
+// getWindowsAMIFilter returns an EC2 AMI filter for the Windows Server version. The Windows Server AMIs typically have
+// pattern Windows_Server-$version-variant-YYYY.MM.DD and the filter will grab all AMIs that match the filter.
+func getWindowsAMIFilter(windowsServerVersion windows.ServerVersion) string {
+	switch windowsServerVersion {
+	case windows.Server2019:
+		return "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+	case windows.Server2022:
+	default:
+	}
+	return "Windows_Server-2022-English-Core-Base-????.??.??"
+}
+
 // getLatestWindowsAMI returns the ID of the latest released "Windows Server with Containers" AMI
-func getLatestWindowsAMI(region string) (string, error) {
+func getLatestWindowsAMI(region string, windowsServerVersion windows.ServerVersion) (string, error) {
 	ec2Client, err := newEC2Client(region)
 	if err != nil {
 		return "", err
 	}
-	// This filter will grab all ami's that match the exact name. The '?' indicate any character will match.
-	// The ami's will have the name format: Windows_Server-2019-English-Full-ContainersLatest-2022.01.19
-	// so the question marks will match the date of creation
-	// The image obtained by using windowsAMIFilterValue is compatible with the test container image -
-	// "mcr.microsoft.com/powershell:lts-nanoserver-1809".
-	// If the windowsAMIFilterValue changes, the test container image also needs to be changed.
-	windowsAMIFilterValue := "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+	windowsAMIFilterValue := getWindowsAMIFilter(windowsServerVersion)
 	searchFilter := ec2.Filter{Name: aws.String("name"), Values: []*string{&windowsAMIFilterValue}}
 
 	describedImages, err := ec2Client.DescribeImages(&ec2.DescribeImagesInput{
@@ -107,7 +107,7 @@ func getLatestWindowsAMI(region string) (string, error) {
 }
 
 // GenerateMachineSet generates a Windows MachineSet which is AWS provider specific
-func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*mapi.MachineSet, error) {
+func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*mapi.MachineSet, error) {
 	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-machine-role=worker"}
 	machines, err := a.oc.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
 	if err != nil {
@@ -121,8 +121,12 @@ func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32) (*ma
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal raw machine provider spec: %v", err)
 	}
+	ami, err := getLatestWindowsAMI(a.PlatformStatus.AWS.Region, windowsServerVersion)
+	if err != nil {
+		return nil, fmt.Errorf("error choosing AMI: %w", err)
+	}
 	providerSpec := &mapi.AWSMachineProviderConfig{
-		AMI:                mapi.AWSResourceReference{ID: &a.imageID},
+		AMI:                mapi.AWSResourceReference{ID: &ami},
 		InstanceType:       linuxWorkerSpec.InstanceType,
 		IAMInstanceProfile: linuxWorkerSpec.IAMInstanceProfile,
 		CredentialsSecret:  linuxWorkerSpec.CredentialsSecret,
