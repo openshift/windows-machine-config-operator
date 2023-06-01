@@ -224,6 +224,7 @@ func (p *Provider) ensureFSSConfigMap(client client.Interface) error {
 			"online-volume-extend":             "true",
 			"topology-preferential-datastores": "true",
 			"csi-windows-support":              "true",
+			"use-csinode-id":                   "true",
 		},
 		BinaryData: nil,
 	}
