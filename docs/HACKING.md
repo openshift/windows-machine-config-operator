@@ -30,16 +30,19 @@ If you already have a configured cluster, move on to [Build](#build)
 ## Build
 
 To manually build, see the subheading
-[below](#build-an-operator-image). To build and deploy automatically using the OLM hack script, jump ahead to
-[Deploy](#deploy-from-source). 
-If you want to build and deploy automatically using the e2e tests, jump ahead to 
-[running the e2e tests](#running-the-e2e-tests). 
+[below](#build-the-operator-image). To build and deploy automatically using the OLM hack script, jump ahead to
+[Deploy](#deploy-from-source).
 
-### Build an operator image
+If you want to run the e2e tests, [build](#build-the-operator-image)) the operator and jump ahead to
+[running the e2e tests](#running-the-e2e-tests).
+
+The `$VARIABLES` mentioned below are environment variables that need to be set or replaced in line.
+
+### Build the operator image
 
 If you want to deploy the operator manually without the OLM, you need to build an operator image that we can deploy to
 the cluster.
-From the top level of your WMCO directory, run
+From the top level of your WMCO directory, run:
 
 ```shell script
 podman build -t quay.io/<quay username>/wmco:<operator name> -f build/Dockerfile .
@@ -47,7 +50,7 @@ podman build -t quay.io/<quay username>/wmco:<operator name> -f build/Dockerfile
 
 Building the full WMCO image is a time consuming process given we are building all the submodules. If you are just
 changing WMCO and not the submodules, you can separately build the submodules as a base image and then just build the
-WMCO  image from this base image:
+WMCO image from this base image:
 
 ```shell script
 make base-img
@@ -63,7 +66,7 @@ Push your image to your container registry with podman
 
 `podman push quay.io/<quay username>/wmco:<operator name>`
 
-## Deploy from source 
+## Deploy from source
 
 Before deploying, ensure your environment is properly configured.
 
@@ -111,11 +114,13 @@ To run tests, you should have a running cluster, and your KUBECONFIG set.
 export KUBECONFIG=<path to kubeconfig> 
 ```
 
-The operator can now be deployed through one of these methods.
+The operator can now be deployed through one of these methods:
 - [Manually](#deploying-the-operator-manually)
-- [Using the OLM](#running-the-olm-hack-script)
-- [Using the e2e tests](#running-the-e2e-tests)
-- [Using the e2e tests on platform agnostic infrastructure](#running-e2e-tests-on-platform-agnostic-infrastructure)
+- [Using OLM](#deploying-using-olm)
+
+To deploy the operator and run the end-to-end tests you can use one of these methods:
+- [Running the e2e tests](#running-the-e2e-tests)
+- [Running the e2e tests on platform agnostic infrastructure](#running-e2e-tests-on-platform-agnostic-infrastructure)
 
 ### Deploying the operator manually
 
@@ -133,12 +138,12 @@ To remove the installed resources:
 make undeploy
 ```
 
-### Deploying using OLM 
+### Deploying using OLM
 
 This command builds the operator image, pushes it to a remote repository and uses OLM to launch the operator.
 
 ```shell script
-hack/olm.sh run -k KUBE_SSH_KEY_PATH
+hack/olm.sh run -k $KUBE_SSH_KEY_PATH
 ```
 #### Cleaning up an OLM deployment
 
@@ -166,7 +171,7 @@ make bundle
 Within the bundle manifests the `:latest` tag must be manually removed in order for the e2e tests to work.
 
 If you plan on building a bundle image using these bundle manifests, the image should be set to reflect where
-the WMCO was pushed to in the [build step](#Build an operator image)
+the WMCO was pushed to in the [build step](#build-the-operator-image)
 
 ```shell script
 make bundle IMG=$OPERATOR_IMAGE
@@ -177,7 +182,7 @@ make bundle IMG=$OPERATOR_IMAGE
 Once the manifests have been generated properly, you can run the following command in the root of this git repository:
 
 ```shell script
-make bundle-build BUNDLE_IMG=<BUNDLE_REPOSITORY:$BUNDLE_TAG>
+make bundle-build BUNDLE_IMG=$BUNDLE_IMAGE:$BUNDLE_TAG
 ```
 
 The variables in the command should be changed to match the container image repository you wish to store the bundle in.
@@ -187,13 +192,13 @@ This command should create a new bundle image. Bundle image and operator image a
 You should then push the newly created bundle image to the remote repository:
 
 ```shell script
-podman push $BUNDLE_REPOSITORY:$BUNDLE_TAG
+podman push $BUNDLE_IMAGE:$BUNDLE_TAG
 ```
 
 You should verify that the new bundle is valid:
 
 ```shell script
-operator-sdk bundle validate $BUNDLE_REPOSITORY:$BUNDLE_TAG --image-builder podman
+operator-sdk bundle validate $BUNDLE_IMAGE:$BUNDLE_TAG --image-builder podman
 ```
 
 #### Creating a new operator index
@@ -206,13 +211,13 @@ An operator index is a collection of bundles. Creating one is required if you wi
 cluster.
 
 ```shell script
-opm index add --bundles $BUNDLE_REPOSITORY:$BUNDLE_TAG --tag $INDEX_REPOSITORY:$INDEX_TAG --container-tool podman
+opm index add --bundles $BUNDLE_IMAGE:$BUNDLE_TAG --tag $INDEX_IMAGE:$INDEX_TAG --container-tool podman
 ```
 
 You should then push the newly created index image to the remote repository:
 
 ```shell script
-podman push $INDEX_REPOSITORY:$INDEX_TAG
+podman push $INDEX_IMAGE:$INDEX_TAG
 ```
 
 #### Editing an existing operator index
@@ -220,30 +225,28 @@ podman push $INDEX_REPOSITORY:$INDEX_TAG
 An existing operator index can have bundles added to it:
 
 ```shell script
-opm index add --from-index $INDEX_REPOSITORY:$INDEX_TAG
+opm index add --from-index $INDEX_IMAGE:$INDEX_TAG
 ```
 
 and removed from it:
 
 ```shell script
-opm index rm --from-index $INDEX_REPOSITORY:$INDEX_TAG
+opm index rm --from-index $INDEX_IMAGE:$INDEX_TAG
 ```
 #### Create a CatalogSource using the index
 
-See the OpenShift docs found
-[here](https://docs.openshift.com/container-platform/latest/operators/admin/olm-managing-custom-catalogs.html#olm-creating-catalog-from-index_olm-managing-custom-catalogs)
+See the OpenShift docs for [adding a CatalogSource to a cluster](https://docs.openshift.com/container-platform/latest/operators/admin/olm-managing-custom-catalogs.html#olm-creating-catalog-from-index_olm-managing-custom-catalogs)
 
 #### Create a subscription object 
 
 To use the custom CatalogSource you need to change the subscription object to reference the CatalogSource you are 
-introducing. See the docs 
-[here](https://docs.openshift.com/container-platform/4.5/operators/understanding/olm/olm-understanding-olm.html#olm-subscription_olm-understanding-olm)
-for an example subscription. 
+introducing. See the docs for [Subscription objects](https://docs.openshift.com/container-platform/latest/operators/understanding/olm/olm-understanding-olm.html#olm-subscription_olm-understanding-olm)
+for an example.
 
 Edit your subscription yaml to match your CatalogSource. 
-For example, 
+For example:
 ```
-  source: < new catalogSource > 
+  source: < new CatalogSource >
   sourceNamespace: < namespace where CatalogSource was deployed >
 ```
 
@@ -253,7 +256,7 @@ Apply the yaml to your cluster, which will deploy the WMCO.
 
 The e2e tests also automatically build and deploy the WMCO onto your cluster.
 
-The e2e tests can be run with the hack script `run-ci-e2e-test.sh`
+The e2e tests can be run with the hack script `run-ci-e2e-test.sh`:
 
 ```shell script
 hack/run-ci-e2e-test.sh -t basic -m 1
@@ -322,8 +325,8 @@ oc delete ns wmco-test
 
 ## Deploy a workload 
 
-If you are not running e2e tests, it is likely that you will want to deploy a workload to test your changes with.
-Find more information [here](custom-workload.md)
+If you are not running e2e tests, it is likely that you will want to deploy a [workload](custom-workload.md) to test
+your changes with.
 
 ## Updating git submodules 
 
