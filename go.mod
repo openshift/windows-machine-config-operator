@@ -6,7 +6,7 @@ require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.38.23
 	github.com/coreos/ignition/v2 v2.14.0
-	github.com/go-imports-organizer/goio v1.3.2
+	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.2.4
 	github.com/openshift/api v0.0.0-20230503133300-8bbcb7ca7183
 	github.com/openshift/client-go v0.0.0-20230503144108-75015d2347cb
@@ -23,7 +23,7 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.24.0
 	golang.org/x/crypto v0.5.0
-	golang.org/x/mod v0.9.0
+	golang.org/x/mod v0.10.0
 	golang.org/x/sys v0.8.0
 	k8s.io/api v0.27.1
 	k8s.io/apimachinery v0.27.1
