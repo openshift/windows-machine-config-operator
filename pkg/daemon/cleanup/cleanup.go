@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	core "k8s.io/api/core/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -64,21 +65,11 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		}
 		// Otherwise, fetch the ConfigMap tied to the node's version annotation.
 		// This ensures we cleanup using the same ConfigMap version that was used to configure the instance
-		version, present := node.Annotations[metadata.VersionAnnotation]
-		if !present {
-			// If no version annotation exists, try the desired version. This is useful if node configuration fails and
-			// the instance needs to be reconciled
-			version, present = node.Annotations[metadata.DesiredVersionAnnotation]
-			if !present {
-				return fmt.Errorf("node %s missing desired version annotation", node.Name)
-			}
-		}
-		err = directClient.Get(ctx,
-			client.ObjectKey{Namespace: configMapNamespace, Name: servicescm.NamePrefix + version}, cm)
+		cm, err = getConfigMapTiedToVersionAnnotation(ctx, directClient, *node, configMapNamespace)
 		if err != nil {
-			return err
+			return fmt.Errorf("cannot get the ConfigMap tied to node: %s version annotation: %w", node, err)
 		}
-		klog.Infof("removing services tied to version: %s", version)
+		// return map of union of the config map data
 		cmData, err = servicescm.Parse(cm.Data)
 		return err
 	}()
@@ -100,6 +91,35 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		return metadata.RemoveVersionAnnotation(ctx, directClient, *node)
 	}
 	return nil
+}
+
+// getConfigMapTiedToVersionAnnotation gets the correct config map tied to the version annotation. If the version
+// annotation does not exist, the desired version annotation is used.
+func getConfigMapTiedToVersionAnnotation(ctx context.Context, c client.Client, node core.Node,
+	namespace string) (*core.ConfigMap,
+	error) {
+	var cm core.ConfigMap
+	version, present := node.Annotations[metadata.VersionAnnotation]
+	if present {
+		err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: servicescm.NamePrefix + version}, &cm)
+		if err == nil {
+			return &cm, nil
+		}
+		if !k8sapierrors.IsNotFound(err) {
+			return nil, err
+		}
+	}
+	// If no version annotation exists, try the desired version. This is useful if node configuration fails and
+	// the instance needs to be reconciled
+	version, present = node.Annotations[metadata.DesiredVersionAnnotation]
+	if !present {
+		return nil, fmt.Errorf("node %s missing desired version annotation", node.Name)
+	}
+	err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: servicescm.NamePrefix + version}, &cm)
+	if err != nil {
+		return nil, err
+	}
+	return &cm, nil
 }
 
 // removeServices uses the given manager to remove all the given Windows services from this instance.
