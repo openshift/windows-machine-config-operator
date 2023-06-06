@@ -292,3 +292,4 @@ func getWatchNamespace() (string, error) {
 	}
 	return ns, nil
 }
+
