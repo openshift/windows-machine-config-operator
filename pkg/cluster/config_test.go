@@ -235,3 +235,44 @@ func TestGetDNS(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckOpenShiftVersion(t *testing.T) {
+	var tests = []struct {
+		name    string
+		version string
+		wantErr bool
+	}{
+		{
+			name:    "valid version",
+			version: "4.12.3",
+			wantErr: false,
+		},
+		{
+			name:    "invalid version",
+			version: "4.12.0",
+			wantErr: true,
+		},
+		{
+			name:    "invalid semver",
+			version: "4.12.0.3",
+			wantErr: true,
+		},
+		{
+			name:    "empty version",
+			version: "",
+			wantErr: true,
+		},
+		{
+			name:    "ci version",
+			version: "4.12.0-0.ci.test-2023-06-05-164148-ci-op-grimvr6c-latest",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkOpenShiftVersion(tt.version)
+			assert.Equal(t, err != nil, tt.wantErr)
+		})
+	}
+}

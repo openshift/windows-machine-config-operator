@@ -11,12 +11,14 @@ import (
 	oconfig "github.com/openshift/api/config/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
+	"github.com/openshift/windows-machine-config-operator/version"
 	"golang.org/x/mod/semver"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-//+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get
+//+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures;clusterversions,verbs=get
 //+kubebuilder:rbac:groups=config.openshift.io;operator.openshift.io,resources=networks,verbs=get
 
 const (
@@ -28,6 +30,9 @@ const (
 	cloudControllerOwnershipConditionType = "CloudControllerOwner"
 	// clusterCloudControllerManagerOperatorName is the registered name of Cluster Cloud Controller Manager Operator
 	clusterCloudControllerManagerOperatorName = "cloud-controller-manager"
+	// minOpenShiftVersion is the minimum required OCP version due to https://issues.redhat.com/browse/OCPBUGS-4862.
+	// Without this fix, BYOH node upgrades will fail.
+	minOpenShiftVersion = "v4.12.3"
 	// MachineAPINamespace is the name of the namespace in which machine objects and userData secret is created.
 	MachineAPINamespace = "openshift-machine-api"
 )
@@ -143,15 +148,75 @@ func (c *config) validateK8sVersion() error {
 		baseK8sVersion, maxK8sVersion)
 }
 
+// getOpenShiftVersion returns the cluster version or an empty string in the case of an error
+func (c *config) getOpenShiftVersion() (string, error) {
+	clusterVersion, err := c.oclient.ConfigV1().ClusterVersions().Get(context.TODO(), "version", meta.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("error retrieving cluster versions: %w", err)
+	}
+	if clusterVersion == nil {
+		return "", fmt.Errorf("empty cluster version")
+	}
+
+	for _, update := range clusterVersion.Status.History {
+		if update.State == oconfig.CompletedUpdate {
+			// obtain the version from the last completed update
+			return update.Version, nil
+		}
+	}
+	return "", fmt.Errorf("no completed updated was found")
+}
+
+// validateOpenShiftVersion gets the OpenShift cluster version and returns an error if it is lesser than
+// minOpenShiftVersion
+func (c *config) validateOpenShiftVersion() error {
+	openShiftVersion, err := c.getOpenShiftVersion()
+	if err != nil {
+		return err
+	}
+	return checkOpenShiftVersion(openShiftVersion)
+}
+
 // Validate method checks if the cluster configurations are as required. It throws an error if the configuration could not
 // be validated.
 func (c *config) Validate() error {
+	if err := c.validateOpenShiftVersion(); err != nil {
+		return fmt.Errorf("invalid OCP version: %w", err)
+	}
 	err := c.validateK8sVersion()
 	if err != nil {
 		return fmt.Errorf("error validating k8s version: %w", err)
 	}
 	if err = c.network.Validate(); err != nil {
 		return fmt.Errorf("error validating network configuration: %w", err)
+	}
+	return nil
+}
+
+// checkOpenShiftVersion checks the OpenShift cluster version and returns an error if it is lesser than
+// minOpenShiftVersion
+func checkOpenShiftVersion(openShiftVersion string) error {
+	// CI cluster version does not contain the Z stream version, so there is no easy of way of checking this in CI.
+	// ex:4.12.0-0.ci.test-2023-06-05-164148-ci-op-grimvr6c-latest
+	if strings.Contains(openShiftVersion, "ci") {
+		ctrl.Log.WithName("config").Info("ignoring OpenShift version validation for CI run",
+			"version", openShiftVersion)
+		return nil
+	}
+
+	// OpenShift version is not prefixed with "v". Add the "v" prefix if it is not present to allow for semver
+	// comparisons.
+	if !strings.HasPrefix(openShiftVersion, "v") {
+		openShiftVersion = "v" + openShiftVersion
+	}
+
+	if !semver.IsValid(openShiftVersion) {
+		return fmt.Errorf("%s is not a semver", openShiftVersion)
+	}
+
+	if semver.Compare(openShiftVersion, minOpenShiftVersion) < 0 {
+		return fmt.Errorf("current version is %s. minimum required version for WMCO %s is %s. "+
+			"please upgrade your cluster", openShiftVersion, version.Get(), minOpenShiftVersion)
 	}
 	return nil
 }
