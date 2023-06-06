@@ -23,6 +23,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	cloudproviderapi "k8s.io/cloud-provider/api"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
@@ -740,6 +741,31 @@ func (tc *testContext) getOperatorConditionName() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unable to get operatorCondition name from namespace %s", wmcoNamespace)
+}
+
+// testNodesSchedulable tests that all Windows nodes are scheduable
+func (tc *testContext) testNodesSchedulable(t *testing.T) {
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			readyCondition := false
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == core.NodeReady {
+					readyCondition = true
+				}
+				if readyCondition {
+					assert.Equal(t, core.ConditionTrue, condition.Status, "node Ready status is false")
+				}
+			}
+			assert.True(t, readyCondition, "node is missing Ready status")
+			// explicitly check for the external cloud provider taint for more helpful test logging
+			for _, taint := range node.Spec.Taints {
+				if taint.Key == cloudproviderapi.TaintExternalCloudProvider {
+					assert.NotEqual(t, core.TaintEffectNoSchedule, taint.Effect, "node has the external cloud provider taint")
+				}
+			}
+			assert.False(t, node.Spec.Unschedulable, "node is set to unschedulable")
+		})
+	}
 }
 
 // testDependentServiceChanges tests that a Windows service which a running service is dependent on can be reconfigured

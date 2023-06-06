@@ -20,7 +20,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	cloudproviderapi "k8s.io/cloud-provider/api"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
@@ -51,6 +50,7 @@ func creationTestSuite(t *testing.T) {
 		// No point in running the other tests if creation failed
 		return
 	}
+	t.Run("Nodes schedulable", tc.testNodesSchedulable)
 	t.Run("Node Metadata", tc.testNodeMetadata)
 	t.Run("Services ConfigMap validation", tc.testServicesConfigMap)
 	t.Run("Services running", tc.testExpectedServicesRunning)
@@ -471,33 +471,6 @@ func (tc *testContext) waitForWindowsNodes(nodeCount int32, expectError, checkVe
 		}
 
 		for _, node := range nodes {
-			// check node status
-			readyCondition := false
-			for _, condition := range node.Status.Conditions {
-				if condition.Type == v1.NodeReady {
-					readyCondition = true
-				}
-				if readyCondition && condition.Status != v1.ConditionTrue {
-					log.Printf("node %v is expected to be in Ready state", node.Name)
-					return false, nil
-				}
-			}
-			if !readyCondition {
-				log.Printf("expected node Status to have condition type Ready for node %v", node.Name)
-				return false, nil
-			}
-			// explicitly check for the external cloud provider taint for more helpful test logging
-			for _, taint := range node.Spec.Taints {
-				if taint.Key == cloudproviderapi.TaintExternalCloudProvider && taint.Effect == v1.TaintEffectNoSchedule {
-					log.Printf("expected node %s to not have the external cloud provider taint", node.GetName())
-					return false, nil
-				}
-			}
-			if node.Spec.Unschedulable {
-				log.Printf("expected node %s to be schedulable", node.Name)
-				return false, nil
-			}
-
 			for _, annotation := range annotations {
 				_, found := node.Annotations[annotation]
 				if !found {
