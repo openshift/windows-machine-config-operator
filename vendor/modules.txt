@@ -124,7 +124,7 @@ github.com/fsnotify/fsnotify
 # github.com/go-errors/errors v1.4.2
 ## explicit; go 1.14
 github.com/go-errors/errors
-# github.com/go-imports-organizer/goio v1.3.2
+# github.com/go-imports-organizer/goio v1.3.3
 ## explicit; go 1.19
 github.com/go-imports-organizer/goio
 github.com/go-imports-organizer/goio/pkg/api/v1alpha1
@@ -426,7 +426,7 @@ golang.org/x/crypto/openpgp/packet
 golang.org/x/crypto/openpgp/s2k
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/mod v0.9.0
+# golang.org/x/mod v0.10.0
 ## explicit; go 1.17
 golang.org/x/mod/internal/lazyregexp
 golang.org/x/mod/modfile
