@@ -200,3 +200,32 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 		_ = tc.deleteJob(testerJob.Name)
 	}, nil
 }
+
+// TestUpgrade tests that things are functioning properly after an upgrade
+func TestUpgrade(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), false, false)
+	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), false, true)
+	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
+
+	// Basic testing to ensure the Node object is in a good state
+	t.Run("Nodes ready", tc.testNodesBecomeReadyAndSchedulable)
+	t.Run("Node annotations", tc.testNodeAnnotations)
+	t.Run("Node Metadata", tc.testNodeMetadata)
+
+	// test that any workloads deployed on the node have not been broken by the upgrade
+	t.Run("Workloads ready", tc.testWorkloadsAvailable)
+}
+
+// testWorkloadsAvailable tests that all workloads deployed on Windows nodes by the test suite are available
+func (tc *testContext) testWorkloadsAvailable(t *testing.T) {
+	deployments, err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).List(context.TODO(),
+		metav1.ListOptions{})
+	require.NoError(t, err)
+	for _, deployment := range deployments.Items {
+		assert.Equalf(t, deployment.Spec.Replicas, deployment.Status.AvailableReplicas,
+			"deployment %s is not available", deployment.GetName())
+	}
+}
