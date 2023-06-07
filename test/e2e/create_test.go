@@ -45,8 +45,8 @@ const (
 func creationTestSuite(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
-	// The order of tests here are important. Any node object related tests should be run only after
-	// testWindowsNodeCreation as that initializes the node objects in the global context.
+
+	require.NoError(t, tc.loadExistingNodes(), "error getting the current Windows nodes in the cluster")
 	if !t.Run("Creation", tc.testWindowsNodeCreation) {
 		// No point in running the other tests if creation failed
 		return
@@ -64,8 +64,26 @@ func creationTestSuite(t *testing.T) {
 	t.Run("Kubelet priority class validation", tc.testKubeletPriorityClass)
 }
 
+// loadExistingNodes adds all configured Windows Nodes to the globalContext cache
+func (tc *testContext) loadExistingNodes() error {
+	byohNodes, err := tc.listFullyConfiguredWindowsNodes(true)
+	if err != nil {
+		return err
+	}
+	machineNodes, err := tc.listFullyConfiguredWindowsNodes(false)
+	if err != nil {
+		return err
+	}
+	gc.byohNodes = byohNodes
+	gc.machineNodes = machineNodes
+	return nil
+}
+
 // testWindowsNodeCreation tests the Windows node creation in the cluster
 func (tc *testContext) testWindowsNodeCreation(t *testing.T) {
+	if len(gc.machineNodes) == numberOfMachineNodes && len(gc.byohNodes) == numberOfBYOHNodes {
+		t.Skip("expected nodes already exist in the cluster")
+	}
 	// Create a private key secret with the known private key.
 	require.NoError(t, tc.createPrivateKeySecret(true), "could not create known private key secret")
 
