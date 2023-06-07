@@ -58,8 +58,8 @@ while getopts ":m:c:b:st:w:" opt; do
       ;;
     t ) # test to run. Defaults to all. Other options are basic and upgrade.
       TEST=$OPTARG
-      if [[ "$TEST" != "all" && "$TEST" != "basic" && "$TEST" != "upgrade" ]]; then
-        echo "Invalid -t option $TEST. Valid options are all, basic or upgrade"
+      if [[ "$TEST" != "all" && "$TEST" != "basic" && "$TEST" != "upgrade" && "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
+        echo "Invalid -t option $TEST. Valid options are all, basic, upgrade, upgrade-setup, and upgrade-test"
         exit 1
       fi
       ;;
@@ -140,12 +140,15 @@ GO_TEST_ARGS="$BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-p
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
 go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $GO_TEST_ARGS
-# Run the creation tests of the Windows VMs
-printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
-go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args $GO_TEST_ARGS
-# Get logs for the creation tests
-printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
-get_WMCO_logs
+
+if [[ "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
+  # Run the creation tests of the Windows VMs
+  printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/create -v -timeout=90m -args $GO_TEST_ARGS
+  # Get logs for the creation tests
+  printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  get_WMCO_logs
+fi
 
 if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
@@ -165,6 +168,16 @@ if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $GO_TEST_ARGS
 fi
+
+if [[ "$TEST" = "upgrade-setup" ]]; then
+  go test ./test/e2e/... -run=TestWMCO/create/Creation -v -timeout=90m -args $GO_TEST_ARGS
+  go test ./test/e2e/... -run=TestWMCO/create/Nodes_ready_and_schedulable -v -timeout=90m -args $GO_TEST_ARGS
+fi
+
+if [[ "$TEST" = "upgrade-test" ]]; then
+  go test ./test/e2e/... -run=TestUpgrade -v -timeout=20m -args $GO_TEST_ARGS
+fi
+
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
