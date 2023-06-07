@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"testing"
+	"time"
 
 	config "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
@@ -122,7 +123,7 @@ func (tc *testContext) waitForNewMachineNodes() error {
 				return false, nil
 			}
 		}
-    return true, nil
+		return true, nil
 	})
 }
 
