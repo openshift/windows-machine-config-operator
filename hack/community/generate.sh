@@ -1,31 +1,14 @@
 #!/bin/bash
 
+# Include the common.sh
+WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
+source $WMCO_ROOT/common.sh
+
 # Given the current community WMCO manifests, generate new community manifests
 # to an output directory.
 
 # Example:
 # Run: bash ./hack/community/generate.sh WMCO_VERSION OUTPUT_DIR
-
-# Extract major version from WMCO_VERSION and map to ocp version.
-get_co_version() {
-  local COMMUNITY_VER="community-"
-
-  case ${WMCO_VERSION:0:1} in
-  7)
-    COMMUNITY_VER="${COMMUNITY_VER}4.12"
-    ;;
-  6)
-    COMMUNITY_VER="${COMMUNITY_VER}4.11"
-    ;;
-  5)
-    COMMUNITY_VER="${COMMUNITY_VER}4.10"
-    ;;
-  *)
-    exit
-    ;;
-  esac
-  echo $COMMUNITY_VER
-}
 
 # Replace necessary fields with the yq tool.
 replace() {
@@ -76,7 +59,7 @@ if [ -z $OUTPUT_DIR ]; then
   exit 1
 fi
 
-COMMUNITY_VERSION=$(get_co_version "$WMCO_VERSION")
+COMMUNITY_VERSION="community-"$(get_OCP_version "$WMCO_VERSION")
 
 # Inject appropriate community-version into the description
 DESCRIPTION=$(cat hack/community/csv/description.md)
