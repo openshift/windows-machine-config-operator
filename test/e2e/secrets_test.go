@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"testing"
+	"time"
 
 	config "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
@@ -96,7 +97,6 @@ func (tc *testContext) testUserDataTamper(t *testing.T) {
 
 	// Updating the userdata with incorrect contents will cause the Machine nodes to be deleted and recreated, wait
 	// until the Machine is back up.
-	log.Printf("waiting for Machine nodes to be recreated after userdata update")
 	assert.NoError(t, tc.waitForNewMachineNodes(), "error waiting for Machine nodes to be reconfigured")
 	assert.NoError(t, tc.waitForValidUserData(validUserDataSecret), "error waiting for valid userdata")
 }
@@ -109,18 +109,23 @@ func (tc *testContext) waitForNewMachineNodes() error {
 	}
 
 	// waitForWindowsNodes will re-populate gc.machineNodes with the configured nodes found
-	err := tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
-	if err != nil {
-		return err
-	}
-	for _, newNode := range gc.machineNodes {
-		for _, oldNode := range oldNodes {
-			if newNode.GetName() == oldNode {
-				return fmt.Errorf("node %s is not a new Node", oldNode)
+	log.Printf("waiting for existing Machine nodes to be removed and replaced")
+	return wait.Poll(retryInterval, time.Minute*10, func() (done bool, err error) {
+		err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+		if err != nil {
+			log.Printf("error waiting for configured Windows Nodes: %s", err)
+			return false, nil
+		}
+		for _, newNode := range gc.machineNodes {
+			for _, oldNode := range oldNodes {
+				if newNode.GetName() == oldNode {
+					log.Printf("node %s is not a new Node, continuing to wait", oldNode)
+					return false, nil
+				}
 			}
 		}
-	}
-	return nil
+		return true, nil
+	})
 }
 
 // testUserDataRegeneration tests that the userdata will be created by WMCO if deleted by a user
