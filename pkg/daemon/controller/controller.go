@@ -32,6 +32,7 @@ import (
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -253,6 +254,10 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	if err = sc.reconcileServices(cmData.Services); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	if err = sc.waitUntilNodeReady(); err != nil {
+		return ctrl.Result{}, fmt.Errorf("error waiting for node to become ready")
+	}
 	// Version annotation is the indicator that the node was fully configured by this version of the services ConfigMap
 	if err = metadata.ApplyVersionAnnotation(sc.ctx, sc.client, node, desiredVersion); err != nil {
 		return ctrl.Result{}, fmt.Errorf("error updating version annotation on node %s: %w", sc.nodeName, err)
@@ -439,6 +444,21 @@ func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) 
 		}
 	}
 	return vars, nil
+}
+
+// waitUntilNodeReady waits until the Node being configured is ready. Returns an error on timeout.
+func (sc *ServiceController) waitUntilNodeReady() error {
+	return wait.PollUntilContextTimeout(sc.ctx, 5*time.Second, time.Minute, true,
+		func(ctx context.Context) (done bool, err error) {
+			var node core.Node
+			err = sc.client.Get(sc.ctx, client.ObjectKey{Name: sc.nodeName}, &node)
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == core.NodeReady && condition.Status == core.ConditionTrue {
+					return true, nil
+				}
+			}
+			return false, nil
+		})
 }
 
 // newPeriodicEventGenerator returns a channel which will have an empty event sent on it at an interval specified by the
