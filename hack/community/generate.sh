@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Include the common.sh
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
@@ -19,7 +20,6 @@ replace() {
     local CO_DESCRIPTION=$DESCRIPTION
     local DISPLAY_NAME="Community Windows Machine Config Operator"
     local MATURITY="preview"
-    local VERSION="$OPERATOR_VERSION"
 
     # Replace CSV fields
     yq eval --exit-status --inplace "
@@ -53,6 +53,11 @@ generate_manifests() {
 
 WMCO_VERSION="$1"
 OUTPUT_DIR="$2"
+
+if [ -z $WMCO_VERSION ]; then
+  echo "WMCO_VERSION not set"
+  exit 1
+fi
 
 if [ -z $OUTPUT_DIR ]; then
   echo "OUTPUT_DIR not set"
