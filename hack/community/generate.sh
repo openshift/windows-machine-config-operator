@@ -1,15 +1,11 @@
 #!/bin/bash
 set -euo pipefail
+# This script is used by the aws-e2e-operator-windows-e2e-operator-test periodic and works by taking the current WMCO
+# manifests and generating community WMCO manifests to the tests ARTIFACTS directory.
 
 # Include the common.sh
 WMCO_ROOT=$(dirname "${BASH_SOURCE}")/..
 source $WMCO_ROOT/common.sh
-
-# Given the current community WMCO manifests, generate new community manifests
-# to an output directory.
-
-# Example:
-# Run: bash ./hack/community/generate.sh WMCO_VERSION OUTPUT_DIR
 
 # Replace necessary fields with the yq tool.
 replace() {
@@ -29,7 +25,7 @@ replace() {
       .spec.maturity |= \"$MATURITY\"
     " "${CO_CSV}"
 
-    # Delete the subscription line
+    # Delete the subscription line as the community WMCO does not require a subscription.
     yq eval --exit-status --inplace 'del(.metadata.annotations."operators.openshift.io/valid-subscription")' "${CO_CSV}"
 
     # Replace annotations fields
@@ -37,7 +33,7 @@ replace() {
     sed -i -e "s/"preview,stable"/$MATURITY/" -e "s/"stable"/$MATURITY/" "${CO_ANNOTATIONS}"
 }
 
-# Copy the WMCO bundle and its contents to the output directory.
+# Copy the WMCO bundle and its contents to the ARTIFACTS directory.
 generate_manifests() {
   local BUNDLE_DIR=$1
   local DESCRIPTION=$2
