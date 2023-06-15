@@ -23,11 +23,14 @@ import (
 	"fmt"
 
 	core "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
+	"k8s.io/kubectl/pkg/drain"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/drainhelper"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
@@ -51,6 +54,23 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	node, err := controller.GetAssociatedNode(directClient, addrs)
 	if err != nil {
 		klog.Infof("no associated node found")
+	}
+	if node != nil {
+		k8sClient, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return fmt.Errorf("unable to initialize client for drainer")
+		}
+		drainer := drainhelper.NewDrainHelper(ctx, k8sClient, klog.NewKlogr())
+		// Make a best effort attempt to cordon and drain the node before removing any services. We shouldn't block
+		// node cleanup if this fails.
+		err = drain.RunCordonOrUncordon(drainer, node, true)
+		if err != nil {
+			klog.Errorf("unable to cordon node: %s", err)
+		}
+		err = drain.RunNodeDrain(drainer, node.GetName())
+		if err != nil {
+			klog.Errorf("unable to drain node: %s", err)
+		}
 	}
 	svcMgr, err := manager.New()
 	if err != nil {

@@ -21,7 +21,6 @@ import (
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	cloudproviderapi "k8s.io/cloud-provider/api"
 	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
-	"k8s.io/kubectl/pkg/drain"
 	kubeletconfig "k8s.io/kubelet/config/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -84,28 +83,6 @@ type nodeConfig struct {
 	wmcoNamespace string
 }
 
-// ErrWriter is a wrapper to enable error-level logging inside kubectl drainer implementation
-type ErrWriter struct {
-	log logr.Logger
-}
-
-func (ew ErrWriter) Write(p []byte) (n int, err error) {
-	// log error
-	ew.log.Error(err, string(p))
-	return len(p), nil
-}
-
-// OutWriter is a wrapper to enable info-level logging inside kubectl drainer implementation
-type OutWriter struct {
-	log logr.Logger
-}
-
-func (ow OutWriter) Write(p []byte) (n int, err error) {
-	// log info
-	ow.log.Info(string(p))
-	return len(p), nil
-}
-
 // NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
 func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, wmcoNamespace string,
@@ -137,15 +114,6 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 
 // Configure configures the Windows VM to make it a Windows worker node
 func (nc *nodeConfig) Configure() error {
-	drainHelper := nc.newDrainHelper()
-	// If we find a node  it implies that we are reconfiguring and we should cordon the node
-	if err := nc.setNode(true); err == nil {
-		// Make a best effort to cordon the node until it is fully configured
-		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
-			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
-		}
-	}
-
 	if err := nc.createBootstrapFiles(); err != nil {
 		return err
 	}
@@ -165,11 +133,6 @@ func (nc *nodeConfig) Configure() error {
 		// populate node object in nodeConfig in the case of a new Windows instance
 		if err := nc.setNode(false); err != nil {
 			return fmt.Errorf("error getting node object: %w", err)
-		}
-
-		// Make a best effort to cordon the node until it is fully configured
-		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
-			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
 		}
 
 		// Ensure we are labeling and annotating the node as soon as the Node object is created, so that we can identify
@@ -197,7 +160,7 @@ func (nc *nodeConfig) Configure() error {
 			return fmt.Errorf("error updating desired version annotation on node %s: %w", nc.node.GetName(), err)
 		}
 
-		// Wait for version annotation. This prevents uncordoning the node until all node services and networks are up
+		// Wait for version annotation. This signals that the node has been fully configured.
 		if err := metadata.WaitForVersionAnnotation(context.TODO(), nc.client, nc.node.Name); err != nil {
 			return fmt.Errorf("error waiting for proper %s annotation for node %s: %w", metadata.VersionAnnotation,
 				nc.node.GetName(), err)
@@ -222,11 +185,6 @@ func (nc *nodeConfig) Configure() error {
 			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
 				return fmt.Errorf("error excluding cloud taint on node %s: %w", nc.node.GetName(), err)
 			}
-		}
-
-		// Uncordon the node now that it is fully configured
-		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, false); err != nil {
-			return fmt.Errorf("error uncordoning the node %s: %w", nc.node.GetName(), err)
 		}
 
 		nc.log.Info("instance has been configured as a worker node", "version",
@@ -447,34 +405,11 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 	return nil
 }
 
-// newDrainHelper returns new drain.Helper instance
-func (nc *nodeConfig) newDrainHelper() *drain.Helper {
-	return &drain.Helper{
-		Ctx:    context.TODO(),
-		Client: nc.k8sclientset,
-		ErrOut: &ErrWriter{nc.log},
-		// Evict all pods regardless of their controller and orphan status
-		Force: true,
-		// Prevents erroring out in case a DaemonSet's pod is on the node
-		IgnoreAllDaemonSets: true,
-		Out:                 &OutWriter{nc.log},
-	}
-}
-
 // Deconfigure removes the node from the cluster, reverting changes made by the Configure function
 func (nc *nodeConfig) Deconfigure() error {
 	// Set nc.node to the existing node
 	if err := nc.setNode(true); err != nil {
 		return err
-	}
-
-	// Cordon and drain the Node before we interact with the instance
-	drainHelper := nc.newDrainHelper()
-	if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
-		return fmt.Errorf("unable to cordon node %s: %w", nc.node.GetName(), err)
-	}
-	if err := drain.RunNodeDrain(drainHelper, nc.node.GetName()); err != nil {
-		return fmt.Errorf("unable to drain node %s: %w", nc.node.GetName(), err)
 	}
 
 	// Revert all changes we've made to the instance by removing installed services, files, and the version annotation

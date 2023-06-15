@@ -33,11 +33,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/jsonpath"
 	"k8s.io/klog/v2"
+	"k8s.io/kubectl/pkg/drain"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,6 +50,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/drainhelper"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
@@ -65,6 +68,7 @@ type Options struct {
 	Client    client.Client
 	Mgr       manager.Manager
 	cmdRunner powershell.CommandRunner
+	drainer   *drain.Helper
 }
 
 // setDefaults returns an Options based on the received options, with all nil or empty fields filled in with reasonable
@@ -105,6 +109,7 @@ type ServiceController struct {
 	watchNamespace string
 	psCmdRunner    powershell.CommandRunner
 	ctrl           controller.Controller
+	drainer        *drain.Helper
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
@@ -152,7 +157,13 @@ func RunController(ctx context.Context, watchNamespace, kubeconfig string) error
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
-	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{Client: ctrlMgr.GetClient()})
+
+	k8sClient, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("unable to initialize client for drainer")
+	}
+	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{
+		Client: ctrlMgr.GetClient(), drainer: drainhelper.NewDrainHelper(ctx, k8sClient, klog.NewKlogr())})
 	if err != nil {
 		return err
 	}
@@ -173,7 +184,7 @@ func NewServiceController(ctx context.Context, nodeName, watchNamespace string, 
 		return nil, err
 	}
 	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
-		watchNamespace: watchNamespace}, nil
+		watchNamespace: watchNamespace, drainer: o.drainer}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -232,6 +243,12 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
 	}
+	// if the node has never been configured, cordon it until the configuration completes
+	if _, present := node.Annotations[metadata.VersionAnnotation]; !present {
+		if err := drain.RunCordonOrUncordon(sc.drainer, &node, true); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	desiredVersion, present := node.Annotations[metadata.DesiredVersionAnnotation]
 	if !present {
@@ -258,11 +275,23 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	if err = sc.waitUntilNodeReady(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("error waiting for node to become ready")
 	}
-	// Version annotation is the indicator that the node was fully configured by this version of the services ConfigMap
-	if err = metadata.ApplyVersionAnnotation(sc.ctx, sc.client, node, desiredVersion); err != nil {
-		return ctrl.Result{}, fmt.Errorf("error updating version annotation on node %s: %w", sc.nodeName, err)
+	if err = sc.markNodeConfigured(&node, desiredVersion); err != nil {
+		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// markNodeConfigured marks the node as configured and schedulable
+func (sc *ServiceController) markNodeConfigured(node *core.Node, desiredVersion string) error {
+	err := drain.RunCordonOrUncordon(sc.drainer, node, false)
+	if err != nil {
+		return fmt.Errorf("unable to ensure node is uncordoned: %w", err)
+	}
+	// Version annotation is the indicator that the node was fully configured by this version of the services ConfigMap
+	if err = metadata.ApplyVersionAnnotation(sc.ctx, sc.client, *node, desiredVersion); err != nil {
+		return fmt.Errorf("error updating node version annotation: %w", err)
+	}
+	return nil
 }
 
 // reconcileServices ensures that all the services passed in via the services slice are created, configured properly
