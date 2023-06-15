@@ -756,7 +756,7 @@ func (vm *windows) stopService(svc *service) error {
 	}
 
 	// Wait until the service has stopped
-	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+	err = wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
 		serviceRunning, err := vm.isRunning(svc.name)
 		if err != nil {
 			vm.log.V(1).Error(err, "unable to check if Windows service is running", "service", svc.name)
@@ -784,7 +784,7 @@ func (vm *windows) deleteService(svc *service) error {
 	}
 
 	// Wait until the service is fully deleted
-	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+	err = wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
 		exists, err := vm.serviceExists(svc.name)
 		if err != nil {
 			vm.log.V(1).Error(err, "unable to check if Windows service exists", "service", svc.name)
@@ -860,7 +860,7 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 	var err error
 	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
 	for _, network := range []string{BaseOVNKubeOverlayNetwork, OVNKubeOverlayNetwork} {
-		err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		err = wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
 			// reinitialize and retry on failure to avoid connection reset SSH errors
 			if err := vm.removeHNSNetwork(network); err != nil {
 				vm.log.V(1).Error(err, "error removing %s HNS network", "network", network)
