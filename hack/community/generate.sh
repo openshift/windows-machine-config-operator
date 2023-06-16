@@ -12,10 +12,16 @@ replace() {
     local CO_CSV=$1
     local DESCRIPTION=$2
     local CO_ANNOTATIONS=$3
+    local COMMUNITY_VERSION=$4
     local CREATED_AT=$(date +"%Y-%m-%dT%H:%M:%SZ")
     local CO_DESCRIPTION=$DESCRIPTION
     local DISPLAY_NAME="Community Windows Machine Config Operator"
     local MATURITY="preview"
+    local IMAGE_TAG="curl -H "Authorization: Bearer XYZ" -X GET
+          "https://quay.io/api/v1/repository/openshift-windows/community-windows-machine-config-operator/tag/" |
+          jq '.tags | sort_by(.last_modified)' | jq '[.[] | select(.name|test("'$COMMUNITY_VERSION'-"))]' | jq  'first |
+          .name'"
+
 
     # Replace CSV fields
     yq eval --exit-status --inplace "
@@ -38,13 +44,14 @@ generate_manifests() {
   local BUNDLE_DIR=$1
   local DESCRIPTION=$2
   local OUTPUT_DIR=$3
+  local COMMUNITY_VERSION=$4
 
   echo "Update operator manifests"
   cp -r "${BUNDLE_DIR}/manifests" "${BUNDLE_DIR}/metadata" "${BUNDLE_DIR}/windows-machine-config-operator.package.yaml" "${OUTPUT_DIR}"
   local CO_CSV="${OUTPUT_DIR}/manifests/windows-machine-config-operator.clusterserviceversion.yaml"
   local CO_ANNOTATIONS="${OUTPUT_DIR}/metadata/annotations.yaml"
 
-  replace "$CO_CSV" "$DESCRIPTION" "$CO_ANNOTATIONS"
+  replace "$CO_CSV" "$DESCRIPTION" "$CO_ANNOTATIONS" "$COMMUNITY_VERSION"
 }
 
 WMCO_VERSION="$1"
@@ -67,4 +74,4 @@ DESCRIPTION=$(cat hack/community/csv/description.md)
 DESCRIPTION=${DESCRIPTION//COMMUNITY_VERSION/$COMMUNITY_VERSION}
 
 BUNDLE_DIR=$(pwd)/bundle
-generate_manifests "$BUNDLE_DIR" "$DESCRIPTION" "$OUTPUT_DIR"
+generate_manifests "$BUNDLE_DIR" "$DESCRIPTION" "$OUTPUT_DIR" "$COMMUNITY_VERSION"
