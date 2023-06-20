@@ -62,23 +62,16 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 			cmData, err = servicescm.Parse(cm.Data)
 			return err
 		}
-		// Otherwise, fetch the ConfigMap tied to the node's version annotation.
-		// This ensures we cleanup using the same ConfigMap version that was used to configure the instance
-		version, present := node.Annotations[metadata.VersionAnnotation]
+		// Otherwise, fetch the ConfigMap tied to the node's desired version annotation
+		desiredVersion, present := node.Annotations[metadata.DesiredVersionAnnotation]
 		if !present {
-			// If no version annotation exists, try the desired version. This is useful if node configuration fails and
-			// the instance needs to be reconciled
-			version, present = node.Annotations[metadata.DesiredVersionAnnotation]
-			if !present {
-				return fmt.Errorf("node %s missing desired version annotation", node.Name)
-			}
+			return fmt.Errorf("node %s missing desired version annotation", node.Name)
 		}
 		err = directClient.Get(ctx,
-			client.ObjectKey{Namespace: configMapNamespace, Name: servicescm.NamePrefix + version}, cm)
+			client.ObjectKey{Namespace: configMapNamespace, Name: servicescm.NamePrefix + desiredVersion}, cm)
 		if err != nil {
 			return err
 		}
-		klog.Infof("removing services tied to version: %s", version)
 		cmData, err = servicescm.Parse(cm.Data)
 		return err
 	}()
