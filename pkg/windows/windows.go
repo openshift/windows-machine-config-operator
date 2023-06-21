@@ -235,6 +235,8 @@ type Windows interface {
 	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
 	// services are also stopped
 	RunWICDCleanup(string, string) error
+	// StopWICD ensures the WICD service is stopped
+	StopWICD() error
 }
 
 // windows implements the Windows interface
@@ -690,6 +692,12 @@ func (vm *windows) setRecoveryActions(svc *service) error {
 		return fmt.Errorf("failed to set recovery actions with stdout: %s: %w", out, err)
 	}
 	return nil
+}
+
+// StopWICD stops WICD if it is running
+func (vm *windows) StopWICD() error {
+	svc := &service{name: WicdServiceName}
+	return vm.ensureServiceNotRunning(svc)
 }
 
 // ensureServiceNotRunning stops a service if it exists and is running

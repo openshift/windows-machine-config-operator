@@ -477,7 +477,16 @@ func (nc *nodeConfig) Deconfigure() error {
 		return fmt.Errorf("unable to drain node %s: %w", nc.node.GetName(), err)
 	}
 
-	// Revert all changes we've made to the instance by removing installed services, files, and the version annotation
+	// Revert all changes we've made to the instance by removing installed services and files.
+	// Stopping WICD and applying the desiredVersion annotation to the node before starting the cleanup procedure
+	// helps to inform the WICD cleanup command of any services that need to be cleaned up.
+	if err := nc.StopWICD(); err != nil {
+		return err
+	}
+	err := metadata.ApplyDesiredVersionAnnotation(context.TODO(), nc.client, *nc.node, version.Get())
+	if err != nil {
+		return err
+	}
 	wicdKC, err := nc.generateWICDKubeconfig()
 	if err != nil {
 		return err
