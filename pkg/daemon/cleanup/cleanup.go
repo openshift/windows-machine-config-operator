@@ -48,50 +48,20 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	if err != nil {
 		return err
 	}
-	var node *core.Node
-	var cmData *servicescm.Data
-	err = func() error {
-		cm := &core.ConfigMap{}
-		node, err := controller.GetAssociatedNode(directClient, addrs)
-		if err != nil {
-			// If no node is found, fetch the most recently created services ConfigMap for best effort cleanup
-			cm, err = servicescm.GetLatest(directClient, ctx, configMapNamespace)
-			if err != nil {
-				return fmt.Errorf("cannot get latest services ConfigMap from namespace %s: %w", configMapNamespace, err)
-			}
-			cmData, err = servicescm.Parse(cm.Data)
-			return err
-		}
-		// Otherwise, fetch the ConfigMap tied to the node's version annotation.
-		// This ensures we cleanup using the same ConfigMap version that was used to configure the instance
-		version, present := node.Annotations[metadata.VersionAnnotation]
-		if !present {
-			// If no version annotation exists, try the desired version. This is useful if node configuration fails and
-			// the instance needs to be reconciled
-			version, present = node.Annotations[metadata.DesiredVersionAnnotation]
-			if !present {
-				return fmt.Errorf("node %s missing desired version annotation", node.Name)
-			}
-		}
-		err = directClient.Get(ctx,
-			client.ObjectKey{Namespace: configMapNamespace, Name: servicescm.NamePrefix + version}, cm)
-		if err != nil {
-			return err
-		}
-		klog.Infof("removing services tied to version: %s", version)
-		cmData, err = servicescm.Parse(cm.Data)
-		return err
-	}()
+	node, err := controller.GetAssociatedNode(directClient, addrs)
 	if err != nil {
-		return err
+		klog.Infof("no associated node found")
 	}
-
 	svcMgr, err := manager.New()
 	if err != nil {
 		klog.Exitf("could not create service manager: %s", err.Error())
 	}
 	defer svcMgr.Disconnect()
-	if err = removeServices(svcMgr, cmData.Services); err != nil {
+	services, err := getServicesToRemove(ctx, directClient, node, configMapNamespace)
+	if err != nil {
+		return err
+	}
+	if err = removeServices(svcMgr, services); err != nil {
 		return err
 	}
 	cleanupContainers()
@@ -100,6 +70,76 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		return metadata.RemoveVersionAnnotation(ctx, directClient, *node)
 	}
 	return nil
+}
+
+// getServicesToRemove returns a list of services that should be removed as part of the cleanup process
+// returns the merged Data of the latest ConfigMap, and the ConfigMap specified by the node's version annotation
+func getServicesToRemove(ctx context.Context, cli client.Client, node *core.Node, configMapNamespace string) ([]servicescm.Service, error) {
+	// get data from the latest services ConfigMap
+	latestCM, err := servicescm.GetLatest(cli, ctx, configMapNamespace)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get latest services ConfigMap from namespace %s: %w", configMapNamespace, err)
+	}
+	latestCMData, err := servicescm.Parse(latestCM.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	// attempt to get the ConfigMap specified by the version annotation
+	var versionCM core.ConfigMap
+	var versionCMData *servicescm.Data
+	err = func() error {
+		if node == nil {
+			return fmt.Errorf("no node object present")
+		}
+		version, present := node.Annotations[metadata.VersionAnnotation]
+		if !present {
+			return fmt.Errorf("node is missing version annotation")
+		}
+		err = cli.Get(ctx, client.ObjectKey{Namespace: configMapNamespace, Name: servicescm.NamePrefix + version},
+			&versionCM)
+		if err != nil {
+			return err
+		}
+		versionCMData, err = servicescm.Parse(versionCM.Data)
+		if err != nil {
+			return err
+		}
+		return nil
+	}()
+	if err != nil {
+		klog.Infof("error getting services ConfigMap associated with version annotation, "+
+			"falling back to use latest services ConfigMap: %s", err)
+		return latestCMData.Services, nil
+	}
+
+	// If the instance was configured using latestCM, return the services from that
+	if versionCM.GetName() == latestCM.GetName() {
+		klog.Infof("removing the services specified in %s", latestCM.GetName())
+		return latestCMData.Services, nil
+	}
+	// merge the two ConfigMaps into one, so all potential services are listed
+	klog.Infof("removing the services specified in %s and %s", versionCM.GetName(), latestCM.GetName())
+	return mergeServices(latestCMData.Services, versionCMData.Services), nil
+}
+
+// mergeServices combines the list of services, prioritizing the data given by s1
+func mergeServices(s1, s2 []servicescm.Service) []servicescm.Service {
+	services := make(map[string]servicescm.Service)
+	for _, service := range s1 {
+		services[service.Name] = service
+	}
+	for _, service := range s2 {
+		if _, present := services[service.Name]; !present {
+			services[service.Name] = service
+		}
+	}
+	var merged []servicescm.Service
+	for _, service := range services {
+		merged = append(merged, service)
+	}
+	return merged
+
 }
 
 // removeServices uses the given manager to remove all the given Windows services from this instance.
