@@ -57,7 +57,7 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 	// Remove all entries from the windows-instances ConfigMap, causing all node objects to be deleted
 	require.NoError(t, tc.clearWindowsInstanceConfigMap(),
 		"error removing windows-instances ConfigMap entries")
-	err = tc.waitForWindowsNodes(0, true, false, true)
+	err = tc.waitForWindowsNodeRemoval(true)
 	require.NoError(t, err, "Removing ConfigMap entries did not cause Windows node deletion")
 
 	// For each node that was deleted, check that all the expected services have been removed
@@ -112,6 +112,26 @@ func (tc *testContext) checkNetworksRemoved(address string) (bool, error) {
 		strings.Contains(out, "VIPEndpoint")), nil
 }
 
+// waitForWindowsNodeRemoval returns when there are zero Windows nodes of the given type, machine or byoh, in the cluster
+func (tc *testContext) waitForWindowsNodeRemoval(isBYOH bool) error {
+	labelSelector := core.LabelOSStable + "=windows"
+	if isBYOH {
+		// BYOH label is set to true
+		labelSelector = fmt.Sprintf("%s,%s=true", labelSelector, controllers.BYOHLabel)
+	} else {
+		// BYOH label is not set
+		labelSelector = fmt.Sprintf("%s,!%s", labelSelector, controllers.BYOHLabel)
+	}
+	return wait.PollImmediate(retryInterval, 10*time.Minute, func() (done bool, err error) {
+		nodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(),
+			meta.ListOptions{LabelSelector: labelSelector})
+		if err != nil {
+			return false, nil
+		}
+		return len(nodes.Items) == 0, nil
+	})
+}
+
 // testWindowsNodeDeletion tests the Windows node deletion from the cluster.
 func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 	// Deploy a DaemonSet and wait until its pods have been made ready on each Windows node. DaemonSet pods cannot be
@@ -147,8 +167,8 @@ func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 		require.NoError(t, err, "error updating Windows MachineSet")
 
 		// we are waiting 10 minutes for all windows machines to get deleted.
-		err = tc.waitForWindowsNodes(expectedNodeCount, true, false, false)
-		require.NoError(t, err, "Windows node deletion failed")
+		err = tc.waitForWindowsNodeRemoval(false)
+		require.NoError(t, err, "Windows Machine Node deletion failed")
 	}
 	t.Run("BYOH node removal", tc.testBYOHRemoval)
 
