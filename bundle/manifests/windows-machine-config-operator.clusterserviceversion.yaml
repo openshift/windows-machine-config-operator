@@ -221,12 +221,6 @@ spec:
         - apiGroups:
           - ""
           resources:
-          - pods/eviction
-          verbs:
-          - create
-        - apiGroups:
-          - ""
-          resources:
           - secrets
           verbs:
           - create
@@ -242,12 +236,6 @@ spec:
           verbs:
           - create
           - delete
-          - get
-        - apiGroups:
-          - apps
-          resources:
-          - daemonsets
-          verbs:
           - get
         - apiGroups:
           - certificates.k8s.io

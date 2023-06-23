@@ -36,8 +36,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
-//+kubebuilder:rbac:groups="apps",resources=daemonsets,verbs=get
-
 const (
 	// HybridOverlaySubnet is an annotation applied by the cluster network operator which is used by the hybrid overlay
 	HybridOverlaySubnet = "k8s.ovn.org/hybrid-overlay-node-subnet"

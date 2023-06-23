@@ -61,7 +61,6 @@ import (
 //+kubebuilder:rbac:groups="",resources=configmaps/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups="",resources=configmaps/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=delete;get;list;patch;watch
-//+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
 //+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=rolebindings,verbs=get;create;delete
 //+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=clusterrolebindings,verbs=get;create;delete
 
