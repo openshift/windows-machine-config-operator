@@ -172,6 +172,9 @@ if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
   go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $GO_TEST_ARGS
 fi
 
+# collect operator resources using must-gather tool
+oc adm must-gather --timeout=2m --image="${OPERATOR_IMAGE}" --dest-dir="${ARTIFACT_DIR}/must-gather"
+
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
 if ! $SKIP_NODE_DELETION; then

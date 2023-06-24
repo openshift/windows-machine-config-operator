@@ -109,8 +109,19 @@ RUN make build-daemon
 #├── windows_exporter.exe
 #└── windows-instance-config-daemon.exe
 
+FROM registry.redhat.io/openshift4/ose-cli:latest AS cli
+
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=operator
+
+# install tools required for must-gather collection script
+RUN INSTALL_PKGS=" \
+      rsync \
+      tar \
+      " && \
+    microdnf install -y $INSTALL_PKGS && \
+    rpm -V $INSTALL_PKGS && \
+    microdnf clean all
 
 WORKDIR /payload/
 # Copy WICD
@@ -158,6 +169,11 @@ COPY pkg/internal/windows-defender-exclusion.ps1 .
 COPY pkg/internal/hns.psm1 .
 
 WORKDIR /
+
+# Copy must-gather collection scripts and binaries
+COPY must-gather/collection-scripts/* /usr/bin/
+COPY --from=cli /usr/bin/oc /usr/bin
+RUN ln -s /usr/bin/oc /usr/bin/kubectl
 
 ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
     USER_UID=1001 \

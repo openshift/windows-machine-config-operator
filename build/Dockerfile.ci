@@ -81,6 +81,7 @@ COPY cmd cmd
 COPY controllers controllers
 COPY bundle bundle
 COPY hack hack
+COPY must-gather must-gather
 COPY pkg pkg
 COPY test test
 COPY vendor vendor
@@ -119,6 +120,9 @@ RUN make build-daemon
 #├── windows_exporter.exe
 #└── windows-instance-config-daemon.exe
 
+FROM registry.redhat.io/openshift4/ose-cli:latest AS cli
+
+# the selected operator image for CI should have rsync and tar, required for must-gather collection script
 FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.20-openshift-4.14
 LABEL stage=operator
 
@@ -168,6 +172,11 @@ COPY --from=build /build/windows-machine-config-operator/pkg/internal/windows-de
 COPY --from=build /build/windows-machine-config-operator/pkg/internal/hns.psm1 .
 
 WORKDIR /
+
+# Copy must-gather collection scripts and binaries
+COPY --from=build /build/windows-machine-config-operator/must-gather/collection-scripts/* /usr/bin/
+COPY --from=cli /usr/bin/oc /usr/bin
+RUN ln -s /usr/bin/oc /usr/bin/kubectl
 
 ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
     USER_UID=1001 \
