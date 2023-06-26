@@ -1,6 +1,7 @@
 package servicescm
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,7 +17,34 @@ func TestParse(t *testing.T) {
 		expectedErr bool
 	}{
 		{
-			name: "both expected keys",
+			name: "all possible keys",
+			input: map[string]string{
+				servicesKey: "[]",
+				filesKey:    "[]",
+				envVarsKey:  "{}",
+			},
+			expectedErr: false,
+		},
+		{
+			name: "null envVars value",
+			input: map[string]string{
+				servicesKey: "[]",
+				filesKey:    "[]",
+				envVarsKey:  "null",
+			},
+			expectedErr: false,
+		},
+		{
+			name: "non-null envVars value",
+			input: map[string]string{
+				servicesKey: "[]",
+				filesKey:    "[]",
+				envVarsKey:  "{\"NO_PROXY\":\"localhost;127.0.0.1\"}",
+			},
+			expectedErr: false,
+		},
+		{
+			name: "only required keys",
 			input: map[string]string{
 				servicesKey: "[]",
 				filesKey:    "[]",
@@ -24,12 +52,20 @@ func TestParse(t *testing.T) {
 			expectedErr: false,
 		},
 		{
+			name: "optional key plus only 1 of 2 required keys",
+			input: map[string]string{
+				servicesKey: "[]",
+				envVarsKey:  "{}",
+			},
+			expectedErr: true,
+		},
+		{
 			name:        "no keys",
 			input:       map[string]string{},
 			expectedErr: true,
 		},
 		{
-			name: "only 1 of the expected keys",
+			name: "only 1 of the required keys",
 			input: map[string]string{
 				servicesKey: "[]",
 			},
@@ -38,8 +74,9 @@ func TestParse(t *testing.T) {
 		{
 			name: "correct number but incorrect key",
 			input: map[string]string{
-				filesKey:  "[]",
-				"testKey": "[]",
+				filesKey:   "[]",
+				"testKey":  "[]",
+				envVarsKey: "{}",
 			},
 			expectedErr: true,
 		},
@@ -48,6 +85,7 @@ func TestParse(t *testing.T) {
 			input: map[string]string{
 				servicesKey: "[]",
 				filesKey:    "[]",
+				envVarsKey:  "{}",
 				"testKey":   "[]",
 			},
 			expectedErr: true,
@@ -64,6 +102,16 @@ func TestParse(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotNil(t, cmData.Services)
 			assert.NotNil(t, cmData.Files)
+			// if any env vars are present, ensure they are not nil when parsed. Otherwise ensure it is nil
+			if value, exists := test.input[envVarsKey]; exists {
+				envVars := &map[string]string{}
+				require.NoError(t, json.Unmarshal([]byte(value), envVars))
+				if len(*envVars) > 0 {
+					assert.NotEmpty(t, cmData.EnvironmentVars)
+					return
+				}
+			}
+			assert.Nil(t, cmData.EnvironmentVars)
 		})
 	}
 }
@@ -92,15 +140,49 @@ func TestGenerate(t *testing.T) {
 			Checksum: "1",
 		},
 	}
-	// Ensure that the ConfigMap we generate passes our own validation functions
-	data, err := NewData(&testServices, &testFiles)
-	require.NoError(t, err)
-	configMap, err := Generate(Name, "testNamespace", data)
-	require.NoError(t, err)
 
-	parsed, err := Parse(configMap.Data)
-	require.NoError(t, err)
-	assert.NoError(t, parsed.ValidateExpectedContent(data))
+	testCases := []struct {
+		name     string
+		services []Service
+		files    []FileInfo
+		envVars  map[string]string
+	}{
+		{
+			name:     "non-empty envVars",
+			services: testServices,
+			files:    testFiles,
+			envVars: map[string]string{
+				"HTTP_PROXY": "http://dev:ad2bc205af349589cb2c425daacf7a00@10.0.29.194:3128/",
+				"HTTS_PROXY": "http://dev:ad2bc205af349589cb2c425daacf7a00@10.0.29.194:3128/",
+				"NO_PROXY":   "localhost",
+			},
+		},
+		{
+			name:     "empty envVars",
+			services: testServices,
+			files:    testFiles,
+			envVars:  map[string]string{},
+		},
+		{
+			name:     "nil envVars",
+			services: testServices,
+			files:    testFiles,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			data, err := NewData(&test.services, &test.files, test.envVars)
+			require.NoError(t, err)
+			configMap, err := Generate(Name, "testNamespace", data)
+			require.NoError(t, err)
+
+			// Ensure that the ConfigMap we generate passes our own validation functions
+			parsed, err := Parse(configMap.Data)
+			require.NoError(t, err)
+			assert.NoError(t, parsed.ValidateExpectedContent(data))
+		})
+	}
 }
 
 func TestGetBootstrapServices(t *testing.T) {
@@ -171,7 +253,7 @@ func TestGetBootstrapServices(t *testing.T) {
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			cmData, err := NewData(&test.input, &[]FileInfo{})
+			cmData, err := NewData(&test.input, &[]FileInfo{}, nil)
 			require.NoError(t, err)
 			bootstrapSvcs := cmData.GetBootstrapServices()
 			assert.Equal(t, test.expectedNumBootstrapSvcs, len(bootstrapSvcs))

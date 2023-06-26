@@ -470,8 +470,8 @@ func TestBootstrap(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			desiredVersion := "testversion"
 			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
-				wmcoNamespace, &servicescm.Data{test.configMapServices,
-					[]servicescm.FileInfo{}})
+				wmcoNamespace, &servicescm.Data{Services: test.configMapServices,
+					Files: []servicescm.FileInfo{}})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{cm}
 
@@ -636,8 +636,8 @@ func TestReconcile(t *testing.T) {
 			desiredVersion := "testversion"
 			// This ConfigMap's name must match with the given Node object's desired-version annotation
 			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
-				wmcoNamespace, &servicescm.Data{test.configMapServices,
-					[]servicescm.FileInfo{}})
+				wmcoNamespace, &servicescm.Data{Services: test.configMapServices,
+					Files: []servicescm.FileInfo{}, EnvironmentVars: nil})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{
 				// This is the node object that will be used in these test cases
