@@ -33,6 +33,20 @@ get_OCP_version() {
   echo $OCP_VER_MAJOR.$OCP_VER_MINOR
 }
 
+# Accepts one argument, the OCP version.
+get_rhel_version(){
+  if [ "$#" -lt 1 ]; then
+    echo incorrect parameter count for get_rhel_version $#
+    return 1
+  fi
+  version=$(echo "$1" | tr -d '.')
+  if [[ $version -ge 413 ]]; then
+    echo "9"
+  else
+    echo "8"
+  fi
+}
+
 check_git_branch() {
   # Return if the working branch is dirty
   if ! git diff --quiet; then
