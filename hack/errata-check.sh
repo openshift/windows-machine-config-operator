@@ -171,10 +171,11 @@ function get-jira-fix-version {
   local exitcode
   local fix_version_count
   local fix_version
-  result=$(curl -s "https://issues.redhat.com/rest/api/2/issue/$jira_id")
+  local url="https://issues.redhat.com/rest/api/2/issue/$jira_id"
+  result=$(curl -s "$url")
   exitcode=$?
   if [ $exitcode -ne 0 ]; then
-    print-error "Unable to curl server. (error: $exitcode)  Connected to VPN?"
+    print-error "Unable to curl server. (error: $exitcode, url: $url)"
     exit 1
   fi
   if [[ "$result" == *"Login Required"* ]]; then
@@ -213,7 +214,7 @@ function list-commits {
     commit_hash=$(echo "$commit" | awk '{ print $1 }')
     pr_num=$(echo "$commit" | awk '{ print substr($5,2) }')
     pr_title=$(gh pr view "$pr_num" --json title | jq -r .title)
-    jira_id=$(echo "$pr_title" | grep -Eo '(WINC|OCPBUGS)-[0-9]*') || true
+    jira_id=$(echo "$pr_title" | grep -Eo '(WINC|OCPBUGS)-[0-9]*' | head -1) || true
     if [ -n "$jira_id" ]; then
       jira_fix_version=$(get-jira-fix-version "$jira_id")
       if [[ "$ERRATA_JIRA_IDS" == *"$jira_id"* ]]; then
