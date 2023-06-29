@@ -26,9 +26,9 @@ func testStorage(t *testing.T) {
 	if !tc.StorageSupport() {
 		t.Skip("storage is not supported on this platform")
 	}
-	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 	require.NoError(t, err, "timed out waiting for Windows Machine nodes")
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, false, true)
 	require.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
 

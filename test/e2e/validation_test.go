@@ -23,10 +23,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	cloudproviderapi "k8s.io/cloud-provider/api"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
+	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -51,6 +53,52 @@ var versionRegex = regexp.MustCompile(`version: "([^"]*)"`)
 type winService struct {
 	state       string
 	description string
+}
+
+// testNodesBecomeReadyAndSchedulable tests that all Windows nodes become ready and schedulable
+func (tc *testContext) testNodesBecomeReadyAndSchedulable(t *testing.T) {
+	nodes := gc.allNodes()
+	for _, node := range nodes {
+		t.Run(node.GetName(), func(t *testing.T) {
+			err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (done bool, err error) {
+				foundNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(), node.GetName(), meta.GetOptions{})
+				require.NoError(t, err)
+				return tc.nodeReadyAndSchedulable(*foundNode), nil
+			})
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// nodeReadyAndSchedulable returns true if the node is both ready and is not marked as unschedulable
+func (tc *testContext) nodeReadyAndSchedulable(node core.Node) bool {
+	readyCondition := false
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == core.NodeReady {
+			readyCondition = true
+		}
+		if readyCondition && condition.Status != core.ConditionTrue {
+			log.Printf("node %v is expected to be in Ready state", node.Name)
+			return false
+		}
+	}
+	if !readyCondition {
+		log.Printf("expected node Status to have condition type Ready for node %v", node.Name)
+		return false
+	}
+	// this taint is applied by WMCO some at point after WICD configures the node
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == cloudproviderapi.TaintExternalCloudProvider && taint.Effect == core.TaintEffectNoSchedule {
+			log.Printf("expected node %s to not have the external cloud provider taint", node.GetName())
+			return false
+		}
+	}
+	// WMCO will uncordon the node at some point after WICD configures it
+	if node.Spec.Unschedulable {
+		log.Printf("expected node %s to be schedulable", node.Name)
+		return false
+	}
+	return true
 }
 
 // testKubeletPriorityClass tests if kubelet priority class is set to "AboveNormal"
@@ -742,13 +790,69 @@ func (tc *testContext) getOperatorConditionName() (string, error) {
 	return "", fmt.Errorf("unable to get operatorCondition name from namespace %s", wmcoNamespace)
 }
 
+// testNodeAnnotations tests that all required annotations are on each Windows node
+func (tc *testContext) testNodeAnnotations(t *testing.T) {
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			annotations := []string{nc.HybridOverlaySubnet, nc.HybridOverlayMac, metadata.VersionAnnotation,
+				nc.PubKeyHashAnnotation}
+			for _, annotation := range annotations {
+				assert.Contains(t, node.Annotations, annotation, "node missing expected annotation: %s", annotation)
+			}
+
+			usernameCorrect, err := tc.checkUsernameAnnotation(&node)
+			require.NoError(t, err)
+			assert.True(t, usernameCorrect)
+
+			pubKey, err := tc.checkPubKeyAnnotation(&node)
+			require.NoError(t, err)
+			assert.True(t, pubKey)
+		})
+	}
+}
+
+// checkUsernameAnnotation checks that the username annotation value is decipherable and correct
+func (tc *testContext) checkUsernameAnnotation(node *core.Node) (bool, error) {
+	privKey, _, err := tc.getExpectedKeyPair()
+	if err != nil {
+		return false, err
+	}
+
+	usernameValue, present := node.Annotations[controllers.UsernameAnnotation]
+	if !present {
+		return false, nil
+	}
+	username, err := crypto.DecryptFromJSONString(usernameValue, privKey)
+	if err != nil {
+		return false, err
+	}
+	if username != tc.vmUsername() {
+		return false, nil
+	}
+	return true, nil
+}
+
+// checkPubKeyAnnotation that node is annotated with the public key which matches the private key used to configure it
+func (tc *testContext) checkPubKeyAnnotation(node *core.Node) (bool, error) {
+	_, pubKey, err := tc.getExpectedKeyPair()
+	if err != nil {
+		return false, err
+	}
+
+	pubKeyAnnotation := nc.CreatePubKeyHashAnnotation(pubKey)
+	if pubKeyAnnotation != node.Annotations[nc.PubKeyHashAnnotation] {
+		return false, nil
+	}
+	return true, nil
+}
+
 // testDependentServiceChanges tests that a Windows service which a running service is dependent on can be reconfigured
 func testDependentServiceChanges(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
-	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 	require.NoError(t, err, "timed out waiting for Windows Machine nodes")
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, false, true)
 	require.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 	nodes := append(gc.machineNodes, gc.byohNodes...)
 
