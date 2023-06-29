@@ -46,11 +46,11 @@ func upgradeTestSuite(t *testing.T) {
 	require.NoError(t, err, "error configuring upgrade")
 
 	// get current Windows node state
-	// TODO: waitForWindowsNodes currently loads nodes into global context, so we need this (even though BYOH
+	// TODO: waitForConfiguredWindowsNodes currently loads nodes into global context, so we need this (even though BYOH
 	// 		 nodes are not being upgraded/tested here). Remove as part of https://issues.redhat.com/browse/WINC-620
-	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, true, false)
 	require.NoError(t, err, "wrong number of Machine controller nodes found")
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
 	require.NoError(t, err, "wrong number of ConfigMap controller nodes found")
 
 	t.Run("Operator version upgrade", tc.testUpgradeVersion)
