@@ -648,6 +648,14 @@ func TestReconcile(t *testing.T) {
 							metadata.DesiredVersionAnnotation: desiredVersion,
 						},
 					},
+					Status: core.NodeStatus{
+						Conditions: []core.NodeCondition{
+							{
+								Type:   core.NodeReady,
+								Status: core.ConditionTrue,
+							},
+						},
+					},
 				},
 				cm,
 			}
@@ -663,6 +671,8 @@ func TestReconcile(t *testing.T) {
 				assert.Error(t, err)
 				return
 			}
+			assert.NoError(t, err)
+
 			createdServices, err := getAllFakeServices(winSvcMgr)
 			require.NoError(t, err)
 
