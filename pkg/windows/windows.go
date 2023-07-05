@@ -219,8 +219,8 @@ type Windows interface {
 	// should be used in scenarios where you want to execute a command that runs in the background. In these cases we
 	// have observed that Run() returns before the command completes and as a result killing the process.
 	Run(string, bool) (string, error)
-	// Reinitialize re-initializes the Windows VM's SSH client
-	Reinitialize() error
+	// RebootAndReinitialize reboots the instance and re-initializes the Windows SSH client
+	RebootAndReinitialize() error
 	// Bootstrap prepares the Windows instance and runs the WICD bootstrap command
 	Bootstrap(string, string, string) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
@@ -383,10 +383,17 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 	return out, nil
 }
 
-func (vm *windows) Reinitialize() error {
-	if err := vm.interact.init(); err != nil {
-		return fmt.Errorf("failed to reinitialize ssh client: %v", err)
+// RebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
+func (vm *windows) RebootAndReinitialize() error {
+	vm.log.Info("rebooting instance")
+	if _, err := vm.Run("Restart-Computer -Force", true); err != nil {
+		return fmt.Errorf("error rebooting the Windows VM: %w", err)
 	}
+	// Reinitialize the SSH connection after the VM reboot
+	if err := vm.reinitialize(); err != nil {
+		return fmt.Errorf("error reinitializing SSH connection after VM reboot: %w", err)
+	}
+	vm.log.V(1).Info("successful reboot")
 	return nil
 }
 
@@ -569,7 +576,7 @@ func (vm *windows) ensureHostNameAndContainersFeature() error {
 	// Changing the host name or enabling the Containers feature requires a VM restart for
 	// the change to take effect.
 	if rebootNeeded {
-		if err := vm.rebootAndReinitialize(); err != nil {
+		if err := vm.RebootAndReinitialize(); err != nil {
 			return fmt.Errorf("error restarting the Windows instance and reinitializing SSH connection: %w", err)
 		}
 	}
@@ -895,12 +902,12 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 			// reinitialize and retry on failure to avoid connection reset SSH errors
 			if err := vm.removeHNSNetwork(network); err != nil {
 				vm.log.V(1).Error(err, "error removing %s HNS network", "network", network)
-				if err := vm.Reinitialize(); err != nil {
+				if err := vm.reinitialize(); err != nil {
 					return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
 				}
 				return false, nil
 			}
-			if err := vm.Reinitialize(); err != nil {
+			if err := vm.reinitialize(); err != nil {
 				return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
 			}
 			out, err := vm.Run(getHNSNetworkCmd(network), true)
@@ -948,14 +955,9 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 	return strings.Contains(out, "Enabled"), nil
 }
 
-// rebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
-func (vm *windows) rebootAndReinitialize() error {
-	if _, err := vm.Run("Restart-Computer -Force", true); err != nil {
-		return fmt.Errorf("error rebooting the Windows VM: %w", err)
-	}
-	// Reinitialize the SSH connection after the VM reboot
-	if err := vm.Reinitialize(); err != nil {
-		return fmt.Errorf("error reinitializing SSH connection after VM reboot: %w", err)
+func (vm *windows) reinitialize() error {
+	if err := vm.interact.init(); err != nil {
+		return fmt.Errorf("failed to reinitialize ssh client: %v", err)
 	}
 	return nil
 }
