@@ -23,6 +23,7 @@ import (
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -32,6 +33,10 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
 
 const (
@@ -88,6 +93,27 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 		return ctrl.Result{}, err
 	}
 
+	if _, ok := node.GetAnnotations()[metadata.RebootAnnotation]; ok {
+		// Create a new signer using the private key that the instances will be reconciled with
+		signer, err := signer.Create(types.NamespacedName{Namespace: r.watchNamespace,
+			Name: secrets.PrivateKeySecret}, r.client)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
+		}
+		instanceInfo, err := r.instanceFromNode(node)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+			instanceInfo, signer, nil, nil, r.platform)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)
+		}
+
+		if err := nc.SafeReboot(ctx, node); err != nil {
+			return ctrl.Result{}, fmt.Errorf("full instance reboot failed: %w", err)
+		}
+	}
 	return ctrl.Result{}, nil
 }
 

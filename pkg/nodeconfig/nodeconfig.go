@@ -244,6 +244,31 @@ func (nc *nodeConfig) Configure() error {
 	return err
 }
 
+// safeReboot safely restarts the instance associated with the given node object, first cordoning and draining the node
+func (nc *nodeConfig) SafeReboot(ctx context.Context, node *core.Node) error {
+	nc.node = node
+	drainer := nc.newDrainHelper()
+	if err := drain.RunCordonOrUncordon(drainer, nc.node, true); err != nil {
+		return fmt.Errorf("unable to cordon node %s: %w", nc.node.Name, err)
+	}
+	if err := drain.RunNodeDrain(drainer, nc.node.Name); err != nil {
+		return fmt.Errorf("unable to drain node %s: %w", nc.node.Name, err)
+	}
+
+	if err := nc.Windows.RebootAndReinitialize(); err != nil {
+		return err
+	}
+	// wait for WICD to remove Reboot annotation
+	if err := metadata.WaitForRebootAnnotationRemoval(ctx, nc.client, nc.node.Name); err != nil {
+		return err
+	}
+
+	if err := drain.RunCordonOrUncordon(drainer, nc.node, false); err != nil {
+		return fmt.Errorf("unable to uncordon node %s: %w", nc.node.Name, err)
+	}
+	return nil
+}
+
 // getWICDServiceAccountSecret returns the secret which holds the credentials for the WICD ServiceAccount
 func (nc *nodeConfig) getWICDServiceAccountSecret() (*core.Secret, error) {
 	var secrets core.SecretList
