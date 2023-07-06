@@ -197,24 +197,21 @@ func windowsNodeVersionChangePredicate() predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			// catch Machine-backed Windows node upgrades as they are re-created
-			return e.Object.GetLabels()[core.LabelOSStable] == "windows" &&
-				e.Object.GetAnnotations()[metadata.VersionAnnotation] == version.Get()
+			return isWindowsNode(e.Object) && e.Object.GetAnnotations()[metadata.VersionAnnotation] == version.Get()
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			// catch BYOH Windows node upgrades to the current WMCO version as they are re-configured in place
-			return e.ObjectNew.GetLabels()[core.LabelOSStable] == "windows" &&
+			return isWindowsNode(e.ObjectNew) &&
 				(e.ObjectOld.GetAnnotations()[metadata.VersionAnnotation] !=
 					e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation]) &&
 				e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation] == version.Get()
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return e.Object.GetLabels()[core.LabelOSStable] == "windows" &&
-				e.Object.GetAnnotations()[metadata.VersionAnnotation] == version.Get()
+			return isWindowsNode(e.Object) && e.Object.GetAnnotations()[metadata.VersionAnnotation] == version.Get()
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			// catch if a node stuck at an older WMCO version is deleted
-			return e.Object.GetLabels()[core.LabelOSStable] == "windows" &&
-				e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get()
+			return isWindowsNode(e.Object) && e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get()
 		},
 	}
 }
@@ -264,7 +261,7 @@ func getVersionAnnotations(nodes []core.Node) map[string]struct{} {
 // isValidWindowsNode returns true if the node object has the Windows label and the BYOH
 // label present for only the BYOH nodes based on the value of the byoh boolean parameter.
 func isValidWindowsNode(o client.Object, byoh bool) bool {
-	if o.GetLabels()[core.LabelOSStable] != "windows" {
+	if !isWindowsNode(o) {
 		return false
 	}
 	if (byoh && o.GetLabels()[BYOHLabel] != "true") ||

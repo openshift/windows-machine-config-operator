@@ -134,13 +134,7 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // mapNodeToMachine maps the given Windows node to its associated Machine
 func (r *WindowsMachineReconciler) mapNodeToMachine(_ context.Context, object client.Object) []reconcile.Request {
-	node := core.Node{}
-
-	// If for some reason this mapper is called on an object which is not a Node, return
-	if kind := object.GetObjectKind().GroupVersionKind(); kind.Kind != node.Kind {
-		return nil
-	}
-	if object.GetLabels()[core.LabelOSStable] != "windows" {
+	if !isWindowsNode(object) {
 		return nil
 	}
 
