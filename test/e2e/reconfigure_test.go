@@ -46,9 +46,11 @@ func (tc *testContext) reconfigurationTest(t *testing.T) {
 	_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), machineNodes[0].Name, types.JSONPatchType,
 		patchData, metav1.PatchOptions{})
 	require.NoError(t, err)
+	// TODO: This is an unreliable check, which will fail if WICD reconciles the node before WMCO is aware of the
+	// version change. This check should be re-added as part of https://issues.redhat.com/browse/OCPBUGS-15886.
 	// Ensure operator communicates to OLM that upgrade is not safe when processing Machine nodes
-	err = tc.validateUpgradeableCondition(metav1.ConditionFalse)
-	require.NoError(t, err, "operator Upgradeable condition not in proper state")
+	// err = tc.validateUpgradeableCondition(metav1.ConditionFalse)
+	// require.NoError(t, err, "operator Upgradeable condition not in proper state")
 
 	_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), byohNodes[0].Name, types.JSONPatchType,
 		patchData, metav1.PatchOptions{})
