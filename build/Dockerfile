@@ -1,6 +1,9 @@
 FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.20-openshift-4.14 as build
 LABEL stage=build
 
+# Disable cgo as it breaks containerd builds
+ENV CGO_ENABLED=0
+
 # dos2unix is needed to build CNI plugins
 RUN yum install -y dos2unix
 
@@ -57,7 +60,6 @@ RUN GOOS=windows go build -o azure-cloud-node-manager.exe ./cmd/cloud-node-manag
 # Build CNI plugins
 WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
 COPY containernetworking-plugins/ .
-ENV CGO_ENABLED=0
 RUN ./build_windows.sh
 
 # Build csi-proxy
