@@ -425,9 +425,6 @@ func (vm *windows) Deconfigure(watchNamespace, wicdKubeconfig string) error {
 	if err := vm.RunWICDCleanup(watchNamespace, wicdKubeconfig); err != nil {
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
 	}
-	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
-		return fmt.Errorf("unable to ensure HNS networks are removed: %w", err)
-	}
 	if err := vm.removeDirectories(); err != nil {
 		return fmt.Errorf("unable to remove created directories: %w", err)
 	}
@@ -857,49 +854,6 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 	// make the output normalized with the go sha256 library
 	sha := strings.ToLower(strings.TrimSpace(out))
 	return &payload.FileInfo{Path: path, SHA256: sha}, nil
-}
-
-// ensureHNSNetworksAreRemoved ensures the HNS networks created by the hybrid-overlay configuration process are removed
-// by repeatedly checking and retrying the removal of each network.
-func (vm *windows) ensureHNSNetworksAreRemoved() error {
-	vm.log.Info("removing HNS networks")
-	var err error
-	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
-	for _, network := range []string{BaseOVNKubeOverlayNetwork, OVNKubeOverlayNetwork} {
-		err = wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
-			// reinitialize and retry on failure to avoid connection reset SSH errors
-			if err := vm.removeHNSNetwork(network); err != nil {
-				vm.log.V(1).Error(err, "error removing %s HNS network", "network", network)
-				if err := vm.reinitialize(); err != nil {
-					return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
-				}
-				return false, nil
-			}
-			if err := vm.reinitialize(); err != nil {
-				return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
-			}
-			out, err := vm.Run(getHNSNetworkCmd(network), true)
-			if err != nil {
-				vm.log.V(1).Error(err, "error waiting for HNS network", "network", network)
-				return false, nil
-			}
-			return !strings.Contains(out, network), nil
-		})
-		if err != nil {
-			return fmt.Errorf("failed ensuring %s HNS network is removed: %w", network, err)
-		}
-	}
-	return nil
-}
-
-// removeHNSNetwork removes the given HNS network.
-func (vm *windows) removeHNSNetwork(networkName string) error {
-	cmd := getHNSNetworkCmd(networkName) + " | Remove-HnsNetwork;"
-	// PowerShell returns error waiting without exit status or signal error when the networks are removed.
-	if out, err := vm.Run(cmd, true); err != nil && !strings.Contains(err.Error(), cmdExitNoStatus) {
-		return fmt.Errorf("failed to remove %s HNS network with output: %s: %w", networkName, out, err)
-	}
-	return nil
 }
 
 // enableContainersWindowsFeature enables the required Windows Containers feature on the Windows instance.
