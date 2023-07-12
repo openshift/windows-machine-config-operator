@@ -68,6 +68,15 @@ RUN GOOS=windows make build
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=base
 
+# install required tools for must-gather collection script
+RUN INSTALL_PKGS=" \
+      rsync \
+      tar \
+      " && \
+    microdnf install -y $INSTALL_PKGS && \
+    rpm -V $INSTALL_PKGS && \
+    microdnf clean all
+
 WORKDIR /payload/
 # Copy hybrid-overlay-node.exe
 COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .

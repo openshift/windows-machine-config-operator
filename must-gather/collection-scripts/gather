@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# Usage:
+# ./gather [BASE_COLLECTION_PATH]
+#
+# where:
+#   BASE_COLLECTION_PATH is an optional argument to define the path of the collection directory, defaults
+#   to `/must-gather`
+
+get_timestamp(){
+  date '+%Y-%m-%d %H:%M:%S'
+}
+
+log(){
+  echo "$(get_timestamp) ${*}"
+}
+
+WMCO_DEFAULT_NS="openshift-windows-machine-config-operator"
+WMCO_SUB_NAME="windows-machine-config-operator"
+
+# TODO: add support for community operator
+# WMCO_COMMUNITY_SUB_NAME="community-windows-machine-config-operator"
+
+# read collection path or use default
+BASE_COLLECTION_PATH="${1:-/must-gather}"
+
+# ensure path exists
+mkdir -p "${BASE_COLLECTION_PATH}"
+
+# define a local cache for kube API to improve the discovery and
+# avoid client-side throttling
+export KUBECACHEDIR=$(mktemp -d)
+
+echo "Must-gather script started with KUBECACHEDIR: ${KUBECACHEDIR}"
+echo "For must-gather version file see: ${BASE_COLLECTION_PATH}/version"
+echo "For script debug logs check ${BASE_COLLECTION_PATH}/gather-debug.log"
+
+# find WMCO version from subscription
+WMCO_SUB_VERSION=$(oc get packagemanifests ${WMCO_SUB_NAME} --cache-dir=${KUBECACHEDIR} \
+  -n openshift-marketplace \
+  -o jsonpath='{.status.channels[0].currentCSVDesc.version}')
+# generate /must-gather/version file with product and version
+# see https://github.com/openshift/enhancements/blob/master/enhancements/oc/must-gather.md#must-gather-images
+echo "${WMCO_SUB_NAME}" > ${BASE_COLLECTION_PATH}/version
+echo "${WMCO_SUB_VERSION}" >> ${BASE_COLLECTION_PATH}/version
+
+# find install namespace since WMCO could be installed in a different namespace
+WMCO_NS=$(oc get subs --cache-dir=${KUBECACHEDIR} -A \
+  -o template \
+  --template '{{range .items}}{{if eq .spec.name "'"${WMCO_SUB_NAME}"'"}}{{.metadata.namespace}}{{end}}{{end}}')
+
+# use namespace from subscription, otherwise use default. This case is useful when the operator is deployed directly
+if [ -z "${WMCO_NS}" ]; then
+    echo "${WMCO_SUB_NAME} subscription not detected. Using ${WMCO_DEFAULT_NS} as default namespace"
+    WMCO_NS=${WMCO_DEFAULT_NS}
+fi
+
+# list of operator resources to collect; as of now, only WMCO namespace
+wmco_resources+=(
+  ns/$WMCO_NS
+)
+
+log "Collecting resources for ${WMCO_SUB_NAME} ${WMCO_SUB_VERSION}" >> "${BASE_COLLECTION_PATH}/gather-debug.log"
+for resource in ${wmco_resources[@]}; do
+  log "Inspecting $resource" >> "${BASE_COLLECTION_PATH}/gather-debug.log"
+  oc adm inspect --cache-dir=${KUBECACHEDIR} --dest-dir ${BASE_COLLECTION_PATH} --all-namespaces ${resource} >> "${BASE_COLLECTION_PATH}/gather-debug.log" 2>&1
+  log "Finish inspecting $resource" >> "${BASE_COLLECTION_PATH}/gather-debug.log"
+done
+log "Collection completed" >> "${BASE_COLLECTION_PATH}/gather-debug.log"
+
+# cleanup
+rm -rf ${KUBECACHEDIR}
+
+# success
+exit 0

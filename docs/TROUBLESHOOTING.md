@@ -77,7 +77,8 @@ E.g. getting logs for any given service:
 ```shell script
 $ oc adm node-logs -l kubernetes.io/os=windows --path=journal -u <LOG_NAME>
 ```
-The same command is executed when collecting logs with `oc adm must-gather`.
+The same command is executed when collecting logs with `oc adm must-gather`. For specific WMCO collection see
+[support for must-gather](../must-gather/README.md).
 
 Other Windows application logs from the EventLog can also be collected by specifying the respective service on a `-u` flag.
 To view logs from all applications logging to the event logs on the Windows machine, run:
