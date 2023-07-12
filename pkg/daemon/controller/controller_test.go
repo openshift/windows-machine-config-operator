@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -470,8 +471,8 @@ func TestBootstrap(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			desiredVersion := "testversion"
 			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
-				wmcoNamespace, &servicescm.Data{test.configMapServices,
-					[]servicescm.FileInfo{}})
+				wmcoNamespace, &servicescm.Data{Services: test.configMapServices,
+					Files: []servicescm.FileInfo{}})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{cm}
 
@@ -500,6 +501,8 @@ func TestReconcile(t *testing.T) {
 		existingServices             map[string]*fake.FakeService
 		configMapServices            []servicescm.Service
 		expectedServicesNameCmdPairs map[string]string
+		existingEnvVars              map[string]string
+		configMapEnvVars             map[string]string
 		expectErr                    bool
 	}{
 		{
@@ -630,14 +633,30 @@ func TestReconcile(t *testing.T) {
 			expectedServicesNameCmdPairs: map[string]string{"test1": "test1 arg1", "test2": "test2 arg1 arg2"},
 			expectErr:                    false,
 		},
+		{
+			name:                         "Reboot annotation is applied when env vars are set",
+			configMapServices:            []servicescm.Service{},
+			expectedServicesNameCmdPairs: map[string]string{},
+			existingEnvVars:              map[string]string{},
+			configMapEnvVars:             map[string]string{"NO_PROXY": "localhost;127.0.0.1", "HTTP_PROXY": "http://example.com"},
+			expectErr:                    false,
+		},
+		{
+			name:                         "Reboot annotation is applied when env vars are corrected",
+			configMapServices:            []servicescm.Service{},
+			expectedServicesNameCmdPairs: map[string]string{},
+			existingEnvVars:              map[string]string{"NO_PROXY": "localhost;127.0.0.1", "HTTP_PROXY": "http://example.com"},
+			configMapEnvVars:             map[string]string{"NO_PROXY": "localhost;127.0.0.2", "HTTP_PROXY": "http://169.254.169.254"},
+			expectErr:                    false,
+		},
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
 			desiredVersion := "testversion"
 			// This ConfigMap's name must match with the given Node object's desired-version annotation
 			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
-				wmcoNamespace, &servicescm.Data{test.configMapServices,
-					[]servicescm.FileInfo{}})
+				wmcoNamespace, &servicescm.Data{Services: test.configMapServices,
+					Files: []servicescm.FileInfo{}, EnvironmentVars: test.configMapEnvVars})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{
 				// This is the node object that will be used in these test cases
@@ -662,9 +681,15 @@ func TestReconcile(t *testing.T) {
 
 			winSvcMgr := fake.NewTestMgr(test.existingServices)
 			c, err := NewServiceController(context.TODO(), "node", wmcoNamespace, Options{
-				Client:    clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
-				Mgr:       winSvcMgr,
-				cmdRunner: &fakePSCmdRunner{},
+				Client: clientfake.NewClientBuilder().WithObjects(clusterObjs...).Build(),
+				Mgr:    winSvcMgr,
+				cmdRunner: &fakePSCmdRunner{
+					map[string]string{
+						"[Environment]::GetEnvironmentVariable('HTTP_PROXY', 'Process')":  test.existingEnvVars["HTTP_PROXY"],
+						"[Environment]::GetEnvironmentVariable('HTTPS_PROXY', 'Process')": test.existingEnvVars["HTTPS_PROXY"],
+						"[Environment]::GetEnvironmentVariable('NO_PROXY', 'Process')":    test.existingEnvVars["NO_PROXY"],
+					},
+				},
 			})
 			_, err = c.Reconcile(context.TODO(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "node"}})
 			if test.expectErr {
@@ -675,8 +700,17 @@ func TestReconcile(t *testing.T) {
 
 			createdServices, err := getAllFakeServices(winSvcMgr)
 			require.NoError(t, err)
-
 			testServicesCreatedAsExpected(t, createdServices, test.expectedServicesNameCmdPairs)
+
+			node := &core.Node{}
+			require.NoError(t, c.client.Get(c.ctx, client.ObjectKey{Name: c.nodeName}, node))
+			_, exists := node.GetAnnotations()[metadata.RebootAnnotation]
+			if reflect.DeepEqual(test.existingEnvVars, test.configMapEnvVars) {
+				assert.False(t, exists, "expected no reboot annotation on node")
+
+			} else {
+				assert.True(t, exists, "expected reboot annotation to be applied on node")
+			}
 		})
 	}
 }

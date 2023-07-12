@@ -25,6 +25,8 @@ const (
 	servicesKey = "services"
 	// filesKey is a required key in the services ConfigMap. The value for this key is a FileInfo object JSON array.
 	filesKey = "files"
+	// envVarsKey is an optional key in the services ConfigMap. The value for this key is a string-to-string map.
+	envVarsKey = "environmentVars"
 )
 
 var (
@@ -91,11 +93,18 @@ type Data struct {
 	Services []Service `json:"services"`
 	// Files contains the path and checksum of all the files copied to a Windows VM by WMCO
 	Files []FileInfo `json:"files"`
+	// EnvironmentVars will be set as system-level environment variables on each Windows instance
+	EnvironmentVars map[string]string `json:"environmentVars,omitempty"`
 }
 
-// NewData returns a new 'Data' object with the given services and files. Validates given object contents on creation.
-func NewData(services *[]Service, files *[]FileInfo) (*Data, error) {
-	cmData := &Data{*services, *files}
+// NewData returns a new 'Data' object with the given services, files and ENV vars if they exist.
+// Validates given object contents on creation.
+func NewData(services *[]Service, files *[]FileInfo, envVars map[string]string) (*Data, error) {
+	cmData := &Data{Services: *services, Files: *files}
+	if len(envVars) > 0 {
+		// treat the envVars key as optional
+		cmData.EnvironmentVars = envVars
+	}
 	if err := cmData.validate(); err != nil {
 		return nil, fmt.Errorf("unable to create services ConfigMap data object: %w", err)
 	}
@@ -158,14 +167,24 @@ func Generate(name, namespace string, data *Data) (*core.ConfigMap, error) {
 	}
 	servicesConfigMap.Data[filesKey] = string(jsonFiles)
 
+	if len(data.EnvironmentVars) > 0 {
+		jsonEnvVars, err := json.Marshal(data.EnvironmentVars)
+		if err != nil {
+			return nil, err
+		}
+		servicesConfigMap.Data[envVarsKey] = string(jsonEnvVars)
+	}
 	return servicesConfigMap, nil
 }
 
 // Parse converts ConfigMap data into the objects representing a Windows services ConfigMap schema
 // Returns error if the given data is invalid in structure
 func Parse(dataFromCM map[string]string) (*Data, error) {
-	if len(dataFromCM) != 2 {
-		return nil, fmt.Errorf("services ConfigMap should have exactly 2 keys")
+	// 2 required keys: services and files
+	// 1 optional key: environmentVars, which won't be present in the services CM if nil or empty
+	if len(dataFromCM) < 2 || len(dataFromCM) > 3 {
+		return nil, fmt.Errorf("services ConfigMap can only the required services and files keys, " +
+			"and additionally an optional environmentVars key")
 	}
 
 	value, ok := dataFromCM[servicesKey]
@@ -186,7 +205,14 @@ func Parse(dataFromCM map[string]string) (*Data, error) {
 		return nil, err
 	}
 
-	return NewData(services, files)
+	envVars := make(map[string]string)
+	value, ok = dataFromCM[envVarsKey]
+	if ok && value != "" {
+		if err := json.Unmarshal([]byte(value), &envVars); err != nil {
+			return nil, err
+		}
+	}
+	return NewData(services, files, envVars)
 }
 
 // GetBootstrapServices filters the cmData object's services list and returns only the bootstrap services
@@ -211,7 +237,8 @@ func (cmData *Data) validate() error {
 	return validatePriorities(cmData.Services)
 }
 
-// ValidateExpectedContent ensures that the given slices are comprised of all the expected services/files and only these
+// ValidateExpectedContent ensures that the given slices are all comprised of only the expected services, files, and
+// environment variables
 func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 	// Validate services
 	if len(cmData.Services) != len(expected.Services) {
@@ -229,6 +256,17 @@ func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 	for _, expectedFile := range expected.Files {
 		if !expectedFile.isPresentAndCorrect(cmData.Files) {
 			return fmt.Errorf("required file %s is not present as expected", expectedFile.Path)
+		}
+	}
+	// Validate environment variables
+	if len(cmData.EnvironmentVars) != len(expected.EnvironmentVars) {
+		return fmt.Errorf("unexpected number of environment variable")
+	}
+	for _, expectedEnvVar := range expected.EnvironmentVars {
+		if cmData.EnvironmentVars[expectedEnvVar] != expected.EnvironmentVars[expectedEnvVar] {
+			return fmt.Errorf("required environment variable %s is not present as expected."+
+				"expected: %s, actual: %s", expectedEnvVar, expected.EnvironmentVars[expectedEnvVar],
+				cmData.EnvironmentVars[expectedEnvVar])
 		}
 	}
 	return nil

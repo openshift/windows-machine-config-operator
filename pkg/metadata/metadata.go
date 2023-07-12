@@ -21,6 +21,8 @@ const (
 	VersionAnnotation = "windowsmachineconfig.openshift.io/version"
 	// DesiredVersionAnnotation is a Node annotation, indicating the Service ConfigMap that should be used to configure it
 	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
+	// RebootAnnotation indicates the node's underlying instance needs to be restarted
+	RebootAnnotation = "windowsmachineconfig.openshift.io/reboot-required"
 )
 
 // generatePatch creates a patch applying the given operation onto each given annotation key and value
@@ -99,6 +101,11 @@ func ApplyDesiredVersionAnnotation(ctx context.Context, c client.Client, node co
 	return ApplyLabelsAndAnnotations(ctx, c, node, nil, map[string]string{DesiredVersionAnnotation: value})
 }
 
+// ApplyRebootAnnotation applies an annotation to the given Node communicating that the instance needs to be restarted
+func ApplyRebootAnnotation(ctx context.Context, c client.Client, node core.Node) error {
+	return ApplyLabelsAndAnnotations(ctx, c, node, nil, map[string]string{RebootAnnotation: ""})
+}
+
 // RemoveVersionAnnotation clears the version annotation from the node object, indicating the node is not configured
 func RemoveVersionAnnotation(ctx context.Context, c client.Client, node core.Node) error {
 	if _, present := node.GetAnnotations()[VersionAnnotation]; present {
@@ -109,6 +116,21 @@ func RemoveVersionAnnotation(ctx context.Context, c client.Client, node core.Nod
 		err = c.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
 		if err != nil {
 			return fmt.Errorf("error removing version annotation from node %s: %w", node.GetName(), err)
+		}
+	}
+	return nil
+}
+
+// RemoveVersionAnnotation clears the reboot annotation from the node, indicating the instance no longer needs a restart
+func RemoveRebootAnnotation(ctx context.Context, c client.Client, node core.Node) error {
+	if _, present := node.GetAnnotations()[RebootAnnotation]; present {
+		patchData, err := GenerateRemovePatch([]string{}, []string{RebootAnnotation})
+		if err != nil {
+			return fmt.Errorf("error creating reboot annotation remove request: %w", err)
+		}
+		err = c.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
+		if err != nil {
+			return fmt.Errorf("error removing reboot annotation from node %s: %w", node.GetName(), err)
 		}
 	}
 	return nil
@@ -132,6 +154,23 @@ func WaitForVersionAnnotation(ctx context.Context, c client.Client, nodeName str
 	if err != nil {
 		return fmt.Errorf("timeout waiting for %s and %s annotations to match on node %s: %w", VersionAnnotation,
 			DesiredVersionAnnotation, nodeName, err)
+	}
+	return nil
+}
+
+// WaitForRebootAnnotationRemoval waits for the reboot annotation to be cleared from the node
+func WaitForRebootAnnotationRemoval(ctx context.Context, c client.Client, nodeName string) error {
+	node := &core.Node{}
+	err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+		err := c.Get(ctx, kubeTypes.NamespacedName{Name: nodeName}, node)
+		if err != nil {
+			return false, nil
+		}
+		_, present := node.Annotations[RebootAnnotation]
+		return !present, nil
+	})
+	if err != nil {
+		return fmt.Errorf("timeout waiting for %s to be cleared: %w", RebootAnnotation, err)
 	}
 	return nil
 }

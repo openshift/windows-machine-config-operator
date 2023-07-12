@@ -187,6 +187,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	nodeReconciler, err := controllers.NewNodeReconciler(mgr, clusterConfig, watchNamespace)
+	if err != nil {
+		setupLog.Error(err, "unable to create Node reconciler")
+		os.Exit(1)
+	}
+	if err = nodeReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create Node controller")
+		os.Exit(1)
+	}
+
 	secretReconciler := controllers.NewSecretReconciler(mgr, clusterConfig.Platform(), watchNamespace)
 	if err = secretReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create Secret controller")

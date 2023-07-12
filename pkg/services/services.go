@@ -7,6 +7,7 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
@@ -51,7 +52,7 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 	}
 	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
 	files := &[]servicescm.FileInfo{}
-	return servicescm.NewData(services, files)
+	return servicescm.NewData(services, files, cluster.GetProxyVars())
 }
 
 // containerdConfiguration returns the service specification for the Windows containerd service

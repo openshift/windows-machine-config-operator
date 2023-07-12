@@ -34,16 +34,11 @@ const (
 )
 
 var (
-	// ClusterWideProxyVars is a map of the global egress proxy variables and values from WMCO's environment
-	ClusterWideProxyVars map[string]string
+	// SupportedProxyVars is a list of the supported proxy variables
+	SupportedProxyVars = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
+	// clusterWideProxyVars is a map of the global egress proxy variables and values from WMCO's environment
+	clusterWideProxyVars map[string]string
 )
-
-// init runs once, initializing global variables
-func init() {
-	// OLM restarts the operator when the global cluster proxy config changes so these values will always be up-to-date
-	// at start time. We never expect a user to update these values via editing the operator pod spec
-	ClusterWideProxyVars = getProxyVars()
-}
 
 // Network interface contains methods to interact with cluster network objects
 type Network interface {
@@ -354,24 +349,27 @@ func IsCloudControllerOwnedByCCM(oclient configclient.Interface) (bool, error) {
 	return ownedByCCM, nil
 }
 
-// getProxyVars returns a map of the cluster-wide proxy variables and values.
-// These are injected by OLM automatically to all its managed operators.
-func getProxyVars() map[string]string {
-	// proxyEnvVars is a list of the supported proxy-related environment variables
-	proxyEnvVars := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
-
-	proxyVars := make(map[string]string, len(proxyEnvVars))
-	for _, envVar := range proxyEnvVars {
-		// read settings from the WMCO container's environment
-		value, found := os.LookupEnv(envVar)
-		if found {
-			proxyVars[envVar] = value
-		}
-	}
-	return proxyVars
-}
-
 // IsProxyEnabled returns whether a global egress proxy is active in the cluster
 func IsProxyEnabled() bool {
-	return len(ClusterWideProxyVars) > 0
+	return len(GetProxyVars()) > 0
+}
+
+// GetProxyVars returns a map of the proxy variables and values from the WMCO container's environment. The presence of
+// any implies a proxy is enabled, as OLM would have injected them into the operator spec. Returns an empty map otherwise.
+func GetProxyVars() map[string]string {
+	if clusterWideProxyVars != nil {
+		return clusterWideProxyVars
+	}
+	// if clusterWideProxyVars is not already cached, initialize it. We never expect these values to change during
+	// runtime as OLM restarts the operator when the global cluster proxy config changes
+	clusterWideProxyVars = make(map[string]string, 3)
+	for _, envVar := range SupportedProxyVars {
+		value, found := os.LookupEnv(envVar)
+		if found {
+			// on Windows, hostname lists are separated by semicolons rather than the Linux default of commas
+			sanitizedVal := strings.ReplaceAll(value, ",", ";")
+			clusterWideProxyVars[envVar] = sanitizedVal
+		}
+	}
+	return clusterWideProxyVars
 }
