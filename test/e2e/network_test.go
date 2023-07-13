@@ -29,9 +29,9 @@ import (
 func testNetwork(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
-	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, false, true)
 	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
 	t.Run("East West Networking", tc.testEastWestNetworking)

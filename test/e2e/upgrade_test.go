@@ -46,11 +46,11 @@ func upgradeTestSuite(t *testing.T) {
 	require.NoError(t, err, "error configuring upgrade")
 
 	// get current Windows node state
-	// TODO: waitForWindowsNodes currently loads nodes into global context, so we need this (even though BYOH
+	// TODO: waitForConfiguredWindowsNodes currently loads nodes into global context, so we need this (even though BYOH
 	// 		 nodes are not being upgraded/tested here). Remove as part of https://issues.redhat.com/browse/WINC-620
-	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, true, false)
 	require.NoError(t, err, "wrong number of Machine controller nodes found")
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
 	require.NoError(t, err, "wrong number of ConfigMap controller nodes found")
 
 	t.Run("Operator version upgrade", tc.testUpgradeVersion)
@@ -199,4 +199,33 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 		_ = tc.deleteService(intermediarySVC.Name)
 		_ = tc.deleteJob(testerJob.Name)
 	}, nil
+}
+
+// TestUpgrade tests that things are functioning properly after an upgrade
+func TestUpgrade(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), false, false)
+	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), false, true)
+	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
+
+	// Basic testing to ensure the Node object is in a good state
+	t.Run("Nodes ready", tc.testNodesBecomeReadyAndSchedulable)
+	t.Run("Node annotations", tc.testNodeAnnotations)
+	t.Run("Node Metadata", tc.testNodeMetadata)
+
+	// test that any workloads deployed on the node have not been broken by the upgrade
+	t.Run("Workloads ready", tc.testWorkloadsAvailable)
+}
+
+// testWorkloadsAvailable tests that all workloads deployed on Windows nodes by the test suite are available
+func (tc *testContext) testWorkloadsAvailable(t *testing.T) {
+	deployments, err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).List(context.TODO(),
+		metav1.ListOptions{})
+	require.NoError(t, err)
+	for _, deployment := range deployments.Items {
+		assert.Equalf(t, deployment.Spec.Replicas, deployment.Status.AvailableReplicas,
+			"deployment %s is not available", deployment.GetName())
+	}
 }
