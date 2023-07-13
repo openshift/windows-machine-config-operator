@@ -205,6 +205,16 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 func TestUpgrade(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
+
+	// Attempt to collect all Node logs if tests fail
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		log.Printf("test failed, attempting to gather Node logs")
+		tc.collectNodeLogs()
+	})
+
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), false, false)
 	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), false, true)
