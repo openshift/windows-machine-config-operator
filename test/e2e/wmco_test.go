@@ -8,6 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
 var (
@@ -36,6 +39,15 @@ func TestWMCO(t *testing.T) {
 	// label, so we ensure that it gets applied and the WMCO deployment is restarted.
 	require.NoError(t, tc.ensureMonitoringIsEnabled(), "error ensuring monitoring is enabled")
 
+	// Attempt to collect all Node logs if tests fail
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		log.Printf("test failed, attempting to gather Node logs")
+		tc.collectWindowsInstanceLogs()
+	})
+
 	// test that the operator can deploy without the secret already created, we can later use a secret created by the
 	// individual test suites after the operator is running
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
@@ -60,4 +72,28 @@ func testOperatorDeployed(t *testing.T) {
 		"windows-machine-config-operator", meta.GetOptions{})
 	require.NoError(t, err, "could not get WMCO deployment")
 	require.NotZerof(t, deployment.Status.AvailableReplicas, "WMCO deployment has no available replicas: %v", deployment)
+}
+
+// collectWindowsInstanceLogs collects the node logs from each Windows Machine in the cluster.
+func (tc *testContext) collectWindowsInstanceLogs() {
+	winMachines, err := tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), meta.ListOptions{
+		LabelSelector: controllers.MachineOSLabel + "=Windows",
+	})
+	if err != nil {
+		log.Printf("unable to list Windows Machines, log collection failed")
+		return
+	}
+	for _, machine := range winMachines.Items {
+		addr, err := controllers.GetAddress(machine.Status.Addresses)
+		if err != nil {
+			log.Printf("unable to get address for %s: %s", machine.GetName(), err)
+			continue
+		}
+		err = tc.nodelessLogCollection(machine.GetName(), addr)
+		if err != nil {
+			log.Printf("unable to collect logs from %s: %s", machine.GetName(), err)
+			continue
+		}
+	}
+
 }

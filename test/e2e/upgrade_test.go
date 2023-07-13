@@ -214,6 +214,15 @@ func TestUpgrade(t *testing.T) {
 	err = tc.scaleMachineApprover(1)
 	require.NoError(t, err)
 
+	// Attempt to collect all Node logs if tests fail
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		log.Printf("test failed, attempting to gather Node logs")
+		tc.collectWindowsInstanceLogs()
+	})
+
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), true, false)
 	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), true, true)
