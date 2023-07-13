@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/openshift/windows-machine-config-operator/controllers"
 )
 
 var (
@@ -36,6 +38,15 @@ func TestWMCO(t *testing.T) {
 	// label, so we ensure that it gets applied and the WMCO deployment is restarted.
 	require.NoError(t, tc.ensureMonitoringIsEnabled(), "error ensuring monitoring is enabled")
 
+	// Attempt to collect all Node logs if tests fail
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		log.Printf("test failed, attempting to gather Node logs")
+		tc.collectNodeLogs()
+	})
+
 	// test that the operator can deploy without the secret already created, we can later use a secret created by the
 	// individual test suites after the operator is running
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
@@ -61,4 +72,20 @@ func testOperatorDeployed(t *testing.T) {
 		"windows-machine-config-operator", meta.GetOptions{})
 	require.NoError(t, err, "could not get WMCO deployment")
 	require.NotZerof(t, deployment.Status.AvailableReplicas, "WMCO deployment has no available replicas: %v", deployment)
+}
+
+// collectNodeLogs collects the logs from each node
+func (tc *testContext) collectNodeLogs() {
+	for _, node := range gc.allNodes() {
+		addr, err := controllers.GetAddress(node.Status.Addresses)
+		if err != nil {
+			log.Printf("unable to get address for %s: %s", node.GetName(), err)
+			continue
+		}
+		err = tc.nodelessLogCollection(node.GetName(), addr)
+		if err != nil {
+			log.Printf("unable to collect logs from %s: %s", node.GetName(), err)
+		}
+	}
+
 }
