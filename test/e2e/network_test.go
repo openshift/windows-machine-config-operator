@@ -27,6 +27,7 @@ import (
 
 // testNetwork runs all the cluster and node network tests
 func testNetwork(t *testing.T) {
+	t.FailNow()
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
