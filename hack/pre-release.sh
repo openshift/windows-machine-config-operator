@@ -10,6 +10,7 @@ source $WMCO_ROOT/hack/common.sh
 CVP=false
 BASEIMAGE=false
 DISTGIT=false
+GITLAB=false
 OPERATOR_SDK_VERSION=v1.15.0
 
 # codes for printing and resetting pink text
@@ -27,6 +28,8 @@ usage() {
   echo "  bumps the baseimage versions"
   echo "optional flags: -d"
   echo "  generates a patch to bump the dist-git version"
+  echo "optional flags: -g"
+  echo "  bumps the gitlab versions"
   echo -e "  ${PINK}Requires connection to the RedHat VPN"
   printf "${START_COLOR}"
 }
@@ -65,6 +68,27 @@ increment_version() {
   echo $version | awk -F. -v OFS=. -v stream="$stream" '{$stream += 1 ; print}'
 }
 
+# This function clones a repo to the current dir, and handles errors.
+# takes 1 argument
+# 1st arg: git URL to clone
+clone_repo() {
+  if [ "$#" -ne 1 ]; then
+     echo incorrect parameter count for clone_repo $#
+    return 1
+  fi
+
+  set +o errexit
+  git clone $1
+  if [ $? -ne 0 ]; then
+    echo -e "${PINK}git clone failed. Are you connected to the VPN?"
+    printf "${START_COLOR}"
+    rm -rf $temp
+    exit 1
+  fi
+  set -o errexit
+
+}
+
 # This function updates the WMCO version in all relevant files
 # takes 3 arguments
 # 1st arg: stream to update. Can be x, y or z to represent the x y or z stream.
@@ -81,9 +105,6 @@ update_WMCO_version() {
   updated_version=$3
   cluster_service_version_yaml=config/manifests/bases/windows-machine-config-operator.clusterserviceversion.yaml
  
-  last_version=$(grep "olm.skipRange" $cluster_service_version_yaml |
-    grep -oP ">=\K([0-9]+\.[0-9]+\.[0-9]+)\s*<" | sed "s/\s*<//")
-
   echo "WMCO version $version detected from the Makefile"
 
   echo "Updating the Makefile to version $updated_version"
@@ -95,6 +116,9 @@ update_WMCO_version() {
   sed -i "s/<$version/<$updated_version/g" $cluster_service_version_yaml
   
   if [[ $stream == "x" ]]; then
+    last_version=$(grep "olm.skipRange" $cluster_service_version_yaml |
+    grep -oP ">=\K([0-9]+\.[0-9]+\.[0-9]+)\s*<" | sed "s/\s*<//")
+
     echo "Updating skipRange lower bound in $cluster_service_version_yaml to $version"
     # Example: matches olm.skipRange: '*>=8.0.0* <9.0.0'
     sed -i "s/>=$last_version/>=$version/g" $cluster_service_version_yaml
@@ -218,7 +242,7 @@ github_update() {
   echo
 }
 
-# This function handles updating the versions in dist_git and creates a patch. Expects you to be connected to the VPN 
+# This function handles updating the versions in dist_git and creates a patch. Expects you to be connected to the VPN
 # takes 2 arguments
 # 1st arg: stream to update. Can be x, y or z to represent the x y or z stream.#
 # 2nd arg: current WMCO version
@@ -231,24 +255,15 @@ dist_git_update() {
   stream=$1
   wmco_version=$2
   updated_version=$3
-
   current_dir=$PWD
+
   # clones the dist-git repo into a temporary directory
   # this will be cleaned up at the end
   temp=$(mktemp -d)
   cd $temp
+  clone_repo "https://pkgs.devel.redhat.com/git/containers/windows-machine-config-operator-bundle"
 
-  set +o errexit
-  git clone https://pkgs.devel.redhat.com/git/containers/windows-machine-config-operator-bundle tmp/windows-machine-config-operator-bundle
-  if [ $? -ne 0 ]; then
-    echo -e "${PINK}git clone failed. Are you connected to the VPN?"
-    printf "${START_COLOR}"
-    rm -rf $temp
-    exit 1
-  fi
-  set -o errexit
-
-  DIST_GIT_LOCATION=$temp/tmp/windows-machine-config-operator-bundle
+  DIST_GIT_LOCATION=$temp/windows-machine-config-operator-bundle
 
   OCP_version=$(get_OCP_version $wmco_version)
 
@@ -262,9 +277,6 @@ dist_git_update() {
   git checkout $base_branch
 
   previous_version=$(grep -Po 'previous_version="\K.*(?=")' render_templates)
-
-  # Example: matches version="v8.0.1"
-  sed -i "s/version=\"v[0-9]\+\(\.[0-9]\+\)\+\"/version=\"v$updated_version\"/g" Dockerfile
 
   # Example: matches version: 8.0.1
   sed -i "s/version: [0-9]\+\(\.[0-9]\+\)\+/version: $updated_version/g" render_templates
@@ -303,6 +315,92 @@ dist_git_update() {
   echo
 }
 
+# This function handles updating the versions in gitlab. Expects you to be connected to the VPN
+# takes 2 arguments
+# 1st arg: stream to update. Can be x, y or z to represent the x y or z stream.
+# 2nd arg: current WMCO version
+# 3rd arg: updated WMCO version
+gitlab_update() {
+ if [ "$#" -ne 3 ]; then
+    echo incorrect parameter count for dist_git_update $#
+    return 1
+  fi
+  stream=$1
+  wmco_version=$2
+  updated_version=$3
+  OCP_version=$(get_OCP_version $wmco_version)
+
+  current_dir=$PWD
+
+  # clones the gitlab repo into a temporary directory
+  temp=$(mktemp -d)
+  cd $temp
+  clone_repo "https://gitlab.cee.redhat.com/cpaas-products/openshift-winc.git"
+
+  GITLAB_LOCATION=$temp/openshift-winc
+  cd $GITLAB_LOCATION
+
+  latest_hash=$(git rev-parse HEAD)
+
+  gitlab_initial_branch=$(git branch --show-current)
+  new_branch=$(create_git_branch_list $stream-stream-bump $gitlab_initial_branch)
+  switch_git_branch $gitlab_initial_branch $new_branch
+
+  git mv versions/release-$wmco_version versions/release-$updated_version
+  rm versions/release-$updated_version/advisory_map.yml
+
+  # Example: matches "Windows Containers 8.0.1"
+  sed -i "s/Windows Containers $wmco_version/Windows Containers $updated_version/" versions/release-$updated_version/release.yml
+
+  commit_message="Update version to $updated_version
+
+This commit was generated by hack/pre-release.sh"
+  generate_commit "$commit_message" versions/release-$updated_version/
+
+  # Display the newly created branches with push instructions
+  push_message=$(display_push_message "$new_branch")
+  echo
+  echo -e "${PINK}${push_message}"
+  echo "go to $GITLAB_LOCATION to push"
+  printf "${START_COLOR}"
+  echo
+
+  # return to the temp dir, and clone the midstream repo
+  cd $temp
+  clone_repo "https://gitlab.cee.redhat.com/openshift-winc-midstream/openshift-winc-midstream.git"
+
+  MIDSTREAM_LOCATION=$temp/openshift-winc-midstream
+  cd $MIDSTREAM_LOCATION
+
+  # switch to the gitlab branch that corresponds with the current ocp version
+  rhel_version=$(get_rhel_version $OCP_version)
+  base_branch=rhaos-$OCP_version-rhel-$rhel_version
+  git checkout $base_branch
+
+  dockerfile_location=distgit/containers/windows-machine-config-operator/Dockerfile
+
+  # Example: matches version="8.0.1"
+  sed -i "s/version=\"$wmco_version\"/version=\"$updated_version\"/" $dockerfile_location
+
+  # Example: matches commit: d0be5e812c3e3914d3cf3c464623e688673565fb
+  sed -i "s/commit: [0-9a-f]{40}/commit: $latest_hash/"  upstream_sources.yml
+
+  commit_message="[$base_branch] Update version to $updated_version
+
+This commit was generated by hack/pre-release.sh"
+  generate_commit "$commit_message" $dockerfile_location
+
+  # Display the newly created branches with push instructions
+  push_message=$(display_push_message $base_branch)
+  echo
+  echo -e "${PINK}${push_message}"
+  echo "go to $MIDSTREAM_LOCATION to push"
+  printf "${START_COLOR}"
+  echo
+
+  cd $current_dir
+}
+
 # check to see if the operator-sdk version is correct
 operator_sdk_current_version=$(operator-sdk version |  grep -oP 'operator-sdk version: "\K[^"]+' )
 if [[ "$operator_sdk_current_version" != "$OPERATOR_SDK_VERSION" ]]; then
@@ -313,11 +411,12 @@ if [[ "$operator_sdk_current_version" != "$OPERATOR_SDK_VERSION" ]]; then
 fi
 
 # This sets the CVP and baseimage flags
-while getopts "bcd" opt; do
+while getopts "bcdg" opt; do
   case "$opt" in 
     c) CVP=true;;
     b) BASEIMAGE=true;;
     d) DISTGIT=true;;
+    g) GITLAB=true;;
   esac 
 done 
 shift $((OPTIND-1))
@@ -352,10 +451,12 @@ git submodule update --init --recursive  > /dev/null 2>&1
 WMCO_VERSION=$(sed -n -e 's/^.*WMCO_VERSION ?= //p' Makefile)
 updated_version=$(increment_version $WMCO_VERSION $stream)
 
-if [[ $DISTGIT == "false" ]]; then
-  github_update $base_branch $stream $WMCO_VERSION $updated_version
-else
+if [[ $DISTGIT == "true" ]]; then
   dist_git_update $stream $WMCO_VERSION $updated_version
+elif [[ $GITLAB == "true" ]]; then
+  gitlab_update $stream $WMCO_VERSION $updated_version
+else
+  github_update $base_branch $stream $WMCO_VERSION $updated_version
 fi
 
 git checkout $initial_branch
