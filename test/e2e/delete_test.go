@@ -78,6 +78,10 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 			networksRemoved, err := tc.checkNetworksRemoved(addr)
 			require.NoError(t, err, "error determining if HNS networks are removed")
 			assert.True(t, networksRemoved, "HNS networks not removed")
+
+			envVarsRemoved, err := tc.checkEnvVarsRemoved(addr)
+			require.NoError(t, err, "error determining if ENV vars are removed")
+			assert.True(t, envVarsRemoved, "ENV vars not removed")
 		})
 	}
 }
@@ -109,6 +113,30 @@ func (tc *testContext) checkNetworksRemoved(address string) (bool, error) {
 	return !(strings.Contains(out, windows.BaseOVNKubeOverlayNetwork) ||
 		strings.Contains(out, windows.OVNKubeOverlayNetwork) ||
 		strings.Contains(out, "VIPEndpoint")), nil
+}
+
+// checkEnvVarsRemoved returns true if the system and service level ENV vars do not exist on the Windows instance
+func (tc *testContext) checkEnvVarsRemoved(address string) (bool, error) {
+	watchedEnvVars := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
+	for _, proxyVar := range watchedEnvVars {
+		systemEnvVars, err := tc.getSystemEnvVar(address, proxyVar)
+		if err != nil {
+			return false, fmt.Errorf("error retrieving system level ENV vars: %w", err)
+		}
+		if _, exists := systemEnvVars[proxyVar]; exists {
+			return false, nil
+		}
+		for _, svcName := range windows.RequiredServices {
+			svcEnvVars, err := tc.getProxyEnvVarsFromService(address, svcName)
+			if err != nil {
+				return false, fmt.Errorf("error retrieving service level ENV vars: %w", err)
+			}
+			if _, exists := svcEnvVars[proxyVar]; exists {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
 }
 
 // waitForWindowsNodeRemoval returns when there are zero Windows nodes of the given type, machine or byoh, in the cluster

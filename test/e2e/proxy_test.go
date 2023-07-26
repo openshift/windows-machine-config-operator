@@ -49,15 +49,14 @@ func testEnvVars(t *testing.T) {
 	expectedEnvVars["HTTP_PROXY"] = clusterProxy.Status.HTTPProxy
 	expectedEnvVars["HTTPS_PROXY"] = clusterProxy.Status.HTTPSProxy
 	expectedEnvVars["NO_PROXY"] = clusterProxy.Status.NoProxy
-
 	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
-	supportedProxyVars := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
+	watchedEnvVars := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
 	for _, node := range gc.allNodes() {
 		t.Run(node.GetName(), func(t *testing.T) {
 			addr, err := controllers.GetAddress(node.Status.Addresses)
 			require.NoError(t, err, "unable to get node address")
 
-			for _, proxyVar := range supportedProxyVars {
+			for _, proxyVar := range watchedEnvVars {
 				t.Run(proxyVar, func(t *testing.T) {
 					systemEnvVars, err := tc.getSystemEnvVar(addr, proxyVar)
 					require.NoError(t, err, "unable to get value of %s from instance", proxyVar)
@@ -69,12 +68,56 @@ func testEnvVars(t *testing.T) {
 				t.Run(svcName, func(t *testing.T) {
 					svcEnvVars, err := tc.getProxyEnvVarsFromService(addr, svcName)
 					require.NoErrorf(t, err, "error getting environment variables of service %s", svcName)
-					for _, proxyVar := range supportedProxyVars {
+					for _, proxyVar := range watchedEnvVars {
 						assert.Equalf(t, expectedEnvVars[proxyVar], svcEnvVars[proxyVar], "incorrect value for %s", proxyVar)
 					}
 				})
 			}
 		})
+	}
+	t.Run("Environment variables removal validation", testEnvVarRemoval)
+}
+
+// testEnvVarRemoval tests that on each node the system-level and the process-level environment variables
+// are unset when the cluster-wide proxy is disabled by patching the proxy variables in the cluster proxy object.
+func testEnvVarRemoval(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	var patches []*patch.JSONPatch
+	patches = append(patches, patch.NewJSONPatch("remove", "/spec/httpProxy", "httpProxy"),
+		patch.NewJSONPatch("remove", "/spec/httpsProxy", "httpsProxy"))
+	patchData, err := json.Marshal(patches)
+	require.NoErrorf(t, err, "%v", patches)
+	_, err = tc.client.Config.ConfigV1().Proxies().Patch(
+		context.TODO(),
+		"cluster",
+		types.JSONPatchType,
+		patchData,
+		meta.PatchOptions{},
+	)
+	patchString := string(patchData)
+	require.NoErrorf(t, err, "unable to patch %s", patchString)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
+	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, false, true)
+	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (done bool, err error) {
+				foundNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(), node.GetName(), meta.GetOptions{})
+				require.NoError(t, err)
+				return tc.nodeReadyAndSchedulable(*foundNode), nil
+			})
+			assert.NoError(t, err)
+		})
+	}
+	for _, node := range gc.allNodes() {
+		addr, err := controllers.GetAddress(node.Status.Addresses)
+		require.NoError(t, err, "unable to get node address")
+		envVarsRemoved, err := tc.checkEnvVarsRemoved(addr)
+		require.NoError(t, err, "error determining if ENV vars are removed")
+		assert.True(t, envVarsRemoved, "ENV vars not removed")
 	}
 }
 
