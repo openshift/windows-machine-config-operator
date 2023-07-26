@@ -48,7 +48,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/envvar"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
@@ -258,7 +257,7 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 
-	awaitingRestart, err := sc.reconcileEnvironmentVariables(cmData.EnvironmentVars, node)
+	awaitingRestart, err := sc.reconcileEnvironmentVariables(cmData.EnvironmentVars, cmData.WatchedEnvironmentVars, node)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -284,8 +283,9 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 
 // reconcileEnvironmentVariables makes sure that the proxy variables exist as expected, or are safely rectified.
 // Returns a boolean expressing whether the instance is awaiting a reboot.
-func (sc *ServiceController) reconcileEnvironmentVariables(envVars map[string]string, node core.Node) (bool, error) {
-	restartRequired, err := envvar.EnsureVarsAreUpToDate(envVars)
+func (sc *ServiceController) reconcileEnvironmentVariables(envVars map[string]string, watchedEnvVars []string,
+	node core.Node) (bool, error) {
+	restartRequired, err := envvar.EnsureVarsAreUpToDate(envVars, watchedEnvVars)
 	if err != nil {
 		return false, err
 	}
@@ -301,7 +301,7 @@ func (sc *ServiceController) reconcileEnvironmentVariables(envVars map[string]st
 	err = wait.PollUntilContextTimeout(sc.ctx, 15*time.Second, 5*time.Minute, true,
 		func(ctx context.Context) (done bool, err error) {
 			stillNeedsReboot := false
-			for _, varName := range cluster.WatchedEnvironmentVars {
+			for _, varName := range watchedEnvVars {
 				cmd := fmt.Sprintf("[Environment]::GetEnvironmentVariable('%s', 'Process')", varName)
 				out, err := sc.psCmdRunner.Run(cmd)
 				if err != nil {
