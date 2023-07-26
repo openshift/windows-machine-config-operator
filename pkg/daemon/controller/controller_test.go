@@ -503,6 +503,7 @@ func TestReconcile(t *testing.T) {
 		expectedServicesNameCmdPairs map[string]string
 		existingEnvVars              map[string]string
 		configMapEnvVars             map[string]string
+		watchedEnvVars               []string
 		expectErr                    bool
 	}{
 		{
@@ -639,6 +640,7 @@ func TestReconcile(t *testing.T) {
 			expectedServicesNameCmdPairs: map[string]string{},
 			existingEnvVars:              map[string]string{},
 			configMapEnvVars:             map[string]string{"NO_PROXY": "localhost;127.0.0.1", "HTTP_PROXY": "http://example.com"},
+			watchedEnvVars:               []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
 			expectErr:                    false,
 		},
 		{
@@ -647,6 +649,25 @@ func TestReconcile(t *testing.T) {
 			expectedServicesNameCmdPairs: map[string]string{},
 			existingEnvVars:              map[string]string{"NO_PROXY": "localhost;127.0.0.1", "HTTP_PROXY": "http://example.com"},
 			configMapEnvVars:             map[string]string{"NO_PROXY": "localhost;127.0.0.2", "HTTP_PROXY": "http://169.254.169.254"},
+			watchedEnvVars:               []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
+			expectErr:                    false,
+		},
+		{
+			name:                         "Reboot annotation is applied when env vars are removed",
+			configMapServices:            []servicescm.Service{},
+			expectedServicesNameCmdPairs: map[string]string{},
+			existingEnvVars:              map[string]string{"NO_PROXY": "localhost;127.0.0.1", "HTTP_PROXY": "http://example.com"},
+			configMapEnvVars:             map[string]string{},
+			watchedEnvVars:               []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
+			expectErr:                    false,
+		},
+		{
+			name:                         "Reboot annotation is applied when env vars are changed",
+			configMapServices:            []servicescm.Service{},
+			expectedServicesNameCmdPairs: map[string]string{},
+			existingEnvVars:              map[string]string{"NO_PROXY": "localhost;127.0.0.1", "HTTP_PROXY": "http://example.com"},
+			configMapEnvVars:             map[string]string{"NO_PROXY": "localhost;127.0.0.1"},
+			watchedEnvVars:               []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
 			expectErr:                    false,
 		},
 	}
@@ -656,7 +677,8 @@ func TestReconcile(t *testing.T) {
 			// This ConfigMap's name must match with the given Node object's desired-version annotation
 			cm, err := servicescm.Generate(servicescm.NamePrefix+desiredVersion,
 				wmcoNamespace, &servicescm.Data{Services: test.configMapServices,
-					Files: []servicescm.FileInfo{}, EnvironmentVars: test.configMapEnvVars})
+					Files: []servicescm.FileInfo{}, EnvironmentVars: test.configMapEnvVars,
+					WatchedEnvironmentVars: test.watchedEnvVars})
 			require.NoError(t, err)
 			clusterObjs := []client.Object{
 				// This is the node object that will be used in these test cases

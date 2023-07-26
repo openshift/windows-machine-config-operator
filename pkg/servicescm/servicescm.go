@@ -27,6 +27,9 @@ const (
 	filesKey = "files"
 	// envVarsKey is an optional key in the services ConfigMap. The value for this key is a string-to-string map.
 	envVarsKey = "environmentVars"
+	// watchedEnvironmentVarsKey is an optional key which lists the watched env vars in the services ConfigMap.
+	// The value for this key is a string slice.
+	watchedEnvironmentVarsKey = "watchedEnvironmentVars"
 )
 
 var (
@@ -95,16 +98,20 @@ type Data struct {
 	Files []FileInfo `json:"files"`
 	// EnvironmentVars will be set as system-level environment variables on each Windows instance
 	EnvironmentVars map[string]string `json:"environmentVars,omitempty"`
+	// WatchedEnvironmentVars contains information about the WMCO watched environment variables
+	WatchedEnvironmentVars []string `json:"watchedEnvironmentVars,omitempty"`
 }
 
-// NewData returns a new 'Data' object with the given services, files and ENV vars if they exist.
-// Validates given object contents on creation.
-func NewData(services *[]Service, files *[]FileInfo, envVars map[string]string) (*Data, error) {
+// NewData returns a new 'Data' object with the given services, files, watched ENV vars and
+// ENV vars if they exist. Validates given object contents on creation.
+func NewData(services *[]Service, files *[]FileInfo, envVars map[string]string,
+	watchedEnvVars []string) (*Data, error) {
 	cmData := &Data{Services: *services, Files: *files}
 	if len(envVars) > 0 {
-		// treat the envVars key as optional
+		// treat the envVars and watchedEnvironmentVars keys as optional
 		cmData.EnvironmentVars = envVars
 	}
+	cmData.WatchedEnvironmentVars = watchedEnvVars
 	if err := cmData.validate(); err != nil {
 		return nil, fmt.Errorf("unable to create services ConfigMap data object: %w", err)
 	}
@@ -174,17 +181,22 @@ func Generate(name, namespace string, data *Data) (*core.ConfigMap, error) {
 		}
 		servicesConfigMap.Data[envVarsKey] = string(jsonEnvVars)
 	}
+	jsonWatchedEnvVars, err := json.Marshal(data.WatchedEnvironmentVars)
+	if err != nil {
+		return nil, err
+	}
+	servicesConfigMap.Data[watchedEnvironmentVarsKey] = string(jsonWatchedEnvVars)
 	return servicesConfigMap, nil
 }
 
 // Parse converts ConfigMap data into the objects representing a Windows services ConfigMap schema
 // Returns error if the given data is invalid in structure
 func Parse(dataFromCM map[string]string) (*Data, error) {
-	// 2 required keys: services and files
-	// 1 optional key: environmentVars, which won't be present in the services CM if nil or empty
-	if len(dataFromCM) < 2 || len(dataFromCM) > 3 {
-		return nil, fmt.Errorf("services ConfigMap can only the required services and files keys, " +
-			"and additionally an optional environmentVars key")
+	// 2 required keys: services, files
+	// 2 optional keys: watchedEnvironmentVars, environmentVars which won't be present in the services CM if nil or empty
+	if len(dataFromCM) < 2 || len(dataFromCM) > 4 {
+		return nil, fmt.Errorf("services ConfigMap can only have the required services, files" +
+			", and an optional watchedEnvironmentVars key or environmentVars key")
 	}
 
 	value, ok := dataFromCM[servicesKey]
@@ -212,7 +224,15 @@ func Parse(dataFromCM map[string]string) (*Data, error) {
 			return nil, err
 		}
 	}
-	return NewData(services, files, envVars)
+
+	var watchedEnvVars []string
+	value, ok = dataFromCM[watchedEnvironmentVarsKey]
+	if ok && value != "" {
+		if err := json.Unmarshal([]byte(value), &watchedEnvVars); err != nil {
+			return nil, err
+		}
+	}
+	return NewData(services, files, envVars, watchedEnvVars)
 }
 
 // GetBootstrapServices filters the cmData object's services list and returns only the bootstrap services
@@ -268,6 +288,14 @@ func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 				"expected: %s, actual: %s", expectedEnvVar, expected.EnvironmentVars[expectedEnvVar],
 				cmData.EnvironmentVars[expectedEnvVar])
 		}
+	}
+	if len(cmData.WatchedEnvironmentVars) != len(expected.WatchedEnvironmentVars) {
+		return fmt.Errorf("unexpected number of watched environment variable")
+	}
+
+	if !reflect.DeepEqual(cmData.WatchedEnvironmentVars, expected.WatchedEnvironmentVars) {
+		return fmt.Errorf("required environment variables are not present as expected "+
+			"expected: %v, actual: %v", cmData.WatchedEnvironmentVars, expected.WatchedEnvironmentVars)
 	}
 	return nil
 }

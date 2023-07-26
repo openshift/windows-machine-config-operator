@@ -301,7 +301,7 @@ func (sc *ServiceController) reconcileEnvironmentVariables(envVars map[string]st
 	err = wait.PollUntilContextTimeout(sc.ctx, 15*time.Second, 5*time.Minute, true,
 		func(ctx context.Context) (done bool, err error) {
 			stillNeedsReboot := false
-			for _, varName := range cluster.SupportedProxyVars {
+			for _, varName := range cluster.WatchedEnvironmentVars {
 				cmd := fmt.Sprintf("[Environment]::GetEnvironmentVariable('%s', 'Process')", varName)
 				out, err := sc.psCmdRunner.Run(cmd)
 				if err != nil {
