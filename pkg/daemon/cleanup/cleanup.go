@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/envvar"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
@@ -57,12 +58,23 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		klog.Exitf("could not create service manager: %s", err.Error())
 	}
 	defer svcMgr.Disconnect()
-	services, err := getServicesToRemove(ctx, directClient, node, configMapNamespace)
+	mergedCMData, err := getMergedCMData(ctx, directClient, configMapNamespace, node)
 	if err != nil {
 		return err
 	}
-	if err = removeServices(svcMgr, services); err != nil {
+	if err = removeServices(svcMgr, mergedCMData.Services); err != nil {
 		return err
+	}
+	restartRequired, err := ensureEnvVarsAreRemoved(mergedCMData.WatchedEnvironmentVars)
+	if err != nil {
+		return err
+	}
+	// rebooting instance to unset the environment variables at the process level as expected
+	if restartRequired {
+		// Applying the reboot annotation results in an event picked up by WMCO's node controller to reboot the instance
+		if err = metadata.ApplyRebootAnnotation(ctx, directClient, *node); err != nil {
+			return fmt.Errorf("error setting reboot annotation on node %s: %w", node.Name, err)
+		}
 	}
 	cleanupContainers()
 
@@ -72,13 +84,15 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	return nil
 }
 
-// getServicesToRemove returns a list of services that should be removed as part of the cleanup process
-// returns the merged Data of the latest ConfigMap, and the ConfigMap specified by the node's version annotation
-func getServicesToRemove(ctx context.Context, cli client.Client, node *core.Node, configMapNamespace string) ([]servicescm.Service, error) {
+// getMergedCMData attempts to get the latest and the version CM data specified by the node's version annotation
+// It returns the merged CM Data containing services and the watched environment variables
+func getMergedCMData(ctx context.Context, cli client.Client,
+	configMapNamespace string, node *core.Node) (*servicescm.Data, error) {
 	// get data from the latest services ConfigMap
 	latestCM, err := servicescm.GetLatest(cli, ctx, configMapNamespace)
 	if err != nil {
-		return nil, fmt.Errorf("cannot get latest services ConfigMap from namespace %s: %w", configMapNamespace, err)
+		return nil, fmt.Errorf("cannot get latest services ConfigMap from namespace %s: %w",
+			configMapNamespace, err)
 	}
 	latestCMData, err := servicescm.Parse(latestCM.Data)
 	if err != nil {
@@ -110,17 +124,18 @@ func getServicesToRemove(ctx context.Context, cli client.Client, node *core.Node
 	if err != nil {
 		klog.Infof("error getting services ConfigMap associated with version annotation, "+
 			"falling back to use latest services ConfigMap: %s", err)
-		return latestCMData.Services, nil
+		return latestCMData, nil
 	}
-
-	// If the instance was configured using latestCM, return the services from that
+	// If the instance was configured using latestCM, return that
 	if versionCM.GetName() == latestCM.GetName() {
-		klog.Infof("removing the services specified in %s", latestCM.GetName())
-		return latestCMData.Services, nil
+		return latestCMData, nil
 	}
-	// merge the two ConfigMaps into one, so all potential services are listed
-	klog.Infof("removing the services specified in %s and %s", versionCM.GetName(), latestCM.GetName())
-	return mergeServices(latestCMData.Services, versionCMData.Services), nil
+	mergedServices := mergeServices(latestCMData.Services, versionCMData.Services)
+	mergedEnvVars := merge(latestCMData.WatchedEnvironmentVars, versionCMData.WatchedEnvironmentVars)
+	return &servicescm.Data{
+		Services:               mergedServices,
+		WatchedEnvironmentVars: mergedEnvVars,
+	}, nil
 }
 
 // mergeServices combines the list of services, prioritizing the data given by s1
@@ -142,6 +157,22 @@ func mergeServices(s1, s2 []servicescm.Service) []servicescm.Service {
 
 }
 
+// merge returns a combined list of the given lists
+func merge(e1, e2 []string) []string {
+	watchedEnvVars := make(map[string]struct{})
+	for _, item := range e1 {
+		watchedEnvVars[item] = struct{}{}
+	}
+	for _, item := range e2 {
+		watchedEnvVars[item] = struct{}{}
+	}
+	var merged []string
+	for item := range watchedEnvVars {
+		merged = append(merged, item)
+	}
+	return merged
+}
+
 // removeServices uses the given manager to remove all the given Windows services from this instance.
 func removeServices(svcMgr manager.Manager, services []servicescm.Service) error {
 	// Build up log message and failures
@@ -161,6 +192,11 @@ func removeServices(svcMgr manager.Manager, services []servicescm.Service) error
 		return fmt.Errorf("%#v", failedRemovals)
 	}
 	return nil
+}
+
+// ensureEnvVarsAreRemoved removes all WICD configured ENV variables from this instance
+func ensureEnvVarsAreRemoved(watchedEnvVars []string) (bool, error) {
+	return envvar.EnsureVarsAreUpToDate(map[string]string{}, watchedEnvVars)
 }
 
 // cleanupContainers makes a best effort to stop all processes with the name containerd-shim-runhcs-v1, stopping
