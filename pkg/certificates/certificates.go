@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	// CABundleKey is the key in the Kube API Server CA ConfigMap where the CA bundle is located
+	// CABundleKey is the key in the Kube API Server CA and trusted CA ConfigMaps where the CA bundle is located
 	CABundleKey = "ca-bundle.crt"
 	// KubeApiServerOperatorNamespace is the namespace of the ConfigMap that contains the CA for the kubelet
 	// to recognize the kube-apiserver client certificate.
@@ -28,6 +28,8 @@ const (
 	// kubeAPIServerInitialCAConfigMapName is the name of the ConfigMap that contains the initial CA certificates
 	// created during the cluster installation, where the initial kubelet CA is valid only for the first year.
 	kubeAPIServerInitialCAConfigMapName = "initial-kube-apiserver-server-ca"
+	// ProxyCertsConfigMap is the name of the ConfigMap that holds the trusted CA bundle for a cluster-wide proxy
+	ProxyCertsConfigMap = "trusted-ca"
 )
 
 // MergeCAsConfigMaps merges the given CA ConfigMaps for the specified subject

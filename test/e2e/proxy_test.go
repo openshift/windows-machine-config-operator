@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
@@ -87,17 +88,17 @@ func testTrustedCAConfigMap(t *testing.T) {
 	// Ensure the trusted-ca ConfigMap exists in the cluster as expected
 	t.Run("Trusted CA ConfigMap metadata", func(t *testing.T) {
 		trustedCA, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(),
-			controllers.ProxyCertsConfigMap, meta.GetOptions{})
-		require.NoErrorf(t, err, "error ensuring ConfigMap %s exists", controllers.ProxyCertsConfigMap)
+			certificates.ProxyCertsConfigMap, meta.GetOptions{})
+		require.NoErrorf(t, err, "error ensuring ConfigMap %s exists", certificates.ProxyCertsConfigMap)
 		assert.True(t, trustedCA.GetLabels()[controllers.InjectionRequestLabel] == "true")
 	})
 
 	t.Run("Trusted CA ConfigMap re-creation", func(t *testing.T) {
 		err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Delete(context.TODO(),
-			controllers.ProxyCertsConfigMap, meta.DeleteOptions{})
+			certificates.ProxyCertsConfigMap, meta.DeleteOptions{})
 		require.NoError(t, err)
 		err = tc.waitForValidTrustedCAConfigMap()
-		assert.NoErrorf(t, err, "error ensuring ConfigMap %s is re-created when deleted", controllers.ProxyCertsConfigMap)
+		assert.NoErrorf(t, err, "error ensuring ConfigMap %s is re-created when deleted", certificates.ProxyCertsConfigMap)
 	})
 
 	t.Run("Invalid trusted CA ConfigMap patching", func(t *testing.T) {
@@ -108,9 +109,9 @@ func testTrustedCAConfigMap(t *testing.T) {
 		patchData, err := json.Marshal(labelPatch)
 		require.NoError(t, err)
 
-		_, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Patch(context.TODO(), controllers.ProxyCertsConfigMap,
+		_, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Patch(context.TODO(), certificates.ProxyCertsConfigMap,
 			types.JSONPatchType, patchData, meta.PatchOptions{})
-		require.NoErrorf(t, err, "unable to patch %s", controllers.ProxyCertsConfigMap)
+		require.NoErrorf(t, err, "unable to patch %s", certificates.ProxyCertsConfigMap)
 		err = tc.waitForValidTrustedCAConfigMap()
 		assert.NoError(t, err, "error testing handling of invalid ConfigMap")
 	})
@@ -123,20 +124,20 @@ func (tc *testContext) waitForValidTrustedCAConfigMap() error {
 	err := wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
 		var err error
 		trustedCA, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(),
-			controllers.ProxyCertsConfigMap, meta.GetOptions{})
+			certificates.ProxyCertsConfigMap, meta.GetOptions{})
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// Retry if the Get() results in a IsNotFound error
 				return false, nil
 			}
-			return false, fmt.Errorf("error retrieving ConfigMap %s: %w", controllers.ProxyCertsConfigMap, err)
+			return false, fmt.Errorf("error retrieving ConfigMap %s: %w", certificates.ProxyCertsConfigMap, err)
 		}
 		// Here, we've retreived a ConfigMap but still need to ensure it is valid.
 		// If it's not valid, retry in hopes that WMCO will replace it with a valid one as expected.
 		return trustedCA.GetLabels()[controllers.InjectionRequestLabel] == "true", nil
 	})
 	if err != nil {
-		return fmt.Errorf("error waiting for ConfigMap %s/%s: %w", wmcoNamespace, controllers.ProxyCertsConfigMap, err)
+		return fmt.Errorf("error waiting for ConfigMap %s/%s: %w", wmcoNamespace, certificates.ProxyCertsConfigMap, err)
 	}
 	return nil
 }
