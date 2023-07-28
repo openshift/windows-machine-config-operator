@@ -110,7 +110,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)
 		}
 
-		if err := nc.SafeReboot(ctx, node); err != nil {
+		if err := nc.SafeReboot(ctx); err != nil {
 			return ctrl.Result{}, fmt.Errorf("full instance reboot failed: %w", err)
 		}
 	}

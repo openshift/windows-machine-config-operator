@@ -111,9 +111,8 @@ func (ow OutWriter) Write(p []byte) (n int, err error) {
 func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, wmcoNamespace string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
-	var err error
 
-	if err = cluster.ValidateCIDR(clusterServiceCIDR); err != nil {
+	if err := cluster.ValidateCIDR(clusterServiceCIDR); err != nil {
 		return nil, fmt.Errorf("error receiving valid CIDR value for "+
 			"creating new node config: %w", err)
 	}
@@ -129,8 +128,8 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 		return nil, fmt.Errorf("error instantiating Windows instance from VM: %w", err)
 	}
 
-	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, platformType: platformType,
-		wmcoNamespace: wmcoNamespace, clusterServiceCIDR: clusterServiceCIDR,
+	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, node: instanceInfo.Node,
+		platformType: platformType, wmcoNamespace: wmcoNamespace, clusterServiceCIDR: clusterServiceCIDR,
 		publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()), log: log, additionalLabels: additionalLabels,
 		additionalAnnotations: additionalAnnotations}, nil
 }
@@ -138,8 +137,8 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 // Configure configures the Windows VM to make it a Windows worker node
 func (nc *nodeConfig) Configure() error {
 	drainHelper := nc.newDrainHelper()
-	// If we find a node  it implies that we are reconfiguring and we should cordon the node
-	if err := nc.setNode(true); err == nil {
+	// If a Node object exists already, it implies that we are reconfiguring and we should cordon the node
+	if nc.node != nil {
 		// Make a best effort to cordon the node until it is fully configured
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
 			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
@@ -162,9 +161,11 @@ func (nc *nodeConfig) Configure() error {
 
 	// Perform rest of the configuration with the kubelet running
 	err = func() error {
-		// populate node object in nodeConfig in the case of a new Windows instance
-		if err := nc.setNode(false); err != nil {
-			return fmt.Errorf("error getting node object: %w", err)
+		if nc.node == nil {
+			// populate node object in nodeConfig in the case of a new Windows instance
+			if err := nc.setNode(false); err != nil {
+				return fmt.Errorf("error setting node object: %w", err)
+			}
 		}
 
 		// Make a best effort to cordon the node until it is fully configured
@@ -244,9 +245,13 @@ func (nc *nodeConfig) Configure() error {
 	return err
 }
 
-// safeReboot safely restarts the instance associated with the given node object, first cordoning and draining the node
-func (nc *nodeConfig) SafeReboot(ctx context.Context, node *core.Node) error {
-	nc.node = node
+// safeReboot safely restarts the underlying instance, first cordoning and draining the associated node.
+// Waits for reboot to take effect before uncordoning the node.
+func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
+	if nc.node == nil {
+		return fmt.Errorf("safe reboot of the instance requires an associated node")
+	}
+
 	drainer := nc.newDrainHelper()
 	if err := drain.RunCordonOrUncordon(drainer, nc.node, true); err != nil {
 		return fmt.Errorf("unable to cordon node %s: %w", nc.node.Name, err)
@@ -488,11 +493,9 @@ func (nc *nodeConfig) newDrainHelper() *drain.Helper {
 
 // Deconfigure removes the node from the cluster, reverting changes made by the Configure function
 func (nc *nodeConfig) Deconfigure() error {
-	// Set nc.node to the existing node
-	if err := nc.setNode(true); err != nil {
-		return err
+	if nc.node == nil {
+		return fmt.Errorf("instance does not a have an associated node to deconfigure")
 	}
-
 	// Cordon and drain the Node before we interact with the instance
 	drainHelper := nc.newDrainHelper()
 	if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
