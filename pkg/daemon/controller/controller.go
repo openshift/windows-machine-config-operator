@@ -182,17 +182,19 @@ func NewServiceController(ctx context.Context, nodeName, watchNamespace string, 
 func (sc *ServiceController) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	nodePredicate := predicate.Funcs{
 		// A node's name will never change, so it is fine to use the name for node identification
-		// The node must have a desired-version annotation for it to be reconcilable
+		// The node must have a desired-version annotation and not be waiting for a reboot for it to be reconcilable
 		CreateFunc: func(e event.CreateEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[metadata.DesiredVersionAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && !isAwaitingReboot(e.Object) &&
+				e.Object.GetAnnotations()[metadata.DesiredVersionAnnotation] != ""
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			// Only process update events if the desired version has changed
-			return sc.nodeName == e.ObjectNew.GetName() &&
+			// Only process update events if the desired version has changed and there is no reboot required
+			return sc.nodeName == e.ObjectNew.GetName() && !isAwaitingReboot(e.ObjectNew) &&
 				e.ObjectOld.GetAnnotations()[metadata.DesiredVersionAnnotation] != e.ObjectNew.GetAnnotations()[metadata.DesiredVersionAnnotation]
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return sc.nodeName == e.Object.GetName() && e.Object.GetAnnotations()[metadata.DesiredVersionAnnotation] != ""
+			return sc.nodeName == e.Object.GetName() && !isAwaitingReboot(e.Object) &&
+				e.Object.GetAnnotations()[metadata.DesiredVersionAnnotation] != ""
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -200,6 +202,9 @@ func (sc *ServiceController) SetupWithManager(ctx context.Context, mgr ctrl.Mana
 	}
 	cmPredicate := predicate.NewPredicateFuncs(func(object client.Object) bool {
 		return strings.HasPrefix(object.GetName(), servicescm.NamePrefix)
+	})
+	rebootPredicate := predicate.NewPredicateFuncs(func(object client.Object) bool {
+		return !isAwaitingReboot(object)
 	})
 
 	// Keeping this on the longer side, as each reconciliation requires running each service's powershell scripts
@@ -211,7 +216,8 @@ func (sc *ServiceController) SetupWithManager(ctx context.Context, mgr ctrl.Mana
 		For(&core.Node{}, builder.WithPredicates(nodePredicate)).
 		Watches(&core.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode),
 			builder.WithPredicates(cmPredicate)).
-		WatchesRawSource(&source.Channel{Source: eventChan}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode)).
+		WatchesRawSource(&source.Channel{Source: eventChan}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode),
+			builder.WithPredicates(rebootPredicate)).
 		Complete(sc)
 }
 
@@ -310,8 +316,7 @@ func (sc *ServiceController) reconcileEnvironmentVariables(envVars map[string]st
 	if err != nil {
 		return true, fmt.Errorf("error waiting for environment vars to get picked up by processes: %w", err)
 	}
-	// Remove the reboot annotation after we know the reboot occurred successfully. No-op if already not present
-	return false, metadata.RemoveRebootAnnotation(sc.ctx, sc.client, node)
+	return false, nil
 }
 
 // ensureVarsAreUpToDate ensures that the proxy environment variables are set as expected on the instance
@@ -651,4 +656,14 @@ func slicesEquivalent(s1, s2 []string) bool {
 	}
 	return reflect.DeepEqual(s1, s2)
 
+}
+
+// isAwaitingReboot returns true if the given object is a node that is awaiting a reboot by WMCO
+func isAwaitingReboot(obj runtime.Object) bool {
+	node, ok := obj.(*core.Node)
+	if !ok {
+		return false
+	}
+	_, exists := node.Annotations[metadata.RebootAnnotation]
+	return exists
 }
