@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: example-windows-pod
+  name: example-windows-pod
+  # must be in the same namespace as the PVC
+  namespace: windows-storage-example
+spec:
+  selector:
+    matchLabels:
+      app: example-windows-pod
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: example-windows-pod
+      name: example-windows-pod
+    spec:
+      os:
+        name: windows
+      tolerations:
+        - key: "os"
+          value: "Windows"
+          Effect: "NoSchedule"
+      containers:
+        - name: example-windows-container
+          image: mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022
+          imagePullPolicy: IfNotPresent
+          command:
+            - pwsh.exe
+            - -command
+            - "$filepath='C:\\test\\csi\\timestamp.txt'; New-Item -Path $filepath -Force ;while (1) { Add-Content -Encoding Ascii $filepath $(Get-Date -Format u); sleep 10 }"
+          volumeMounts:
+            - name: test-volume
+              mountPath: "/test/"
+              readOnly: false
+      volumes:
+        - name: test-volume
+          persistentVolumeClaim:
+            claimName: example-windows-pvc
+      nodeSelector:
+        kubernetes.io/os: windows
