@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: windows-storage-example
+  labels:
+    # Windows storage resources must be deployed in a privileged namespace with a disabled pod security admission label
+    # synchronization
+    security.openshift.io/scc.podSecurityLabelSync: "false"
+    pod-security.kubernetes.io/enforce: privileged
