@@ -44,7 +44,7 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 		kubeletConfiguration,
 		hybridOverlayConfiguration(vxlanPort, debug),
 		kubeProxyConfiguration(debug),
-		csiProxyConfiguration(),
+		csiProxyConfiguration(debug),
 	}
 	if platform == config.AzurePlatformType && ccmEnabled {
 		*services = append(*services, azureCloudNodeManagerConfiguration())
@@ -159,9 +159,11 @@ func kubeProxyConfiguration(debug bool) servicescm.Service {
 }
 
 // csiProxyConfiguration returns the Service definition for csi-proxy
-func csiProxyConfiguration() servicescm.Service {
+func csiProxyConfiguration(debug bool) servicescm.Service {
 	serviceCmd := fmt.Sprintf("%s -log_file=%s -logtostderr=false -windows-service", windows.CSIProxyPath,
 		windows.CSIProxyLog)
+	// Set log level
+	serviceCmd = fmt.Sprintf("%s %s", serviceCmd, klogVerbosityArg(debug))
 	return servicescm.Service{
 		Name:                   "csi-proxy",
 		Command:                serviceCmd,
