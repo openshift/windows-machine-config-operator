@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
@@ -27,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
@@ -147,6 +149,11 @@ func (nc *nodeConfig) Configure() error {
 
 	if err := nc.createBootstrapFiles(); err != nil {
 		return err
+	}
+	if cluster.IsProxyEnabled() {
+		if err := nc.ensureTrustedCABundle(); err != nil {
+			return err
+		}
 	}
 	wicdKC, err := nc.generateWICDKubeconfig()
 	if err != nil {
@@ -532,6 +539,22 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 		return err
 	}
 	return nil
+}
+
+// ensureTrustedCABundle gets the trusted CA ConfigMap and ensures the cert bundle on the instance has up-to-date data
+func (nc *nodeConfig) ensureTrustedCABundle() error {
+	trustedCA := &core.ConfigMap{}
+	if err := nc.client.Get(context.TODO(), types.NamespacedName{Namespace: nc.wmcoNamespace,
+		Name: certificates.ProxyCertsConfigMap}, trustedCA); err != nil {
+		return fmt.Errorf("unable to get ConfigMap %s: %w", certificates.ProxyCertsConfigMap, err)
+	}
+	return nc.UpdateTrustedCABundleFile(trustedCA.Data)
+}
+
+// UpdateTrustedCABundleFile updates the file containing the trusted CA bundle in the Windows node, if needed
+func (nc *nodeConfig) UpdateTrustedCABundleFile(data map[string]string) error {
+	dir, fileName := windows.SplitPath(windows.TrustedCABundlePath)
+	return nc.Windows.EnsureFileContent([]byte(data[certificates.CABundleKey]), fileName, dir)
 }
 
 // generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret
