@@ -27,6 +27,7 @@ func testNodeLogs(t *testing.T) {
 		"kubelet/kubelet.log",
 		"containerd/containerd.log",
 		"wicd/windows-instance-config-daemon.exe.INFO",
+		"csi-proxy/csi-proxy.log",
 	}
 	optionalLogs := []string{
 		"kube-proxy/kube-proxy.exe.ERROR",
