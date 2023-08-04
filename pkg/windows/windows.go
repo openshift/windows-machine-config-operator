@@ -130,6 +130,8 @@ const (
 	containersFeatureName = "Containers"
 	// wicdKubeconfigPath is the path of the kubeconfig used by WICD
 	wicdKubeconfigPath = K8sDir + "\\wicd-kubeconfig"
+	// TrustedCABundlePath is the location of the trusted CA bundle file
+	TrustedCABundlePath = remoteDir + "\\ca-bundle.crt"
 )
 
 var (
