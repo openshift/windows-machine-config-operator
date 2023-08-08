@@ -80,7 +80,7 @@ get_aws_ms() {
 
   local filter="Windows_Server-2022-English-Core-Base-????.??.??"
   if [ "$winver" == "2019" ]; then
-    filter="Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+    filter="Windows_Server-2019-English-Core-Base-????.??.??"
   fi
 
   # get the AMI id for the Windows VM
