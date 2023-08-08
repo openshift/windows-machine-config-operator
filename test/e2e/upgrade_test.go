@@ -218,6 +218,7 @@ func TestUpgrade(t *testing.T) {
 
 	// test that any workloads deployed on the node have not been broken by the upgrade
 	t.Run("Workloads ready", tc.testWorkloadsAvailable)
+	t.Run("Node Logs", tc.testNodeLogs)
 }
 
 // testWorkloadsAvailable tests that all workloads deployed on Windows nodes by the test suite are available
