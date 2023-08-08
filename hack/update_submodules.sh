@@ -92,7 +92,7 @@ function update_submodules_for_branch() {
     # Update the submodule to the latest remote commit
     git submodule update --remote $submodule
     generate_submodule_commit $submodule
-    if [ "$submodule" = "kubelet" ] || [ "$submodule" = "kube-proxy" ] || [ "$submodule" = "containerd" ]; then
+    if [ "$submodule" = "kubelet" ] || [ "$submodule" = "kube-proxy" ] || [ "$submodule" = "containerd" ] || ["$submodule" = "csi-proxy" ]; then
       generate_version_commit "$submodule"
     fi
   done
