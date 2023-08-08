@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 )
 
@@ -221,11 +222,21 @@ func TestUpgrade(t *testing.T) {
 
 // testWorkloadsAvailable tests that all workloads deployed on Windows nodes by the test suite are available
 func (tc *testContext) testWorkloadsAvailable(t *testing.T) {
-	deployments, err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).List(context.TODO(),
-		metav1.ListOptions{})
-	require.NoError(t, err)
-	for _, deployment := range deployments.Items {
-		assert.Equalf(t, deployment.Spec.Replicas, deployment.Status.AvailableReplicas,
-			"deployment %s is not available", deployment.GetName())
-	}
+	err := wait.PollImmediateWithContext(context.TODO(), retry.Interval, retry.ResourceChangeTimeout,
+		func(ctx context.Context) (bool, error) {
+			deployments, err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).List(ctx, metav1.ListOptions{})
+			if err != nil {
+				log.Printf("error getting deployment list: %s", err)
+				return false, nil
+			}
+			for _, deployment := range deployments.Items {
+				if deployment.Spec.Replicas == nil ||
+					(*deployment.Spec.Replicas != deployment.Status.AvailableReplicas) {
+					log.Printf("waiting for %s to become available", deployment.GetName())
+					return false, nil
+				}
+			}
+			return true, nil
+		})
+	assert.NoError(t, err)
 }
