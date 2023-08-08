@@ -180,6 +180,9 @@ fi
 if [[ "$TEST" = "upgrade-setup" ]]; then
   go test ./test/e2e/... -run=TestWMCO/create/Creation -v -timeout=90m -args $GO_TEST_ARGS
   go test ./test/e2e/... -run=TestWMCO/create/Nodes_ready_and_schedulable -v -timeout=90m -args $GO_TEST_ARGS
+  # Run the storage test, skipping deletion of the created workload in order to test that it persists across the upgrade
+  go test ./test/e2e/... -run=TestWMCO/storage -v -timeout=15m -args $GO_TEST_ARGS --skip-workload-deletion=true
+  go test ./test/e2e/... -run=TestWMCO/create/Node_Logs -v -timeout=10m -args $GO_TEST_ARGS
 fi
 
 if [[ "$TEST" = "upgrade-test" ]]; then

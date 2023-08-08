@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,8 +30,15 @@ func testStorage(t *testing.T) {
 	var pvcVolumeSource *core.PersistentVolumeClaimVolumeSource
 	pvc, err := tc.CloudProvider.CreatePVC(tc.client.K8s, tc.workloadNamespace)
 	require.NoError(t, err)
-	defer tc.client.K8s.CoreV1().PersistentVolumeClaims(tc.workloadNamespace).Delete(context.TODO(),
-		pvc.GetName(), meta.DeleteOptions{})
+	if !skipWorkloadDeletion {
+		defer func() {
+			err := tc.client.K8s.CoreV1().PersistentVolumeClaims(tc.workloadNamespace).Delete(context.TODO(),
+				pvc.GetName(), meta.DeleteOptions{})
+			if err != nil {
+				log.Printf("error deleting PVC: %s", err)
+			}
+		}()
+	}
 	pvcVolumeSource = &core.PersistentVolumeClaimVolumeSource{ClaimName: pvc.GetName()}
 	affinity, err := getAffinityForNode(&gc.allNodes()[0])
 	require.NoError(t, err)
@@ -39,7 +47,12 @@ func testStorage(t *testing.T) {
 	// successful, storage is working as expected.
 	winServerDeployment, err := tc.deployWindowsWebServer("win-webserver-storage-test", affinity, pvcVolumeSource)
 	assert.NoError(t, err)
-	if err == nil {
-		defer tc.deleteDeployment(winServerDeployment.GetName())
+	if err == nil && !skipWorkloadDeletion {
+		defer func() {
+			err := tc.deleteDeployment(winServerDeployment.GetName())
+			if err != nil {
+				log.Printf("error deleting deployment: %s", err)
+			}
+		}()
 	}
 }
