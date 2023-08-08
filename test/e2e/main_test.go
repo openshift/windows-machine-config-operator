@@ -27,6 +27,8 @@ var (
 	numberOfBYOHNodes int
 	// privateKeyPath is the path of the private key file used to configure the Windows node
 	privateKeyPath string
+	// skipWorkloadDeletion indicates that worklaods should not be deleted when tests complete
+	skipWorkloadDeletion bool
 	// wmcoNamespace is the namespace WMCO is deployed to
 	wmcoNamespace string
 	// windowsServerVersion is the Windows Server version to test against
@@ -148,6 +150,8 @@ func TestMain(m *testing.M) {
 		"Namespace that WMCO is deployed to")
 	flag.StringVar(&privateKeyPath, "private-key-path", "",
 		"path of the private key file used to configure the Windows node")
+	flag.BoolVar(&skipWorkloadDeletion, "skip-workload-deletion", false,
+		"skips deletion of workloads at the end of tests")
 	flag.Func("windows-server-version", "Windows Server version to test. "+
 		"Supported versions: 2019 or 2022 (default 2022)",
 		func(value string) error {
