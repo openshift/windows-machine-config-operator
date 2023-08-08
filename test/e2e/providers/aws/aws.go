@@ -60,7 +60,7 @@ func newEC2Client(region string) (*ec2.EC2, error) {
 func getWindowsAMIFilter(windowsServerVersion windows.ServerVersion) string {
 	switch windowsServerVersion {
 	case windows.Server2019:
-		return "Windows_Server-2019-English-Full-ContainersLatest-????.??.??"
+		return "Windows_Server-2019-English-Core-Base-????.??.??"
 	case windows.Server2022:
 	default:
 	}
