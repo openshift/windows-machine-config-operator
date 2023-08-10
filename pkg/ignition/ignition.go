@@ -13,8 +13,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Watch permission are needed in order to populate the cache. We use a cached client to list machineconfig resources.
+// Watch permission are needed in order to populate the cache. We use a cached client to list machineconfig and
+// controllerconfig resources.
 //+kubebuilder:rbac:groups="machineconfiguration.openshift.io",resources=machineconfigs,verbs=list;watch
+//+kubebuilder:rbac:groups="machineconfiguration.openshift.io",resources=controllerconfigs,verbs=list;watch
 
 const (
 	// kubeletSystemdName is the name of the systemd service that the kubelet runs under,
@@ -27,15 +29,14 @@ const (
 	// RenderedWorkerPrefix allows identification of the rendered worker MachineConfig, the combination of all worker
 	// MachineConfigs.
 	RenderedWorkerPrefix = "rendered-worker-"
-	// KubeletCACertPath is the path to the kubelet's client CA certificate as defined in ignition
-	KubeletCACertPath = "/etc/kubernetes/kubelet-ca.crt"
 	// CloudConfigPath is the path to the cloud config file as defined in ignition
 	CloudConfigPath = "/etc/kubernetes/cloud.conf"
 )
 
-// Ignition is a representation of an Ignition file
+// Ignition is a representation of an Ignition resource
 type Ignition struct {
-	config ignCfgTypes.Config
+	config        ignCfgTypes.Config
+	kubeletCAData []byte
 }
 
 // New returns a new instance of Ignition
@@ -60,7 +61,31 @@ func New(c client.Client) (*Ignition, error) {
 	}
 	log.V(1).Info("parsed", "machineconfig", renderedWorker.GetName(), "using ignition version",
 		configuration.Ignition.Version)
+
+	ccList := mcfg.ControllerConfigList{}
+	if err := c.List(context.TODO(), &ccList); err != nil {
+		return nil, err
+	}
+	var kubeletCAData []byte
+	for _, item := range ccList.Items {
+		if item.Spec.KubeAPIServerServingCAData != nil {
+			log.V(1).Info("processing kubelet-ca", "ControllerConfig", item.Name)
+			kubeletCAData = item.Spec.KubeAPIServerServingCAData
+			break
+		}
+	}
+	if len(kubeletCAData) == 0 {
+		return nil, fmt.Errorf("cannot find kubelet-ca")
+	}
+	// set kubelet-ca raw data
+	ign.kubeletCAData = kubeletCAData
+
 	return ign, nil
+}
+
+// GetKubeletCAData is a getter for kubelet CA raw data
+func (ign *Ignition) GetKubeletCAData() []byte {
+	return ign.kubeletCAData
 }
 
 // GetFiles is a getter for the files embedded within the ignition spec
