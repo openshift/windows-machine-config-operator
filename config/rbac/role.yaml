@@ -180,6 +180,13 @@ rules:
 - apiGroups:
   - machineconfiguration.openshift.io
   resources:
+  - controllerconfigs
+  verbs:
+  - list
+  - watch
+- apiGroups:
+  - machineconfiguration.openshift.io
+  resources:
   - machineconfigs
   verbs:
   - list
