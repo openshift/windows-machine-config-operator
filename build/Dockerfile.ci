@@ -104,6 +104,8 @@ RUN make build-daemon
 #│   ├── containerd.exe
 #│   └── containerd-shim-runhcs-v1.exe
 #│   └── containerd_conf.toml
+#├── csi-proxy/
+#│   ├── csi-proxy.exe
 #├── generated/
 #├── hybrid-overlay-node.exe
 #├── kube-node/
@@ -151,6 +153,7 @@ COPY --from=build /build/windows-machine-config-operator/containernetworking-plu
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe .
 COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .
 
+# Build csi-proxy.exe
 WORKDIR /payload/csi-proxy/
 COPY --from=build /build/windows-machine-config-operator/csi-proxy/bin/csi-proxy.exe .
 
