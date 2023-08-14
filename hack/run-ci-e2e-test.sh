@@ -23,6 +23,9 @@ SKIP_NODE_DELETION=""
 WMCO_PATH_OPTION=""
 
 export CGO_ENABLED=0
+# Add exclusion from forced cgo enabling as it breaks containerd builds
+# TODO: Remove as part of https://issues.redhat.com/browse/WINC-1095
+export GO_COMPLIANCE_CGO_ENABLED_EXCLUDE=1
 
 get_WMCO_logs() {
   retries=0

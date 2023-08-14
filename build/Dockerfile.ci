@@ -7,6 +7,10 @@ FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.17-openshift-4.10 as 
 LABEL stage=build
 WORKDIR /build/
 
+# Add exclusion from forced cgo enabling as it breaks containerd builds
+# TODO: Remove as part of https://issues.redhat.com/browse/WINC-1095
+ENV GO_COMPLIANCE_CGO_ENABLED_EXCLUDE=1
+
 # dos2unix is needed to build CNI plugins
 RUN yum install -y dos2unix
 
