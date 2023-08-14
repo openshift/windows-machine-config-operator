@@ -5,15 +5,15 @@ may be relevant.
 ## Supported Cloud Providers based on OKD/OCP Version and WMCO version
 | Cloud Provider            | Supported OKD/OCP Version | Supported WMCO version |
 |---------------------------|---------------------------|------------------------|
-| Amazon Web Services (AWS) | 4.6+                      | WMCO 1.0+              |
 | VMware vSphere            | 4.7+                      | WMCO 2.0+              |
 | Platform none (BYOH)      | 4.8+                      | WMCO 3.1.0+            |
 | Azure                     | 4.11+                     | WMCO 6.0+              |
+| Amazon Web Services (AWS) | 4.11+                     | WMCO 6.0+              |
 | GCP                       | 4.12+                     | WMCO 7.0+              |
 
-Note: We added Azure support in 4.6 but given that Microsoft has [stopped publishing Windows Server 2019 images with
+Note: We added Azure and AWS support in 4.6 but given that Microsoft and AWS have [stopped publishing Windows Server 2019 images with
 Docker](https://techcommunity.microsoft.com/t5/containers/important-update-deprecation-of-docker-virtual-machine-images/ba-p/3646272),
-we have decided to drop Azure support for releases older than 6.0.0. For 5.y.z and below it was a requirement for
+we have decided to drop Azure and AWS support for releases older than 6.0.0. For 5.y.z and below it was a requirement for
 the Windows Server 2019 images to have Docker pre-installed. From 6.0.0 onwards we are using containerd as the
 runtime and it is WMCO's responsibility to manage that.
 
