@@ -10,6 +10,8 @@ excludes:
   - matchtype: path
     regexp: container*
   - matchtype: path
+    regexp: csi-proxy
+  - matchtype: path
     regexp: kube*
   - matchtype: path
     regexp: hcsshim
