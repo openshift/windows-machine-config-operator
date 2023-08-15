@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
@@ -40,6 +41,11 @@ const (
 	// wmcoContainerName is the name of the container in the deployment spec of the operator
 	wmcoContainerName = "manager"
 )
+
+// versionRegex captures the version from the output of the WMCO version command
+// example: captures `5.0.0-1b759bf1-dirty` from the string
+// `windows-machine-config-operator version: "5.0.0-1b759bf1-dirty", go version: "go1.17.5 linux/amd64"`
+var versionRegex = regexp.MustCompile(`version: "([^"]*)"`)
 
 // winService contains information regarding a Windows service's current state
 type winService struct {
@@ -199,23 +205,26 @@ func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
 	return instanceIDs, nil
 }
 
-// getWMCOVersion returns the version of the operator. This is sourced from the WMCO binary used
-// to create the operator image. We cannot use version.Get() as there is no easy way to populate ldflags
-// when running e2e tests without having to maintain the WMCO version in another location.
-// This function will return an error if the binary is missing.
+// getWMCOVersion returns the version that the operator reports
 func getWMCOVersion() (string, error) {
-	cmd := exec.Command(wmcoPath, "version")
+	cmd := exec.Command("oc", "exec", "deploy/windows-machine-config-operator", "-n", wmcoNamespace, "--",
+		"/usr/local/bin/windows-machine-config-operator", "version")
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("error running %s: %w", cmd.String(), err)
+		var exitError *exec.ExitError
+		stderr := ""
+		if errors.As(err, &exitError) {
+			stderr = string(exitError.Stderr)
+		}
+		return "", fmt.Errorf("oc exec failed with exit code %s and output: %s: %s", err, string(out), stderr)
 	}
 	// out is formatted like:
 	// windows-machine-config-operator version: "5.0.0-1b759bf1-dirty", go version: "go1.17.5 linux/amd64"
-	versionSplit := strings.Split(string(out), "\"")
-	if len(versionSplit) < 3 {
-		return "", fmt.Errorf("unexpected version output")
+	matches := versionRegex.FindStringSubmatch(string(out))
+	if len(matches) < 2 {
+		return "", fmt.Errorf("could not parse version from '%s'", string(out))
 	}
-	return versionSplit[1], nil
+	return matches[1], nil
 }
 
 // testNodeTaint tests if the Windows node has the Windows taint
