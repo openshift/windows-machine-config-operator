@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
@@ -515,8 +516,8 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding() error {
 	}
 	if err == nil {
 		// check if existing RoleBinding's contents are as expected, delete it if not
-		if existingRB.RoleRef == expectedRB.RoleRef &&
-			len(existingRB.Subjects) == len(expectedRB.Subjects) && existingRB.Subjects[0] == expectedRB.Subjects[0] {
+		if existingRB.RoleRef.Name == expectedRB.RoleRef.Name &&
+			reflect.DeepEqual(existingRB.Subjects, expectedRB.Subjects) {
 			return nil
 		}
 		err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Delete(context.TODO(), wicdRBACResourceName,
@@ -564,8 +565,8 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding() error {
 	}
 	if err == nil {
 		// check if existing ClusterRoleBinding's contents are as expected, delete it if not
-		if existingCRB.RoleRef == expectedCRB.RoleRef &&
-			len(existingCRB.Subjects) == len(expectedCRB.Subjects) && existingCRB.Subjects[0] == expectedCRB.Subjects[0] {
+		if existingCRB.RoleRef.Name == expectedCRB.RoleRef.Name &&
+			reflect.DeepEqual(existingCRB.Subjects, expectedCRB.Subjects) {
 			return nil
 		}
 		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(context.TODO(), wicdRBACResourceName,
