@@ -346,13 +346,17 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 		return nil, err
 	}
 
-	filesToTransfer := map[string]struct{}{
-		ignition.KubeletCACertPath: {},
-	}
+	filesToTransfer := map[string]struct{}{}
 	if _, ok := kubeletArgs[ignition.CloudConfigOption]; ok {
 		filesToTransfer[ignition.CloudConfigPath] = struct{}{}
 	}
 	filePathsToContents := make(map[string]string)
+	// process kubelet-ca
+	filePathsToContents[windows.K8sDir+"\\"+KubeletClientCAFilename] = string(ign.GetKubeletCAData())
+	// loop through all the files in the ignition if they are files to transfer
+	if len(filesToTransfer) == 0 {
+		return filePathsToContents, nil
+	}
 	// For each new file in the ignition file check if is a file we are interested in and, if so, decode its contents
 	for _, ignFile := range ign.GetFiles() {
 		if _, ok := filesToTransfer[ignFile.Node.Path]; ok {
