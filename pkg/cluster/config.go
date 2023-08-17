@@ -196,10 +196,11 @@ func (c *config) Validate() error {
 // checkOpenShiftVersion checks the OpenShift cluster version and returns an error if it is lesser than
 // minOpenShiftVersion
 func checkOpenShiftVersion(openShiftVersion string) error {
-	// CI cluster version does not contain the Z stream version, so there is no easy of way of checking this in CI.
-	// ex:4.12.0-0.ci.test-2023-06-05-164148-ci-op-grimvr6c-latest
-	if strings.Contains(openShiftVersion, "ci") {
-		ctrl.Log.WithName("config").Info("ignoring OpenShift version validation for CI run",
+	// CI and nightly cluster versions do not contain the Z stream version, so there is no easy of way of checking
+	// this in CI. ex:4.12.0-0.ci.test-2023-06-05-164148-ci-op-grimvr6c-latest
+	// We can assume that these clusters are recent enough to include the OCP changes required for WMCO to function.
+	if strings.Contains(openShiftVersion, "ci") || strings.Contains(openShiftVersion, "nightly") {
+		ctrl.Log.WithName("config").Info("ignoring OpenShift version validation for CI and nightly clusters",
 			"version", openShiftVersion)
 		return nil
 	}
