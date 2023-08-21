@@ -325,18 +325,17 @@ func (sc *ServiceController) ensureVarsAreUpToDate(envVars map[string]string) (b
 	// systemEnvVarRegistryPath is where system level environment variables are stored in the Windows OS
 	const systemEnvVarRegistryPath = `SYSTEM\CurrentControlSet\Control\Session Manager\Environment`
 	restartRequired := false
-	for key, expectedVal := range envVars {
-		registryKey, err := registry.OpenKey(registry.LOCAL_MACHINE, systemEnvVarRegistryPath, registry.ALL_ACCESS)
-		if err != nil {
-			return false, fmt.Errorf("unable to open Windows system registry key %s: %w", systemEnvVarRegistryPath, err)
+	registryKey, err := registry.OpenKey(registry.LOCAL_MACHINE, systemEnvVarRegistryPath, registry.ALL_ACCESS)
+	if err != nil {
+		return false, fmt.Errorf("unable to open Windows system registry key %s: %w", systemEnvVarRegistryPath, err)
+	}
+	defer func() { // always close the registry key, without swallowing any error returned before the defer call
+		closeErr := registryKey.Close()
+		if closeErr != nil {
+			klog.Errorf("could not close key %v: %v", registryKey, closeErr)
 		}
-		defer func() { // always close the registry key, without swallowing any error returned before the defer call
-			closeErr := registryKey.Close()
-			if closeErr != nil {
-				klog.Errorf("could not close key: %v", closeErr)
-			}
-		}()
-
+	}()
+	for key, expectedVal := range envVars {
 		actualVal, _, err := registryKey.GetStringValue(key)
 		if err != nil && err != registry.ErrNotExist {
 			return false, fmt.Errorf("unable to read environment variable %s: %w", key, err)
