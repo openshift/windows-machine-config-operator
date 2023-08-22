@@ -20,6 +20,10 @@ type cache struct {
 	apiServerEndpoint string
 }
 
+func (c cache) GetEndpoint() string {
+	return c.apiServerEndpoint
+}
+
 // cache has the information related to nodeConfig that should not be changed.
 var nodeConfigCache = cache{}
 

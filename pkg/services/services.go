@@ -2,6 +2,8 @@ package services
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -21,6 +23,7 @@ const (
 	// hostnameOverrideVar is the variable that should be replaced with the value of the desired instance hostname
 	hostnameOverrideVar = "HOSTNAME_OVERRIDE"
 	NodeIPVar           = "NODE_IP"
+	nodeIPOverrideVar   = "NODE_IP_OVERRIDE"
 )
 
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
@@ -193,9 +196,36 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 		preScripts = append(preScripts, hostnameOverridePowershellVar)
 	}
 
-	kubeletServiceCmd := fmt.Sprintf("%s -log-file=%s %s",
-		windows.KubeLogRunnerPath, windows.KubeletLog, windows.KubeletPath)
+	if platform == config.BareMetalPlatformType {
+		url, err := url.Parse(nodeconfig.GetNodeConfig().GetEndpoint())
+		if err != nil {
+			return servicescm.Service{}, err
+		}
+		nodeIPRecords, err := net.LookupIP(url.Hostname())
+		if err != nil {
+			return servicescm.Service{}, err
+		}
+		var ip *net.IP
+		for _, a := range nodeIPRecords {
+			if a.To4() != nil {
+				ip = &a
+				break
+			}
+		}
+		if ip == nil {
+			return servicescm.Service{}, fmt.Errorf("failed to retrieve ip")
+		}
 
+		nodeIPOverrideArg := "--node-ip=" + nodeIPOverrideVar
+		nodeIPOverridePowershellVar := servicescm.PowershellPreScript{
+			VariableName: nodeIPOverrideVar,
+			Path:         fmt.Sprintf("(Find-NetRoute -RemoteIPAddress \"%s\").IPAddress", ip.String()),
+		}
+		kubeletArgs = append(kubeletArgs, nodeIPOverrideArg)
+		preScripts = append(preScripts, nodeIPOverridePowershellVar)
+	}
+
+	kubeletServiceCmd := windows.KubeletPath
 	for _, arg := range kubeletArgs {
 		kubeletServiceCmd += fmt.Sprintf(" %s", arg)
 	}
@@ -271,6 +301,8 @@ func getHostnameCmd(platformType config.PlatformType) string {
 		return "Invoke-RestMethod -UseBasicParsing -Uri http://169.254.169.254/latest/meta-data/local-hostname"
 	case config.GCPPlatformType:
 		return windows.GcpGetHostnameScriptRemotePath
+	case config.BareMetalPlatformType:
+		return "[System.Net.Dns]::Resolve((Find-NetRoute -RemoteIPAddress \"0.0.0.0\").IPAddress[0]).HostName"
 	default:
 		// by default use the original hostname
 		return ""

@@ -587,3 +587,7 @@ func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
 	trimmedKey := strings.TrimSuffix(pubKey, "\n")
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(trimmedKey)))
 }
+
+func GetNodeConfig() cache {
+	return nodeConfigCache
+}
