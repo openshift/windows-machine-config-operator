@@ -245,7 +245,7 @@ func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 		return fmt.Errorf("unexpected number of services")
 	}
 	for _, expectedSvc := range expected.Services {
-		if !expectedSvc.isPresentAndCorrect(cmData.Services) {
+		if !contains(cmData.Services, expectedSvc) {
 			return fmt.Errorf("required service %s is not present with expected configuration", expectedSvc.Name)
 		}
 	}
@@ -254,7 +254,7 @@ func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 		return fmt.Errorf("unexpected number of files")
 	}
 	for _, expectedFile := range expected.Files {
-		if !expectedFile.isPresentAndCorrect(cmData.Files) {
+		if !contains(cmData.Files, expectedFile) {
 			return fmt.Errorf("required file %s is not present as expected", expectedFile.Path)
 		}
 	}
@@ -272,21 +272,10 @@ func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 	return nil
 }
 
-// isPresentAndCorrect checks if the required service exists as expected within the given services slice
-func (s Service) isPresentAndCorrect(services []Service) bool {
-	for _, service := range services {
-		if reflect.DeepEqual(s, service) {
-			return true
-		}
-	}
-	return false
-}
-
-// isPresentAndCorrect checks if the required file exists as expected within the given files slice
-// TODO: When we move to go1.18, consolodate this helper with the above Service.isPresentAndCorrect using generics
-func (f FileInfo) isPresentAndCorrect(files []FileInfo) bool {
-	for _, file := range files {
-		if reflect.DeepEqual(f, file) {
+// contains checks if the required item exists as expected within the given slice
+func contains[S ~[]E, E any](slice S, target E) bool {
+	for _, item := range slice {
+		if reflect.DeepEqual(target, item) {
 			return true
 		}
 	}
