@@ -52,14 +52,14 @@ func New(c client.Client) (*Ignition, error) {
 		return nil, err
 	}
 
-	configuration, report, err := ignCfg.Parse(renderedWorker.Spec.Config.Raw)
+	configuration, report, err := ignCfg.ParseCompatibleVersion(renderedWorker.Spec.Config.Raw)
 	if err != nil || report.IsFatal() {
 		return nil, fmt.Errorf("failed to parse MachineConfig ignition: %v\nReport: %v", err, report)
 	}
 	ign := &Ignition{
 		config: configuration,
 	}
-	log.V(1).Info("parsed", "machineconfig", renderedWorker.GetName(), "ignition version",
+	log.V(1).Info("parsed", "machineconfig", renderedWorker.GetName(), "using ignition version",
 		configuration.Ignition.Version)
 
 	ccList := mcfg.ControllerConfigList{}
