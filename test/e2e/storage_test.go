@@ -10,9 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/azure"
 )
+
+// storageTestLabel indicates that this Node was chosen to have the storage workload attached to it, and the Node should
+// be blocked from migrating from in-tree to CSI.
+var storageTestLabel = "wmco-test/storage-attached"
 
 // testStorage tests that persistent volumes can be accessed by Windows pods
 func testStorage(t *testing.T) {
@@ -53,8 +59,16 @@ func testStorage(t *testing.T) {
 		}()
 	}
 	pvcVolumeSource := &core.PersistentVolumeClaimVolumeSource{ClaimName: pvc.GetName()}
-	affinity, err := getAffinityForNode(&gc.allNodes()[0])
+	selectedNode := &gc.allNodes()[0]
+	affinity, err := getAffinityForNode(selectedNode)
 	require.NoError(t, err)
+	if inTreeUpgrade {
+		patch, err := metadata.GenerateAddPatch(map[string]string{storageTestLabel: "true"}, nil)
+		require.NoError(t, err)
+		_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), selectedNode.GetName(), types.JSONPatchType, patch,
+			meta.PatchOptions{})
+		require.NoError(t, err, "error labeling node for upgrade test")
+	}
 
 	// The deployment will not come to ready if the volume is not able to be attached to the pod. If the deployment is
 	// successful, storage is working as expected.

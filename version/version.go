@@ -3,7 +3,10 @@ package version
 import (
 	"fmt"
 	"runtime"
+	"strconv"
+	"strings"
 
+	"golang.org/x/mod/semver"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -23,4 +26,14 @@ func Print() {
 // Get() returns the operator version
 func Get() string {
 	return Version
+}
+
+// Major returns only the Major portion of the operator version semver
+func Major() (int, error) {
+	semverParsableVersion := Get()
+	if version := Get(); !strings.HasPrefix(version, "v") {
+		semverParsableVersion = "v" + version
+	}
+	majorVersion := strings.TrimPrefix(semver.Major(semverParsableVersion), "v")
+	return strconv.Atoi(majorVersion)
 }

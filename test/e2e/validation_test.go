@@ -16,6 +16,7 @@ import (
 	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/semver"
 	batch "k8s.io/api/batch/v1"
 	certificates "k8s.io/api/certificates/v1"
 	core "k8s.io/api/core/v1"
@@ -807,7 +808,21 @@ func (tc *testContext) testNodeAnnotations(t *testing.T) {
 			pubKey, err := tc.checkPubKeyAnnotation(&node)
 			require.NoError(t, err)
 			assert.True(t, pubKey)
+			t.Run("CSI Label", func(t *testing.T) {
+				tc.testCSILabel(t, &node)
+			})
 		})
+	}
+}
+
+// testCSILabel tests that the csi label is applied to the Node for the expected platforms and cluster version
+func (tc *testContext) testCSILabel(t *testing.T, node *core.Node) {
+	major, err := nodeMajorVersion(node)
+	require.NoError(t, err)
+	if nodeShouldHaveCSILabel(tc.CloudProvider.GetType(), major) {
+		assert.Equal(t, "true", node.GetLabels()[metadata.CSIConfiguredLabel])
+	} else {
+		assert.Equal(t, "", node.GetLabels()[metadata.CSIConfiguredLabel])
 	}
 }
 
@@ -922,4 +937,28 @@ func changeHybridOverlayCommandVerbosity(in string) (string, error) {
 func finalLine(s string) string {
 	lineSplit := strings.Split(strings.TrimSpace(s), "\n")
 	return strings.TrimSpace(lineSplit[len(lineSplit)-1])
+}
+
+// nodeMajorVersion returns the Major portion of the node version annotation
+func nodeMajorVersion(node *core.Node) (int, error) {
+	major := semver.Major("v" + node.GetAnnotations()[metadata.VersionAnnotation])
+	if major == "" {
+		return 0, fmt.Errorf("unable to parse major version into semver")
+	}
+	return strconv.Atoi(strings.TrimPrefix(major, "v"))
+}
+
+// nodeShouldHaveCSILabel returns true if a Node on the given platform and version should be annotated with the
+// CSIConfiguredLabel
+func nodeShouldHaveCSILabel(platform config.PlatformType, nodeMajorVersion int) bool {
+	if platform != config.AzurePlatformType && platform != config.VSpherePlatformType {
+		return true
+	}
+	if platform == config.AzurePlatformType && nodeMajorVersion >= 8 {
+		return true
+	}
+	if platform == config.VSpherePlatformType && nodeMajorVersion >= 9 {
+		return true
+	}
+	return false
 }

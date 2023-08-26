@@ -212,21 +212,31 @@ func TestUpgrade(t *testing.T) {
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), false, true)
 	require.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
-	// Basic testing to ensure the Node object is in a good state
-	t.Run("Nodes ready", tc.testNodesBecomeReadyAndSchedulable)
-	t.Run("Node annotations", tc.testNodeAnnotations)
-	t.Run("Node Metadata", tc.testNodeMetadata)
-
 	if inTreeUpgrade {
-		// Deploy the CSI drivers and wait for a CSI node to be created
-		// This is a requirement for storage workloads to go back to ready
 		azureProvider, ok := tc.CloudProvider.(*azure.Provider)
 		require.True(t, ok, "in tree upgrade must be ran on Azure")
+
+		// Check that Node upgrades have been blocked for Nodes with storage volumes attached
+		require.NoError(t, tc.waitForBlockedUpgrade())
+
+		// Deploy the required CSI drivers and unblock the upgrade
 		require.NoError(t, azureProvider.EnsureWindowsCSIDaemonSet(tc.client.K8s))
 		log.Printf("waiting for csinodes to reflect driver deployment")
 		err = tc.waitForCSINodesWithDrivers(gc.allNodes())
 		require.NoError(t, err)
+		require.NoError(t, tc.allowUpgrade(gc.allNodes()))
 	}
+
+	// wait for Configured windows nodes to be upgraded to expected version
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), true, false)
+	require.NoError(t, err, "timed out waiting for Windows Machine nodes to be upgraded to current version")
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), true, true)
+	require.NoError(t, err, "timed out waiting for BYOH Windows nodes to be upgraded to current version")
+
+	// Basic testing to ensure the Node object is in a good state
+	t.Run("Nodes ready", tc.testNodesBecomeReadyAndSchedulable)
+	t.Run("Node annotations", tc.testNodeAnnotations)
+	t.Run("Node Metadata", tc.testNodeMetadata)
 
 	// test that any workloads deployed on the node have not been broken by the upgrade
 	t.Run("Workloads ready", tc.testWorkloadsAvailable)
@@ -281,4 +291,49 @@ func (tc *testContext) waitForCSINodesWithDrivers(nodes []v1.Node) error {
 		}
 		return true, nil
 	})
+}
+
+// waitForBlockedUpgrade waits until all Windows nodes that should be blocked from upgrading, have been blocked
+func (tc *testContext) waitForBlockedUpgrade() error {
+	return wait.PollImmediate(retry.Interval, 10*time.Minute, func() (bool, error) {
+		nodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(),
+			metav1.ListOptions{LabelSelector: storageTestLabel + "=true"})
+		if err != nil {
+			log.Printf("error listing Windows Nodes: %s", err)
+			return false, nil
+		}
+		for _, node := range nodes.Items {
+			log.Printf("checking that node %s is blocked from upgrading", node.GetName())
+			if value := node.GetLabels()[metadata.UpgradeBlockedLabel]; value != "true" {
+				log.Printf("node %s not annotated as blocked", node.GetName())
+				return false, nil
+			}
+			upgradedVersion, err := getWMCOVersion()
+			if err != nil {
+				log.Printf("error getting WMCO version: %s", err)
+				return false, nil
+			}
+			log.Printf("checking that node %s has not been upgraded to %s", node.GetName(), upgradedVersion)
+			if node.GetLabels()[metadata.DesiredVersionAnnotation] == upgradedVersion {
+				return false, fmt.Errorf("%s has been upgraded", node.GetName())
+			}
+		}
+		return true, nil
+	})
+}
+
+// allowUpgrade applies the required label to unblock the upgrade of a Windows Node
+func (tc *testContext) allowUpgrade(nodes []v1.Node) error {
+	patch, err := metadata.GenerateAddPatch(map[string]string{metadata.AllowUpgradeLabel: "true"}, nil)
+	if err != nil {
+		return fmt.Errorf("error generating patch: %w", err)
+	}
+	for _, node := range nodes {
+		_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.GetName(), types.JSONPatchType, patch,
+			metav1.PatchOptions{})
+		if err != nil {
+			return fmt.Errorf("error patching Node %s: %w", node.GetName(), err)
+		}
+	}
+	return nil
 }
