@@ -23,6 +23,12 @@ const (
 	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
 	// RebootAnnotation indicates the node's underlying instance needs to be restarted
 	RebootAnnotation = "windowsmachineconfig.openshift.io/reboot-required"
+	// UpgradeBlockedLabel indicates that the Node's upgrade has been blocked by WMCO
+	UpgradeBlockedLabel = "windowsmachineconfig.openshift.io/upgrade-blocked"
+	// CSIConfiguredLabel indicates that this Node was configured to use CSI storage, and not in-tree storage
+	CSIConfiguredLabel = "windowsmachineconfig.openshift.io/configured-with-csi"
+	// AllowUpgradeLabel should be applied on a Node by a user, if they wish to unblock an upgrade
+	AllowUpgradeLabel = "windowsmachineconfig.openshift.io/allow-upgrade"
 )
 
 // generatePatch creates a patch applying the given operation onto each given annotation key and value
@@ -106,6 +112,11 @@ func ApplyRebootAnnotation(ctx context.Context, c client.Client, node core.Node)
 	return ApplyLabelsAndAnnotations(ctx, c, node, nil, map[string]string{RebootAnnotation: ""})
 }
 
+// ApplyBlockedLabel applies a label to the given Node communicating that the Node's upgrade is blocked
+func ApplyBlockedLabel(ctx context.Context, c client.Client, node core.Node) error {
+	return ApplyLabelsAndAnnotations(ctx, c, node, map[string]string{UpgradeBlockedLabel: "true"}, nil)
+}
+
 // RemoveVersionAnnotation clears the version annotation from the node object, indicating the node is not configured
 func RemoveVersionAnnotation(ctx context.Context, c client.Client, node core.Node) error {
 	if _, present := node.GetAnnotations()[VersionAnnotation]; present {
@@ -131,6 +142,21 @@ func RemoveRebootAnnotation(ctx context.Context, c client.Client, node core.Node
 		err = c.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
 		if err != nil {
 			return fmt.Errorf("error removing reboot annotation from node %s: %w", node.GetName(), err)
+		}
+	}
+	return nil
+}
+
+// RemoveBlockedLabel clears the blocked label from the given Node
+func RemoveBlockedLabel(ctx context.Context, c client.Client, node core.Node) error {
+	if _, present := node.GetLabels()[UpgradeBlockedLabel]; present {
+		patchData, err := GenerateRemovePatch([]string{UpgradeBlockedLabel}, []string{})
+		if err != nil {
+			return fmt.Errorf("error creating remove patch: %w", err)
+		}
+		err = c.Patch(ctx, &node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
+		if err != nil {
+			return fmt.Errorf("error patching node %s: %w", node.GetName(), err)
 		}
 	}
 	return nil
