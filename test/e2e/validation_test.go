@@ -16,6 +16,7 @@ import (
 	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/mod/semver"
 	batch "k8s.io/api/batch/v1"
 	certificates "k8s.io/api/certificates/v1"
 	core "k8s.io/api/core/v1"
@@ -807,7 +808,22 @@ func (tc *testContext) testNodeAnnotations(t *testing.T) {
 			pubKey, err := tc.checkPubKeyAnnotation(&node)
 			require.NoError(t, err)
 			assert.True(t, pubKey)
+
+			t.Run("CSI Annotation", func(t *testing.T) {
+				tc.testCSIAnnotation(t, &node)
+			})
 		})
+	}
+}
+
+// testCSIAnnotation tests that the csi Annotation is applied to the Node for the expected platforms and cluster version
+func (tc *testContext) testCSIAnnotation(t *testing.T, node *core.Node) {
+	minorVersion, err := tc.clusterMinorVersion()
+	require.NoError(t, err)
+	if nodeShouldHaveCSIAnnotation(tc.CloudProvider.GetType(), minorVersion) {
+		assert.Equal(t, "true", node.Annotations[controllers.CSIAnnotation])
+	} else {
+		assert.Equal(t, "", node.Annotations[controllers.CSIAnnotation])
 	}
 }
 
@@ -844,6 +860,25 @@ func (tc *testContext) checkPubKeyAnnotation(node *core.Node) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// clusterMinorVersion returns an int representation of the minor version of the OCP cluster
+func (tc *testContext) clusterMinorVersion() (int, error) {
+	versionInfo, err := tc.client.Config.Discovery().ServerVersion()
+	if err != nil {
+		return 0, fmt.Errorf("error retrieving server version: %w", err)
+	}
+	// split the version in the form Major.Minor
+	versionString := semver.MajorMinor(versionInfo.GitVersion)
+	parsedSplit := strings.Split(versionString, ".")
+	if len(parsedSplit) != 2 {
+		return 0, fmt.Errorf("unexpected format for major/minor version %s: %w", versionString, err)
+	}
+	minorVersion, err := strconv.Atoi(parsedSplit[1])
+	if err != nil {
+		return 0, fmt.Errorf("unable to convert %s to an int: %w", parsedSplit[1], err)
+	}
+	return minorVersion, nil
 }
 
 // testDependentServiceChanges tests that a Windows service which a running service is dependent on can be reconfigured
@@ -922,4 +957,22 @@ func changeHybridOverlayCommandVerbosity(in string) (string, error) {
 func finalLine(s string) string {
 	lineSplit := strings.Split(strings.TrimSpace(s), "\n")
 	return strings.TrimSpace(lineSplit[len(lineSplit)-1])
+}
+
+// nodeShouldHaveCSIAnnotation returns true if a Node on the given platform and cluster version should be annotated with
+// the CSIAnnotation
+func nodeShouldHaveCSIAnnotation(platform config.PlatformType, clusterMinorVersion int) bool {
+	if inTreeUpgrade {
+		return false
+	}
+	if platform != config.AzurePlatformType && platform != config.VSpherePlatformType {
+		return true
+	}
+	if platform == config.AzurePlatformType && clusterMinorVersion >= 13 {
+		return true
+	}
+	if platform == config.VSpherePlatformType && clusterMinorVersion >= 14 {
+		return true
+	}
+	return false
 }

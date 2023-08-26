@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 
 	"github.com/go-logr/logr"
 	config "github.com/openshift/api/config/v1"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/mod/semver"
 	core "k8s.io/api/core/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -25,6 +28,16 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/version"
+)
+
+var (
+	// CSIAnnotation indicates that this Node was configured by a version of WMCO with CSI storage. When upgrading this
+	// Node CSI storage migration does not have to be accounted for.
+	CSIAnnotation = "windowsmachineconfig.openshift.io/configured-with-csi"
+	// UpgradeBlockedAnnotation indicates that the Node's upgrade has been blocked by WMCO
+	UpgradeBlockedAnnotation = "windowsmachineconfig.openshift.io/upgrade-blocked"
+	// AllowUpgradeLabel should be applied on a Node by a user, if they wish to unblock an upgrade
+	AllowUpgradeLabel = "windowsmachineconfig.openshift.io/allow-upgrade"
 )
 
 // instanceReconciler contains everything needed to perform actions on a Windows instance
@@ -63,7 +76,14 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation])
 		return nil
 	}
-
+	// Check if the running version of WMCO is one where in tree storage is deprecated in favor of CSI.
+	csiEnabled, err := r.usesCSI()
+	if err != nil {
+		return err
+	}
+	if csiEnabled {
+		annotationsToApply[CSIAnnotation] = "true"
+	}
 	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		instanceInfo, r.signer, labelsToApply, annotationsToApply, r.platform)
 	if err != nil {
@@ -73,6 +93,17 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
 	// configured again.
 	if instanceInfo.UpgradeRequired() {
+		blocked := r.upgradeBlocked(instanceInfo.Node, csiEnabled)
+		if blocked {
+			blockMessage := fmt.Sprintf("node upgrade has been blocked, as it can not be ensured that workloads "+
+				"will not be disrupted. If an in-tree persistent storage volume is in use, please ensure the CSI "+
+				"drivers for the given node have been deployed. This block must be overriden by applying the "+
+				"label %s to the node. It is recommended to unblock Nodes individually, and to wait for the upgrade "+
+				"to complete sucessfully before unblocking another Node.", AllowUpgradeLabel)
+			r.log.Info(blockMessage)
+			r.recorder.Eventf(instanceInfo.Node, "BlockedUpgrade", "storage", blockMessage)
+			return nil
+		}
 		// Instance requiring an upgrade indicates that node object is present with the version annotation
 		r.log.Info("instance requires upgrade", "node", instanceInfo.Node.GetName(), "version",
 			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation], "expected version", version.Get())
@@ -82,6 +113,39 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 	}
 
 	return nc.Configure()
+}
+
+// upgradeBlocked returns whether the upgrade should be blocked if an upgrade will break storage functionality
+func (r *instanceReconciler) upgradeBlocked(node *core.Node, upgradingToCSI bool) bool {
+	if !upgradingToCSI {
+		return false
+	}
+	if _, present := node.GetLabels()[AllowUpgradeLabel]; present {
+		return false
+	}
+	if value := node.GetAnnotations()[CSIAnnotation]; value == "true" {
+		return false
+	}
+	if len(node.Status.VolumesAttached) == 0 {
+		return false
+	}
+	return true
+}
+
+func (r *instanceReconciler) usesCSI() (bool, error) {
+	firstMajorVersionWithCSISupport := map[config.PlatformType]int{
+		config.AzurePlatformType:   8,
+		config.VSpherePlatformType: 9,
+	}
+	wmcoMajorVersion := strings.TrimPrefix(semver.Major(version.Get()), "v")
+	majorVersionInt, err := strconv.Atoi(wmcoMajorVersion)
+	if err != nil {
+		return false, fmt.Errorf("error converting %s to an int: %w", wmcoMajorVersion, err)
+	}
+	if firstVersion, ok := firstMajorVersionWithCSISupport[r.platform]; !ok || firstVersion <= majorVersionInt {
+		return true, nil
+	}
+	return false, nil
 }
 
 // instanceFromNode returns an instance object for the given node. Requires a username that can be used to SSH into the

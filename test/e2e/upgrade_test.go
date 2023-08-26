@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
@@ -218,14 +219,33 @@ func TestUpgrade(t *testing.T) {
 	t.Run("Node Metadata", tc.testNodeMetadata)
 
 	if inTreeUpgrade {
-		// Deploy the CSI drivers and wait for a CSI node to be created
-		// This is a requirement for storage workloads to go back to ready
 		vsphereProvider, ok := tc.CloudProvider.(*vsphere.Provider)
 		require.True(t, ok, "in tree upgrade must be ran on vSphere")
+
+		// Check that Node upgrades have been blocked by checking annotation
+		require.NoError(t, tc.waitForUpgradeBlockAnnotation())
+
+		// Deploy the CSI drivers and wait for a CSI node to be created
+		// This is a requirement for storage workloads to go back to ready
 		require.NoError(t, vsphereProvider.EnsureWindowsCSIDrivers(tc.client.K8s))
 		log.Printf("waiting for csinodes to reflect driver deployment")
 		err = tc.waitForCSINodesWithDrivers(gc.allNodes())
 		require.NoError(t, err)
+
+		// apply the allow label to each node
+		patch, err := metadata.GenerateAddPatch(map[string]string{controllers.AllowUpgradeLabel: "true"}, nil)
+		require.NoError(t, err)
+		for _, node := range gc.allNodes() {
+			_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), node.GetName(), types.JSONPatchType, patch,
+				metav1.PatchOptions{})
+			require.NoError(t, err)
+		}
+
+		// wait for Configured windows nodes to be upgraded to expected version
+		err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), true, false)
+		assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
+		err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), true, true)
+		assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 	}
 
 	// test that any workloads deployed on the node have not been broken by the upgrade
@@ -276,6 +296,28 @@ func (tc *testContext) waitForCSINodesWithDrivers(nodes []v1.Node) error {
 				}
 			}
 			if !ready {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+}
+
+// waitForUpgradeBlockAnnotation waits until all Windows nodes are annotated as having their upgrades blocked
+func (tc *testContext) waitForUpgradeBlockAnnotation() error {
+	return wait.PollImmediate(retry.Interval, 10*time.Minute, func() (bool, error) {
+		err := tc.loadExistingNodes()
+		if err != nil {
+			log.Printf("error loading Windows Nodes: %s", err)
+			return false, nil
+		}
+		if len(gc.allNodes()) != numberOfBYOHNodes+numberOfMachineNodes {
+			log.Printf("unexpected amount of Windows Nodes")
+			return false, nil
+		}
+		for _, node := range gc.allNodes() {
+			if value := node.GetAnnotations()[controllers.UpgradeBlockedAnnotation]; value != "true" {
+				log.Printf("node %s not annotated as blocked", node.GetName())
 				return false, nil
 			}
 		}
