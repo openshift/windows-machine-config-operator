@@ -52,7 +52,11 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 	}
 	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
 	files := &[]servicescm.FileInfo{}
-	return servicescm.NewData(services, files, cluster.GetProxyVars())
+	var watchedEnvVars []string
+	for _, envVar := range cluster.WatchedEnvironmentVars {
+		watchedEnvVars = append(watchedEnvVars, envVar)
+	}
+	return servicescm.NewData(services, files, cluster.GetProxyVars(), watchedEnvVars)
 }
 
 // containerdConfiguration returns the service specification for the Windows containerd service

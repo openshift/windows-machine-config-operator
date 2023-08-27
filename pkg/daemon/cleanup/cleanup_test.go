@@ -137,6 +137,46 @@ func TestMergeServices(t *testing.T) {
 	}
 }
 
+func TestMerge(t *testing.T) {
+	testIO := []struct {
+		name     string
+		list1    []string
+		list2    []string
+		expected []string
+	}{
+		{
+			name:     "both empty",
+			list1:    []string{},
+			list2:    []string{},
+			expected: []string{},
+		},
+		{
+			name:     "one empty",
+			list1:    []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
+			list2:    []string{},
+			expected: []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
+		},
+		{
+			name:     "different lists",
+			list1:    []string{"HTTP_PROXY"},
+			list2:    []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
+			expected: []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
+		},
+		{
+			name:     "overlapping lists",
+			list1:    []string{"HTTP_PROXY", "HTTPS_PROXY"},
+			list2:    []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
+			expected: []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"},
+		},
+	}
+	for _, test := range testIO {
+		t.Run(test.name, func(t *testing.T) {
+			out := merge(test.list1, test.list2)
+			assert.ElementsMatch(t, out, test.expected)
+		})
+	}
+}
+
 func newTestService(name string, dependencies []string) *fake.FakeService {
 	return fake.NewFakeService(
 		name,

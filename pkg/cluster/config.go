@@ -34,8 +34,8 @@ const (
 )
 
 var (
-	// SupportedProxyVars is a list of the supported proxy variables
-	SupportedProxyVars = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
+	// WatchedEnvironmentVars is a list of the WMCO watched environment variables
+	WatchedEnvironmentVars = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
 	// clusterWideProxyVars is a map of the global egress proxy variables and values from WMCO's environment
 	clusterWideProxyVars map[string]string
 )
@@ -363,7 +363,7 @@ func GetProxyVars() map[string]string {
 	// if clusterWideProxyVars is not already cached, initialize it. We never expect these values to change during
 	// runtime as OLM restarts the operator when the global cluster proxy config changes
 	clusterWideProxyVars = make(map[string]string, 3)
-	for _, envVar := range SupportedProxyVars {
+	for _, envVar := range WatchedEnvironmentVars {
 		value, found := os.LookupEnv(envVar)
 		if found {
 			// on Windows, hostname lists are separated by semicolons rather than the Linux default of commas

@@ -524,7 +524,10 @@ func (nc *nodeConfig) Deconfigure() error {
 	if err := nc.Windows.Deconfigure(nc.wmcoNamespace, wicdKC); err != nil {
 		return fmt.Errorf("error deconfiguring instance: %w", err)
 	}
-
+	// Wait for reboot annotation removal. This prevents deleting the node until the node no longer needs reboot.
+	if err := metadata.WaitForRebootAnnotationRemoval(context.TODO(), nc.client, nc.node.Name); err != nil {
+		return err
+	}
 	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())
 	return nil
 }
