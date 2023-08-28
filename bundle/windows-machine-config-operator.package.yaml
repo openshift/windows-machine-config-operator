@@ -1,4 +1,4 @@
 channels:
-  - currentCSV: windows-machine-config-operator.v7.1.1
+  - currentCSV: windows-machine-config-operator.v7.2.0
     channels: alpha
 packageName: windows-machine-config-operator
