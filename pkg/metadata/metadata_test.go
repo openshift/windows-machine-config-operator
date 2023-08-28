@@ -3,9 +3,10 @@ package metadata
 import (
 	"testing"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 )
 
 func TestGeneratePatch(t *testing.T) {

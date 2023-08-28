@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"net"
 
+	core "k8s.io/api/core/v1"
+
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/version"
-	core "k8s.io/api/core/v1"
 )
 
 // Info represents a instance that is meant to be joined to the cluster
