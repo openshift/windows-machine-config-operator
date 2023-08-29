@@ -66,6 +66,7 @@ type Options struct {
 	Client    client.Client
 	Mgr       manager.Manager
 	cmdRunner powershell.CommandRunner
+	caBundle  string
 }
 
 // setDefaults returns an Options based on the received options, with all nil or empty fields filled in with reasonable
@@ -106,6 +107,7 @@ type ServiceController struct {
 	watchNamespace string
 	psCmdRunner    powershell.CommandRunner
 	ctrl           controller.Controller
+	caBundle       string
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
@@ -124,7 +126,7 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 }
 
 // RunController is the entry point of WICD's controller functionality
-func RunController(ctx context.Context, watchNamespace, kubeconfig string) error {
+func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle string) error {
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return err
@@ -153,7 +155,7 @@ func RunController(ctx context.Context, watchNamespace, kubeconfig string) error
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
-	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{Client: ctrlMgr.GetClient()})
+	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{Client: ctrlMgr.GetClient(), caBundle: caBundle})
 	if err != nil {
 		return err
 	}
@@ -174,7 +176,7 @@ func NewServiceController(ctx context.Context, nodeName, watchNamespace string, 
 		return nil, err
 	}
 	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
-		watchNamespace: watchNamespace}, nil
+		watchNamespace: watchNamespace, caBundle: o.caBundle}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

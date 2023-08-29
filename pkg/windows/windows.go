@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
@@ -470,7 +471,9 @@ func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string) 
 	}
 	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --kubeconfig %s --namespace %s",
 		wicdLogDir, wicdKubeconfigPath, watchNamespace)
-
+	if cluster.IsProxyEnabled() {
+		wicdServiceArgs = fmt.Sprintf("%s --ca-bundle %s", wicdServiceArgs, TrustedCABundlePath)
+	}
 	// if WICD crashes, attempt to restart WICD after 10, 30, and 60 seconds, and then every 2 minutes after that.
 	// reset this counter 5 min after a period with no crashes
 	recoveryActions := []recoveryAction{

@@ -39,6 +39,7 @@ var (
 	}
 	windowsService bool
 	logDir         string
+	caBundle       string
 )
 
 func init() {
@@ -47,6 +48,8 @@ func init() {
 		"if not provided, the command will log to stdout/stderr")
 	controllerCmd.PersistentFlags().BoolVar(&windowsService, "windows-service", false,
 		"Enables running as a Windows service")
+	controllerCmd.PersistentFlags().StringVar(&caBundle, "ca-bundle", "",
+		"the full path to CA bundle file containing certificates trusted by the cluster")
 }
 
 func runControllerCmd(cmd *cobra.Command, args []string) {
@@ -65,7 +68,7 @@ func runControllerCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 	klog.Info("service controller running")
-	if err := controller.RunController(ctx, namespace, kubeconfig); err != nil {
+	if err := controller.RunController(ctx, namespace, kubeconfig, caBundle); err != nil {
 		klog.Error(err)
 		os.Exit(1)
 	}
