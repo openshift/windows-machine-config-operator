@@ -48,6 +48,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/certs"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/envvar"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
@@ -259,7 +260,7 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 
-	awaitingRestart, err := sc.reconcileEnvironmentVariables(cmData.EnvironmentVars, cmData.WatchedEnvironmentVars, node)
+	awaitingRestart, err := sc.reconcileEnvVarsAndCerts(cmData.EnvironmentVars, cmData.WatchedEnvironmentVars, node)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -283,15 +284,20 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	return ctrl.Result{}, nil
 }
 
-// reconcileEnvironmentVariables makes sure that the proxy variables exist as expected, or are safely rectified.
+// reconcileEnvVarsAndCerts ensures environment variables and certificates exist as expected, or are safely rectified.
 // Returns a boolean expressing whether the instance is awaiting a reboot.
-func (sc *ServiceController) reconcileEnvironmentVariables(envVars map[string]string, watchedEnvVars []string,
+func (sc *ServiceController) reconcileEnvVarsAndCerts(envVars map[string]string, watchedEnvVars []string,
 	node core.Node) (bool, error) {
-	restartRequired, err := envvar.EnsureVarsAreUpToDate(envVars, watchedEnvVars)
+	certsUpdated, err := certs.Reconcile(sc.caBundle)
 	if err != nil {
 		return false, err
 	}
-	if restartRequired {
+	envVarsUpdated, err := envvar.EnsureVarsAreUpToDate(envVars, watchedEnvVars)
+	if err != nil {
+		return false, err
+	}
+	if certsUpdated || envVarsUpdated {
+		// If there's any changes, an instance restart is required to ensure all processes pick up the updates.
 		// Applying the reboot annotation results in an event picked up by WMCO's node controller to reboot the instance
 		if err = metadata.ApplyRebootAnnotation(sc.ctx, sc.client, node); err != nil {
 			return false, fmt.Errorf("error setting reboot annotation on node %s: %w", sc.nodeName, err)
