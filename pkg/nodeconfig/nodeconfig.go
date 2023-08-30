@@ -136,12 +136,6 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 			return nil, err
 		}
 	}
-	if nodeConfigCache.credentials == nil {
-		nodeConfigCache.credentials, err = getWICDCredentials()
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, platformType: platformType,
 		wmcoNamespace: wmcoNamespace, clusterServiceCIDR: clusterServiceCIDR,
