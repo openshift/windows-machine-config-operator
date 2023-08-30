@@ -30,17 +30,17 @@ func proxyTestSuite(t *testing.T) {
 		t.Skip("cluster-wide proxy is not enabled in this environment")
 	}
 
-	t.Run("Trusted CA ConfigMap validation", testTrustedCAConfigMap)
-	t.Run("Environment variables validation", testEnvVars)
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	t.Run("Trusted CA ConfigMap validation", tc.testTrustedCAConfigMap)
+	t.Run("Environment variables validation", tc.testEnvVars)
 }
 
 // testEnvVars tests that on each node
 // 1. the system-level environment variables are set properly as per the cluster-wide proxy
 // 2. the required Windows services pick up the proper values for proxy environment variables
-func testEnvVars(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testEnvVars(t *testing.T) {
 	clusterProxy, err := tc.client.Config.ConfigV1().Proxies().Get(context.TODO(), "cluster", meta.GetOptions{})
 	if err != nil {
 		require.NoError(t, err)
@@ -75,15 +75,12 @@ func testEnvVars(t *testing.T) {
 			}
 		})
 	}
-	t.Run("Environment variables removal validation", testEnvVarRemoval)
+	t.Run("Environment variables removal validation", tc.testEnvVarRemoval)
 }
 
 // testEnvVarRemoval tests that on each node the system-level and the process-level environment variables
 // are unset when the cluster-wide proxy is disabled by patching the proxy variables in the cluster proxy object.
-func testEnvVarRemoval(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testEnvVarRemoval(t *testing.T) {
 	var patches []*patch.JSONPatch
 	patches = append(patches, patch.NewJSONPatch("remove", "/spec/httpProxy", "httpProxy"),
 		patch.NewJSONPatch("remove", "/spec/httpsProxy", "httpsProxy"))
@@ -124,10 +121,7 @@ func testEnvVarRemoval(t *testing.T) {
 // testTrustedCAConfigMap tests multiple aspects of expected functionality for the trusted-ca ConfigMap
 // 1. It exists on operator startup 2. It is re-created when deleted 3. It is patched if invalid contents are detected.
 // The ConfigMap data is managed by CNO so no need to do content validation testing.
-func testTrustedCAConfigMap(t *testing.T) {
-	tc, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testTrustedCAConfigMap(t *testing.T) {
 	// Ensure the trusted-ca ConfigMap exists in the cluster as expected
 	t.Run("Trusted CA ConfigMap metadata", func(t *testing.T) {
 		trustedCA, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(),
