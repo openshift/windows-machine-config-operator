@@ -28,10 +28,11 @@ import (
 // systemEnvVarRegistryPath is where system level environment variables are stored in the Windows OS
 const systemEnvVarRegistryPath = `SYSTEM\CurrentControlSet\Control\Session Manager\Environment`
 
-// EnsureVarsAreUpToDate ensures that the proxy environment variables are set as expected on the instance
-// If there's any changes, an instance restart is required to ensure all processes pick up the updated values.
-func EnsureVarsAreUpToDate(envVars map[string]string, watchedEnvVars []string) (bool, error) {
-	restartRequired := false
+// Reconcile ensures that the proxy environment variables are set as expected on the instance
+// If there's any changes, it returns true indicating an instance restart is required to ensure all processes
+// pick up the updated values.
+func Reconcile(envVars map[string]string, watchedEnvVars []string) (bool, error) {
+	envVarsUpdated := false
 	registryKey, err := registry.OpenKey(registry.LOCAL_MACHINE, systemEnvVarRegistryPath, registry.ALL_ACCESS)
 	if err != nil {
 		return false, fmt.Errorf("unable to open Windows system registry key %s: %w",
@@ -51,7 +52,7 @@ func EnsureVarsAreUpToDate(envVars map[string]string, watchedEnvVars []string) (
 		}
 	}
 	if len(envVarsToRemove) != 0 {
-		restartRequired, err = EnsureEnvVarsAreRemoved(registryKey, envVarsToRemove)
+		envVarsUpdated, err = EnsureEnvVarsAreRemoved(registryKey, envVarsToRemove)
 		if err != nil {
 			return false, fmt.Errorf("error removing envionment variables %v: %v", envVarsToRemove, err)
 		}
@@ -73,16 +74,16 @@ func EnsureVarsAreUpToDate(envVars map[string]string, watchedEnvVars []string) (
 				// Do not log value as proxy information is sensitive
 				return false, fmt.Errorf("unable to set environment variable %s: %w", key, err)
 			}
-			restartRequired = true
+			envVarsUpdated = true
 		}
 	}
-	return restartRequired, nil
+	return envVarsUpdated, nil
 }
 
 // EnsureEnvVarsAreRemoved ensures that the given environment variables are removed from the instance's Windows registry
 // An instance restart is required after they are removed to ensure all processes pick up the updated values.
 func EnsureEnvVarsAreRemoved(registryKey registry.Key, envVarsToRemove []string) (bool, error) {
-	restartRequired := false
+	envVarsRemoved := false
 	for _, envVar := range envVarsToRemove {
 		err := registryKey.DeleteValue(envVar)
 		if err != nil {
@@ -91,8 +92,8 @@ func EnsureEnvVarsAreRemoved(registryKey registry.Key, envVarsToRemove []string)
 			}
 		} else {
 			klog.Infof("Removed environment variable %s", envVar)
-			restartRequired = true
+			envVarsRemoved = true
 		}
 	}
-	return restartRequired, nil
+	return envVarsRemoved, nil
 }
