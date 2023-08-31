@@ -86,6 +86,7 @@ fi
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"false"}
 
 # Setup and run the operator if it is not already deployed
+wmco_deployed_by_script=false
 if  ! oc get deploy/windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE > /dev/null; then
   # OPERATOR_IMAGE defines where the WMCO image to test with is located. If $OPERATOR_IMAGE is already set, use its value.
   # Setting $OPERATOR_IMAGE is required for local testing.
@@ -110,6 +111,7 @@ if  ! oc get deploy/windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE > 
       sleep 5
       retries+=1
   done
+  wmco_deployed_by_script=true
 fi
 
 # WINDOWS_INSTANCES_DATA holds the windows-instances ConfigMap data section
@@ -197,7 +199,7 @@ if ! $SKIP_NODE_DELETION; then
   printf "\n####### WMCO logs for %s deletion tests #######\n" "$PRINT_UPGRADE" >> "$ARTIFACT_DIR"/wmco.log
   get_WMCO_logs
   # Cleanup the operator resources
-  if ! [[ "$OPENSHIFT_CI" = "true" &&  "$TEST" = "upgrade" ]]; then
+  if [ "$wmco_deployed_by_script" = "true" ]; then
     cleanup_WMCO $OSDK
   fi
 else
