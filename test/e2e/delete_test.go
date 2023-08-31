@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
@@ -218,16 +220,17 @@ func (tc *testContext) deployNOOPDaemonSet() (*apps.DaemonSet, error) {
 // waitUntilDeploymentScaled will return nil if the daemonset is fully deployed across the Windows nodes
 func (tc *testContext) waitUntilDaemonsetScaled(name string, desiredReplicas int) error {
 	var ds *apps.DaemonSet
-	var err error
-	for i := 0; i < retryCount; i++ {
-		ds, err = tc.client.K8s.AppsV1().DaemonSets(tc.workloadNamespace).Get(context.TODO(), name, meta.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("could not get daemonset %s: %w", name, err)
-		}
-		if int(ds.Status.NumberAvailable) == desiredReplicas {
-			return nil
-		}
-		time.Sleep(retryInterval)
+	err := wait.PollImmediateWithContext(context.TODO(), retry.Interval, retry.Timeout,
+		func(ctx context.Context) (done bool, err error) {
+			ds, err = tc.client.K8s.AppsV1().DaemonSets(tc.workloadNamespace).Get(ctx, name, meta.GetOptions{})
+			if err != nil {
+				log.Printf("could not get daemonset %s: %s", name, err)
+				return false, nil
+			}
+			return int(ds.Status.NumberAvailable) == desiredReplicas, nil
+		})
+	if err != nil {
+		return fmt.Errorf("error waiting for daemonset %s to scale, current status: %+v: %w", name, ds.Status, err)
 	}
-	return fmt.Errorf("timed out waiting for daemonset %s to scale, current status: %+v", name, ds.Status)
+	return nil
 }
