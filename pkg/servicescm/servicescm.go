@@ -282,12 +282,9 @@ func (cmData *Data) ValidateExpectedContent(expected *Data) error {
 	if len(cmData.EnvironmentVars) != len(expected.EnvironmentVars) {
 		return fmt.Errorf("unexpected number of environment variable")
 	}
-	for _, expectedEnvVar := range expected.EnvironmentVars {
-		if cmData.EnvironmentVars[expectedEnvVar] != expected.EnvironmentVars[expectedEnvVar] {
-			return fmt.Errorf("required environment variable %s is not present as expected."+
-				"expected: %s, actual: %s", expectedEnvVar, expected.EnvironmentVars[expectedEnvVar],
-				cmData.EnvironmentVars[expectedEnvVar])
-		}
+	if !reflect.DeepEqual(cmData.EnvironmentVars, expected.EnvironmentVars) {
+		return fmt.Errorf("required environment variables are not present as expected "+
+			"expected: %v, actual: %v", cmData.EnvironmentVars, expected.EnvironmentVars)
 	}
 	if len(cmData.WatchedEnvironmentVars) != len(expected.WatchedEnvironmentVars) {
 		return fmt.Errorf("unexpected number of watched environment variable")

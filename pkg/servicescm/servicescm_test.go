@@ -198,6 +198,30 @@ func TestGenerate(t *testing.T) {
 			assert.NoError(t, parsed.ValidateExpectedContent(data))
 		})
 	}
+	t.Run("ConfigMaps with different envVar values", func(t *testing.T) {
+		services := testServices
+		files := testFiles
+		existingEnvVars := map[string]string{
+			"HTTP_PROXY":  "proxy_endpoint:3128/",
+			"HTTPS_PROXY": "proxy_endpoint:3128/",
+			"NO_PROXY":    "localhost",
+		}
+		expectedEnvVars := map[string]string{
+			"HTTP_PROXY":  "proxy_endpoint:3128/",
+			"HTTPS_PROXY": "proxy_endpoint:3128/",
+			"NO_PROXY":    "localhost, example.com",
+		}
+		watchedEnvVars := testEnvVars
+		expectedData, err := NewData(&services, &files, expectedEnvVars, watchedEnvVars)
+		require.NoError(t, err)
+		existingData, err := NewData(&services, &files, existingEnvVars, watchedEnvVars)
+		require.NoError(t, err)
+		configMap, err := Generate(Name, "testNamespace", existingData)
+		require.NoError(t, err)
+		parsed, err := Parse(configMap.Data)
+		require.NoError(t, err)
+		assert.Error(t, parsed.ValidateExpectedContent(expectedData))
+	})
 }
 
 func TestGetBootstrapServices(t *testing.T) {
