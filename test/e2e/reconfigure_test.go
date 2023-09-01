@@ -57,10 +57,10 @@ func (tc *testContext) reconfigurationTest(t *testing.T) {
 	require.NoError(t, err)
 
 	// The Windows nodes should eventually be returned to the state we expect them to be in
-	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, true, false)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, true, false)
 	assert.NoError(t, err, "error waiting for Windows Machine nodes to be reconfigured")
 
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
 	assert.NoError(t, err, "error waiting for Windows BYOH nodes to be reconfigured")
 
 	err = tc.validateUpgradeableCondition(metav1.ConditionTrue)
@@ -100,7 +100,7 @@ func (tc *testContext) testReAddInstance(t *testing.T) {
 	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 
 	// wait for the node to be removed
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes-1, false, true, true)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes-1, true, true)
 	require.NoError(t, err, "error waiting for the removal of a node")
 
 	// update the ConfigMap again, re-adding the instance
@@ -119,7 +119,7 @@ func (tc *testContext) testReAddInstance(t *testing.T) {
 	require.NoError(t, err, "error patching windows-instances ConfigMap data with add operation")
 
 	// wait for the node to be successfully re-added
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, true, true)
+	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
 	assert.NoError(t, err, "error waiting for the Windows node to be re-added")
 
 	err = tc.validateUpgradeableCondition(metav1.ConditionTrue)

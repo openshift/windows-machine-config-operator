@@ -209,6 +209,14 @@ run-ci-e2e-byoh-test:
 run-ci-e2e-upgrade-test:
 	hack/run-ci-e2e-test.sh -t upgrade
 
+.PHONY: upgrade-test-setup
+upgrade-test-setup:
+	hack/run-ci-e2e-test.sh -t upgrade-setup -s
+
+.PHONY: upgrade-test
+upgrade-test:
+	hack/run-ci-e2e-test.sh -t upgrade-test
+
 .PHONY: clean
 clean:
 	rm -rf ${OUTPUT_DIR}
