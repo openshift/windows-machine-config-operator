@@ -48,6 +48,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/certs"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/envvar"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
@@ -66,6 +67,7 @@ type Options struct {
 	Client    client.Client
 	Mgr       manager.Manager
 	cmdRunner powershell.CommandRunner
+	caBundle  string
 }
 
 // setDefaults returns an Options based on the received options, with all nil or empty fields filled in with reasonable
@@ -106,6 +108,7 @@ type ServiceController struct {
 	watchNamespace string
 	psCmdRunner    powershell.CommandRunner
 	ctrl           controller.Controller
+	caBundle       string
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
@@ -124,7 +127,7 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 }
 
 // RunController is the entry point of WICD's controller functionality
-func RunController(ctx context.Context, watchNamespace, kubeconfig string) error {
+func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle string) error {
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return err
@@ -153,7 +156,7 @@ func RunController(ctx context.Context, watchNamespace, kubeconfig string) error
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
-	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{Client: ctrlMgr.GetClient()})
+	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{Client: ctrlMgr.GetClient(), caBundle: caBundle})
 	if err != nil {
 		return err
 	}
@@ -174,7 +177,7 @@ func NewServiceController(ctx context.Context, nodeName, watchNamespace string, 
 		return nil, err
 	}
 	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
-		watchNamespace: watchNamespace}, nil
+		watchNamespace: watchNamespace, caBundle: o.caBundle}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -257,7 +260,7 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 
-	awaitingRestart, err := sc.reconcileEnvironmentVariables(cmData.EnvironmentVars, cmData.WatchedEnvironmentVars, node)
+	awaitingRestart, err := sc.reconcileEnvVarsAndCerts(cmData.EnvironmentVars, cmData.WatchedEnvironmentVars, node)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -281,15 +284,20 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 	return ctrl.Result{}, nil
 }
 
-// reconcileEnvironmentVariables makes sure that the proxy variables exist as expected, or are safely rectified.
+// reconcileEnvVarsAndCerts ensures environment variables and certificates exist as expected, or are safely rectified.
 // Returns a boolean expressing whether the instance is awaiting a reboot.
-func (sc *ServiceController) reconcileEnvironmentVariables(envVars map[string]string, watchedEnvVars []string,
+func (sc *ServiceController) reconcileEnvVarsAndCerts(envVars map[string]string, watchedEnvVars []string,
 	node core.Node) (bool, error) {
-	restartRequired, err := envvar.EnsureVarsAreUpToDate(envVars, watchedEnvVars)
+	certsUpdated, err := certs.Reconcile(sc.caBundle)
 	if err != nil {
 		return false, err
 	}
-	if restartRequired {
+	envVarsUpdated, err := envvar.EnsureVarsAreUpToDate(envVars, watchedEnvVars)
+	if err != nil {
+		return false, err
+	}
+	if certsUpdated || envVarsUpdated {
+		// If there's any changes, an instance restart is required to ensure all processes pick up the updates.
 		// Applying the reboot annotation results in an event picked up by WMCO's node controller to reboot the instance
 		if err = metadata.ApplyRebootAnnotation(sc.ctx, sc.client, node); err != nil {
 			return false, fmt.Errorf("error setting reboot annotation on node %s: %w", sc.nodeName, err)
