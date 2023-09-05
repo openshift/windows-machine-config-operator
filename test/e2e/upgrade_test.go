@@ -223,7 +223,7 @@ func TestUpgrade(t *testing.T) {
 
 // testWorkloadsAvailable tests that all workloads deployed on Windows nodes by the test suite are available
 func (tc *testContext) testWorkloadsAvailable(t *testing.T) {
-	err := wait.PollImmediateWithContext(context.TODO(), retry.Interval, retry.ResourceChangeTimeout,
+	err := wait.PollImmediateWithContext(context.TODO(), retry.Interval, retry.Timeout,
 		func(ctx context.Context) (bool, error) {
 			deployments, err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).List(ctx, metav1.ListOptions{})
 			if err != nil {
