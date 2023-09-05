@@ -151,6 +151,7 @@ func (tc *testContext) waitForWindowsNodeRemoval(isBYOH bool) error {
 
 // testWindowsNodeDeletion tests the Windows node deletion from the cluster.
 func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
+	tc.cleanupDeployments()
 	// Deploy a DaemonSet and wait until its pods have been made ready on each Windows node. DaemonSet pods cannot be
 	// drained from a Node.
 	// Doing this ensures that WMCO is able to handle containers being present on the instance when deconfiguring.
@@ -269,4 +270,21 @@ func (tc *testContext) waitUntilDaemonsetScaled(name string, desiredReplicas int
 		return fmt.Errorf("error waiting for daemonset %s to scale, current status: %+v: %w", name, ds.Status, err)
 	}
 	return nil
+}
+
+// cleanupWorkloads attempts to delete all deployments that exist within the testContext workload namespace
+func (tc *testContext) cleanupDeployments() {
+	deployments, err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).List(context.TODO(), meta.ListOptions{})
+	if err != nil {
+		log.Printf("error getting deployment list: %s", err)
+		return
+	}
+	for _, deployment := range deployments.Items {
+		log.Printf("deleting deployment %s", deployment.GetName())
+		err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).Delete(context.TODO(), deployment.GetName(),
+			meta.DeleteOptions{})
+		if err != nil {
+			log.Printf("error deleting deployment %s: %s", deployment.GetName(), err)
+		}
+	}
 }
