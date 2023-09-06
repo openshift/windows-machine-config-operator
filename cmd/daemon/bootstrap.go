@@ -22,9 +22,9 @@ import (
 	"context"
 
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/daemon/config"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
 )
 
@@ -49,10 +49,9 @@ func init() {
 
 // runBootstrapCmd runs WICD's one-shot bootstrap operation, starting services as per the desired services ConfigMap
 func runBootstrapCmd(cmd *cobra.Command, args []string) {
-	// This command will not run in a pod, authenticate using the provided Service Account creds instead
-	cfg, err := config.FromServiceAccount(apiServerURL, saCA, saToken)
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		klog.Exitf("error using service account to build config: %s", err.Error())
+		klog.Exitf("error building config: %s", err.Error())
 	}
 	sc, err := controller.NewServiceController(context.TODO(), "", namespace, controller.Options{Config: cfg})
 	if err != nil {

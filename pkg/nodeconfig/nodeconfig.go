@@ -157,16 +157,19 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.createBootstrapFiles(); err != nil {
 		return err
 	}
+	wicdKC, err := nc.generateWICDKubeconfig()
+	if err != nil {
+		return err
+	}
 
 	wmcoVersion := version.Get()
 	// Start all required services to bootstrap a node object using WICD
-	if err := nc.Windows.Bootstrap(wmcoVersion, nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace,
-		nodeConfigCache.credentials); err != nil {
+	if err := nc.Windows.Bootstrap(wmcoVersion, nc.wmcoNamespace, wicdKC); err != nil {
 		return fmt.Errorf("bootstrapping the Windows instance failed: %w", err)
 	}
 
 	// Perform rest of the configuration with the kubelet running
-	err := func() error {
+	err = func() error {
 		// populate node object in nodeConfig in the case of a new Windows instance
 		if err := nc.setNode(false); err != nil {
 			return fmt.Errorf("error getting node object: %w", err)
@@ -194,8 +197,7 @@ func (nc *nodeConfig) Configure() error {
 			return fmt.Errorf("unable to check if cloud controller owned by cloud controller manager: %w", err)
 		}
 
-		if err := nc.Windows.ConfigureWICD(nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace,
-			nodeConfigCache.credentials); err != nil {
+		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdKC); err != nil {
 			return fmt.Errorf("configuring WICD failed: %w", err)
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
@@ -243,12 +245,35 @@ func (nc *nodeConfig) Configure() error {
 	// Stop the kubelet so that the node is marked NotReady in case of an error in configuration. We are stopping all
 	// the required services as they are interdependent and is safer to do so given the node is going to be NotReady.
 	if err != nil {
-		err := nc.Windows.RunWICDCleanup(nodeConfigCache.apiServerEndpoint, nc.wmcoNamespace, nodeConfigCache.credentials)
-		if err != nil {
+		if err := nc.Windows.RunWICDCleanup(nc.wmcoNamespace, wicdKC); err != nil {
 			nc.log.Info("Unable to mark node as NotReady", "error", err)
 		}
 	}
 	return err
+}
+
+// getWICDServiceAccountSecret returns the secret which holds the credentials for the WICD ServiceAccount
+func (nc *nodeConfig) getWICDServiceAccountSecret() (*core.Secret, error) {
+	var secrets core.SecretList
+	err := nc.client.List(context.TODO(), &secrets, client.InNamespace(nc.wmcoNamespace))
+	if err != nil {
+		return nil, err
+	}
+	// Go through all the secrets in the WMCO namespace, and find the token secret which contains the auth credentials
+	// for the WICD ServiceAccount. This secret's name will always have the form:
+	// ${service_account_name}-token-${random_string}.
+	tokenSecretPrefix := "windows-instance-config-daemon-token-"
+	var filteredSecrets []core.Secret
+	for _, secret := range secrets.Items {
+		if strings.HasPrefix(secret.Name, tokenSecretPrefix) {
+			filteredSecrets = append(filteredSecrets, secret)
+		}
+	}
+	if len(filteredSecrets) != 1 {
+		return nil, fmt.Errorf("expected 1 secret with '%s' prefix, found %d", tokenSecretPrefix, len(filteredSecrets))
+	}
+	return &filteredSecrets[0], nil
+
 }
 
 // createBootstrapFiles creates all prerequisite files on the node required to start kubelet using latest ignition spec
@@ -258,12 +283,7 @@ func (nc *nodeConfig) createBootstrapFiles() error {
 	if err != nil {
 		return err
 	}
-	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(context.TODO(), mcoBootstrapSecret,
-		meta.GetOptions{})
-	if err != nil {
-		return err
-	}
-	filePathsToContents[windows.BootstrapKubeconfigPath], err = createBootstrapKubeconfig(bootstrapSecret)
+	filePathsToContents[windows.BootstrapKubeconfigPath], err = nc.generateBootstrapKubeconfig()
 	if err != nil {
 		return err
 	}
@@ -321,25 +341,41 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 	return filePathsToContents, nil
 }
 
-// createBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server
-func createBootstrapKubeconfig(bootstrapSecret *core.Secret) (string, error) {
-	// extract ca.crt and token data fields
-	caCert := bootstrapSecret.Data[core.ServiceAccountRootCAKey]
-	if caCert == nil {
-		return "", fmt.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
-			bootstrapSecret.GetName())
-	}
-	token := bootstrapSecret.Data[core.ServiceAccountTokenKey]
-	if token == nil {
-		return "", fmt.Errorf("unable to find %s token in secret %s", core.ServiceAccountTokenKey,
-			bootstrapSecret.GetName())
-	}
-	kubeconfig, err := generateKubeconfig(&windows.Authentication{CaCert: caCert, Token: token},
-		nodeConfigCache.apiServerEndpoint)
+// generateBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server
+func (nc *nodeConfig) generateBootstrapKubeconfig() (string, error) {
+	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(context.TODO(), mcoBootstrapSecret,
+		meta.GetOptions{})
 	if err != nil {
 		return "", err
 	}
-	kubeconfigData, err := json.Marshal(kubeconfig)
+	return newKubeconfigFromSecret(bootstrapSecret, "kubelet")
+}
+
+// generateWICDKubeconfig returns the contents of a kubeconfig created from the WICD ServiceAccount
+func (nc *nodeConfig) generateWICDKubeconfig() (string, error) {
+	wicdSASecret, err := nc.getWICDServiceAccountSecret()
+	if err != nil {
+		return "", err
+	}
+	return newKubeconfigFromSecret(wicdSASecret, "wicd")
+}
+
+// newKubeconfigFromSecret returns the contents of a kubeconfig generated from the given service account token secret
+func newKubeconfigFromSecret(saSecret *core.Secret, username string) (string, error) {
+	// extract ca.crt and token data fields
+	caCert := saSecret.Data[core.ServiceAccountRootCAKey]
+	if caCert == nil {
+		return "", fmt.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
+			saSecret.GetName())
+	}
+	token := saSecret.Data[core.ServiceAccountTokenKey]
+	if token == nil {
+		return "", fmt.Errorf("unable to find %s token in secret %s", core.ServiceAccountTokenKey,
+			saSecret.GetName())
+	}
+	kc := generateKubeconfig(caCert, string(token), nodeConfigCache.apiServerEndpoint,
+		username)
+	kubeconfigData, err := json.Marshal(kc)
 	if err != nil {
 		return "", err
 	}
@@ -450,8 +486,11 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	// Revert all changes we've made to the instance by removing installed services, files, and the version annotation
-	err := nc.Windows.Deconfigure(nc.wmcoNamespace, nodeConfigCache.apiServerEndpoint, nodeConfigCache.credentials)
+	wicdKC, err := nc.generateWICDKubeconfig()
 	if err != nil {
+		return err
+	}
+	if err := nc.Windows.Deconfigure(nc.wmcoNamespace, wicdKC); err != nil {
 		return fmt.Errorf("error deconfiguring instance: %w", err)
 	}
 
@@ -476,31 +515,31 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 }
 
 // generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret
-func generateKubeconfig(secret *windows.Authentication, apiServerURL string) (clientcmdv1.Config, error) {
+func generateKubeconfig(caCert []byte, token, apiServerURL, username string) clientcmdv1.Config {
 	kubeconfig := clientcmdv1.Config{
 		Clusters: []clientcmdv1.NamedCluster{{
 			Name: "local",
 			Cluster: clientcmdv1.Cluster{
 				Server:                   apiServerURL,
-				CertificateAuthorityData: secret.CaCert,
+				CertificateAuthorityData: caCert,
 			}},
 		},
 		AuthInfos: []clientcmdv1.NamedAuthInfo{{
-			Name: "kubelet",
+			Name: username,
 			AuthInfo: clientcmdv1.AuthInfo{
-				Token: string(secret.Token),
+				Token: token,
 			},
 		}},
 		Contexts: []clientcmdv1.NamedContext{{
-			Name: "kubelet",
+			Name: username,
 			Context: clientcmdv1.Context{
 				Cluster:  "local",
-				AuthInfo: "kubelet",
+				AuthInfo: username,
 			},
 		}},
-		CurrentContext: "kubelet",
+		CurrentContext: username,
 	}
-	return kubeconfig, nil
+	return kubeconfig
 }
 
 // generateKubeletConfiguration returns the configuration spec for the kubelet Windows service
