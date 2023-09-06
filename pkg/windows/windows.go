@@ -2,6 +2,7 @@ package windows
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -397,7 +398,11 @@ func (vm *windows) RebootAndReinitialize() error {
 	if _, err := vm.Run("Restart-Computer -Force", true); err != nil {
 		return fmt.Errorf("error rebooting the Windows VM: %w", err)
 	}
-	// Reinitialize the SSH connection after the VM reboot
+	// Wait for instance to be unreachable via SSH, implies reboot is underway
+	if err := vm.waitUntilUnreachable(); err != nil {
+		return fmt.Errorf("instance reboot failed to start: %w", err)
+	}
+	// Wait for instance to come back online and reinitialize the SSH connection after the reboot
 	if err := vm.reinitialize(); err != nil {
 		return fmt.Errorf("error reinitializing SSH connection after VM reboot: %w", err)
 	}
@@ -963,6 +968,15 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 		return false, fmt.Errorf("failed to get Windows feature: %s: %w", containersFeatureName, err)
 	}
 	return strings.Contains(out, "Enabled"), nil
+}
+
+// waitUntilUnreachable tries to run a dummy command until it fails to see if the instance is reachable via SSH
+func (vm *windows) waitUntilUnreachable() error {
+	return wait.PollUntilContextTimeout(context.TODO(), retry.WindowsAPIInterval, retry.ResourceChangeTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			_, err := vm.Run("Get-Help", true)
+			return (err != nil), nil
+		})
 }
 
 func (vm *windows) reinitialize() error {
