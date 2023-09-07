@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,6 +84,10 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 			envVarsRemoved, err := tc.checkEnvVarsRemoved(addr)
 			require.NoError(t, err, "error determining if ENV vars are removed")
 			assert.True(t, envVarsRemoved, "ENV vars not removed")
+
+			t.Run("AWS metadata endpoint", func(t *testing.T) {
+				tc.checkAWSMetadataEndpointRouteIsRestored(t, addr)
+			})
 		})
 	}
 }
@@ -138,6 +143,17 @@ func (tc *testContext) checkEnvVarsRemoved(address string) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// checkAWSMetadataEndpointRouteIsRestored returns true if the metadata endpoint route is present on the Windows
+// instance
+func (tc *testContext) checkAWSMetadataEndpointRouteIsRestored(t *testing.T, address string) {
+	if tc.CloudProvider.GetType() != config.AWSPlatformType {
+		t.Skipf("Skipping for %s", tc.CloudProvider.GetType())
+	}
+	out, err := tc.runPowerShellSSHJob("check-routes", "Get-NetRoute", address)
+	require.NoError(t, err, "error checking routes")
+	assert.True(t, strings.Contains(out, "169.254.169.254"), "metadata endpoint route is not restored")
 }
 
 // waitForWindowsNodeRemoval returns when there are zero Windows nodes of the given type, machine or byoh, in the cluster
