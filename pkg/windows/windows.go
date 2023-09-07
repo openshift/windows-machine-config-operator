@@ -750,19 +750,23 @@ func (vm *windows) stopService(svc *service) error {
 	}
 
 	// Wait until the service has stopped
-	err = wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
-		serviceRunning, err := vm.isRunning(svc.name)
-		if err != nil {
-			vm.log.V(1).Error(err, "unable to check if Windows service is running", "service", svc.name)
-			return false, nil
-		}
-		return !serviceRunning, nil
-	})
-	if err != nil {
+	if err = vm.waitStopped(svc.name); err != nil {
 		return fmt.Errorf("error waiting for the %s service to stop: %w", svc.name, err)
 	}
 
 	return nil
+}
+
+// waitStopped returns once the service has stopped within the retry.Timeout interval otherwise returns an error
+func (vm *windows) waitStopped(serviceName string) error {
+	return wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
+		serviceRunning, err := vm.isRunning(serviceName)
+		if err != nil {
+			vm.log.V(1).Error(err, "unable to check if Windows service is running", "service", serviceName)
+			return false, nil
+		}
+		return !serviceRunning, nil
+	})
 }
 
 // deleteService deletes the specified Windows service
