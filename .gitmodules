@@ -35,4 +35,4 @@
 [submodule "csi-proxy"]
 	path = csi-proxy
 	url = https://github.com/openshift/csi-proxy
-	branch = release-4.14
+	branch = release-4.15
