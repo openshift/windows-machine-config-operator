@@ -621,8 +621,7 @@ func (vm *windows) transferFiles() error {
 	return nil
 }
 
-// ensureServiceIsRunning ensures a Windows service is running on the VM, creating and starting it if not already so.
-// The service's description will be set as part of this.
+// ensureServiceIsRunning ensures a Windows service is running on the VM, creating and starting it if not already so
 func (vm *windows) ensureServiceIsRunning(svc *service) error {
 	serviceExists, err := vm.serviceExists(svc.name)
 	if err != nil {
@@ -634,19 +633,14 @@ func (vm *windows) ensureServiceIsRunning(svc *service) error {
 			return fmt.Errorf("error creating %s Windows service: %w", svc.name, err)
 		}
 	}
-	if err := vm.setServiceDescription(svc.name); err != nil {
-		return fmt.Errorf("error setting description of the %s Windows service: %w", svc.name, err)
-	}
-	if err := vm.setRecoveryActions(svc); err != nil {
-		return fmt.Errorf("error setting recovery actions for the %s Windows service: %w", svc.name, err)
-	}
 	if err := vm.startService(svc); err != nil {
 		return fmt.Errorf("error starting %s Windows service: %w", svc.name, err)
 	}
 	return nil
 }
 
-// createService creates the service on the Windows VM
+// createService creates the service on the Windows VM. The service's description and recovery action will be set after
+// the service is created.
 func (vm *windows) createService(svc *service) error {
 	if svc == nil {
 		return fmt.Errorf("service object should not be nil")
@@ -662,6 +656,14 @@ func (vm *windows) createService(svc *service) error {
 	if err != nil {
 		return fmt.Errorf("failed to create service %s: %w", svc.name, err)
 	}
+
+	if err := vm.setServiceDescription(svc.name); err != nil {
+		return fmt.Errorf("error setting description of the %s Windows service: %w", svc.name, err)
+	}
+	if err := vm.setRecoveryActions(svc); err != nil {
+		return fmt.Errorf("error setting recovery actions for the %s Windows service: %w", svc.name, err)
+	}
+
 	return nil
 }
 
