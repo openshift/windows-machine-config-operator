@@ -86,6 +86,6 @@ func (a *Provider) StorageSupport() bool {
 	return false
 }
 
-func (a *Provider) CreatePVC(_ client.Interface, _ string) (*core.PersistentVolumeClaim, error) {
+func (a *Provider) CreatePVC(_ client.Interface, _ string, _ *core.PersistentVolume) (*core.PersistentVolumeClaim, error) {
 	return nil, fmt.Errorf("storage not supported on Nutanix")
 }
