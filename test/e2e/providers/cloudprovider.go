@@ -26,8 +26,9 @@ type CloudProvider interface {
 	// StorageSupport indicates if we support Windows storage on this provider
 	StorageSupport() bool
 	// CreatePVC creates a new PersistentVolumeClaim that can be used by a workload. The PVC will be created with
-	// the given client, in the given namespace.
-	CreatePVC(client.Interface, string) (*core.PersistentVolumeClaim, error)
+	// the given client, in the given namespace. If a PV is provided, the PVC will be provisioned from the PVC. Else,
+	// it will be dynamically provisioned via a StorageClass.
+	CreatePVC(client.Interface, string, *core.PersistentVolume) (*core.PersistentVolumeClaim, error)
 }
 
 // NewCloudProvider returns a CloudProvider interface or an error

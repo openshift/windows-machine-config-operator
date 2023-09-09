@@ -148,7 +148,7 @@ func (p *Provider) StorageSupport() bool {
 }
 
 // CreatePVC creates a PVC for a dynamically provisioned volume
-func (p *Provider) CreatePVC(client client.Interface, namespace string) (*core.PersistentVolumeClaim, error) {
+func (p *Provider) CreatePVC(client client.Interface, namespace string, _ *core.PersistentVolume) (*core.PersistentVolumeClaim, error) {
 	// Use a StorageClass to allow for dynamic volume provisioning
 	// https://docs.openshift.com/container-platform/4.12/storage/dynamic-provisioning.html#about_dynamic-provisioning
 	sc, err := p.ensureStorageClass(client)
