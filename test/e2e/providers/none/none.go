@@ -1,11 +1,14 @@
 package none
 
 import (
+	"context"
 	"fmt"
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	core "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	client "k8s.io/client-go/kubernetes"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
@@ -35,9 +38,24 @@ func (p *Provider) GetType() config.PlatformType {
 }
 
 func (p *Provider) StorageSupport() bool {
-	return false
+	return true
 }
 
-func (p *Provider) CreatePVC(_ client.Interface, _ string) (*core.PersistentVolumeClaim, error) {
-	return nil, fmt.Errorf("storage not supported on platform none")
+func (p *Provider) CreatePVC(c client.Interface, namespace string, pv *core.PersistentVolume) (*core.PersistentVolumeClaim, error) {
+	if pv == nil {
+		return nil, fmt.Errorf("a PV must be provided for platform none")
+	}
+	pvcSpec := core.PersistentVolumeClaim{
+		ObjectMeta: meta.ObjectMeta{
+			GenerateName: "smb-pvc" + "-",
+		},
+		Spec: core.PersistentVolumeClaimSpec{
+			AccessModes: []core.PersistentVolumeAccessMode{core.ReadWriteMany},
+			Resources: core.ResourceRequirements{
+				Requests: core.ResourceList{core.ResourceStorage: resource.MustParse("1Gi")},
+			},
+			StorageClassName: &pv.Spec.StorageClassName,
+		},
+	}
+	return c.CoreV1().PersistentVolumeClaims(namespace).Create(context.TODO(), &pvcSpec, meta.CreateOptions{})
 }
