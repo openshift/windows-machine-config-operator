@@ -150,7 +150,7 @@ get_operator_sdk() {
 
 get_packagemanifests_version() {
   # Find the line that has a semver pattern in it, such as v2.0.0
-  local VERSION=$(grep -o v.\.\.\.. $MANIFEST_LOC/windows-machine-config-operator.package.yaml)
+  local VERSION=$(grep -o 'v[0-9]\+\.[0-9]\+\.[0-9]\+' $MANIFEST_LOC/windows-machine-config-operator.package.yaml)
   # return the version without the 'v' at the beginning.
   echo ${VERSION:1}
 }
