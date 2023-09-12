@@ -125,7 +125,7 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
-	win, err := windows.New(clusterDNS, instanceInfo, signer)
+	win, err := windows.New(clusterDNS, instanceInfo, signer, &platformType)
 	if err != nil {
 		return nil, fmt.Errorf("error instantiating Windows instance from VM: %w", err)
 	}
