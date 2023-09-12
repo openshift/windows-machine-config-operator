@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.20-openshift-4.14 as build
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.20-openshift-4.15 as build
 LABEL stage=build
 
 # dos2unix is needed to build CNI plugins
