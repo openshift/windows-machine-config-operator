@@ -122,7 +122,7 @@ func (p *Provider) StorageSupport() bool {
 	return false
 }
 
-func (p *Provider) CreatePVC(_ client.Interface, _ string) (*core.PersistentVolumeClaim, error) {
+func (p *Provider) CreatePVC(_ client.Interface, _ string, _ *core.PersistentVolume) (*core.PersistentVolumeClaim, error) {
 	return nil, fmt.Errorf("storage not supported on azure")
 }
 
