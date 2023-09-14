@@ -19,13 +19,14 @@ source $WMCO_ROOT/hack/common.sh
 # get_spec returns the template yaml common for all cloud providers
 get_spec() {
 
-  if [ "$#" -lt 3 ]; then
+  if [ "$#" -lt 4 ]; then
     error-exit incorrect parameter count for get_spec $#
   fi
 
   local infraID=$1
   local az=$2
   local provider=$3
+  local byoh=$4
 
   # set machineset name, short name for Azure and vSphere due to
   # the limit in the number of characters for VM name
@@ -58,6 +59,7 @@ spec:
         machine.openshift.io/cluster-api-machine-type: worker
         machine.openshift.io/cluster-api-machineset: ${machineSetName}
         machine.openshift.io/os-id: Windows
+        windowsmachineconfig.openshift.io/ignore: "${byoh}"
     spec:
       metadata:
         labels:
@@ -68,7 +70,7 @@ EOF
 # get_aws_ms creates a MachineSet for AWS Cloud Provider
 get_aws_ms() {
 
-  if [ "$#" -lt 5 ]; then
+  if [ "$#" -lt 6 ]; then
     error-exit incorrect parameter count for get_aws_ms $#
   fi
 
@@ -77,6 +79,7 @@ get_aws_ms() {
   local az=$3
   local provider=$4
   local winver=$5
+  local byoh=$6
 
   local filter="Windows_Server-2022-English-Core-Base-????.??.??"
   if [ "$winver" == "2019" ]; then
@@ -90,7 +93,7 @@ get_aws_ms() {
   fi
 
   cat <<EOF
-$(get_spec $infraID $az $provider)
+$(get_spec $infraID $az $provider $byoh)
       providerSpec:
         value:
           ami:
@@ -132,7 +135,7 @@ EOF
 # get_azure_ms creates a MachineSet for Azure Cloud Provider
 get_azure_ms() {
 
-  if [ "$#" -lt 5 ]; then
+  if [ "$#" -lt 6 ]; then
     error-exit incorrect parameter count for get_azure_ms $#
   fi
 
@@ -141,6 +144,7 @@ get_azure_ms() {
   local az=$3
   local provider=$4
   local winver=$5
+  local byoh=$6
 
   local sku="2022-datacenter-smalldisk"
   if [ "$winver" == "2019" ]; then
@@ -150,7 +154,7 @@ get_azure_ms() {
   fi
 
   cat <<EOF
-$(get_spec $infraID $az $provider)
+$(get_spec $infraID $az $provider $byoh)
       providerSpec:
         value:
           apiVersion: azureproviderconfig.openshift.io/v1beta1
@@ -188,7 +192,7 @@ EOF
 
 # get_gcp_ms creates a MachineSet for Google Cloud Platform
 get_gcp_ms() {
-  if [ "$#" -lt 5 ]; then
+  if [ "$#" -lt 6 ]; then
     error-exit incorrect parameter count for get_gcp_ms $#
   fi
 
@@ -197,6 +201,7 @@ get_gcp_ms() {
   local az=$3
   local provider=$4
   local winver=$5
+  local byoh=$6
 
   local image="projects/windows-cloud/global/images/family/windows-2022-core"
   if [ "$winver" == "2019" ]; then
@@ -209,7 +214,7 @@ get_gcp_ms() {
   local projectID=$(oc get infrastructure cluster -ojsonpath={.status.platformStatus.gcp.projectID})
 
   cat <<EOF
-$(get_spec $infraID $az_suffix $provider)
+$(get_spec $infraID $az_suffix $provider $byoh)
       providerSpec:
         value:
           apiVersion: machine.openshift.io/v1beta1
@@ -245,12 +250,13 @@ EOF
 # get_vsphere_ms creates a MachineSet for vSphere Cloud Provider
 get_vsphere_ms() {
 
-  if [ "$#" -lt 2 ]; then
+  if [ "$#" -lt 3 ]; then
     error-exit incorrect parameter count for get_vsphere_ms $#
   fi
 
   local infraID=$1
   local provider=$2
+  local byoh=$3
 
   # set golden image template name
   # TODO: read from parameter
@@ -281,7 +287,7 @@ get_vsphere_ms() {
   server=$(echo "${providerSpec}" | jq -r '.workspace.server')
   # build machineset
   cat <<EOF
-$(get_spec $infraID "" $provider)
+$(get_spec $infraID "" $provider $byoh)
       providerSpec:
         value:
           apiVersion: vsphereprovider.openshift.io/v1beta1
@@ -307,7 +313,8 @@ EOF
 }
 
 winver="2022"
-while getopts ":w:" opt; do
+byoh=false
+while getopts ":w:b" opt; do
   case ${opt} in
     w ) # Windows Server version to use in the MachineSet. Defaults to 2022. Other option is 2019.
       winver="$OPTARG"
@@ -316,8 +323,11 @@ while getopts ":w:" opt; do
         exit 1
       fi
       ;;
+    b )
+      byoh=true
+      ;;
     \? )
-      echo "Usage: $0 -w <2019/2022> apply/delete"
+      echo "Usage: $0 -w <2019/2022> -b apply/delete"
       exit 0
       ;;
   esac
@@ -348,16 +358,16 @@ az="$(oc get machines -n openshift-machine-api | grep -w "Running" | awk '{print
 # Creates/deletes a MachineSet for Cloud Provider
 case "$platform" in
     AWS)
-      ms=$(get_aws_ms $infraID $region $az $platform $winver)
+      ms=$(get_aws_ms $infraID $region $az $platform $winver $byoh)
     ;;
     Azure)
-      ms=$(get_azure_ms $infraID $region $az $platform $winver)
+      ms=$(get_azure_ms $infraID $region $az $platform $winver $byoh)
     ;;
     GCP)
-      ms=$(get_gcp_ms $infraID $region $az $platform $winver)
+      ms=$(get_gcp_ms $infraID $region $az $platform $winver $byoh)
     ;;
     VSphere)
-      ms=$(get_vsphere_ms $infraID $platform)
+      ms=$(get_vsphere_ms $infraID $platform $byoh)
     ;;
     *)
       error-exit "platform '$platform' is not yet supported by this script"
