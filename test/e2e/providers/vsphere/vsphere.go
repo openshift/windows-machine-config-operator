@@ -111,7 +111,7 @@ func (p *Provider) getWorkspaceFromExistingMachineSet() (*mapi.Workspace, error)
 // getNetwork returns the network that needs to be used in the MachineSet
 func getNetwork() string {
 	// Default network for dev environment
-	networkSegment := "dev-segment"
+	networkSegment := "devqe-segment-222"
 	if os.Getenv("OPENSHIFT_CI") == "true" {
 		// $LEASED_RESOURCE holds the network the CI cluster is in
 		networkSegment = os.Getenv("LEASED_RESOURCE")
