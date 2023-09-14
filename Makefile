@@ -7,7 +7,7 @@ WMCO_VERSION ?= 8.1.0
 
 # *_GIT_VERSION are the k8s versions. Any update to the build line could potentially require an update to the sed
 # command in generate_k8s_version_commit() in hack/update_submodules.sh
-KUBELET_GIT_VERSION=v1.26.7+0ef5eae
+KUBELET_GIT_VERSION=v1.26.7+c7ee51f
 KUBE-PROXY_GIT_VERSION=v1.26.0+ec42cea
 CONTAINERD_GIT_VERSION=v1.6.23-7-gbe7d468dc
 
