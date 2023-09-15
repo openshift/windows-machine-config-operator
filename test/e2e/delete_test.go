@@ -48,6 +48,9 @@ func (tc *testContext) clearWindowsInstanceConfigMap() error {
 
 // testBYOHRemoval tests that nodes are properly removed and deconfigured after removing ConfigMap entries
 func (tc *testContext) testBYOHRemoval(t *testing.T) {
+	if gc.numberOfBYOHNodes == 0 {
+		t.Skip("No BYOH nodes present")
+	}
 	// Get list of BYOH nodes before the node objects are deleted
 	byohNodes, err := tc.listFullyConfiguredWindowsNodes(true)
 	require.NoError(t, err, "error getting BYOH node list")
