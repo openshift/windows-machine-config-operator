@@ -62,6 +62,7 @@ func proxyTestSuite(t *testing.T) {
 	t.Run("Certificate validation", tc.testCertsImport)
 	t.Run("Environment variables validation", tc.testEnvVars)
 	t.Run("Certificate validation removal", tc.testCertsRemoval)
+	t.Run("Environment variables removal validation", tc.testEnvVarRemoval)
 }
 
 // testCertsImport tests that any additional certificates from the proxy's trusted bundle are imported by each node
@@ -226,7 +227,8 @@ func (tc *testContext) testEnvVars(t *testing.T) {
 
 			for _, svcName := range windows.RequiredServices {
 				t.Run(svcName, func(t *testing.T) {
-					svcEnvVars, err := tc.getProxyEnvVarsFromService(addr, svcName)
+					svcEnvVars, err := tc.getProxyEnvVarsFromService(addr, svcName,
+						fmt.Sprintf("%s-%s", svcName, "added"))
 					require.NoErrorf(t, err, "error getting environment variables of service %s", svcName)
 					for _, proxyVar := range watchedEnvVars {
 						assert.Equalf(t, expectedEnvVars[proxyVar], svcEnvVars[proxyVar], "incorrect value for %s", proxyVar)
@@ -235,18 +237,14 @@ func (tc *testContext) testEnvVars(t *testing.T) {
 			}
 		})
 	}
-	t.Run("Environment variables removal validation", tc.testEnvVarRemoval)
 }
 
 // testEnvVarRemoval tests that on each node the system-level and the process-level environment variables
 // are unset when the cluster-wide proxy is disabled by patching the proxy variables in the cluster proxy object.
 func (tc *testContext) testEnvVarRemoval(t *testing.T) {
-	// This test is flaking consistently after we fix the way we check for proxy enabled in the e2e tests.
-	// Until we address https://issues.redhat.com/browse/OCPBUGS-19502, this test has been temporarily disabled.
-	t.Skip("Env var removal validation test is disabled, pending a fix")
 	var patches []*patch.JSONPatch
-	patches = append(patches, patch.NewJSONPatch("remove", "/spec/httpProxy", "httpProxy"),
-		patch.NewJSONPatch("remove", "/spec/httpsProxy", "httpsProxy"))
+	patches = append(patches, patch.NewJSONPatch("remove", "/spec/httpProxy", nil),
+		patch.NewJSONPatch("remove", "/spec/httpsProxy", nil))
 	patchData, err := json.Marshal(patches)
 	require.NoErrorf(t, err, "%v", patches)
 	_, err = tc.client.Config.ConfigV1().Proxies().Patch(
@@ -258,20 +256,7 @@ func (tc *testContext) testEnvVarRemoval(t *testing.T) {
 	)
 	patchString := string(patchData)
 	require.NoErrorf(t, err, "unable to patch %s", patchString)
-	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
-	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
-	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, false, true)
-	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
-	for _, node := range gc.allNodes() {
-		t.Run(node.GetName(), func(t *testing.T) {
-			err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (done bool, err error) {
-				foundNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(), node.GetName(), meta.GetOptions{})
-				require.NoError(t, err)
-				return tc.nodeReadyAndSchedulable(*foundNode), nil
-			})
-			assert.NoError(t, err)
-		})
-	}
+	require.NoError(t, tc.waitForAllNodesToReboot())
 	for _, node := range gc.allNodes() {
 		addr, err := controllers.GetAddress(node.Status.Addresses)
 		require.NoError(t, err, "unable to get node address")
@@ -350,11 +335,11 @@ func (tc *testContext) getSystemEnvVar(addr, variableName string) (map[string]st
 }
 
 // getServiceProxyEnvVars returns a map of all environment variables present in a service's config
-func (tc *testContext) getProxyEnvVarsFromService(addr, svcName string) (map[string]string, error) {
+func (tc *testContext) getProxyEnvVarsFromService(addr, svcName, jobName string) (map[string]string, error) {
 	command := fmt.Sprintf("Get-Process %s | ForEach-Object { $_.StartInfo.EnvironmentVariables.GetEnumerator() "+
 		"| Format-List }",
 		svcName)
-	return tc.getEnvVar(addr, svcName, command)
+	return tc.getEnvVar(addr, jobName, command)
 }
 
 func (tc *testContext) getEnvVar(addr, name, command string) (map[string]string, error) {
