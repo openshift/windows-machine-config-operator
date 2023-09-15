@@ -173,6 +173,8 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 		// Replace the known private key with a randomly generated one.
 		err = tc.createPrivateKeySecret(false)
 		require.NoError(t, err, "error replacing private key secret")
+		// Wait for machines with the known key to become Running, so that the machine list is up-to-date
+		machines, err = tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Running", false)
 	}
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 	assert.NoError(t, err, "Windows node creation failed")
