@@ -163,7 +163,8 @@ func (tc *testContext) checkEnvVarsRemoved(address string) (bool, error) {
 			return false, nil
 		}
 		for _, svcName := range windows.RequiredServices {
-			svcEnvVars, err := tc.getProxyEnvVarsFromService(address, svcName)
+			svcEnvVars, err := tc.getProxyEnvVarsFromService(address, svcName,
+				fmt.Sprintf("%s-%s", svcName, "removed"))
 			if err != nil {
 				return false, fmt.Errorf("error retrieving service level ENV vars: %w", err)
 			}
