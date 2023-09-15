@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
+	apps "k8s.io/api/apps/v1"
 	core "k8s.io/api/core/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	client "k8s.io/client-go/kubernetes"
 
@@ -27,6 +31,7 @@ const (
 	// "unknown instance type: Standard_D4s_V3" on dev cluster instances.
 	// Use the instance type the other worker machines use.
 	defaultVMSize = "Standard_D2s_v3"
+	csiNamespace  = "openshift-cluster-csi-drivers"
 )
 
 // Provider is a provider struct for testing Azure
@@ -119,11 +124,218 @@ func (p *Provider) GetType() config.PlatformType {
 }
 
 func (p *Provider) StorageSupport() bool {
-	return false
+	return true
 }
 
-func (p *Provider) CreatePVC(_ client.Interface, _ string, _ *core.PersistentVolume) (*core.PersistentVolumeClaim, error) {
-	return nil, fmt.Errorf("storage not supported on azure")
+func (p *Provider) CreatePVC(c client.Interface, namespace string, _ *core.PersistentVolume) (*core.PersistentVolumeClaim, error) {
+	if err := p.ensureWindowsCSIDaemonSet(c); err != nil {
+		return nil, err
+	}
+	storageClassName := "azurefile-csi"
+	pvcSpec := core.PersistentVolumeClaim{
+		ObjectMeta: meta.ObjectMeta{
+			GenerateName: "e2e" + "-",
+		},
+		Spec: core.PersistentVolumeClaimSpec{
+			AccessModes: []core.PersistentVolumeAccessMode{core.ReadWriteMany},
+			Resources: core.ResourceRequirements{
+				Requests: core.ResourceList{core.ResourceStorage: resource.MustParse("2Gi")},
+			},
+			StorageClassName: &storageClassName,
+		},
+	}
+	return c.CoreV1().PersistentVolumeClaims(namespace).Create(context.TODO(), &pvcSpec, meta.CreateOptions{})
+}
+
+// ensureWindowsCSIDaemonSet deploys the Windows CSI driver DaemonSet if it doesn't already exist
+func (p *Provider) ensureWindowsCSIDaemonSet(client client.Interface) error {
+	dsName := "azure-file-csi-driver-node-windows"
+	directoryType := core.HostPathDirectory
+	directoryOrCreate := core.HostPathDirectoryOrCreate
+	ds := apps.DaemonSet{
+		ObjectMeta: meta.ObjectMeta{
+			Name: dsName,
+		},
+		Spec: apps.DaemonSetSpec{
+			Selector: &meta.LabelSelector{MatchLabels: map[string]string{"app": dsName}},
+			Template: core.PodTemplateSpec{
+				ObjectMeta: meta.ObjectMeta{
+					Labels: map[string]string{"app": dsName},
+				},
+				Spec: core.PodSpec{
+					PriorityClassName: "system-node-critical",
+					NodeSelector:      map[string]string{core.LabelOSStable: "windows"},
+					// Use the controller-sa as the node-sa doesn't have GET secrets permissions required for Windows
+					ServiceAccountName: "azure-file-csi-driver-controller-sa",
+					OS:                 &core.PodOS{Name: core.Windows},
+					Tolerations: []core.Toleration{
+						{
+							Key:    "os",
+							Value:  "Windows",
+							Effect: core.TaintEffectNoSchedule,
+						},
+					},
+					Containers: []core.Container{
+						{
+							Name:  "node-driver-registrar",
+							Image: "mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar:v2.8.0",
+							Args:  []string{"--v=2", "--csi-address=$(CSI_ENDPOINT)", "-kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"},
+							Env: []core.EnvVar{
+								{
+									Name:  "CSI_ENDPOINT",
+									Value: `unix://C:\\csi\\csi.sock`,
+								},
+								{
+									Name:  "DRIVER_REG_SOCK_PATH",
+									Value: `C:\\var\\lib\\kubelet\\plugins\\file.csi.azure.com\\csi.sock`,
+								},
+								{
+									Name: "KUBE_NODE_NAME",
+									ValueFrom: &core.EnvVarSource{
+										FieldRef: &core.ObjectFieldSelector{
+											FieldPath: "spec.nodeName",
+										},
+									},
+								},
+							},
+							VolumeMounts: []core.VolumeMount{
+								{
+									Name:      "kubelet-dir",
+									MountPath: "/var/lib/kubelet",
+								},
+								{
+									Name:      "plugin-dir",
+									MountPath: "/csi",
+								},
+								{
+									Name:      "registration-dir",
+									MountPath: "/registration",
+								},
+							},
+						},
+						{
+							Name:  "azurefile",
+							Image: "mcr.microsoft.com/k8s/csi/azurefile-csi:latest",
+							Args:  []string{"--v=5", "--endpoint=$(CSI_ENDPOINT)", "--nodeid=$(KUBE_NODE_NAME)"},
+							Env: []core.EnvVar{
+								{
+									Name: "KUBE_NODE_NAME",
+									ValueFrom: &core.EnvVarSource{
+										FieldRef: &core.ObjectFieldSelector{
+											FieldPath: "spec.nodeName",
+										},
+									},
+								},
+								{
+									Name:  "CSI_ENDPOINT",
+									Value: `unix://C:\\csi\\csi.sock`,
+								},
+							},
+							VolumeMounts: []core.VolumeMount{
+								{
+									Name:      "kubelet-dir",
+									MountPath: "/var/lib/kubelet",
+								},
+								{
+									Name:      "plugin-dir",
+									MountPath: "/csi",
+								},
+								{
+									Name:      "azure-config",
+									MountPath: "/k",
+								},
+								{
+									Name:      "csi-proxy-filesystem-v1",
+									MountPath: `\\.\pipe\csi-proxy-filesystem-v1`,
+								},
+								{
+									Name:      "csi-proxy-smb-pipe-v1",
+									MountPath: `\\.\pipe\csi-proxy-smb-v1`,
+								},
+							},
+						},
+					},
+					Volumes: []core.Volume{
+						{
+							Name: "csi-proxy-filesystem-v1",
+							VolumeSource: core.VolumeSource{
+								HostPath: &core.HostPathVolumeSource{
+									Path: `\\.\pipe\csi-proxy-filesystem-v1`,
+								},
+							},
+						},
+						{
+							Name: "csi-proxy-smb-pipe-v1",
+							VolumeSource: core.VolumeSource{
+								HostPath: &core.HostPathVolumeSource{
+									Path: `\\.\pipe\csi-proxy-smb-v1`,
+								},
+							},
+						},
+						{
+							Name: "registration-dir",
+							VolumeSource: core.VolumeSource{
+								HostPath: &core.HostPathVolumeSource{
+									Path: `C:\var\lib\kubelet\plugins_registry\`,
+									Type: &directoryType,
+								},
+							},
+						},
+						{
+							Name: "kubelet-dir",
+							VolumeSource: core.VolumeSource{
+								HostPath: &core.HostPathVolumeSource{
+									Path: `C:\var\lib\kubelet`,
+									Type: &directoryType,
+								},
+							},
+						},
+						{
+							Name: "plugin-dir",
+							VolumeSource: core.VolumeSource{
+								HostPath: &core.HostPathVolumeSource{
+									Path: `C:\var\lib\kubelet\plugins\file.csi.azure.com\`,
+									Type: &directoryOrCreate,
+								},
+							},
+						},
+						{
+							Name: "azure-config",
+							VolumeSource: core.VolumeSource{
+								HostPath: &core.HostPathVolumeSource{
+									Path: `C:\k\`,
+									Type: &directoryOrCreate,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	// See if the DaemonSet already exists in the state we expect it to be in.
+	existingDS, err := client.AppsV1().DaemonSets(csiNamespace).Get(context.TODO(), dsName, meta.GetOptions{})
+	if err != nil {
+		if !k8sapierrors.IsNotFound(err) {
+			return fmt.Errorf("error getting existing Windows CSI DaemonSet: %w", err)
+		}
+	} else {
+		if reflect.DeepEqual(existingDS.Spec, ds.Spec) {
+			// DaemonSet is already as expected, nothing to do here.
+			return nil
+		}
+		// Delete the DaemonSet as it has the wrong spec.
+		err = client.AppsV1().DaemonSets(csiNamespace).Delete(context.TODO(), dsName, meta.DeleteOptions{})
+		if err != nil {
+			return fmt.Errorf("error deleting existing Windows CSI DaemonSet: %w", err)
+
+		}
+	}
+	_, err = client.AppsV1().DaemonSets(csiNamespace).Create(context.TODO(), &ds, meta.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("error creating Windows CSI DaemonSet: %w", err)
+	}
+	return nil
 }
 
 // getImageSKU returns the SKU based on the Windows Server version
