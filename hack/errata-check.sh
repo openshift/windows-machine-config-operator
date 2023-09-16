@@ -114,7 +114,7 @@ function check-upstream-status {
 
 function get-wmco-version {
   local branch=$1
-  WMCO_VERSION=$(git show "$branch":Makefile | grep -Po '(?<=WMCO_VERSION \?= )\d+')
+  WMCO_VERSION=$(git show "$branch":Makefile | grep -Po '(?<=WMCO_VERSION \?= )\d+.\d+.\d+')
   print-label "WMCO Version" "v$WMCO_VERSION"
 }
 
@@ -240,7 +240,7 @@ function get-last-wmco-version {
     # Check if last release branch is cloned locally
     print-yellow "Release tag not found, finding branching point from $last_release"
     check-upstream-status "$last_release"
-    LAST_WMCO_VERSION="Branching Day ${WMCO_VERSION}.0.0"
+    LAST_WMCO_VERSION="Branching Day ${WMCO_VERSION}"
     LAST_WMCO_HASH=$({ diff -u <(git rev-list --first-parent "$branch") <(git rev-list --first-parent "$last_release") || true; } | sed -ne 's/^ //p' | head -1)
     return
   else
