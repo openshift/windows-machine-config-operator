@@ -42,11 +42,12 @@ func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureSta
 
 // newVSphereMachineProviderSpec returns a vSphereMachineProviderSpec generated from the inputs, or an error
 func (p *Provider) newVSphereMachineProviderSpec() (*mapi.VSphereMachineProviderSpec, error) {
-	workspace, err := p.getWorkspaceFromExistingMachineSet()
+	existingProviderSpec, err := p.getProviderSpecFromExistingMachineSet()
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("creating machineset provider spec which targets %s\n", workspace.Server)
+	log.Printf("creating machineset provider spec which targets %s with network %s\n",
+		existingProviderSpec.Workspace.Server, existingProviderSpec.Network)
 
 	// The template is an image which has been properly sysprepped.  The image is derived from an environment variable
 	// defined in the job spec.
@@ -65,20 +66,18 @@ func (p *Provider) newVSphereMachineProviderSpec() (*mapi.VSphereMachineProvider
 		CredentialsSecret: &core.LocalObjectReference{
 			Name: defaultCredentialsSecretName,
 		},
-		DiskGiB:   int32(128),
-		MemoryMiB: int64(16384),
-		Network: mapi.NetworkSpec{
-			Devices: []mapi.NetworkDeviceSpec{{NetworkName: getNetwork()}},
-		},
+		DiskGiB:           int32(128),
+		MemoryMiB:         int64(16384),
+		Network:           existingProviderSpec.Network,
 		NumCPUs:           int32(4),
 		NumCoresPerSocket: int32(1),
 		Template:          vmTemplate,
-		Workspace:         workspace,
+		Workspace:         existingProviderSpec.Workspace,
 	}, nil
 }
 
-// getWorkspaceFromExistingMachineSet returns Workspace from a machineset provisioned during installation
-func (p *Provider) getWorkspaceFromExistingMachineSet() (*mapi.Workspace, error) {
+// getProviderSpecFromExistingMachineSet returns the providerSpec of an existing machineset provisioned during installation
+func (p *Provider) getProviderSpecFromExistingMachineSet() (*mapi.VSphereMachineProviderSpec, error) {
 	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-cluster=" +
 		p.InfrastructureName}
 	machineSets, err := p.oc.Machine.MachineSets(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
@@ -101,22 +100,7 @@ func (p *Provider) getWorkspaceFromExistingMachineSet() (*mapi.Workspace, error)
 		return nil, fmt.Errorf("unable to unmarshal providerSpec: %w", err)
 	}
 
-	return providerSpec.Workspace, nil
-}
-
-// getNetwork returns the network that needs to be used in the MachineSet
-func getNetwork() string {
-	// Default network for dev environment
-	networkSegment := "dev-segment"
-	if os.Getenv("OPENSHIFT_CI") == "true" {
-		// $LEASED_RESOURCE holds the network the CI cluster is in
-		networkSegment = os.Getenv("LEASED_RESOURCE")
-		// Default to "ci-segment" if the environment variable is not set.
-		if networkSegment == "" {
-			networkSegment = "ci-segment"
-		}
-	}
-	return networkSegment
+	return &providerSpec, nil
 }
 
 // GenerateMachineSet generates the MachineSet object which is vSphere provider specific
