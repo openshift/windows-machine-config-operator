@@ -524,15 +524,6 @@ func (nc *nodeConfig) Deconfigure() error {
 	if err := nc.Windows.Deconfigure(nc.wmcoNamespace, wicdKC); err != nil {
 		return fmt.Errorf("error deconfiguring instance: %w", err)
 	}
-
-	// Windows Server 2022 VMs on AWS have a non-persistent route to the metadata endpoint. This is lost when the HNS
-	// networks are deleted. Explicitly restore them to allow the same VM to be configured as a node again.
-	if nc.platformType == configv1.AWSPlatformType {
-		if err := nc.Windows.RestoreAWSRoutes(); err != nil {
-			return err
-		}
-	}
-
 	// Wait for reboot annotation removal. This prevents deleting the node until the node no longer needs reboot.
 	if err := metadata.WaitForRebootAnnotationRemoval(context.TODO(), nc.client, nc.node.Name); err != nil {
 		return err
