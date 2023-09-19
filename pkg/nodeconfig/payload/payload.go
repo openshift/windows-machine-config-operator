@@ -57,6 +57,8 @@ const (
 	// HybridOverlayPath contains the path of the hybrid overlay binary. The container image should already have this
 	// binary mounted
 	HybridOverlayPath = payloadDirectory + HybridOverlayName
+	// CSIProxyPath contains the path of the csi-proxy executable. This should be mounted in the container image.
+	CSIProxyPath = payloadDirectory + "csi-proxy/csi-proxy.exe"
 	// WindowsExporterName is the name of the Windows metrics exporter executable
 	WindowsExporterName = "windows_exporter.exe"
 	// WindowsExporterPath contains the path of the windows_exporter binary. The container image should already have
