@@ -23,10 +23,6 @@ func reconfigurationTestSuite(t *testing.T) {
 	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
 		t.Run("Re-add removed instance", tc.testReAddInstance)
 	}
-	// testPrivateKeyChange must be the last test run in the reconfiguration suite. This is because we do not currently
-	// wait for nodes to fully come back up after changing the private key back to the valid key. Only the deletion test
-	// suite should run after this. Any other tests may result in flakes.
-	// This limitation will be removed with https://issues.redhat.com/browse/WINC-655
 	t.Run("Change private key", testPrivateKeyChange)
 }
 
