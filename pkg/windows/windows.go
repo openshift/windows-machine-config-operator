@@ -235,6 +235,8 @@ type Windows interface {
 	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
 	// services are also stopped
 	RunWICDCleanup(string, string) error
+	// RestoreAWSRoutes restores the default routes on AWS VMs. This function should not be called on non-AWS VMs
+	RestoreAWSRoutes() error
 }
 
 // windows implements the Windows interface
@@ -495,6 +497,35 @@ func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string) 
 	return nil
 }
 
+func (vm *windows) RestoreAWSRoutes() error {
+	ec2LaunchV2ServiceName := "\"Amazon EC2Launch\""
+	serviceExists, err := vm.serviceExists(ec2LaunchV2ServiceName)
+	if err != nil {
+		return fmt.Errorf("error checking if %s service exists: %w", ec2LaunchV2ServiceName, err)
+	}
+	// We don't want ensureServiceIsRunning to create the service if it does not exist, so we return without an error.
+	// Returning an error does not make sense as we could have an AMI configured without the EC2Launch service present
+	// and the route created using some other customer specific method which is unknown to us.
+	if !serviceExists {
+		vm.log.Info("missing", "service", ec2LaunchV2ServiceName)
+		return nil
+	}
+	ec2Launch, err := newService("C:\\Program Files\\Amazon\\EC2Launch\\service\\EC2LaunchService.exe",
+		ec2LaunchV2ServiceName, "", nil, nil, 0)
+	if err != nil {
+		return err
+	}
+	if err = vm.ensureServiceIsRunning(ec2Launch); err != nil {
+		return err
+	}
+	// The EC2Launch service stops running once it has completed its tasks like creating routes. So we wait until it
+	// has stopped running before proceeding.
+	if err = vm.waitStopped(ec2LaunchV2ServiceName); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Interface helper methods
 
 // ensureWICDFilesExist ensures all files required for WICD to run exist. If needed, creates the destination directory,
@@ -621,8 +652,7 @@ func (vm *windows) transferFiles() error {
 	return nil
 }
 
-// ensureServiceIsRunning ensures a Windows service is running on the VM, creating and starting it if not already so.
-// The service's description will be set as part of this.
+// ensureServiceIsRunning ensures a Windows service is running on the VM, creating and starting it if not already so
 func (vm *windows) ensureServiceIsRunning(svc *service) error {
 	serviceExists, err := vm.serviceExists(svc.name)
 	if err != nil {
@@ -634,19 +664,14 @@ func (vm *windows) ensureServiceIsRunning(svc *service) error {
 			return fmt.Errorf("error creating %s Windows service: %w", svc.name, err)
 		}
 	}
-	if err := vm.setServiceDescription(svc.name); err != nil {
-		return fmt.Errorf("error setting description of the %s Windows service: %w", svc.name, err)
-	}
-	if err := vm.setRecoveryActions(svc); err != nil {
-		return fmt.Errorf("error setting recovery actions for the %s Windows service: %w", svc.name, err)
-	}
 	if err := vm.startService(svc); err != nil {
 		return fmt.Errorf("error starting %s Windows service: %w", svc.name, err)
 	}
 	return nil
 }
 
-// createService creates the service on the Windows VM
+// createService creates the service on the Windows VM. The service's description and recovery action will be set after
+// the service is created.
 func (vm *windows) createService(svc *service) error {
 	if svc == nil {
 		return fmt.Errorf("service object should not be nil")
@@ -662,6 +687,14 @@ func (vm *windows) createService(svc *service) error {
 	if err != nil {
 		return fmt.Errorf("failed to create service %s: %w", svc.name, err)
 	}
+
+	if err := vm.setServiceDescription(svc.name); err != nil {
+		return fmt.Errorf("error setting description of the %s Windows service: %w", svc.name, err)
+	}
+	if err := vm.setRecoveryActions(svc); err != nil {
+		return fmt.Errorf("error setting recovery actions for the %s Windows service: %w", svc.name, err)
+	}
+
 	return nil
 }
 
@@ -755,19 +788,23 @@ func (vm *windows) stopService(svc *service) error {
 	}
 
 	// Wait until the service has stopped
-	err = wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
-		serviceRunning, err := vm.isRunning(svc.name)
-		if err != nil {
-			vm.log.V(1).Error(err, "unable to check if Windows service is running", "service", svc.name)
-			return false, nil
-		}
-		return !serviceRunning, nil
-	})
-	if err != nil {
+	if err = vm.waitStopped(svc.name); err != nil {
 		return fmt.Errorf("error waiting for the %s service to stop: %w", svc.name, err)
 	}
 
 	return nil
+}
+
+// waitStopped returns once the service has stopped within the retry.Timeout interval otherwise returns an error
+func (vm *windows) waitStopped(serviceName string) error {
+	return wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
+		serviceRunning, err := vm.isRunning(serviceName)
+		if err != nil {
+			vm.log.V(1).Error(err, "unable to check if Windows service is running", "service", serviceName)
+			return false, nil
+		}
+		return !serviceRunning, nil
+	})
 }
 
 // deleteService deletes the specified Windows service
