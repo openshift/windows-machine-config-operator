@@ -27,8 +27,6 @@ var (
 	numberOfBYOHNodes int
 	// privateKeyPath is the path of the private key file used to configure the Windows node
 	privateKeyPath string
-	// wmcoPath is the path to the WMCO binary that was used within the operator image
-	wmcoPath string
 	// wmcoNamespace is the namespace WMCO is deployed to
 	wmcoNamespace string
 	// windowsServerVersion is the Windows Server version to test against
@@ -146,8 +144,6 @@ func TestMain(m *testing.M) {
 	flag.IntVar(&numberOfMachineNodes, "machine-node-count", 1,
 		"number of nodes to be created for testing the Machine controller."+
 			"Setting this to 0 will result in some tests being skipped")
-	flag.StringVar(&wmcoPath, "wmco-path", "./../../build/_output/bin/windows-machine-config-operator",
-		"Path to the WMCO binary, used for version validation")
 	flag.StringVar(&wmcoNamespace, "wmco-namespace", "openshift-windows-machine-config-operator",
 		"Namespace that WMCO is deployed to")
 	flag.StringVar(&privateKeyPath, "private-key-path", "",
