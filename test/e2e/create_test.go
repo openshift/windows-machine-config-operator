@@ -160,23 +160,62 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	}
 	_, err := tc.createWindowsMachineSet(gc.numberOfMachineNodes, false)
 	require.NoError(t, err, "failed to create Windows MachineSet")
-	// We need to cover the case where a user changes the private key secret before the WMCO has a chance to
-	// configure the Machine. In order to simulate that case we need to wait for the MachineSet to be fully
-	// provisioned and then change the key. The correct amount of nodes being configured is proof that the
-	// mismatched Machine created with the mismatched key was deleted and replaced.
-	// Depending on timing and configuration flakes this will either cause all Machines, or all Machines after
-	// the first configured Machines to hit this scenario. This is a platform agonistic test so we run it only on
-	// Azure.
+
+	t.Run("Machine configuration while private key change", tc.testMachineConfigurationWhilePrivateKeyChange)
+
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
-	if tc.CloudProvider.GetType() == config.AzurePlatformType {
-		// Replace the known private key with a randomly generated one.
-		err = tc.createPrivateKeySecret(false)
-		require.NoError(t, err, "error replacing private key secret")
-	}
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 	assert.NoError(t, err, "Windows node creation failed")
 	tc.machineLogCollection(machines.Items)
+}
+
+// testMachineConfigurationWhilePrivateKeyChange tests that machines which have not yet been configured by WMCO are
+// deleted after the private key is changed, but before WMCO is able to configure them, resulting in WMCO getting an
+// SSH authentication error. This could be considered a platform-agnostic test (except for vSphere where the private
+// key is baked in the VM template) so we run it only on Azure.
+func (tc *testContext) testMachineConfigurationWhilePrivateKeyChange(t *testing.T) {
+	if tc.CloudProvider.GetType() != config.AzurePlatformType {
+		t.Skip("test disabled, exclusively runs on Azure")
+	}
+	machines, err := tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
+	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
+
+	err = tc.createPrivateKeySecret(false)
+	require.NoError(t, err, "error replacing private key secret")
+
+	err = tc.waitForMachinesDeleted(machines.Items)
+	require.NoError(t, err, "error waiting for machines deletion after private key secret change")
+}
+
+// waitForMachinesDeleted waits for the given list of machines to be deleted
+func (tc *testContext) waitForMachinesDeleted(machines []mapi.Machine) (err error) {
+	// This is the maximum amount of time for the deletion of all machines in Azure
+	deletionTimeout := time.Minute * 15
+	for _, m := range machines {
+		log.Printf("waiting (timeout: %s) for machine %s to be deleted", deletionTimeout.String(), m.GetName())
+		err = wait.PollUntilContextTimeout(context.TODO(), retry.ResourceChangeTimeout, deletionTimeout, false,
+			func(ctx context.Context) (done bool, err error) {
+				_, err = tc.client.Machine.Machines(clusterinfo.MachineAPINamespace).Get(context.TODO(), m.GetName(),
+					metav1.GetOptions{})
+				if err != nil {
+					if apierrors.IsNotFound(err) {
+						// machine deleted
+						return true, nil
+					}
+					log.Printf("error getting machine object, retrying: %v", err)
+					return false, nil
+				}
+				// machine exist, wait for it to be deleted
+				log.Printf("waiting for machine %s to be deleted", m.GetName())
+				return false, nil
+			})
+		// fail on any machine timeout
+		if err != nil {
+			break
+		}
+	}
+	return err
 }
 
 // machineLogCollection makes a best effort attempt to collect logs from each Machine instance
