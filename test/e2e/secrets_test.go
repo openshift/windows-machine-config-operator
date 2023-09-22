@@ -181,9 +181,9 @@ func testPrivateKeyChange(t *testing.T) {
 	err = tc.validateUpgradeableCondition(meta.ConditionTrue)
 	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 
-	// Re-create the known private key so SSH connection can be re-established
-	// TODO: Remove dependency on this secret by rotating keys as part of https://issues.redhat.com/browse/WINC-655
-	require.NoError(t, tc.createPrivateKeySecret(true), "error confirming known private key secret exists")
+	// revert key changes so the test suite is able to SSH into the VMs
+	require.NoError(t, tc.createPrivateKeySecret(true))
+	require.NoError(t, tc.waitForNewMachineNodes())
 }
 
 // waitForBYOHPrivateKeyUpdate waits until all BYOH Nodes annotations are updated to reflect the expected private key
