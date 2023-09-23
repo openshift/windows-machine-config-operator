@@ -157,7 +157,7 @@ func (p *Provider) CreateInTreePVC(client client.Interface, namespace string) (*
 }
 
 // CreatePVC creates a PVC for a dynamically provisioned volume
-func (p *Provider) CreatePVC(client client.Interface, namespace string) (*core.PersistentVolumeClaim, error) {
+func (p *Provider) CreatePVC(client client.Interface, namespace string, _ *core.PersistentVolume) (*core.PersistentVolumeClaim, error) {
 	if err := p.EnsureWindowsCSIDrivers(client); err != nil {
 		return nil, err
 	}
