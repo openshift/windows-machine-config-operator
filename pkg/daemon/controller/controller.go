@@ -292,7 +292,7 @@ func (sc *ServiceController) reconcileEnvVarsAndCerts(envVars map[string]string,
 	if err != nil {
 		return false, err
 	}
-	envVarsUpdated, err := envvar.EnsureVarsAreUpToDate(envVars, watchedEnvVars)
+	envVarsUpdated, err := envvar.Reconcile(envVars, watchedEnvVars)
 	if err != nil {
 		return false, err
 	}

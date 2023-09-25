@@ -65,12 +65,12 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	if err = removeServices(svcMgr, mergedCMData.Services); err != nil {
 		return err
 	}
-	restartRequired, err := ensureEnvVarsAreRemoved(mergedCMData.WatchedEnvironmentVars)
+	envVarsRemoved, err := ensureEnvVarsAreRemoved(mergedCMData.WatchedEnvironmentVars)
 	if err != nil {
 		return err
 	}
 	// rebooting instance to unset the environment variables at the process level as expected
-	if restartRequired {
+	if envVarsRemoved {
 		// Applying the reboot annotation results in an event picked up by WMCO's node controller to reboot the instance
 		if err = metadata.ApplyRebootAnnotation(ctx, directClient, *node); err != nil {
 			return fmt.Errorf("error setting reboot annotation on node %s: %w", node.Name, err)
@@ -196,7 +196,7 @@ func removeServices(svcMgr manager.Manager, services []servicescm.Service) error
 
 // ensureEnvVarsAreRemoved removes all WICD configured ENV variables from this instance
 func ensureEnvVarsAreRemoved(watchedEnvVars []string) (bool, error) {
-	return envvar.EnsureVarsAreUpToDate(map[string]string{}, watchedEnvVars)
+	return envvar.Reconcile(map[string]string{}, watchedEnvVars)
 }
 
 // cleanupContainers makes a best effort to stop all processes with the name containerd-shim-runhcs-v1, stopping
