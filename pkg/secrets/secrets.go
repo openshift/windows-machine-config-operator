@@ -43,7 +43,7 @@ func GenerateUserData(platformType oconfig.PlatformType, publicKey ssh.PublicKey
 	if pubKeyBytes == nil {
 		return nil, fmt.Errorf("failed to retrieve public key using signer")
 	}
-	userData := processTags(platformType, generateUserDataWithPubKey(string(pubKeyBytes[:])))
+	userData := processTags(platformType, generateUserDataWithPubKey(platformType, string(pubKeyBytes[:])))
 	// sshd service is started to create the default sshd_config file. This file is modified
 	// for enabling publicKey auth and the service is restarted for the changes to take effect.
 	userDataSecret := &core.Secret{
@@ -60,8 +60,8 @@ func GenerateUserData(platformType oconfig.PlatformType, publicKey ssh.PublicKey
 }
 
 // generateUserDataWithPubKey returns the Windows user data for the given pubKey
-func generateUserDataWithPubKey(pubKey string) string {
-	return `function Get-RandomPassword {
+func generateUserDataWithPubKey(platformType oconfig.PlatformType, pubKey string) string {
+	userData := `function Get-RandomPassword {
 				Add-Type -AssemblyName 'System.Web'
 				return [System.Web.Security.Membership]::GeneratePassword(16, 2)
 			}
@@ -97,7 +97,14 @@ func generateUserDataWithPubKey(pubKey string) string {
 			$acl.SetAccessRule($administratorsRule)
 			$acl.SetAccessRule($systemRule)
 			$acl | Set-Acl
-			Restart-Service sshd`
+			Restart-Service sshd
+			`
+	if platformType == oconfig.AWSPlatformType {
+		userData += `if (Test-Path -Path 'C:\Program Files\Amazon\EC2Launch\EC2Launch.exe' -PathType Leaf) {
+				& 'C:\Program Files\Amazon\EC2Launch\EC2Launch.exe' run-task add-routes --persistent
+			}`
+	}
+	return userData
 }
 
 // applyTag surrounds the given data using the tag name with the following
