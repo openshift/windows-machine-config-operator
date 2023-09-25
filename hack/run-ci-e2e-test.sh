@@ -172,6 +172,8 @@ if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
 fi
 
 if [[ "$TEST" = "upgrade-setup" ]]; then
+  # TODO: Remove this after adding it to the appropriate release jobs
+  export UPGRADE_FROM_IN_TREE=true
   go test ./test/e2e/... -run=TestWMCO/create/Creation -v -timeout=90m -args $GO_TEST_ARGS
   go test ./test/e2e/... -run=TestWMCO/create/Nodes_ready_and_schedulable -v -timeout=90m -args $GO_TEST_ARGS
   # Run the storage test, skipping deletion of the created workload in order to test that it persists across the upgrade
@@ -180,6 +182,8 @@ if [[ "$TEST" = "upgrade-setup" ]]; then
 fi
 
 if [[ "$TEST" = "upgrade-test" ]]; then
+  # TODO: Remove this after adding it to the appropriate release jobs
+  export UPGRADE_FROM_IN_TREE=true
   go test ./test/e2e/... -run=TestUpgrade -v -timeout=20m -args $GO_TEST_ARGS
 fi
 

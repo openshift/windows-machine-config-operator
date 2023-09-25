@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
+	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/azure"
 )
 
 const (
@@ -216,6 +217,17 @@ func TestUpgrade(t *testing.T) {
 	t.Run("Node annotations", tc.testNodeAnnotations)
 	t.Run("Node Metadata", tc.testNodeMetadata)
 
+	if inTreeUpgrade {
+		// Deploy the CSI drivers and wait for a CSI node to be created
+		// This is a requirement for storage workloads to go back to ready
+		azureProvider, ok := tc.CloudProvider.(*azure.Provider)
+		require.True(t, ok, "in tree upgrade must be ran on Azure")
+		require.NoError(t, azureProvider.EnsureWindowsCSIDaemonSet(tc.client.K8s))
+		log.Printf("waiting for csinodes to reflect driver deployment")
+		err = tc.waitForCSINodesWithDrivers(gc.allNodes())
+		require.NoError(t, err)
+	}
+
 	// test that any workloads deployed on the node have not been broken by the upgrade
 	t.Run("Workloads ready", tc.testWorkloadsAvailable)
 	t.Run("Node Logs", tc.testNodeLogs)
@@ -240,4 +252,33 @@ func (tc *testContext) testWorkloadsAvailable(t *testing.T) {
 			return true, nil
 		})
 	assert.NoError(t, err)
+}
+
+// waitForCSINodes waits for a CSINode to exist for each node with a driver loaded, indicating CSI functionality has
+// been enabled for the given node.
+func (tc *testContext) waitForCSINodesWithDrivers(nodes []v1.Node) error {
+	return wait.PollImmediate(retry.Interval, 10*time.Minute, func() (bool, error) {
+		csinodes, err := tc.client.K8s.StorageV1().CSINodes().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			log.Printf("error listing CSINodes: %s", err)
+			return false, nil
+		}
+		for _, node := range nodes {
+			var ready bool
+			for _, csinode := range csinodes.Items {
+				if csinode.GetName() == node.GetName() {
+					if len(csinode.Spec.Drivers) != 1 {
+						log.Printf("CSINode for %s is missing driver", node.GetName())
+						break
+					}
+					ready = true
+					break
+				}
+			}
+			if !ready {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
 }
