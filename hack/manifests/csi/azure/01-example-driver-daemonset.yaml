@@ -1,0 +1,110 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: azure-file-csi-driver-node-windows
+  namespace: openshift-cluster-csi-drivers
+spec:
+  selector:
+    matchLabels:
+      app: azure-file-csi-driver-node-windows
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: azure-file-csi-driver-node-windows
+    spec:
+      priorityClassName: system-node-critical
+      nodeSelector:
+        kubernetes.io/os: windows
+      serviceAccountName: azure-file-csi-driver-controller-sa
+      os:
+        name: windows
+      containers:
+        - name: node-driver-registrar
+          image: mcr.microsoft.com/oss/kubernetes-csi/csi-node-driver-registrar:v2.8.0
+          args:
+            - "--v=2"
+            - "--csi-address=$(CSI_ENDPOINT)"
+            - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+          env:
+            - name: CSI_ENDPOINT
+              value: 'unix://C:\\csi\\csi.sock'
+            - name: DRIVER_REG_SOCK_PATH
+              value: 'C:\\var\\lib\\kubelet\\plugins\\file.csi.azure.com\\csi.sock'
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: "spec.nodeName"
+          volumeMounts:
+            - name: kubelet-dir
+              mountPath: /var/lib/kubelet
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+          livenessProbe:
+            exec:
+              command:
+                - /csi-node-driver-registrar.exe
+                - --kubelet-registration-path=C:\\var\\lib\\kubelet\\plugins\\file.csi.azure.com\\csi.sock
+                - --mode=kubelet-registration-probe
+            initialDelaySeconds: 3
+        - name: azurefile
+          image: mcr.microsoft.com/k8s/csi/azurefile-csi:latest
+          args:
+            - "--v=5"
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--nodeid=$(KUBE_NODE_NAME)"
+          env:
+            - name: CSI_ENDPOINT
+              value: 'unix://C:\\csi\\csi.sock'
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: "spec.nodeName"
+          imagePullPolicy: "Always"
+          volumeMounts:
+            - name: kubelet-dir
+              mountPath: /var/lib/kubelet
+            - name: plugin-dir
+              mountPath: /csi
+            - name: azure-config
+              mountPath: /k
+            - name: csi-proxy-filesystem-v1
+              mountPath: \\.\pipe\csi-proxy-filesystem-v1
+            - name: csi-proxy-smb-pipe-v1
+              mountPath: \\.\pipe\csi-proxy-smb-v1
+      volumes:
+        - name: csi-proxy-filesystem-v1
+          hostPath:
+            path: \\.\pipe\csi-proxy-filesystem-v1
+            type: ''
+        - name: csi-proxy-smb-pipe-v1
+          hostPath:
+            path: \\.\pipe\csi-proxy-smb-v1
+            type: ''
+        - name: registration-dir
+          hostPath:
+            path: 'C:\var\lib\kubelet\plugins_registry\'
+            type: Directory
+        - name: plugin-dir
+          hostPath:
+            path: 'C:\var\lib\kubelet\plugins\file.csi.azure.com\'
+            type: DirectoryOrCreate
+        - name: kubelet-dir
+          hostPath:
+            path: 'C:\var\lib\kubelet'
+            type: Directory
+        - name: azure-config
+          hostPath:
+            path: 'C:\k\'
+            type: DirectoryOrCreate
+      tolerations:
+        - key: "os"
+          value: "Windows"
+          effect: "NoSchedule"
