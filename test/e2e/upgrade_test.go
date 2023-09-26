@@ -208,9 +208,9 @@ func TestUpgrade(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), false, false)
-	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
+	require.NoError(t, err, "timed out waiting for Windows Machine nodes")
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), false, true)
-	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
+	require.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
 	// Basic testing to ensure the Node object is in a good state
 	t.Run("Nodes ready", tc.testNodesBecomeReadyAndSchedulable)
