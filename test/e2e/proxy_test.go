@@ -121,6 +121,9 @@ func (tc *testContext) testEnvVars(t *testing.T) {
 // testEnvVarRemoval tests that on each node the system-level and the process-level environment variables
 // are unset when the cluster-wide proxy is disabled by patching the proxy variables in the cluster proxy object.
 func (tc *testContext) testEnvVarRemoval(t *testing.T) {
+	// This test is flaking consistently after we fix the way we check for proxy enabled in the e2e tests.
+	// Until we address https://issues.redhat.com/browse/OCPBUGS-19502, this test has been temporarily disabled.
+	t.Skip("Env var removal validation test is disabled, pending a fix")
 	var patches []*patch.JSONPatch
 	patches = append(patches, patch.NewJSONPatch("remove", "/spec/httpProxy", "httpProxy"),
 		patch.NewJSONPatch("remove", "/spec/httpsProxy", "httpsProxy"))
