@@ -15,6 +15,8 @@ import (
 	"golang.org/x/mod/semver"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+
+	"github.com/openshift/windows-machine-config-operator/version"
 )
 
 //+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get
@@ -372,4 +374,24 @@ func GetProxyVars() map[string]string {
 		}
 	}
 	return clusterWideProxyVars
+}
+
+// CSIStorageEnabled returns true if WMCO should configure Nodes to use CSI driver backed storage, and not in-tree
+// storage
+func CSIStorageEnabled(platform oconfig.PlatformType) (bool, error) {
+	var firstWMCOVersionWithCSISupport int
+	switch platform {
+	case oconfig.AzurePlatformType:
+		firstWMCOVersionWithCSISupport = 8
+	case oconfig.VSpherePlatformType:
+		firstWMCOVersionWithCSISupport = 9
+	default:
+		// All other platforms had in-tree storage removed in 4.12 or before, and must have CSI enabled
+		return true, nil
+	}
+	majorVersion, err := version.Major()
+	if err != nil {
+		return false, fmt.Errorf("error getting WMCO major version: %w", err)
+	}
+	return firstWMCOVersionWithCSISupport <= majorVersion, nil
 }
