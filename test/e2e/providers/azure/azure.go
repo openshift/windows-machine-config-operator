@@ -51,7 +51,7 @@ func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureSta
 }
 
 // newAzureMachineProviderSpec returns an AzureMachineProviderSpec generated from the inputs, or an error
-func (p *Provider) newAzureMachineProviderSpec(location string, zone *string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
+func (p *Provider) newAzureMachineProviderSpec(location string, zone string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
 	return &mapi.AzureMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
 			APIVersion: "azureproviderconfig.openshift.io/v1beta1",
