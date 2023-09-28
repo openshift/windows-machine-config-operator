@@ -19,7 +19,6 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
-	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -28,12 +27,15 @@ import (
 // proxyTestSuite contains the validation cases for cluster-wide proxy.
 // All subtests are skipped if a proxy is not enabled in the test environment.
 func proxyTestSuite(t *testing.T) {
-	if !cluster.IsProxyEnabled() {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	proxyEnabled, err := tc.client.ProxyEnabled()
+	require.NoErrorf(t, err, "error checking if proxy is enabled in test environment")
+	if !proxyEnabled {
 		t.Skip("cluster-wide proxy is not enabled in this environment")
 	}
 
-	tc, err := NewTestContext()
-	require.NoError(t, err)
 	// Enables proxy test suite to be run individually on existing Windows nodes
 	require.NoError(t, tc.loadExistingNodes())
 
