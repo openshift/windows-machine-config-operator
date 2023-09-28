@@ -44,6 +44,13 @@ func creationTestSuite(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, tc.loadExistingNodes(), "error getting the current Windows nodes in the cluster")
+
+	proxyEnabled, err := tc.client.ProxyEnabled()
+	require.NoErrorf(t, err, "error checking if proxy is enabled in test environment")
+	if proxyEnabled {
+		require.NoError(t, tc.configureUserCABundle())
+	}
+
 	if !t.Run("Creation", tc.testWindowsNodeCreation) {
 		// No point in running the other tests if creation failed
 		return
