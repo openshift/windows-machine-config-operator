@@ -1,7 +1,7 @@
 [submodule "ovn-kubernetes"]
 	path = ovn-kubernetes
-	url = https://github.com/openshift/ovn-kubernetes
-	branch = release-4.15
+	url = https://github.com/kyrtapz/ovn-kubernetes-downstream
+	branch = windows_fix
 [submodule "containernetworking-plugins"]
 	path = containernetworking-plugins
 	url = https://github.com/openshift/containernetworking-plugins
