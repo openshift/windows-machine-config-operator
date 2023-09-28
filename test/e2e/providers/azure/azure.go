@@ -10,6 +10,7 @@ import (
 	mapi "github.com/openshift/api/machine/v1beta1"
 	apps "k8s.io/api/apps/v1"
 	core "k8s.io/api/core/v1"
+	storage "k8s.io/api/storage/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -92,19 +93,12 @@ func (p *Provider) newAzureMachineProviderSpec(location string, zone *string, wi
 
 // GenerateMachineSet generates the machineset object which is aws provider specific
 func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*mapi.MachineSet, error) {
-	// Inspect master-0 to get Azure Location and Zone
-	machines, err := p.oc.Machine.Machines(clusterinfo.MachineAPINamespace).Get(context.TODO(),
-		p.InfrastructureName+"-master-0", meta.GetOptions{})
+	// Create the Windows Machines in the same location and zone as another node in the cluster
+	masterProviderSpec, err := p.getExistingMachineProviderSpec()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)
-	}
-	masterProviderSpec := new(mapi.AzureMachineProviderSpec)
-	err = json.Unmarshal(machines.Spec.ProviderSpec.Value.Raw, masterProviderSpec)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal master-0 azure machine provider spec: %v", err)
+		return nil, err
 	}
 
-	// create new machine provider spec for deploying Windows node in the same Location and Zone as master-0
 	providerSpec, err := p.newAzureMachineProviderSpec(masterProviderSpec.Location, masterProviderSpec.Zone,
 		windowsServerVersion)
 	if err != nil {
@@ -119,6 +113,23 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, wind
 	return machineset.New(rawProviderSpec, p.InfrastructureName, replicas, withIgnoreLabel, ""), nil
 }
 
+// getExistingMachineProviderSpec returns the spec of the *-master-0 Machine. The same Machine will always be returned
+// for the sake of consistency.
+func (p *Provider) getExistingMachineProviderSpec() (*mapi.AzureMachineProviderSpec, error) {
+	// Inspect master-0 to get Azure Location and Zone
+	machine, err := p.oc.Machine.Machines(clusterinfo.MachineAPINamespace).Get(context.TODO(),
+		p.InfrastructureName+"-master-0", meta.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get master-0 machine resource: %v", err)
+	}
+	masterProviderSpec := new(mapi.AzureMachineProviderSpec)
+	err = json.Unmarshal(machine.Spec.ProviderSpec.Value.Raw, masterProviderSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal master-0 azure machine provider spec: %v", err)
+	}
+	return masterProviderSpec, nil
+}
+
 func (p *Provider) GetType() config.PlatformType {
 	return config.AzurePlatformType
 }
@@ -127,11 +138,27 @@ func (p *Provider) StorageSupport() bool {
 	return true
 }
 
+// CreateInTreePVC creates a PVC which has the potential to be migrated to a CSI PVC on upgrade
+func (p *Provider) CreateInTreePVC(c client.Interface, namespace string) (*core.PersistentVolumeClaim, error) {
+	return p.createPVC(c, namespace, true)
+}
+
 func (p *Provider) CreatePVC(c client.Interface, namespace string) (*core.PersistentVolumeClaim, error) {
-	if err := p.ensureWindowsCSIDaemonSet(c); err != nil {
+	if err := p.EnsureWindowsCSIDaemonSet(c); err != nil {
 		return nil, err
 	}
+	return p.createPVC(c, namespace, false)
+}
+
+func (p *Provider) createPVC(c client.Interface, namespace string, inTree bool) (*core.PersistentVolumeClaim, error) {
 	storageClassName := "azurefile-csi"
+	if inTree {
+		sc, err := p.ensureStorageClass(c)
+		if err != nil {
+			return nil, fmt.Errorf("error ensuring in-tree storage class exists")
+		}
+		storageClassName = sc.GetName()
+	}
 	pvcSpec := core.PersistentVolumeClaim{
 		ObjectMeta: meta.ObjectMeta{
 			GenerateName: "e2e" + "-",
@@ -147,8 +174,38 @@ func (p *Provider) CreatePVC(c client.Interface, namespace string) (*core.Persis
 	return c.CoreV1().PersistentVolumeClaims(namespace).Create(context.TODO(), &pvcSpec, meta.CreateOptions{})
 }
 
+// ensureStorageClass ensures an azure-file storage class exists for use with in-tree storage
+func (p *Provider) ensureStorageClass(client client.Interface) (*storage.StorageClass, error) {
+	storageClassName := "e2e"
+	sc, err := client.StorageV1().StorageClasses().Get(context.TODO(), storageClassName, meta.GetOptions{})
+	if err == nil {
+		return sc, nil
+	} else if !k8sapierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("error getting storage class '%s': %w", storageClassName, err)
+	}
+
+	// get the location that this StorageClass will be usable in
+	masterProviderSpec, err := p.getExistingMachineProviderSpec()
+	if err != nil {
+		return nil, err
+	}
+	clusterLocation := masterProviderSpec.Location
+	volumeBinding := storage.VolumeBindingImmediate
+	reclaimPolicy := core.PersistentVolumeReclaimDelete
+	sc = &storage.StorageClass{
+		ObjectMeta: meta.ObjectMeta{
+			Name: storageClassName,
+		},
+		Provisioner:       "kubernetes.io/azure-file",
+		Parameters:        map[string]string{"location": clusterLocation, "skuName": "Standard_LRS"},
+		ReclaimPolicy:     &reclaimPolicy,
+		VolumeBindingMode: &volumeBinding,
+	}
+	return client.StorageV1().StorageClasses().Create(context.TODO(), sc, meta.CreateOptions{})
+}
+
 // ensureWindowsCSIDaemonSet deploys the Windows CSI driver DaemonSet if it doesn't already exist
-func (p *Provider) ensureWindowsCSIDaemonSet(client client.Interface) error {
+func (p *Provider) EnsureWindowsCSIDaemonSet(client client.Interface) error {
 	dsName := "azure-file-csi-driver-node-windows"
 	directoryType := core.HostPathDirectory
 	directoryOrCreate := core.HostPathDirectoryOrCreate

@@ -21,13 +21,17 @@ import (
 // It also tests that 'oc adm node-logs' works with the nodes created by WMCO.
 func (tc *testContext) testNodeLogs(t *testing.T) {
 	// All these paths are relative to /var/log/
+	kubeProxyLog := "kube-proxy/kube-proxy.log"
 	mandatoryLogs := []string{
-		"kube-proxy/kube-proxy.log",
+		kubeProxyLog,
 		"hybrid-overlay/hybrid-overlay.log",
 		"kubelet/kubelet.log",
 		"containerd/containerd.log",
 		"wicd/windows-instance-config-daemon.exe.INFO",
-		"csi-proxy/csi-proxy.log",
+	}
+	// TODO: Always collect csi-proxy log when no longer upgrading from in-tree to CSI for any platform
+	if !inTreeUpgrade {
+		mandatoryLogs = append(mandatoryLogs, "csi-proxy/csi-proxy.log")
 	}
 	nodeArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes")
 	for _, node := range gc.allNodes() {
@@ -39,7 +43,19 @@ func (tc *testContext) testNodeLogs(t *testing.T) {
 					err := retrieveLog(node.GetName(), file, nodeDir)
 					if err != nil {
 						log.Printf("unable to retrieve log %s from node %s: %s", file, node.GetName(), err)
-						return false, nil
+						// In release-4.12 the kube-proxy log is in a different place. If this is an upgrade, both
+						// locations should be checked or a failure will occur.
+						if inTreeUpgrade && file == kubeProxyLog {
+							file = "kube-proxy/kube-proxy.exe.INFO"
+							log.Printf("trying %s instead", file)
+							err := retrieveLog(node.GetName(), file, nodeDir)
+							if err != nil {
+								log.Printf("unable to retrieve log %s from node %s: %s", file, node.GetName(), err)
+								return false, nil
+							}
+						} else {
+							return false, nil
+						}
 					}
 					logInfo, err := os.Stat(filepath.Join(nodeDir, file))
 					if err != nil {
