@@ -1,13 +1,22 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"math/big"
+	"net"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,6 +31,12 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
+)
+
+const (
+	// userCABundleName is the name of the ConfigMap that holds additional user-provided proxy certs
+	userCABundleName      = "user-ca-bundle"
+	userCABundleNamespace = "openshift-config"
 )
 
 // proxyTestSuite contains the validation cases for cluster-wide proxy.
@@ -246,6 +261,86 @@ func (tc *testContext) getEnvVar(addr, name, command string) (map[string]string,
 		return nil, fmt.Errorf("error running SSH job: %w", err)
 	}
 	return parseWindowsEnvVars(out), nil
+}
+
+// configureUserCABundle configures the cluster-wide proxy with additional user-provided certificates
+func (tc *testContext) configureUserCABundle() error {
+	if err := tc.createUserCABundle(); err != nil {
+		return err
+	}
+	return tc.patchProxyTrustedCA()
+}
+
+// createUserCABundle creates a ConfigMap with an additional trusted CA bundle
+func (tc *testContext) createUserCABundle() error {
+	cert, err := generateCertificate()
+	if err != nil {
+		return fmt.Errorf("unable to generate additional certs: %w", err)
+	}
+	userCABundleCM := &core.ConfigMap{
+		ObjectMeta: meta.ObjectMeta{
+			Name:      userCABundleName,
+			Namespace: userCABundleNamespace,
+		},
+		Data: map[string]string{
+			certificates.CABundleKey: cert,
+		},
+	}
+	_, err = tc.client.K8s.CoreV1().ConfigMaps(userCABundleNamespace).Create(context.TODO(), userCABundleCM, meta.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("error creating user-provided CA ConfigMap: %w", err)
+	}
+	return nil
+}
+
+// patchProxyTrustedCA patches the proxy to use the user-provided CA bundle, which CNO will merge with other proxy certs
+func (tc *testContext) patchProxyTrustedCA() error {
+	patches := []*patch.JSONPatch{patch.NewJSONPatch("replace", "/spec/trustedCA/name", userCABundleName)}
+	patchData, err := json.Marshal(patches)
+	if err != nil {
+		return fmt.Errorf("invalid patch data %v: %w", patches, err)
+	}
+	_, err = tc.client.Config.ConfigV1().Proxies().Patch(context.TODO(), "cluster", types.JSONPatchType, patchData,
+		meta.PatchOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to patch proxy with trustedCA: %w", err)
+	}
+	return nil
+}
+
+// generateCertificate generates a new self-signed PEM-encoded certificate
+func generateCertificate() (string, error) {
+	cert := &x509.Certificate{
+		SerialNumber: big.NewInt(33),
+		Subject: pkix.Name{
+			Organization:  []string{"New Test Cert Org."},
+			Country:       []string{"US"},
+			Province:      []string{"MA"},
+			Locality:      []string{"Boston"},
+			StreetAddress: []string{"New Test Cert St."},
+			PostalCode:    []string{"02115"},
+		},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().AddDate(10, 0, 0),
+		SubjectKeyId: []byte{1, 2, 3, 4, 6},
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	certPrivKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	if err != nil {
+		return "", err
+	}
+	certBytes, err := x509.CreateCertificate(rand.Reader, cert, cert, &certPrivKey.PublicKey, certPrivKey)
+	if err != nil {
+		return "", err
+	}
+	certPEM := new(bytes.Buffer)
+	pem.Encode(certPEM, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: certBytes,
+	})
+	return certPEM.String(), nil
 }
 
 // parseWindowsEnvVars parses the Powershell output listing all environment variables with their name, value pairs
