@@ -25,8 +25,32 @@ function help() {
   echo "update_submodules.sh -m kubernetes -r release-4.9 master"
 }
 
+# update_libraries updates the k8s and OpenShift libraries
+function update_libraries() {
+  local base_branch=$1
+  local version=$2
+  go get github.com/openshift/api@$base_branch
+  go get github.com/openshift/client-go@$base_branch
+  go get github.com/openshift/library-go@$base_branch
+  go get github.com/openshift/machine-config-operator@$base_branch
+  go get -u=patch k8s.io/api
+  go get -u=patch k8s.io/apimachinery
+  go get -u=patch k8s.io/client-go
+  go get -u=patch k8s.io/cloud-provider
+  go get -u=patch k8s.io/kubectl
+  go get -u=patch k8s.io/kubelet
+  go get -u=patch sigs.k8s.io/controller-runtime
+  go mod tidy
+  go mod vendor
+  git add go.mod go.sum vendor
+  if git commit -m "[vendor] Use $version k8s and OpenShift libraries" -m "This commit was generated using hack/update_submodules.sh"; then
+    echo "New vendor commit for k8s version $version"
+  fi
+}
+
 function generate_version_commit() {
-  local submodule=$1
+  local base_branch=$1
+  local submodule=$2
   cd "$submodule"
   if ! git remote show upstream; then
     if [ "$submodule" = "containerd" ]; then
@@ -52,6 +76,13 @@ function generate_version_commit() {
   git add Makefile
   if git commit -m "[build] Update $submodule version to $version" -m "This commit was generated using hack/update_submodules.sh"; then
     echo "New Makefile commit for $submodule version $version"
+  fi
+  if [ "$submodule" = "kubelet" ]; then
+    if [ "$remote_branch" = "" ]; then
+      update_libraries "$base_branch" "$version"
+    else
+      echo "Not updating libraries due to remote branch change"
+    fi
   fi
 }
 
@@ -93,7 +124,8 @@ function update_submodules_for_branch() {
     git submodule update --remote $submodule
     generate_submodule_commit $submodule
     if [ "$submodule" = "kubelet" ] || [ "$submodule" = "kube-proxy" ] || [ "$submodule" = "containerd" ]; then
-      generate_version_commit "$submodule"
+      generate_version_commit "$base_branch" "$submodule"
+
     fi
   done
 }
