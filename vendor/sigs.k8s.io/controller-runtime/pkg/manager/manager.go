@@ -19,6 +19,7 @@ package manager
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/pointer"
+
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -281,12 +283,12 @@ type Options struct {
 	// Port is the port that the webhook server serves at.
 	// It is used to set webhook.Server.Port if WebhookServer is not set.
 	//
-	// Deprecated: Use WebhookServer.Port instead.
+	// Deprecated: Use WebhookServer instead. A WebhookServer can be created via webhook.NewServer.
 	Port int
 	// Host is the hostname that the webhook server binds to.
 	// It is used to set webhook.Server.Host if WebhookServer is not set.
 	//
-	// Deprecated: Use WebhookServer.Host instead.
+	// Deprecated: Use WebhookServer instead. A WebhookServer can be created via webhook.NewServer.
 	Host string
 
 	// CertDir is the directory that contains the server key and certificate.
@@ -295,12 +297,12 @@ type Options struct {
 	// must be named tls.key and tls.crt, respectively.
 	// It is used to set webhook.Server.CertDir if WebhookServer is not set.
 	//
-	// Deprecated: Use WebhookServer.CertDir instead.
+	// Deprecated: Use WebhookServer instead. A WebhookServer can be created via webhook.NewServer.
 	CertDir string
 
 	// TLSOpts is used to allow configuring the TLS config used for the webhook server.
 	//
-	// Deprecated: Use WebhookServer.TLSConfig instead.
+	// Deprecated: Use WebhookServer instead. A WebhookServer can be created via webhook.NewServer.
 	TLSOpts []func(*tls.Config)
 
 	// WebhookServer is an externally configured webhook.Server. By default,
@@ -390,6 +392,9 @@ type LeaderElectionRunnable interface {
 
 // New returns a new Manager for creating Controllers.
 func New(config *rest.Config, options Options) (Manager, error) {
+	if config == nil {
+		return nil, errors.New("must specify Config")
+	}
 	// Set default values for options fields
 	options = setOptionsDefaults(options)
 
@@ -409,6 +414,11 @@ func New(config *rest.Config, options Options) (Manager, error) {
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	config = rest.CopyConfig(config)
+	if config.UserAgent == "" {
+		config.UserAgent = rest.DefaultKubernetesUserAgent()
 	}
 
 	// Create the recorder provider to inject event recorders for the components.
