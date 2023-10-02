@@ -1,0 +1,9 @@
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: example-windows-sc
+  namespace: windows-storage-example
+provisioner: csi.vsphere.vmware.com
+parameters:
+  # vSphere Container Storage Plug-in only supports NTFS file system on Windows nodes
+  csi.storage.k8s.io/fstype: "ntfs"
