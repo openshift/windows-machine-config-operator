@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	stats "k8s.io/kubelet/pkg/apis/stats/v1alpha1"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
@@ -127,12 +128,16 @@ func TestUpgradeBlocked(t *testing.T) {
 			if tt.hasCSILabel {
 				node.Labels[metadata.CSIConfiguredLabel] = "true"
 			}
+			pods := []stats.PodStats{}
 			if tt.volumeMounted {
-				node.Status.VolumesInUse = []core.UniqueVolumeName{"test"}
+				pods = []stats.PodStats{{VolumeStats: []stats.VolumeStats{{PVCRef: &stats.PVCReference{
+					Name:      "test-pvc",
+					Namespace: "test",
+				}}}}}
 			}
 			fakeClient := clientfake.NewClientBuilder().WithObjects(&node).Build()
 			r := instanceReconciler{client: fakeClient}
-			result := r.upgradeBlocked(&node, tt.upgradingToCSI)
+			result := r.upgradeBlocked(&node, tt.upgradingToCSI, pods)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
