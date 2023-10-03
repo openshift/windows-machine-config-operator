@@ -93,3 +93,12 @@ func (o *OpenShift) GetInfrastructure() (*config.Infrastructure, error) {
 	}
 	return infra, nil
 }
+
+// ProxyEnabled queries the Proxy resource to see if a cluster-wide proxy is enabled in this environment
+func (o *OpenShift) ProxyEnabled() (bool, error) {
+	clusterProxy, err := o.Config.ConfigV1().Proxies().Get(context.TODO(), "cluster", meta.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	return clusterProxy.Status.HTTPProxy != "" || clusterProxy.Status.HTTPSProxy != "", nil
+}
