@@ -51,7 +51,7 @@ func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureSta
 }
 
 // newAzureMachineProviderSpec returns an AzureMachineProviderSpec generated from the inputs, or an error
-func (p *Provider) newAzureMachineProviderSpec(location, zone string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
+func (p *Provider) newAzureMachineProviderSpec(location string, zone *string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
 	return &mapi.AzureMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
 			APIVersion: "azureproviderconfig.openshift.io/v1beta1",
@@ -66,7 +66,7 @@ func (p *Provider) newAzureMachineProviderSpec(location, zone string, windowsSer
 			Namespace: clusterinfo.MachineAPINamespace,
 		},
 		Location: location,
-		Zone:     &zone,
+		Zone:     zone,
 		VMSize:   p.vmSize,
 		Image: mapi.Image{
 			Publisher: defaultImagePublisher,
@@ -99,7 +99,7 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, wind
 	}
 
 	// create new machine provider spec for deploying Windows node in the same Location and Zone as master-0
-	providerSpec, err := p.newAzureMachineProviderSpec(masterProviderSpec.Location, *masterProviderSpec.Zone,
+	providerSpec, err := p.newAzureMachineProviderSpec(masterProviderSpec.Location, masterProviderSpec.Zone,
 		windowsServerVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new azure machine provider spec: %v", err)
