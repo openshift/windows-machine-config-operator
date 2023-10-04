@@ -159,6 +159,11 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	}
 	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
 	assert.NoError(t, err, "Windows node creation failed")
+	if tc.CloudProvider.GetType() == config.AzurePlatformType {
+		// Update the machines list
+		machines, err = tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Running", false)
+		require.NoError(t, err, "error waiting for Windows Machines to be running")
+	}
 	tc.machineLogCollection(machines.Items)
 }
 
