@@ -25,16 +25,16 @@ func TestWMCO(t *testing.T) {
 	require.NotEmpty(t, privateKeyPath, "private-key-path is not set")
 	gc.privateKeyPath = privateKeyPath
 
-	testCtx, err := NewTestContext()
+	tc, err := NewTestContext()
 	require.NoError(t, err)
-	log.Printf("Testing against Windows Server %s\n", testCtx.windowsServerVersion)
+	log.Printf("Testing against Windows Server %s\n", tc.windowsServerVersion)
 	// Create the namespace test resources can be deployed in, as well as required resources within said namespace.
-	require.NoError(t, testCtx.ensureNamespace(testCtx.workloadNamespace, testCtx.workloadNamespaceLabels), "error creating test namespace")
-	require.NoError(t, testCtx.sshSetup(), "unable to setup SSH requirements")
+	require.NoError(t, tc.ensureNamespace(tc.workloadNamespace, tc.workloadNamespaceLabels), "error creating test namespace")
+	require.NoError(t, tc.sshSetup(), "unable to setup SSH requirements")
 
 	// When the upgrade test is run from CI, the namespace that gets created does not have the required monitoring
 	// label, so we ensure that it gets applied and the WMCO deployment is restarted.
-	require.NoError(t, testCtx.ensureMonitoringIsEnabled(), "error ensuring monitoring is enabled")
+	require.NoError(t, tc.ensureMonitoringIsEnabled(), "error ensuring monitoring is enabled")
 
 	// test that the operator can deploy without the secret already created, we can later use a secret created by the
 	// individual test suites after the operator is running
@@ -54,9 +54,9 @@ func TestWMCO(t *testing.T) {
 
 // testOperatorDeployed tests that the operator pod is running
 func testOperatorDeployed(t *testing.T) {
-	testCtx, err := NewTestContext()
+	tc, err := NewTestContext()
 	require.NoError(t, err)
-	deployment, err := testCtx.client.K8s.AppsV1().Deployments(wmcoNamespace).Get(context.TODO(),
+	deployment, err := tc.client.K8s.AppsV1().Deployments(wmcoNamespace).Get(context.TODO(),
 		"windows-machine-config-operator", meta.GetOptions{})
 	require.NoError(t, err, "could not get WMCO deployment")
 	require.NotZerof(t, deployment.Status.AvailableReplicas, "WMCO deployment has no available replicas: %v", deployment)

@@ -27,17 +27,16 @@ import (
 
 // testNetwork runs all the cluster and node network tests
 func testNetwork(t *testing.T) {
-	// Populate the global test context
-	testCtx, err := NewTestContext()
+	tc, err := NewTestContext()
 	require.NoError(t, err)
-	err = testCtx.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
 	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
-	err = testCtx.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
+	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
 	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
-	t.Run("East West Networking", testEastWestNetworking)
-	t.Run("North south networking", testNorthSouthNetworking)
-	t.Run("Pod DNS Resolution", testPodDNSResolution)
+	t.Run("East West Networking", tc.testEastWestNetworking)
+	t.Run("North south networking", tc.testNorthSouthNetworking)
+	t.Run("Pod DNS Resolution", tc.testPodDNSResolution)
 }
 
 var (
@@ -59,10 +58,7 @@ const (
 )
 
 // testEastWestNetworking deploys Windows and Linux pods, and tests that the pods can communicate
-func testEastWestNetworking(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testEastWestNetworking(t *testing.T) {
 	testCases := []struct {
 		name            string
 		curlerOS        operatingSystem
@@ -102,24 +98,24 @@ func testEastWestNetworking(t *testing.T) {
 			// So trying multiple times
 			var winServerDeployment *appsv1.Deployment
 			for i := 0; i < deploymentRetries; i++ {
-				winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver-"+strings.ToLower(
+				winServerDeployment, err = tc.deployWindowsWebServer("win-webserver-"+strings.ToLower(
 					node.Status.NodeInfo.MachineID), affinity, nil)
 				if err == nil {
 					break
 				}
 			}
 			require.NoError(t, err, "could not create Windows Server deployment")
-			defer testCtx.deleteDeployment(winServerDeployment.Name)
-			testCtx.collectDeploymentLogs(winServerDeployment)
+			defer tc.deleteDeployment(winServerDeployment.Name)
+			tc.collectDeploymentLogs(winServerDeployment)
 
 			// Get the pod so we can use its IP
-			winServerIP, err := testCtx.getPodIP(*winServerDeployment.Spec.Selector)
+			winServerIP, err := tc.getPodIP(*winServerDeployment.Spec.Selector)
 			require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeployment.Spec.Selector)
 
 			// Create a clusterIP service which can be used to reach the Windows webserver
-			intermediarySVC, err := testCtx.createService(winServerDeployment.Name, v1.ServiceTypeClusterIP, *winServerDeployment.Spec.Selector)
+			intermediarySVC, err := tc.createService(winServerDeployment.Name, v1.ServiceTypeClusterIP, *winServerDeployment.Spec.Selector)
 			require.NoError(t, err, "could not create service")
-			defer testCtx.deleteService(intermediarySVC.Name)
+			defer tc.deleteService(intermediarySVC.Name)
 
 			for _, tt := range testCases {
 				t.Run(tt.name, func(t *testing.T) {
@@ -133,22 +129,22 @@ func testEastWestNetworking(t *testing.T) {
 
 					// create the curler job based on the specified curlerOS
 					if tt.curlerOS == linux {
-						curlerJob, err = testCtx.createLinuxCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID),
+						curlerJob, err = tc.createLinuxCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID),
 							endpointIP, false)
 						require.NoError(t, err, "could not create Linux job")
 					} else if tt.curlerOS == windowsOS {
 						// Always deploy the Windows curler pod on the first node. Because we test scaling multiple
 						// Windows nodes, this allows us to test that Windows pods can communicate with other Windows
 						// pods located on both the same node, and other nodes.
-						curlerJob, err = testCtx.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID),
+						curlerJob, err = tc.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID),
 							endpointIP, firstNodeAffinity)
 						require.NoError(t, err, "could not create Windows job")
 					} else {
 						t.Fatalf("unsupported curler OS %s", tt.curlerOS)
 					}
-					defer testCtx.deleteJob(curlerJob.Name)
+					defer tc.deleteJob(curlerJob.Name)
 
-					err = testCtx.waitUntilJobSucceeds(curlerJob.Name)
+					err = tc.waitUntilJobSucceeds(curlerJob.Name)
 					assert.NoError(t, err, "could not curl the Windows server")
 				})
 			}
@@ -157,37 +153,35 @@ func testEastWestNetworking(t *testing.T) {
 					intermediarySVC.GetNamespace())
 				nodeAffinity, err := getAffinityForNode(&node)
 				require.NoError(t, err)
-				curler, err := testCtx.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID)+"-dns-test",
+				curler, err := tc.createWinCurlerJob(strings.ToLower(node.Status.NodeInfo.MachineID)+"-dns-test",
 					serviceDNS, nodeAffinity)
 				require.NoError(t, err)
-				defer testCtx.deleteJob(curler.GetName())
-				assert.NoError(t, testCtx.waitUntilJobSucceeds(curler.GetName()))
+				defer tc.deleteJob(curler.GetName())
+				assert.NoError(t, tc.waitUntilJobSucceeds(curler.GetName()))
 			})
 		})
 	}
 }
 
 // testPodDNSResolution test the DNS resolution in a Windows pod
-func testPodDNSResolution(t *testing.T) {
+func (tc *testContext) testPodDNSResolution(t *testing.T) {
 	// This test has 25% failure rate in CI.  WINC-743 has been created to address
 	// this issue. Until we address WINC-743, this test has been temporarily
 	// disabled.
 	t.Skip("Pod DNS resolution test is disabled, pending flake investigation")
-	// create context
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
+
 	// the following DNS resolution tests use curl.exe because nslookup tool is not present
 	// in the selected container image for the e2e tests. Ideally, we would use the native
 	// PowerShell cmdlet Resolve-DnsName, but it is not present either.
 	// TODO: Use a compatible container image for the e2e test suite that includes the
 	//  PowerShell cmdlet Resolve-DnsName.
-	winJob, err := testCtx.createWindowsServerJob("win-dns-tester",
+	winJob, err := tc.createWindowsServerJob("win-dns-tester",
 		// curl'ing with --head flag to fetch only the headers as a lightweight alternative
 		"curl.exe --head -k https://www.openshift.com",
 		nil)
 	require.NoError(t, err, "could not create Windows tester job")
-	defer testCtx.deleteJob(winJob.Name)
-	err = testCtx.waitUntilJobSucceeds(winJob.Name)
+	defer tc.deleteJob(winJob.Name)
+	err = tc.waitUntilJobSucceeds(winJob.Name)
 	assert.NoError(t, err, "Windows tester job failed")
 }
 
@@ -240,15 +234,12 @@ func (tc *testContext) getLogs(podLabelSelector string) (string, error) {
 }
 
 // testNorthSouthNetworking deploys a Windows Server pod, and tests that we can network with it from outside the cluster
-func testNorthSouthNetworking(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testNorthSouthNetworking(t *testing.T) {
 	// Ignore the application ingress load balancer test for None and vSphere platforms as it has to be created manually
 	// https://docs.openshift.com/container-platform/4.9/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html
-	if testCtx.CloudProvider.GetType() == config.VSpherePlatformType ||
-		testCtx.CloudProvider.GetType() == config.NonePlatformType {
-		t.Skipf("NorthSouthNetworking test is disabled for platform %s", testCtx.CloudProvider.GetType())
+	if tc.CloudProvider.GetType() == config.VSpherePlatformType ||
+		tc.CloudProvider.GetType() == config.NonePlatformType {
+		t.Skipf("NorthSouthNetworking test is disabled for platform %s", tc.CloudProvider.GetType())
 	}
 	// Require at least one node to test
 	require.NotEmpty(t, gc.allNodes())
@@ -256,17 +247,18 @@ func testNorthSouthNetworking(t *testing.T) {
 	// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
 	// So trying multiple times
 	var winServerDeployment *appsv1.Deployment
+	var err error
 	for i := 0; i < deploymentRetries; i++ {
-		winServerDeployment, err = testCtx.deployWindowsWebServer("win-webserver", nil, nil)
+		winServerDeployment, err = tc.deployWindowsWebServer("win-webserver", nil, nil)
 		if err == nil {
 			break
 		}
 	}
 	require.NoError(t, err, "could not create Windows Server deployment")
-	defer testCtx.deleteDeployment(winServerDeployment.GetName())
-	testCtx.collectDeploymentLogs(winServerDeployment)
+	defer tc.deleteDeployment(winServerDeployment.GetName())
+	tc.collectDeploymentLogs(winServerDeployment)
 	// Assert that we can successfully GET the webserver
-	err = testCtx.getThroughLoadBalancer(winServerDeployment)
+	err = tc.getThroughLoadBalancer(winServerDeployment)
 	assert.NoError(t, err, "unable to GET the webserver through a load balancer")
 }
 
@@ -612,7 +604,7 @@ func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
 }
 
 // createLinuxCurlerJob creates a linux job to curl a specific endpoint. curl must be present in the container image.
-func (testCtx *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, continuous bool) (*batchv1.Job, error) {
+func (tc *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, continuous bool) (*batchv1.Job, error) {
 	// Retries a failed curl attempt once to avoid flakes
 	curlCommand := fmt.Sprintf(
 		"curl %s;"+
@@ -630,7 +622,7 @@ func (testCtx *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, con
 				" done",
 			curlCommand)
 	}
-	return testCtx.createLinuxJob("linux-curler-"+jobSuffix, []string{"bash", "-c", curlCommand})
+	return tc.createLinuxJob("linux-curler-"+jobSuffix, []string{"bash", "-c", curlCommand})
 }
 
 // createLinuxJob creates a job which will run the provided command with a ubi8 image

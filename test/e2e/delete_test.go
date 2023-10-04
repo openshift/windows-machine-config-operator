@@ -28,7 +28,9 @@ import (
 const remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPolicy Bypass -Command "
 
 func deletionTestSuite(t *testing.T) {
-	t.Run("Deletion", func(t *testing.T) { testWindowsNodeDeletion(t) })
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+	t.Run("Deletion", tc.testWindowsNodeDeletion)
 }
 
 // clearWindowsInstanceConfigMap removes all entries in the windows-instances ConfigMap
@@ -111,25 +113,22 @@ func (tc *testContext) checkNetworksRemoved(address string) (bool, error) {
 }
 
 // testWindowsNodeDeletion tests the Windows node deletion from the cluster.
-func testWindowsNodeDeletion(t *testing.T) {
-	testCtx, err := NewTestContext()
-	require.NoError(t, err)
-
+func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 	// Deploy a DaemonSet and wait until its pods have been made ready on each Windows node. DaemonSet pods cannot be
 	// drained from a Node.
 	// Doing this ensures that WMCO is able to handle containers being present on the instance when deconfiguring.
-	ds, err := testCtx.deployNOOPDaemonSet()
+	ds, err := tc.deployNOOPDaemonSet()
 	require.NoError(t, err, "error creating DaemonSet")
-	defer testCtx.client.K8s.AppsV1().DaemonSets(ds.GetNamespace()).Delete(context.TODO(), ds.GetName(),
+	defer tc.client.K8s.AppsV1().DaemonSets(ds.GetNamespace()).Delete(context.TODO(), ds.GetName(),
 		meta.DeleteOptions{})
-	err = testCtx.waitUntilDaemonsetScaled(ds.GetName(), int(gc.numberOfMachineNodes+gc.numberOfBYOHNodes))
+	err = tc.waitUntilDaemonsetScaled(ds.GetName(), int(gc.numberOfMachineNodes+gc.numberOfBYOHNodes))
 	require.NoError(t, err, "error waiting for DaemonSet pods to become ready")
 
 	// set expected node count to zero, since all Windows Nodes should be deleted in the test
 	expectedNodeCount := int32(0)
 	// Get all the Machines created by the e2e tests
 	// For platform=none, the resulting slice is empty
-	e2eMachineSets, err := testCtx.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).List(context.TODO(),
+	e2eMachineSets, err := tc.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).List(context.TODO(),
 		meta.ListOptions{LabelSelector: clusterinfo.MachineE2ELabel + "=true"})
 	require.NoError(t, err, "error listing MachineSets")
 	var machineControllerMachineSet *mapi.MachineSet
@@ -143,42 +142,42 @@ func testWindowsNodeDeletion(t *testing.T) {
 	if machineControllerMachineSet != nil {
 		// Scale the Windows MachineSet to 0
 		machineControllerMachineSet.Spec.Replicas = &expectedNodeCount
-		_, err = testCtx.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Update(context.TODO(),
+		_, err = tc.client.Machine.MachineSets(clusterinfo.MachineAPINamespace).Update(context.TODO(),
 			machineControllerMachineSet, meta.UpdateOptions{})
 		require.NoError(t, err, "error updating Windows MachineSet")
 
 		// we are waiting 10 minutes for all windows machines to get deleted.
-		err = testCtx.waitForWindowsNodes(expectedNodeCount, true, false, false)
+		err = tc.waitForWindowsNodes(expectedNodeCount, true, false, false)
 		require.NoError(t, err, "Windows node deletion failed")
 	}
-	t.Run("BYOH node removal", testCtx.testBYOHRemoval)
+	t.Run("BYOH node removal", tc.testBYOHRemoval)
 
 	// Cleanup all the MachineSets created by us.
 	for _, machineSet := range e2eMachineSets.Items {
-		assert.NoError(t, testCtx.deleteMachineSet(&machineSet), "error deleting MachineSet")
+		assert.NoError(t, tc.deleteMachineSet(&machineSet), "error deleting MachineSet")
 	}
 	// Phase is ignored during deletion, in this case we are just waiting for Machines to be deleted.
-	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", false)
+	_, err = tc.waitForWindowsMachines(int(expectedNodeCount), "", false)
 	require.NoError(t, err, "Machine controller Windows machine deletion failed")
-	_, err = testCtx.waitForWindowsMachines(int(expectedNodeCount), "", true)
+	_, err = tc.waitForWindowsMachines(int(expectedNodeCount), "", true)
 	require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
 
 	// Test if prometheus configuration is updated to have no node entries in the endpoints object
-	t.Run("Prometheus configuration", testPrometheus)
+	t.Run("Prometheus configuration", tc.testPrometheus)
 
 	// Cleanup windows-instances ConfigMap
-	testCtx.deleteWindowsInstanceConfigMap()
+	tc.deleteWindowsInstanceConfigMap()
 
 	// Cleanup secrets created by us.
-	err = testCtx.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Delete(context.TODO(),
+	err = tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Delete(context.TODO(),
 		clusterinfo.UserDataSecretName, meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete userData secret")
 
-	err = testCtx.client.K8s.CoreV1().Secrets(wmcoNamespace).Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
+	err = tc.client.K8s.CoreV1().Secrets(wmcoNamespace).Delete(context.TODO(), secrets.PrivateKeySecret, meta.DeleteOptions{})
 	require.NoError(t, err, "could not delete privateKey secret")
 
 	// Cleanup wmco-test namespace created by us.
-	err = testCtx.deleteNamespace(testCtx.workloadNamespace)
+	err = tc.deleteNamespace(tc.workloadNamespace)
 	require.NoError(t, err, "could not delete test namespace")
 }
 
