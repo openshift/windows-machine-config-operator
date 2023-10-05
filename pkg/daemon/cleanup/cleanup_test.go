@@ -97,6 +97,46 @@ func TestRemoveServices(t *testing.T) {
 	}
 }
 
+func TestMergeServices(t *testing.T) {
+	testIO := []struct {
+		name     string
+		list1    []servicescm.Service
+		list2    []servicescm.Service
+		expected []servicescm.Service
+	}{
+		{
+			name:     "both empty",
+			list1:    []servicescm.Service{},
+			list2:    []servicescm.Service{},
+			expected: []servicescm.Service{},
+		},
+		{
+			name:     "one empty",
+			list1:    []servicescm.Service{{Name: "service1"}, {Name: "service2"}},
+			list2:    []servicescm.Service{},
+			expected: []servicescm.Service{{Name: "service1"}, {Name: "service2"}},
+		},
+		{
+			name:  "different services",
+			list1: []servicescm.Service{{Name: "service1"}, {Name: "service2", Dependencies: []string{"service1"}}},
+			list2: []servicescm.Service{{Name: "service3"}, {Name: "service4", Dependencies: []string{"service3"}}},
+			expected: []servicescm.Service{{Name: "service1"}, {Name: "service2", Dependencies: []string{"service1"}},
+				{Name: "service3"}, {Name: "service4", Dependencies: []string{"service3"}}},
+		},
+		{
+			name:     "overlapping services",
+			list1:    []servicescm.Service{{Name: "service1"}, {Name: "service2"}},
+			list2:    []servicescm.Service{{Name: "service2", Dependencies: []string{"service1"}}, {Name: "service3"}},
+			expected: []servicescm.Service{{Name: "service1"}, {Name: "service2"}, {Name: "service3"}}},
+	}
+	for _, test := range testIO {
+		t.Run(test.name, func(t *testing.T) {
+			out := mergeServices(test.list1, test.list2)
+			assert.ElementsMatch(t, out, test.expected)
+		})
+	}
+}
+
 func newTestService(name string, dependencies []string) *fake.FakeService {
 	return fake.NewFakeService(
 		name,
