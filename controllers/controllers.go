@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 
@@ -12,11 +13,13 @@ import (
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
+	stats "k8s.io/kubelet/pkg/apis/stats/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
+	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
@@ -26,6 +29,8 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
+
+//+kubebuilder:rbac:groups="",resources=nodes/proxy,verbs=get;
 
 // instanceReconciler contains everything needed to perform actions on a Windows instance
 type instanceReconciler struct {
@@ -64,6 +69,16 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 		return nil
 	}
 
+	csiEnabled, err := cluster.CSIStorageEnabled(r.platform)
+	if err != nil {
+		return err
+	}
+	if csiEnabled {
+		if labelsToApply == nil {
+			labelsToApply = make(map[string]string)
+		}
+		labelsToApply[metadata.CSIConfiguredLabel] = "true"
+	}
 	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		instanceInfo, r.signer, labelsToApply, annotationsToApply, r.platform)
 	if err != nil {
@@ -73,15 +88,76 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
 	// configured again.
 	if instanceInfo.UpgradeRequired() {
+		podStats, err := r.getPodStatsForNode(instanceInfo.Node.GetName())
+		if err != nil {
+			return fmt.Errorf("error getting node summary: %w", err)
+		}
+		blocked := r.upgradeBlocked(instanceInfo.Node, csiEnabled, podStats)
+		if blocked {
+			blockMessage := fmt.Sprintf("node upgrade has been blocked, as it can not be ensured that workloads "+
+				"will not be disrupted. If an in-tree persistent storage volume is in use, please ensure the CSI "+
+				"drivers for the given node have been deployed. This block must be overriden by applying the "+
+				"label %s=true to the node. It is recommended to unblock Nodes individually, and to wait for the upgrade "+
+				"to complete sucessfully before unblocking another Node.", metadata.AllowUpgradeLabel)
+			r.log.Info(blockMessage)
+			r.recorder.Eventf(instanceInfo.Node, core.EventTypeWarning, "UpgradeBlocked", blockMessage)
+			return metadata.ApplyBlockedLabel(context.TODO(), r.client, *instanceInfo.Node)
+		}
 		// Instance requiring an upgrade indicates that node object is present with the version annotation
 		r.log.Info("instance requires upgrade", "node", instanceInfo.Node.GetName(), "version",
 			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation], "expected version", version.Get())
+		if err = metadata.RemoveBlockedLabel(context.TODO(), r.client, *instanceInfo.Node); err != nil {
+			return fmt.Errorf("error removing upgrade block label: %w", err)
+		}
+
 		if err := nc.Deconfigure(); err != nil {
 			return err
 		}
 	}
 
 	return nc.Configure()
+}
+
+// getPodStatsForNode queries the cAdvisor metrics endpoint for pods on the given Node
+func (r *instanceReconciler) getPodStatsForNode(nodeName string) ([]stats.PodStats, error) {
+	data, err := r.k8sclientset.DiscoveryV1().RESTClient().Get().
+		AbsPath("api/v1/nodes/" + nodeName + "/proxy/stats/summary").DoRaw(context.TODO())
+	if err != nil {
+		return nil, err
+	}
+	var nodeStats stats.Summary
+	err = json.Unmarshal(data, &nodeStats)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling: %w", err)
+	}
+	return nodeStats.Pods, nil
+}
+
+// upgradeBlocked returns whether the upgrade should be blocked if an upgrade will break storage functionality.
+func (r *instanceReconciler) upgradeBlocked(node *core.Node, upgradingToCSI bool, nodePodStats []stats.PodStats) bool {
+	// Only consider the case of vSphere and Azure. Safely migrating in-tree storage on other platforms is not supported
+	// by WMCO.
+	if r.platform != config.VSpherePlatformType && r.platform != config.AzurePlatformType {
+		return false
+	}
+	if !upgradingToCSI {
+		return false
+	}
+	if value := node.GetLabels()[metadata.AllowUpgradeLabel]; value == "true" {
+		return false
+	}
+	if value := node.GetLabels()[metadata.CSIConfiguredLabel]; value == "true" {
+		return false
+	}
+	// For each pod running on this node, check if there is a PVC backed volume, if one is found, block the upgrade
+	for _, pod := range nodePodStats {
+		for _, volume := range pod.VolumeStats {
+			if volume.PVCRef != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // instanceFromNode returns an instance object for the given node. Requires a username that can be used to SSH into the
