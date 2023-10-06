@@ -234,8 +234,8 @@ type Windows interface {
 	Bootstrap(string, string, string) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, string) error
-	// Deconfigure removes all files and networks created by WMCO and runs the WICD cleanup command.
-	Deconfigure(string, string) error
+	// RemoveFilesAndNetworks removes all files and networks created by WMCO
+	RemoveFilesAndNetworks() error
 	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
 	// services are also stopped
 	RunWICDCleanup(string, string) error
@@ -429,12 +429,7 @@ func (vm *windows) RunWICDCleanup(watchNamespace, wicdKubeconfig string) error {
 	return nil
 }
 
-func (vm *windows) Deconfigure(watchNamespace, wicdKubeconfig string) error {
-	vm.log.Info("deconfiguring")
-
-	if err := vm.RunWICDCleanup(watchNamespace, wicdKubeconfig); err != nil {
-		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
-	}
+func (vm *windows) RemoveFilesAndNetworks() error {
 	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
 		return fmt.Errorf("unable to ensure HNS networks are removed: %w", err)
 	}

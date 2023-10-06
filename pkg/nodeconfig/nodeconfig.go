@@ -507,6 +507,7 @@ func (nc *nodeConfig) Deconfigure() error {
 	if nc.node == nil {
 		return fmt.Errorf("instance does not a have an associated node to deconfigure")
 	}
+	nc.log.Info("deconfiguring")
 	// Cordon and drain the Node before we interact with the instance
 	drainHelper := nc.newDrainHelper()
 	if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
@@ -517,11 +518,10 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	// Revert all changes we've made to the instance by removing installed services, files, and the version annotation
-	wicdKC, err := nc.generateWICDKubeconfig()
-	if err != nil {
+	if err := nc.cleanupWithWICD(); err != nil {
 		return err
 	}
-	if err := nc.Windows.Deconfigure(nc.wmcoNamespace, wicdKC); err != nil {
+	if err := nc.Windows.RemoveFilesAndNetworks(); err != nil {
 		return fmt.Errorf("error deconfiguring instance: %w", err)
 	}
 
@@ -532,13 +532,21 @@ func (nc *nodeConfig) Deconfigure() error {
 			return err
 		}
 	}
-
-	// Wait for reboot annotation removal. This prevents deleting the node until the node no longer needs reboot.
-	if err := metadata.WaitForRebootAnnotationRemoval(context.TODO(), nc.client, nc.node.Name); err != nil {
-		return err
-	}
 	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())
 	return nil
+}
+
+// cleanupWithWICD runs WICD cleanup and waits until the cleanup effects are fully complete
+func (nc *nodeConfig) cleanupWithWICD() error {
+	wicdKC, err := nc.generateWICDKubeconfig()
+	if err != nil {
+		return err
+	}
+	if err := nc.Windows.RunWICDCleanup(nc.wmcoNamespace, wicdKC); err != nil {
+		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
+	}
+	// Wait for reboot annotation removal. This prevents deleting the node until the node no longer needs reboot.
+	return metadata.WaitForRebootAnnotationRemoval(context.TODO(), nc.client, nc.node.Name)
 }
 
 // UpdateKubeletClientCA updates the kubelet client CA certificate file in the Windows node. No service restart or
