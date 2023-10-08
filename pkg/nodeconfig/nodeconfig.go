@@ -494,6 +494,14 @@ func (nc *nodeConfig) Deconfigure() error {
 		return fmt.Errorf("error deconfiguring instance: %w", err)
 	}
 
+	// Windows Server 2022 VMs on AWS have a non-persistent route to the metadata endpoint. This is lost when the HNS
+	// networks are deleted. Explicitly restore them to allow the same VM to be configured as a node again.
+	if nc.platformType == configv1.AWSPlatformType {
+		if err := nc.Windows.RestoreAWSRoutes(); err != nil {
+			return err
+		}
+	}
+
 	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())
 	return nil
 }
