@@ -110,18 +110,18 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// We need the create event to account for Machines that are in provisioned state but were created
 		// before WMCO started running
 		CreateFunc: func(e event.CreateEvent) bool {
-			return r.isValidMachine(e.Object) && isWindowsMachine(e.Object.GetLabels())
+			return isWindowsMachine(e.Object.GetLabels()) && r.isValidMachine(e.Object)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return r.isValidMachine(e.ObjectNew) && isWindowsMachine(e.ObjectNew.GetLabels())
+			return isWindowsMachine(e.ObjectNew.GetLabels()) && r.isValidMachine(e.ObjectNew)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return r.isValidMachine(e.Object) && isWindowsMachine(e.Object.GetLabels())
+			return isWindowsMachine(e.Object.GetLabels()) && r.isValidMachine(e.Object)
 		},
 		// process delete event
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			// for Windows machines only
-			return isWindowsMachine(e.Object.GetLabels())
+			// for Windows machines only and avoid processing delete event for machines with ignore label
+			return isWindowsMachine(e.Object.GetLabels()) && e.Object.GetLabels()[IgnoreLabel] != "true"
 		},
 	}
 
