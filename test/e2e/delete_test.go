@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -65,7 +66,10 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 	err = tc.waitForWindowsNodeRemoval(true)
 	require.NoError(t, err, "Removing ConfigMap entries did not cause Windows node deletion")
 
-	// For each node that was deleted, check that all the expected services have been removed
+	trustedCABundle, err := tc.getProxyCABundle()
+	require.NoError(t, err)
+
+	// For each node that was deleted, check that all the expected services and proxy configuration have been removed
 	for _, node := range byohNodes {
 		t.Run(node.GetName(), func(t *testing.T) {
 			addr, err := controllers.GetAddress(node.Status.Addresses)
@@ -89,11 +93,33 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 			require.NoError(t, err, "error determining if ENV vars are removed")
 			assert.True(t, envVarsRemoved, "ENV vars not removed")
 
+			t.Run("Proxy certificate removal", func(t *testing.T) {
+				tc.checkCertsRemoved(t, addr, trustedCABundle)
+			})
+
 			t.Run("AWS metadata endpoint", func(t *testing.T) {
 				tc.checkAWSMetadataEndpointRouteIsRestored(t, addr)
 			})
 		})
 	}
+}
+
+// getProxyCABundle returns the expected CA bundle data based on cluster state
+func (tc *testContext) getProxyCABundle() (string, error) {
+	proxyEnabled, err := tc.client.ProxyEnabled()
+	if err != nil {
+		return "", fmt.Errorf("error checking if proxy is enabled in test environment: %w", err)
+	}
+	if !proxyEnabled {
+		return "", nil
+	}
+	// TODO: this only tests the user-provided certs, a subset of the required proxy certificates.
+	// Should be addressed with https://issues.redhat.com/browse/WINC-1144
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(userCABundleNamespace).Get(context.TODO(), userCABundleName, meta.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("error getting user-provided CA ConfigMap: %w", err)
+	}
+	return cm.Data[certificates.CABundleKey], nil
 }
 
 // checkDirsDoNotExist returns true if the required directories do not exist on the Windows instance with the given

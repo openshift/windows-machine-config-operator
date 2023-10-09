@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -57,12 +59,13 @@ func proxyTestSuite(t *testing.T) {
 	t.Run("Trusted CA ConfigMap validation", tc.testTrustedCAConfigMap)
 	// Certificate validation test must run before environment variables removal validation since the latter results in
 	// the deletion of TrustedCAConfigMap, which the former relies on
-	t.Run("Certificate validation", tc.testCerts)
+	t.Run("Certificate validation", tc.testCertsImport)
 	t.Run("Environment variables validation", tc.testEnvVars)
+	t.Run("Certificate validation removal", tc.testCertsRemoval)
 }
 
-// testCerts tests that any additional certificates from the proxy's trusted bundle are imported by each node
-func (tc *testContext) testCerts(t *testing.T) {
+// testCertsImport tests that any additional certificates from the proxy's trusted bundle are imported by each node
+func (tc *testContext) testCertsImport(t *testing.T) {
 	// TODO: this only tests the user-provided certs, a subset of the required proxy certificates.
 	// Should be addressed with https://issues.redhat.com/browse/WINC-1144
 	cm, err := tc.client.K8s.CoreV1().ConfigMaps(userCABundleNamespace).Get(context.TODO(), userCABundleName, meta.GetOptions{})
@@ -76,36 +79,122 @@ func (tc *testContext) testCerts(t *testing.T) {
 		t.Run(node.GetName(), func(t *testing.T) {
 			addr, err := controllers.GetAddress(node.Status.Addresses)
 			require.NoError(t, err, "unable to get node address")
-
-			// Read in one cert at a time and test it exists in the Windows instance's system store
-			i := 0
-			for block, rest := pem.Decode([]byte(trustedCABundle)); block != nil; block, rest = pem.Decode(rest) {
-				certBytes := pem.EncodeToMemory(block)
-				// Multi-line certificate data causes issues in the command. Encode to base64 as a workaround
-				expectedCertBase64 := base64.StdEncoding.EncodeToString(certBytes)
-				commandToRun := fmt.Sprintf("$base64Data=\\\"%s\\\";"+
-					// Decode base64 into cert's actual string data
-					"$certString=[Text.Encoding]::Utf8.GetString([Convert]::FromBase64String($base64Data));"+
-					// Create a Powershell certificate object with the expected cert.
-					// First requires data to be written to a file and then provide the file path the cert constructor
-					"Set-Content C:\\Temp\\cert.pem $certString;"+
-					"$expectedCert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::new(\\\"C:\\Temp\\cert.pem\\\");"+
-					// Get the number of existing certs equivalent to the expected cert
-					"(Get-ChildItem -Path Cert:\\LocalMachine\\Root | Where-Object {$expectedCert.Equals($_)}).Count",
-					expectedCertBase64)
-				out, err := tc.runPowerShellSSHJob(fmt.Sprintf("get-cert-%d", i), commandToRun, addr)
-				if err != nil {
-					require.NoError(t, err, "error running SSH job: %w", err)
-				}
-				// Final line should contain a single number representing the number of certs found equal to the target
-				count, err := strconv.Atoi(finalLine(out))
-				require.NoError(t, err)
-
-				assert.Equalf(t, count, 1, "unexpected cert %d count on node %s: expected 1, found %d", i, node, count)
-				i++
-			}
+			tc.checkCertsImported(t, addr, trustedCABundle)
 		})
 	}
+}
+
+// checkCertsImported tests that all certs in the given bundle are imported into the node with the given address
+func (tc *testContext) checkCertsImported(t *testing.T, address, trustedCABundle string) {
+	proxyCertsImported, err := tc.checkProxyCerts(address, []byte(trustedCABundle), 1)
+	require.NoError(t, err, "error determining if proxy certs are imported")
+	assert.True(t, proxyCertsImported, "proxy certs not imported")
+}
+
+// testCertsRemoval tests that any additional certificates from the proxy's trusted bundle are removed by each node
+func (tc *testContext) testCertsRemoval(t *testing.T) {
+	// TODO: this only tests the user-provided certs, a subset of the required proxy certificates.
+	// Should be addressed with https://issues.redhat.com/browse/WINC-1144
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(userCABundleNamespace).Get(context.TODO(), userCABundleName, meta.GetOptions{})
+	require.NoErrorf(t, err, "error getting user-provided CA ConfigMap: %w", err)
+
+	// Read all expected certs from CM data
+	trustedCABundle := cm.Data[certificates.CABundleKey]
+	assert.Greater(t, len(trustedCABundle), 0, "no additional user-provided certs in bundle")
+
+	require.NoError(t, tc.removeProxyTrustedCA(), "error removing user CA bundle from cluster-wide proxy")
+	require.NoError(t, tc.waitForAllNodesToReboot())
+
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			addr, err := controllers.GetAddress(node.Status.Addresses)
+			require.NoError(t, err, "unable to get node address")
+			tc.checkCertsRemoved(t, addr, trustedCABundle)
+		})
+	}
+}
+
+// checkCertsRemoved tests that all certs in the given bundle do not exist on the node with the given address
+func (tc *testContext) checkCertsRemoved(t *testing.T, address, trustedCABundle string) {
+	proxyCertsRemoved, err := tc.checkProxyCerts(address, []byte(trustedCABundle), 0)
+	require.NoError(t, err, "error determining if proxy certs are removed")
+	assert.True(t, proxyCertsRemoved, "proxy certs not removed")
+}
+
+// waitForAllNodesToReboot waits for all Windows nodes in the cluster to be rebooted
+func (tc *testContext) waitForAllNodesToReboot() error {
+	// Wait for reboot annotation to be applied to all Windows nodes, and then wait for removal
+	if err := tc.waitForRebootAnnotation(false); err != nil {
+		return err
+	}
+	return tc.waitForRebootAnnotation(true)
+}
+
+// waitForRebootAnnotation waits for all nodes in the cluster to have the reboot annotation either applied or removed
+func (tc *testContext) waitForRebootAnnotation(waitingForRemoval bool) error {
+	allWinNodes := make(map[string]struct{})
+	for _, node := range gc.allNodes() {
+		allWinNodes[node.Name] = struct{}{}
+	}
+	seenWinNodes := make(map[string]struct{})
+
+	err := wait.PollUntilContextTimeout(context.TODO(), retry.Interval, retry.Timeout, true,
+		func(context.Context) (done bool, err error) {
+			labelSelector := core.LabelOSStable + "=windows"
+			winNodes, err := tc.client.K8s.CoreV1().Nodes().List(context.TODO(), meta.ListOptions{LabelSelector: labelSelector})
+			if err != nil {
+				return false, err
+			}
+			// Add nodes to the seen list based on the presence of the reboot annotation
+			for _, node := range winNodes.Items {
+				_, present := node.Annotations[metadata.RebootAnnotation]
+				if present != waitingForRemoval {
+					seenWinNodes[node.Name] = struct{}{}
+				}
+			}
+			// Poll until all expected Windows nodes are seen
+			return reflect.DeepEqual(seenWinNodes, allWinNodes), nil
+		})
+	if err != nil {
+		return fmt.Errorf("timeout waiting for reboot annotation on all Windows nodes: %w", err)
+	}
+	return nil
+}
+
+// checkProxyCerts determines if each certificates exists the expected number of times on the given instance
+func (tc *testContext) checkProxyCerts(address string, caBundleData []byte, expectedNum int) (bool, error) {
+	// Read in one cert at a time and test it exists in the Windows instance's system store
+	i := 0
+	for block, rest := pem.Decode(caBundleData); block != nil; block, rest = pem.Decode(rest) {
+		certBytes := pem.EncodeToMemory(block)
+		// Multi-line certificate data causes issues in the command. Encode to base64 as a workaround
+		expectedCertBase64 := base64.StdEncoding.EncodeToString(certBytes)
+		commandToRun := fmt.Sprintf("$base64Data=\\\"%s\\\";"+
+			// Decode base64 into cert's actual string data
+			"$certString=[Text.Encoding]::Utf8.GetString([Convert]::FromBase64String($base64Data));"+
+			// Create a Powershell certificate object with the expected cert.
+			// First requires data to be written to a file and then provide the file path the cert constructor
+			"Set-Content C:\\Temp\\cert.pem $certString;"+
+			"$expectedCert=[System.Security.Cryptography.X509Certificates.X509Certificate2]::new(\\\"C:\\Temp\\cert.pem\\\");"+
+			// Get the number of existing certs equivalent to the expected cert
+			"(Get-ChildItem -Path Cert:\\LocalMachine\\Root | Where-Object {$expectedCert.Equals($_)}).Count",
+			expectedCertBase64)
+		out, err := tc.runPowerShellSSHJob(fmt.Sprintf("get-cert-%d", i), commandToRun, address)
+		if err != nil {
+			return false, fmt.Errorf("error running SSH job: %w", err)
+		}
+		// Final line should contain a single number representing the number of certs found equal to the target cert
+		count, err := strconv.Atoi(finalLine(out))
+		if err != nil {
+			return false, err
+		}
+
+		if count != expectedNum {
+			return false, nil
+		}
+		i++
+	}
+	return true, nil
 }
 
 // testEnvVars tests that on each node
@@ -282,7 +371,7 @@ func (tc *testContext) configureUserCABundle() error {
 	if err := tc.createUserCABundle(); err != nil {
 		return err
 	}
-	return tc.patchProxyTrustedCA()
+	return tc.addProxyTrustedCA()
 }
 
 // createUserCABundle creates a ConfigMap with an additional trusted CA bundle
@@ -307,9 +396,20 @@ func (tc *testContext) createUserCABundle() error {
 	return nil
 }
 
-// patchProxyTrustedCA patches the proxy to use the user-provided CA bundle, which CNO will merge with other proxy certs
-func (tc *testContext) patchProxyTrustedCA() error {
-	patches := []*patch.JSONPatch{patch.NewJSONPatch("replace", "/spec/trustedCA/name", userCABundleName)}
+// addProxyTrustedCA adds the user-provided CA bundle to the cluster-wide proxy config
+func (tc *testContext) addProxyTrustedCA() error {
+	return tc.patchProxyTrustedCA(userCABundleName)
+}
+
+// removeProxyTrustedCA removes the user-provided CA bundle from the cluster-wide proxy config
+func (tc *testContext) removeProxyTrustedCA() error {
+	return tc.patchProxyTrustedCA("")
+}
+
+// patchProxyTrustedCA patches the proxy to use the given CA bundle, which CNO will merge with other proxy certs.
+// An empty parameter means the proxy will be configured with no user-provided additional certificates.
+func (tc *testContext) patchProxyTrustedCA(configMapName string) error {
+	patches := []*patch.JSONPatch{patch.NewJSONPatch("replace", "/spec/trustedCA/name", configMapName)}
 	patchData, err := json.Marshal(patches)
 	if err != nil {
 		return fmt.Errorf("invalid patch data %v: %w", patches, err)
