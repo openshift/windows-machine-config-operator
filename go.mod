@@ -8,10 +8,10 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.2.4
-	github.com/openshift/api v0.0.0-20231003083825-c3f7566f6ef6
-	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
+	github.com/openshift/api v0.0.0-20231006150950-bbe1a26bbafc
+	github.com/openshift/client-go v0.0.0-20231005121823-e81400b97c46
 	github.com/openshift/library-go v0.0.0-20231003133513-3a0c1fc00519
-	github.com/openshift/machine-config-operator v0.0.1-0.20231003180718-6f37eade07de
+	github.com/openshift/machine-config-operator v0.0.1-0.20231005122316-c74052cba27e
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -22,9 +22,9 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.26.0
-	golang.org/x/crypto v0.13.0
-	golang.org/x/mod v0.12.0
-	golang.org/x/sys v0.12.0
+	golang.org/x/crypto v0.14.0
+	golang.org/x/mod v0.13.0
+	golang.org/x/sys v0.13.0
 	k8s.io/api v0.28.2
 	k8s.io/apimachinery v0.28.2
 	k8s.io/client-go v0.28.2
@@ -99,11 +99,11 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
-	golang.org/x/net v0.15.0 // indirect
+	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
+	golang.org/x/net v0.16.0 // indirect
 	golang.org/x/oauth2 v0.10.0 // indirect
-	golang.org/x/sync v0.3.0 // indirect
-	golang.org/x/term v0.12.0 // indirect
+	golang.org/x/sync v0.4.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
