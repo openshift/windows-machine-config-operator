@@ -6,6 +6,7 @@
 # USAGE
 #    machineset.sh
 # OPTIONS
+#    -b                      Set 'windowsmachineconfig.openshift.io/ignore' label for BYOH use case. Default: false
 #    -w                      Windows Server version (optional) 2019 or 2022. Default: 2022
 #    $1/$2 (if -w is used)   Action                 (optional) apply/delete the MachineSet
 # PREREQUISITES
@@ -31,6 +32,10 @@ get_spec() {
   # set machineset name, short name for Azure and vSphere due to
   # the limit in the number of characters for VM name
   machineSetName="winworker"
+  # update machineset name for BYOH to avoid conflicts
+  if [ "$byoh" = "true" ]; then
+    machineSetName="winbyoh"
+  fi
   # check provider
   if [ "$provider" = "aws" ] || [ "$provider" = "gce" ]; then
     # improve machineset name for aws/gcp provider
