@@ -20,6 +20,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -36,6 +37,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/jsonpath"
 	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -61,6 +63,9 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
+// WICDController is the name of the WICD controller in logs and other outputs
+const WICDController = "WICD"
+
 // Options contains a list of options available when creating a new ServiceController
 type Options struct {
 	Config    *rest.Config
@@ -68,6 +73,7 @@ type Options struct {
 	Mgr       manager.Manager
 	cmdRunner powershell.CommandRunner
 	caBundle  string
+	recorder  record.EventRecorder
 }
 
 // setDefaults returns an Options based on the received options, with all nil or empty fields filled in with reasonable
@@ -109,6 +115,8 @@ type ServiceController struct {
 	psCmdRunner    powershell.CommandRunner
 	ctrl           controller.Controller
 	caBundle       string
+	// recorder to generate events
+	recorder record.EventRecorder
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
@@ -156,7 +164,8 @@ func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle str
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
-	sc, err := NewServiceController(ctx, node.Name, watchNamespace, Options{Client: ctrlMgr.GetClient(), caBundle: caBundle})
+	sc, err := NewServiceController(ctx, node.Name, watchNamespace,
+		Options{Client: ctrlMgr.GetClient(), caBundle: caBundle, recorder: ctrlMgr.GetEventRecorderFor(WICDController)})
 	if err != nil {
 		return err
 	}
@@ -177,7 +186,7 @@ func NewServiceController(ctx context.Context, nodeName, watchNamespace string, 
 		return nil, err
 	}
 	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
-		watchNamespace: watchNamespace, caBundle: o.caBundle}, nil
+		watchNamespace: watchNamespace, caBundle: o.caBundle, recorder: o.recorder}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -288,22 +297,32 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 // Returns a boolean expressing whether the instance is awaiting a reboot.
 func (sc *ServiceController) reconcileEnvVarsAndCerts(envVars map[string]string, watchedEnvVars []string,
 	node core.Node) (bool, error) {
-	certsUpdated, err := certs.Reconcile(sc.caBundle)
-	if err != nil {
-		return false, err
-	}
 	envVarsUpdated, err := envvar.Reconcile(envVars, watchedEnvVars)
 	if err != nil {
 		return false, err
 	}
+	// Reconcile certs but only process the error after determining reboot status in case error happened after cert changes
+	certsUpdated, err := certs.Reconcile(sc.caBundle)
 	if certsUpdated || envVarsUpdated {
 		// If there's any changes, an instance restart is required to ensure all processes pick up the updates.
 		// Applying the reboot annotation results in an event picked up by WMCO's node controller to reboot the instance
-		if err = metadata.ApplyRebootAnnotation(sc.ctx, sc.client, node); err != nil {
-			return false, fmt.Errorf("error setting reboot annotation on node %s: %w", sc.nodeName, err)
+		if annotationErr := metadata.ApplyRebootAnnotation(sc.ctx, sc.client, node); annotationErr != nil {
+			return false, fmt.Errorf("error setting reboot annotation on node %s: %w", sc.nodeName, annotationErr)
 		}
-		return true, nil
+		if err == nil {
+			return true, nil
+		}
 	}
+	if err != nil {
+		var fileIOErr *certs.FileIOError
+		if errors.Is(err, fileIOErr) {
+			sc.recorder.Event(&node, core.EventTypeWarning, "CertificateReadError",
+				"File I/O error when reading imported certificates. This has the potential to leave stale "+
+					"certificates behind in the node's local trust store.")
+		}
+		return false, err
+	}
+
 	// Wait until the environment variables at the process level are set as expected.
 	// This will only be picked up after WMCO reboots the instance
 	err = wait.PollUntilContextTimeout(sc.ctx, 15*time.Second, 5*time.Minute, true,
