@@ -7,7 +7,7 @@ WMCO_VERSION ?= 10.15.0
 
 # *_GIT_VERSION are the k8s versions. Any update to the build line could potentially require an update to the sed
 # command in generate_k8s_version_commit() in hack/update_submodules.sh
-KUBELET_GIT_VERSION=v1.28.2+6ab54b8
+KUBELET_GIT_VERSION=v1.28.2+270de19
 KUBE-PROXY_GIT_VERSION=v1.27.1+70821f7
 CONTAINERD_GIT_VERSION=v1.7.6
 # CHANNELS define the bundle channels used in the bundle.
