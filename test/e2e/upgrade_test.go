@@ -39,7 +39,7 @@ func upgradeTestSuite(t *testing.T) {
 	require.NoError(t, err)
 
 	// test if Windows workloads are running by creating a Job that curls the workloads continuously.
-	cleanupWorkloadAndTester, err := tc.deployWindowsWorkloadAndTester()
+	cleanupWorkloadAndTester, windowsWebServerCurlTesterJobName, err := tc.deployWindowsWorkloadAndTester()
 	require.NoError(t, err, "error deploying Windows workloads")
 	defer cleanupWorkloadAndTester()
 
@@ -54,6 +54,11 @@ func upgradeTestSuite(t *testing.T) {
 	require.NoError(t, err, "wrong number of Machine controller nodes found")
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
 	require.NoError(t, err, "wrong number of ConfigMap controller nodes found")
+
+	pods, err := tc.getPodsFailedForJob(windowsWebServerCurlTesterJobName)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(pods.Items), "Windows workloads inaccessible for significant"+
+		" amount of time during upgrade", "Failed pod count", len(pods.Items))
 
 	t.Run("Operator version upgrade", tc.testUpgradeVersion)
 }
@@ -72,16 +77,6 @@ func (tc *testContext) testUpgradeVersion(t *testing.T) {
 		err := tc.waitForServicesConfigMapDeletion(servicescm.NamePrefix + outdatedVersion)
 		assert.NoError(t, err, "failed to ensure outdated services ConfigMap is removed after operator upgrade")
 	})
-
-	// TODO: Fix matching label for jobs. See https://issues.redhat.com/browse/WINC-673
-	// Test if there was any downtime for Windows workloads by checking the failure on the Job pods.
-	pods, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(),
-		metav1.ListOptions{FieldSelector: "status.phase=Failed",
-			LabelSelector: "job-name=" + windowsWorkloadTesterJob + "-job"})
-
-	require.NoError(t, err)
-	require.Equal(t, 0, len(pods.Items), "Windows workloads inaccessible for significant amount of time during upgrade")
-
 }
 
 // configureUpgradeTest carries out steps required before running tests for upgrade scenario.
@@ -174,36 +169,36 @@ func (tc *testContext) scaleWMCODeployment(desiredReplicas int32) error {
 
 // deployWindowsWorkloadAndTester tests if the Windows Webserver deployment is available.
 // This is achieved by creating a Job object that continuously curls the webserver every 5 seconds.
-// returns a tearDown func that must be executed to cleanup resources
-func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
+// returns the name of the job, and a tearDown func that must be executed to cleanup resources
+func (tc *testContext) deployWindowsWorkloadAndTester() (func(), string, error) {
 	// create a Windows Webserver deployment
 	deployment, err := tc.deployWindowsWebServer("win-webserver", nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating Windows Webserver deployment for upgrade test: %w", err)
+		return nil, "", fmt.Errorf("error creating Windows Webserver deployment for upgrade test: %w", err)
 	}
 	// create a clusterIP service which can be used to reach the Windows webserver
 	intermediarySVC, err := tc.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
 	if err != nil {
 		_ = tc.deleteDeployment(deployment.Name)
-		return nil, fmt.Errorf("error creating service for deployment %s: %w", deployment.Name, err)
+		return nil, "", fmt.Errorf("error creating service for deployment %s: %w", deployment.Name, err)
 	}
 	// create a Job object that continuously curls the webserver every 5 seconds.
 	testerJob, err := tc.createLinuxCurlerJob(windowsWorkloadTesterJob, intermediarySVC.Spec.ClusterIP, true)
 	if err != nil {
 		_ = tc.deleteDeployment(deployment.Name)
 		_ = tc.deleteService(intermediarySVC.Name)
-		return nil, fmt.Errorf("error creating linux job %s: %w", windowsWorkloadTesterJob, err)
+		return nil, "", fmt.Errorf("error creating linux job %s: %w", windowsWorkloadTesterJob, err)
 	}
-	// return a cleanup func
-	return func() {
-		// collect webserver pods logs
+	cleanupFunc := func() {
+		// collect logs
 		tc.collectDeploymentLogs(deployment)
 		tc.writePodLogs("job-name=" + testerJob.Name)
 		// ignore errors while deleting the objects
 		_ = tc.deleteDeployment(deployment.Name)
 		_ = tc.deleteService(intermediarySVC.Name)
 		_ = tc.deleteJob(testerJob.Name)
-	}, nil
+	}
+	return cleanupFunc, testerJob.Name, nil
 }
 
 // TestUpgrade tests that things are functioning properly after an upgrade
@@ -284,4 +279,10 @@ func (tc *testContext) waitForCSINodesWithDrivers(nodes []v1.Node) error {
 		}
 		return true, nil
 	})
+}
+
+// getPodsFailedForJob return the list of failed pods for a given job name in the test namespace
+func (tc *testContext) getPodsFailedForJob(jobName string) (*v1.PodList, error) {
+	return tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(),
+		metav1.ListOptions{FieldSelector: "status.phase=Failed", LabelSelector: "job-name=" + jobName})
 }
