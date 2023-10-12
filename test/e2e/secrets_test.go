@@ -95,17 +95,17 @@ func (tc *testContext) testUserDataTamper(t *testing.T) {
 	assert.NoError(t, tc.waitForValidUserData(validUserDataSecret), "error waiting for valid userdata")
 }
 
-// waitForNewMachineNodes returns an error if waitForWindowsNodes returns the same Machine backed nodes
+// waitForNewMachineNodes returns an error if waitForConfiguredWindowsNodes returns the same Machine backed nodes
 func (tc *testContext) waitForNewMachineNodes() error {
 	var oldNodes []string
 	for _, node := range gc.machineNodes {
 		oldNodes = append(oldNodes, node.GetName())
 	}
 
-	// waitForWindowsNodes will re-populate gc.machineNodes with the configured nodes found
+	// waitForConfiguredWindowsNodes will re-populate gc.machineNodes with the configured nodes found
 	log.Printf("waiting for existing Machine nodes to be removed and replaced")
 	return wait.Poll(retryInterval, time.Minute*10, func() (done bool, err error) {
-		err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
+		err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 		if err != nil {
 			log.Printf("error waiting for configured Windows Nodes: %s", err)
 			return false, nil
@@ -116,6 +116,10 @@ func (tc *testContext) waitForNewMachineNodes() error {
 					log.Printf("node %s is not a new Node, continuing to wait", oldNode)
 					return false, nil
 				}
+			}
+			if !tc.nodeReadyAndSchedulable(newNode) {
+				log.Printf("node %s is not yet ready and schedulable, continuing to wait", newNode.GetName())
+				return false, nil
 			}
 		}
 		return true, nil
@@ -159,6 +163,8 @@ func testPrivateKeyChange(t *testing.T) {
 	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
 		t.Skipf("Skipping for %s", config.VSpherePlatformType)
 	}
+	// Load the state of nodes before the test begins, this is required to determine if new Machine nodes were created
+	require.NoError(t, tc.loadExistingNodes())
 	err = tc.createPrivateKeySecret(false)
 	require.NoError(t, err, "error replacing known private key secret with a random key")
 	// Ensure operator communicates to OLM that upgrade is not safe when processing secret resources
@@ -166,11 +172,11 @@ func testPrivateKeyChange(t *testing.T) {
 	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 
 	// Ensure Machines nodes are re-created and configured using the new private key
-	err = tc.waitForWindowsNodes(gc.numberOfMachineNodes, false, false, false)
-	assert.NoError(t, err, "error waiting for Windows nodes configured with newly created private key")
+	assert.NoError(t, tc.waitForNewMachineNodes(),
+		"error waiting for Machine nodes configured with newly created private key")
 	// Ensure public key hash and encrypted username annotations are updated correctly on BYOH nodes
-	err = tc.waitForWindowsNodes(gc.numberOfBYOHNodes, false, false, true)
-	assert.NoError(t, err, "error waiting for Windows nodes updated with newly created private key")
+	assert.NoError(t, tc.waitForBYOHPrivateKeyUpdate(),
+		"error waiting for BYOH nodes to be updated with the newly created private key")
 
 	err = tc.validateUpgradeableCondition(meta.ConditionTrue)
 	require.NoError(t, err, "operator Upgradeable condition not in proper state")
@@ -178,6 +184,25 @@ func testPrivateKeyChange(t *testing.T) {
 	// revert key changes so the test suite is able to SSH into the VMs
 	require.NoError(t, tc.createPrivateKeySecret(true))
 	require.NoError(t, tc.waitForNewMachineNodes())
+}
+
+// waitForBYOHPrivateKeyUpdate waits until all BYOH Nodes annotations are updated to reflect the expected private key
+func (tc *testContext) waitForBYOHPrivateKeyUpdate() error {
+	return wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (done bool, err error) {
+		nodes, err := tc.listFullyConfiguredWindowsNodes(true)
+		if err != nil {
+			return false, nil
+		}
+		for _, node := range nodes {
+			if pubKeyCorrect, err := tc.checkPubKeyAnnotation(&node); err != nil || !pubKeyCorrect {
+				return false, nil
+			}
+			if usernameCorrect, err := tc.checkUsernameAnnotation(&node); err != nil || !usernameCorrect {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
 }
 
 // generatePrivateKey generates a random RSA private key
