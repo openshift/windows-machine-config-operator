@@ -196,6 +196,9 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 	}
 	// return a cleanup func
 	return func() {
+		// collect webserver pods logs
+		tc.collectDeploymentLogs(deployment)
+		tc.writePodLogs("job-name=" + testerJob.Name)
 		// ignore errors while deleting the objects
 		_ = tc.deleteDeployment(deployment.Name)
 		_ = tc.deleteService(intermediarySVC.Name)
