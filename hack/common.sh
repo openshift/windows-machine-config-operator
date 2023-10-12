@@ -107,6 +107,7 @@ run_WMCO() {
   fi
 
   transform_csv REPLACE_IMAGE $OPERATOR_IMAGE
+  transform_csv "imagePullPolicy: IfNotPresent" "imagePullPolicy: Always"
 
   # Validate the operator bundle manifests
   $OSDK bundle validate $MANIFEST_LOC
@@ -153,10 +154,10 @@ cleanup_WMCO() {
 
   # Cleanup the operator and revert changes made to the csv
   if ! OSDK_WMCO_management cleanup $OSDK; then
-      transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
+      revert_csv
       error-exit "operator cleanup failed"
   fi
-  transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
+  revert_csv
 
   # Remove the declared namespace
   oc delete ns $WMCO_DEPLOY_NAMESPACE
@@ -171,7 +172,13 @@ transform_csv() {
     echo incorrect parameter count for replace_csv_value $#
     return 1
   fi
-  sed -i "s|"$1"|"$2"|g" $MANIFEST_LOC/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+  sed -i "s|$1|$2|g" $MANIFEST_LOC/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+}
+
+# Revert the CSV back to it's original form
+revert_csv() {
+    transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
+    transform_csv "imagePullPolicy: Always" "imagePullPolicy: IfNotPresent"
 }
 
 # creates the `windows-instances` ConfigMap
