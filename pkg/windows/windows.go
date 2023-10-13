@@ -243,8 +243,6 @@ type Windows interface {
 	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
 	// services are also stopped
 	RunWICDCleanup(string, string) error
-	// RestoreAWSRoutes restores the default routes on AWS VMs. This function should not be called on non-AWS VMs
-	RestoreAWSRoutes() error
 }
 
 // windows implements the Windows interface
@@ -518,35 +516,6 @@ func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string) 
 		return fmt.Errorf("error ensuring %s Windows service has started running: %w", WicdServiceName, err)
 	}
 	vm.log.Info("configured", "service", WicdServiceName, "args", wicdServiceArgs)
-	return nil
-}
-
-func (vm *windows) RestoreAWSRoutes() error {
-	ec2LaunchV2ServiceName := "\"Amazon EC2Launch\""
-	serviceExists, err := vm.serviceExists(ec2LaunchV2ServiceName)
-	if err != nil {
-		return fmt.Errorf("error checking if %s service exists: %w", ec2LaunchV2ServiceName, err)
-	}
-	// We don't want ensureServiceIsRunning to create the service if it does not exist, so we return without an error.
-	// Returning an error does not make sense as we could have an AMI configured without the EC2Launch service present
-	// and the route created using some other customer specific method which is unknown to us.
-	if !serviceExists {
-		vm.log.Info("missing", "service", ec2LaunchV2ServiceName)
-		return nil
-	}
-	ec2Launch, err := newService("C:\\Program Files\\Amazon\\EC2Launch\\service\\EC2LaunchService.exe",
-		ec2LaunchV2ServiceName, "", nil, nil, 0)
-	if err != nil {
-		return err
-	}
-	if err = vm.ensureServiceIsRunning(ec2Launch); err != nil {
-		return err
-	}
-	// The EC2Launch service stops running once it has completed its tasks like creating routes. So we wait until it
-	// has stopped running before proceeding.
-	if err = vm.waitStopped(ec2LaunchV2ServiceName); err != nil {
-		return err
-	}
 	return nil
 }
 
