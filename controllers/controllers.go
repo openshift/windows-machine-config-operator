@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 
 	"github.com/go-logr/logr"
 	config "github.com/openshift/api/config/v1"
@@ -26,6 +27,17 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/version"
+)
+
+const (
+	// MaxParallelUpgrades is the default maximum allowed number of nodes that can be upgraded in parallel.
+	// It is a positive integer and cannot be used to stop upgrades, only to limit the number of concurrent upgrades.
+	MaxParallelUpgrades = 1
+)
+
+var (
+	// controllerLocker is used to synchronize upgrades between controllers
+	controllerLocker sync.Mutex
 )
 
 // instanceReconciler contains everything needed to perform actions on a Windows instance
@@ -102,6 +114,9 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 			return fmt.Errorf("error removing upgrade block label: %w", err)
 		}
 
+		if err := markNodeAsUpgrading(context.TODO(), r.client, instanceInfo.Node); err != nil {
+			return err
+		}
 		if err := nc.Deconfigure(); err != nil {
 			return err
 		}
@@ -328,4 +343,39 @@ func markAsFreeOnSuccess(c client.Client, watchNamespace string, recorder record
 		return condition.MarkAsFree(c, watchNamespace, recorder, controllerName)
 	}
 	return err
+}
+
+// markNodeAsUpgrading marks the given node as upgrading by adding an annotation to it. If the number of nodes
+// performing upgrades in parallel exceeds the maximum allowed, an error is returned
+func markNodeAsUpgrading(ctx context.Context, c client.Client, currentNode *core.Node) error {
+	controllerLocker.Lock()
+	defer controllerLocker.Unlock()
+	upgradingNodes, err := findUpgradingNodes(ctx, c)
+	if err != nil {
+		return err
+	}
+	// check if current node is already marked as upgrading
+	for _, node := range upgradingNodes.Items {
+		if node.Name == currentNode.Name {
+			// current node is upgrading, continue with it
+			return nil
+		}
+	}
+	if len(upgradingNodes.Items) >= MaxParallelUpgrades {
+		return fmt.Errorf("cannot mark node %s as upgrading, maximum number of parallel upgrading nodes reached (%d)",
+			currentNode.Name, MaxParallelUpgrades)
+	}
+	return metadata.ApplyUpgradingLabel(ctx, c, currentNode)
+}
+
+// findUpgradingNodes returns a pointer to the resulting list of Windows nodes that are upgrading  i.e. have the
+// upgrading label set to true
+func findUpgradingNodes(ctx context.Context, c client.Client) (*core.NodeList, error) {
+	// get nodes Windows nodes with upgrading label
+	matchingLabels := client.MatchingLabels{core.LabelOSStable: "windows", metadata.UpgradingLabel: "true"}
+	nodeList := &core.NodeList{}
+	if err := c.List(ctx, nodeList, matchingLabels); err != nil {
+		return nil, fmt.Errorf("error listing Windows nodes with upgrading label: %w", err)
+	}
+	return nodeList, nil
 }
