@@ -257,7 +257,7 @@ github.com/monochromegane/go-gitignore
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
-# github.com/openshift/api v0.0.0-20230918105526-6488b1202507
+# github.com/openshift/api v0.0.0-20231012190404-7b36cb38c7d0
 ## explicit; go 1.20
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -309,7 +309,7 @@ github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
 github.com/openshift/library-go/pkg/image/internal/reference
 github.com/openshift/library-go/pkg/image/reference
-# github.com/openshift/machine-config-operator v0.0.1-0.20231002195040-a2469941c0dc
+# github.com/openshift/machine-config-operator v0.0.1-0.20231012141247-20d95766e888
 ## explicit; go 1.20
 github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1
 # github.com/operator-framework/api v0.16.0
