@@ -331,6 +331,30 @@ func (tc *testContext) ensureTestRunnerRole() error {
 	return nil
 }
 
+// ensureTestRunnerClusterRole ensures the proper ClusterRole exists, a requirement for listing Windows node
+// noop if the ClusterRole already exists. Nodes are cluster-scoped resources, and only ClusterRoles
+// can grant permissions to cluster-scoped resources.
+func (tc *testContext) ensureTestRunnerClusterRole(ctx context.Context) error {
+	clusterRole := rbac.ClusterRole{
+		TypeMeta: meta.TypeMeta{},
+		ObjectMeta: meta.ObjectMeta{
+			Name: tc.workloadNamespace,
+		},
+		Rules: []rbac.PolicyRule{
+			{
+				Resources: []string{"nodes"},
+				APIGroups: []string{""},
+				Verbs:     []string{"get", "list"},
+			},
+		},
+	}
+	_, err := tc.client.K8s.RbacV1().ClusterRoles().Create(ctx, &clusterRole, meta.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("unable to create role: %w", err)
+	}
+	return nil
+}
+
 // ensureTestRunnerRoleBinding ensures the proper RoleBinding exists, a requirement for SSHing into a Windows node
 // noop if the RoleBinding already exists.
 func (tc *testContext) ensureTestRunnerRoleBinding() error {
@@ -356,6 +380,32 @@ func (tc *testContext) ensureTestRunnerRoleBinding() error {
 	return nil
 }
 
+// ensureTestRunnerClusterRoleBinding ensures the proper ClusterRoleBinding exists, a requirement for listing
+// Windows nodes, noop if the ClusterRoleBinding already exists.
+func (tc *testContext) ensureTestRunnerClusterRoleBinding(ctx context.Context) error {
+	crb := rbac.ClusterRoleBinding{
+		TypeMeta: meta.TypeMeta{},
+		ObjectMeta: meta.ObjectMeta{
+			Name: tc.workloadNamespace,
+		},
+		Subjects: []rbac.Subject{{
+			Kind:      rbac.ServiceAccountKind,
+			Name:      tc.workloadNamespace,
+			Namespace: tc.workloadNamespace,
+		}},
+		RoleRef: rbac.RoleRef{
+			APIGroup: rbac.GroupName,
+			Kind:     "ClusterRole",
+			Name:     tc.workloadNamespace,
+		},
+	}
+	_, err := tc.client.K8s.RbacV1().ClusterRoleBindings().Create(ctx, &crb, meta.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("unable to create cluster role: %w", err)
+	}
+	return nil
+}
+
 // sshSetup creates all the Kubernetes resources required to SSH into a Windows node
 func (tc *testContext) sshSetup() error {
 	if err := tc.ensureTestRunnerSA(); err != nil {
@@ -365,6 +415,21 @@ func (tc *testContext) sshSetup() error {
 		return fmt.Errorf("error ensuring Role created: %w", err)
 	}
 	if err := tc.ensureTestRunnerRoleBinding(); err != nil {
+		return fmt.Errorf("error ensuring RoleBinding created: %w", err)
+	}
+	return nil
+}
+
+// ensureTestRunnerRBAC creates the RBAC resources required for the test runner service account
+func (tc *testContext) ensureTestRunnerRBAC() error {
+	ctx := context.TODO()
+	if err := tc.ensureTestRunnerSA(); err != nil {
+		return fmt.Errorf("error ensuring SA created: %w", err)
+	}
+	if err := tc.ensureTestRunnerClusterRole(ctx); err != nil {
+		return fmt.Errorf("error ensuring Role created: %w", err)
+	}
+	if err := tc.ensureTestRunnerClusterRoleBinding(ctx); err != nil {
 		return fmt.Errorf("error ensuring RoleBinding created: %w", err)
 	}
 	return nil
