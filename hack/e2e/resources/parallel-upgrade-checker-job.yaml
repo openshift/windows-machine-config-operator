@@ -1,0 +1,52 @@
+kind: Job
+apiVersion: batch/v1
+metadata:
+  name: parallel-upgrades-checker
+  namespace: wmco-test
+  labels:
+    batch.kubernetes.io/job-name: parallel-upgrades-checker
+    job-name: parallel-upgrades-checker
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        batch.kubernetes.io/job-name: parallel-upgrades-checker
+        job-name: parallel-upgrades-checker
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      restartPolicy: Never
+      serviceAccountName: wmco-test
+      os:
+        name: linux
+      containers:
+        - name: parallel-upgrades-checker
+          image: 'REPLACE_WITH_OPENSHIFT_TOOLS_IMAGE'
+          command:
+            - bash
+            - '-c'
+            - |
+              #!/bin/bash
+              set -euo pipefail
+
+              # max number of parallel upgrades allowed, fixed to 1. Refer to controllers.MaxParallelUpgrades
+              export MAX_PARALLEL_UPGRADES=1
+
+              # loop indefinitely until count exceeded
+              while true; do
+              	upgradingCount=$(oc get nodes -l kubernetes.io/os=windows  -o jsonpath='{.items[*].metadata.labels.windowsmachineconfig\.openshift\.io/upgrading}' | wc -w)	
+              	if [[ $upgradingCount -gt $MAX_PARALLEL_UPGRADES ]]; then
+              	  echo "error: max upgrading count exceeded"
+              	  exit 1 
+              	fi
+                echo ""
+              	echo "pass: upgrading count $upgradingCount/$MAX_PARALLEL_UPGRADES"
+              	echo "waiting 5s for next check..."
+              	sleep 5
+              done
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
