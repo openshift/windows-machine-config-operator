@@ -179,9 +179,11 @@ if [[ "$TEST" = "upgrade-setup" ]]; then
   # Run the storage test, skipping deletion of the created workload in order to test that it persists across the upgrade
   go test ./test/e2e/... -run=TestWMCO/storage -v -timeout=15m -args $GO_TEST_ARGS --skip-workload-deletion=true
   go test ./test/e2e/... -run=TestWMCO/create/Node_Logs -v -timeout=10m -args $GO_TEST_ARGS
+  createParallelUpgradeCheckerResources
 fi
 
 if [[ "$TEST" = "upgrade-test" ]]; then
+  trap deleteParallelUpgradeCheckerResources EXIT
   go test ./test/e2e/... -run=TestUpgrade -v -timeout=20m -args $GO_TEST_ARGS
 fi
 
