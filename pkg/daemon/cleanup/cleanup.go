@@ -27,6 +27,7 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/daemon/certs"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/controller"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/envvar"
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
@@ -69,13 +70,19 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	if err != nil {
 		return err
 	}
-	// rebooting instance to unset the environment variables at the process level as expected
-	if envVarsRemoved {
+
+	certsRemoved, err := certs.Reconcile("")
+	// rebooting instance to unset the environment variables and available certifictes at the process level as expected
+	if envVarsRemoved || certsRemoved {
 		// Applying the reboot annotation results in an event picked up by WMCO's node controller to reboot the instance
-		if err = metadata.ApplyRebootAnnotation(ctx, directClient, *node); err != nil {
-			return fmt.Errorf("error setting reboot annotation on node %s: %w", node.Name, err)
+		if annotationErr := metadata.ApplyRebootAnnotation(ctx, directClient, *node); annotationErr != nil {
+			return fmt.Errorf("error setting reboot annotation on node %s: %w", node.Name, annotationErr)
 		}
 	}
+	if err != nil {
+		return err
+	}
+
 	cleanupContainers()
 
 	if node != nil {
