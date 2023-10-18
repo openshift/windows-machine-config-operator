@@ -1,6 +1,10 @@
 FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.20-openshift-4.15 as build
 LABEL stage=build
 
+# Silence go compliance shim output
+ENV GO_COMPLIANCE_INFO=0
+ENV GO_COMPLIANCE_DEBUG=0
+
 # dos2unix is needed to build CNI plugins
 RUN yum install -y dos2unix
 
