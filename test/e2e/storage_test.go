@@ -17,7 +17,6 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
-	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/smb"
 )
 
@@ -28,9 +27,6 @@ func testStorage(t *testing.T) {
 	if !tc.StorageSupport() {
 		t.Skip("storage is not supported on this platform")
 	}
-	if inTreeUpgrade && tc.CloudProvider.GetType() != config.VSpherePlatformType {
-		t.Skip("in tree upgrade is only testable on vSphere")
-	}
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 	require.NoError(t, err, "timed out waiting for Windows Machine nodes")
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, false, true)
@@ -40,23 +36,15 @@ func testStorage(t *testing.T) {
 	// Create the PVC and choose the node the deployment will be scheduled on. This is necessary as ReadWriteOnly
 	// volumes can only be bound to a single node.
 	// https://docs.openshift.com/container-platform/4.12/storage/understanding-persistent-storage.html#pv-access-modes_understanding-persistent-storage
-	var pvc *core.PersistentVolumeClaim
-	if inTreeUpgrade {
-		vsphereProvider, ok := tc.CloudProvider.(*vsphere.Provider)
-		require.True(t, ok, "in tree upgrade must be ran on vSphere")
-		pvc, err = vsphereProvider.CreateInTreePVC(tc.client.K8s, tc.workloadNamespace)
+	var pv *core.PersistentVolume
+	if tc.CloudProvider.GetType() == config.NonePlatformType {
+		err = smb.EnsureSMBControllerResources(tc.client.K8s)
 		require.NoError(t, err)
-	} else {
-		var pv *core.PersistentVolume
-		if tc.CloudProvider.GetType() == config.NonePlatformType {
-			err = smb.EnsureSMBControllerResources(tc.client.K8s)
-			require.NoError(t, err)
-			pv, err = tc.createSMBPV()
-			require.NoError(t, err)
-		}
-		pvc, err = tc.CloudProvider.CreatePVC(tc.client.K8s, tc.workloadNamespace, pv)
+		pv, err = tc.createSMBPV()
 		require.NoError(t, err)
 	}
+	pvc, err := tc.CloudProvider.CreatePVC(tc.client.K8s, tc.workloadNamespace, pv)
+	require.NoError(t, err)
 	if !skipWorkloadDeletion {
 		defer func() {
 			err := tc.client.K8s.CoreV1().PersistentVolumeClaims(tc.workloadNamespace).Delete(context.TODO(),

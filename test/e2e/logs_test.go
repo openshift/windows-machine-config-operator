@@ -27,10 +27,7 @@ func (tc *testContext) testNodeLogs(t *testing.T) {
 		"kubelet/kubelet.log",
 		"containerd/containerd.log",
 		"wicd/windows-instance-config-daemon.exe.INFO",
-	}
-	// TODO: Always collect csi-proxy log when no longer upgrading from in-tree to CSI for any platform
-	if !inTreeUpgrade {
-		mandatoryLogs = append(mandatoryLogs, "csi-proxy/csi-proxy.log")
+		"csi-proxy/csi-proxy.log",
 	}
 	nodeArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes")
 	for _, node := range gc.allNodes() {

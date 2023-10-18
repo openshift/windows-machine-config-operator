@@ -135,23 +135,14 @@ func (p *Provider) StorageSupport() bool {
 	return true
 }
 
-// CreateInTreePVC creates a PVC which has the potential to be migrated to a CSI PVC on upgrade
-func (p *Provider) CreateInTreePVC(client client.Interface, namespace string) (*core.PersistentVolumeClaim, error) {
-	return p.createPVC(client, namespace, true)
-}
-
 // CreatePVC creates a PVC for a dynamically provisioned volume
 func (p *Provider) CreatePVC(client client.Interface, namespace string, _ *core.PersistentVolume) (*core.PersistentVolumeClaim, error) {
-	if err := p.EnsureWindowsCSIDrivers(client); err != nil {
+	if err := p.ensureWindowsCSIDrivers(client); err != nil {
 		return nil, err
 	}
-	return p.createPVC(client, namespace, false)
-}
-
-func (p *Provider) createPVC(client client.Interface, namespace string, inTree bool) (*core.PersistentVolumeClaim, error) {
 	// Use a StorageClass to allow for dynamic volume provisioning
 	// https://docs.openshift.com/container-platform/4.12/storage/dynamic-provisioning.html#about_dynamic-provisioning
-	sc, err := p.ensureStorageClass(client, inTree)
+	sc, err := p.ensureStorageClass(client)
 	if err != nil {
 		return nil, fmt.Errorf("unable to ensure a usable StorageClass is created: %w", err)
 	}
@@ -170,8 +161,8 @@ func (p *Provider) createPVC(client client.Interface, namespace string, inTree b
 	return client.CoreV1().PersistentVolumeClaims(namespace).Create(context.TODO(), &pvcSpec, meta.CreateOptions{})
 }
 
-// ensureStorageClass ensures a usable vSphere NTFS storage class exists.
-func (p *Provider) ensureStorageClass(client client.Interface, inTree bool) (*storage.StorageClass, error) {
+// ensureStorageClass ensures a usable vSphere NTFS storage class exists
+func (p *Provider) ensureStorageClass(client client.Interface) (*storage.StorageClass, error) {
 	sc, err := client.StorageV1().StorageClasses().Get(context.TODO(), storageClassName, meta.GetOptions{})
 	if err == nil {
 		return sc, nil
@@ -180,15 +171,11 @@ func (p *Provider) ensureStorageClass(client client.Interface, inTree bool) (*st
 	}
 	volumeBinding := storage.VolumeBindingImmediate
 	reclaimPolicy := core.PersistentVolumeReclaimDelete
-	provisioner := "csi.vsphere.vmware.com"
-	if inTree {
-		provisioner = "kubernetes.io/vsphere-volume"
-	}
 	sc = &storage.StorageClass{
 		ObjectMeta: meta.ObjectMeta{
 			Name: storageClassName,
 		},
-		Provisioner:       provisioner,
+		Provisioner:       "csi.vsphere.vmware.com",
 		Parameters:        map[string]string{"fstype": "ntfs"},
 		ReclaimPolicy:     &reclaimPolicy,
 		VolumeBindingMode: &volumeBinding,
@@ -196,8 +183,8 @@ func (p *Provider) ensureStorageClass(client client.Interface, inTree bool) (*st
 	return client.StorageV1().StorageClasses().Create(context.TODO(), sc, meta.CreateOptions{})
 }
 
-// EnsureWindowsCSIDrivers ensures that the vSphere CSI drivers are deployed across Windows nodes
-func (p *Provider) EnsureWindowsCSIDrivers(client client.Interface) error {
+// ensureWindowsCSIDrivers ensures that the vSphere CSI drivers are deployed across Windows nodes
+func (p *Provider) ensureWindowsCSIDrivers(client client.Interface) error {
 	if err := p.ensureFSSConfigMap(client); err != nil {
 		return err
 	}
