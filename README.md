@@ -233,7 +233,10 @@ config for the OpenShift Container Platform. WMCO will not be able to automatica
 workloads.
 
 ### Storage
-At this time, only in-tree storage is supported in all cloud providers.
+Windows Nodes are running csi-proxy and are ready to use CSI drivers, however Windows CSI driver DaemonSets are not
+deployed as part of the product. In order to use persistent storage for Windows workloads, the cluster administrator
+must deploy the appropriate Windows CSI driver Daemonset. This should be done by following the documentation given
+by the chosen storage driver's provider. A list of drivers can be found [here](https://kubernetes-csi.github.io/docs/drivers.html#production-drivers).
 
 ### Pod Autoscaling
 [Horizontal](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html) and
