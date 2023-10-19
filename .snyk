@@ -1,0 +1,14 @@
+exclude:
+  global:
+    - "cloud-provider-azure/**"
+    - "containerd/**"
+    - "containernetworking-plugins/**"
+    - "csi-proxy/**"
+    - "hcsshim/**"
+    - "kube-proxy/**"
+    - "kubelet/**"
+    - "ovn-kubernetes/**"
+    - "promu/**"
+    - "vendor/**"
+    - "windows_exporter/**"
+    - "**/*_test.go"
