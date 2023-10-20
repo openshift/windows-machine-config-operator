@@ -108,6 +108,9 @@ build-daemon:
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run cmd/operator/main.go
 
+ifndef IGNORE-NOT-FOUND
+  IGNORE-NOT-FOUND = false
+endif
 ##@ Deployment
 
 .PHONY: install
@@ -116,7 +119,7 @@ install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | oc delete -f -
+	$(KUSTOMIZE) build config/crd | oc delete --ignore-not-found=$(IGNORE-NOT-FOUND) -f -
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
@@ -125,7 +128,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/default | oc delete -f -
+	$(KUSTOMIZE) build config/default | oc delete --ignore-not-found=$(IGNORE-NOT-FOUND) -f -
 
 .PHONY: controller-gen
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
