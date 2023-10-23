@@ -26,7 +26,7 @@ require (
 	golang.org/x/mod v0.13.0
 	golang.org/x/sys v0.13.0
 	k8s.io/api v0.28.3
-	k8s.io/apimachinery v0.29.0-alpha.0.0.20231012225557-ab8b4c890065
+	k8s.io/apimachinery v0.28.3
 	k8s.io/client-go v0.28.3
 	k8s.io/cloud-provider v0.28.3
 	k8s.io/klog/v2 v2.100.1
