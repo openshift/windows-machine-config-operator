@@ -1761,8 +1761,7 @@ message HTTPGetAction {
 
 // HTTPHeader describes a custom header to be used in HTTP probes
 message HTTPHeader {
-  // The header field name.
-  // This will be canonicalized upon output, so case-variant names will be understood as the same header.
+  // The header field name
   optional string name = 1;
 
   // The header field value
@@ -5134,7 +5133,6 @@ message ServiceSpec {
   // service or not.  If this field is specified when creating a Service
   // which does not need it, creation will fail. This field will be wiped
   // when updating a Service to no longer need it (e.g. changing type).
-  // This field cannot be updated once set.
   // +optional
   optional int32 healthCheckNodePort = 12;
 
