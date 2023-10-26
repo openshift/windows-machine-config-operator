@@ -120,3 +120,17 @@ func processTags(platformType oconfig.PlatformType, userData string) string {
 	}
 	return userData
 }
+
+// GenerateServiceAccountTokenSecret returns a pointer to a secret with the given name and namespace with
+// ServiceAccountToken type and the given serviceAccountName as the annotation
+func GenerateServiceAccountTokenSecret(namespace, serviceAccountName string) *core.Secret {
+	return &core.Secret{
+		TypeMeta: meta.TypeMeta{},
+		ObjectMeta: meta.ObjectMeta{
+			Name:        serviceAccountName,
+			Namespace:   namespace,
+			Annotations: map[string]string{core.ServiceAccountNameKey: serviceAccountName},
+		},
+		Type: core.SecretTypeServiceAccountToken,
+	}
+}
