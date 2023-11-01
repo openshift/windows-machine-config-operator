@@ -312,7 +312,7 @@ func (tc *testContext) ensureTestRunnerSA() error {
 
 // ensureTestRunnerRole ensures the proper Role exists, a requirement for SSHing into a Windows node
 // noop if the Role already exists.
-func (tc *testContext) ensureTestRunnerRole() error {
+func (tc *testContext) ensureTestRunnerRole(ctx context.Context) error {
 	role := rbac.Role{
 		TypeMeta:   meta.TypeMeta{},
 		ObjectMeta: meta.ObjectMeta{Name: tc.workloadNamespace},
@@ -325,7 +325,7 @@ func (tc *testContext) ensureTestRunnerRole() error {
 			},
 		},
 	}
-	_, err := tc.client.K8s.RbacV1().Roles(tc.workloadNamespace).Create(context.TODO(), &role, meta.CreateOptions{})
+	_, err := tc.client.K8s.RbacV1().Roles(tc.workloadNamespace).Create(ctx, &role, meta.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("unable to create role: %w", err)
 	}
@@ -358,7 +358,7 @@ func (tc *testContext) ensureTestRunnerClusterRole(ctx context.Context) error {
 
 // ensureTestRunnerRoleBinding ensures the proper RoleBinding exists, a requirement for SSHing into a Windows node
 // noop if the RoleBinding already exists.
-func (tc *testContext) ensureTestRunnerRoleBinding() error {
+func (tc *testContext) ensureTestRunnerRoleBinding(ctx context.Context) error {
 	rb := rbac.RoleBinding{
 		TypeMeta:   meta.TypeMeta{},
 		ObjectMeta: meta.ObjectMeta{Name: tc.workloadNamespace},
@@ -374,7 +374,7 @@ func (tc *testContext) ensureTestRunnerRoleBinding() error {
 			Name:     tc.workloadNamespace,
 		},
 	}
-	_, err := tc.client.K8s.RbacV1().RoleBindings(tc.workloadNamespace).Create(context.TODO(), &rb, meta.CreateOptions{})
+	_, err := tc.client.K8s.RbacV1().RoleBindings(tc.workloadNamespace).Create(ctx, &rb, meta.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("unable to create role: %w", err)
 	}
@@ -407,20 +407,6 @@ func (tc *testContext) ensureTestRunnerClusterRoleBinding(ctx context.Context) e
 	return nil
 }
 
-// sshSetup creates all the Kubernetes resources required to SSH into a Windows node
-func (tc *testContext) sshSetup() error {
-	if err := tc.ensureTestRunnerSA(); err != nil {
-		return fmt.Errorf("error ensuring SA created: %w", err)
-	}
-	if err := tc.ensureTestRunnerRole(); err != nil {
-		return fmt.Errorf("error ensuring Role created: %w", err)
-	}
-	if err := tc.ensureTestRunnerRoleBinding(); err != nil {
-		return fmt.Errorf("error ensuring RoleBinding created: %w", err)
-	}
-	return nil
-}
-
 // ensureTestRunnerRBAC creates the RBAC resources required for the test runner service account
 func (tc *testContext) ensureTestRunnerRBAC() error {
 	ctx := context.TODO()
@@ -431,6 +417,12 @@ func (tc *testContext) ensureTestRunnerRBAC() error {
 		return fmt.Errorf("error ensuring Role created: %w", err)
 	}
 	if err := tc.ensureTestRunnerClusterRoleBinding(ctx); err != nil {
+		return fmt.Errorf("error ensuring RoleBinding created: %w", err)
+	}
+	if err := tc.ensureTestRunnerRole(ctx); err != nil {
+		return fmt.Errorf("error ensuring Role created: %w", err)
+	}
+	if err := tc.ensureTestRunnerRoleBinding(ctx); err != nil {
 		return fmt.Errorf("error ensuring RoleBinding created: %w", err)
 	}
 	return nil
