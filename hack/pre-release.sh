@@ -11,7 +11,7 @@ CVP=false
 BASEIMAGE=false
 DISTGIT=false
 GITLAB=false
-OPERATOR_SDK_VERSION=v1.15.0
+OPERATOR_SDK_VERSION=v1.32.0
 
 # codes for printing and resetting pink text
 PINK='\033[95m'
@@ -227,7 +227,7 @@ github_update() {
 
   # remove make bundle artifacts
   sed -i 's/REPLACE_IMAGE:latest/REPLACE_IMAGE/' bundle/manifests/windows-machine-config-operator.clusterserviceversion.yaml
-  sed -i 's/operator-sdk-v1.14.0+git/operator-sdk-v1.15.0+git/' bundle/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+  sed -i "s/operator-sdk-v1.14.0+git/operator-sdk-$OPERATOR_SDK_VERSION+git/" bundle/manifests/windows-machine-config-operator.clusterserviceversion.yaml
 
   commit_message="[$base_branch] Update version to $updated_version
 
