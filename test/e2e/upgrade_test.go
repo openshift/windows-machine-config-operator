@@ -30,6 +30,8 @@ const (
 	windowsWorkloadTesterJob = "windows-workload-tester"
 	// outdatedVersion is the 'previous' version in the simulated upgrade that the operator is being upgraded from
 	outdatedVersion = "old-version"
+	// parallelUpgradesCheckerJobName is a fixed name for the job that checks for the number of parallel upgrades
+	parallelUpgradesCheckerJobName = "parallel-upgrades-checker"
 )
 
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
@@ -206,9 +208,9 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 func TestUpgrade(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
-	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), false, false)
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), true, false)
 	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
-	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), false, true)
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), true, true)
 	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
 	// Basic testing to ensure the Node object is in a good state
@@ -219,6 +221,24 @@ func TestUpgrade(t *testing.T) {
 	// test that any workloads deployed on the node have not been broken by the upgrade
 	t.Run("Workloads ready", tc.testWorkloadsAvailable)
 	t.Run("Node Logs", tc.testNodeLogs)
+	t.Run("Parallel Upgrades Checker", tc.testParallelUpgradesChecker)
+
+}
+
+// testParallelUpgradesChecker tests that the number of parallel upgrades does not exceed the max allowed
+// in the lifetime of the job execution. This test is run after the upgrade is complete.
+func (tc *testContext) testParallelUpgradesChecker(t *testing.T) {
+	// get current Windows node state
+	require.NoError(t, tc.loadExistingNodes(), "error getting the current Windows nodes in the cluster")
+	if len(gc.allNodes()) < 2 {
+		t.Skipf("Requires 2 or more nodes to run. Found %d nodes", len(gc.allNodes()))
+	}
+	failedPods, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: "job-name=" + parallelUpgradesCheckerJobName, FieldSelector: "status.phase=Failed"})
+	require.NoError(t, err)
+	tc.writePodLogs("job-name=" + parallelUpgradesCheckerJobName)
+	require.Equal(t, 0, len(failedPods.Items), "parallel upgrades check failed",
+		"failed pod count", len(failedPods.Items))
 }
 
 // testWorkloadsAvailable tests that all workloads deployed on Windows nodes by the test suite are available

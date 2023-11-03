@@ -237,6 +237,10 @@ func (nc *nodeConfig) Configure() error {
 			return fmt.Errorf("error uncordoning the node %s: %w", nc.node.GetName(), err)
 		}
 
+		if err := metadata.RemoveUpgradingLabel(context.TODO(), nc.client, nc.node); err != nil {
+			return fmt.Errorf("error removing upgrading label from node %s: %w", nc.node.GetName(), err)
+		}
+
 		nc.log.Info("instance has been configured as a worker node", "version",
 			nc.node.Annotations[metadata.VersionAnnotation])
 		return nil
