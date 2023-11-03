@@ -100,16 +100,19 @@ func NewApprover(client client.Client, clientSet *kubernetes.Clientset, csr *cer
 		watchNamespace}, nil
 }
 
-// Approve approves a CSR by updating its status conditions to true if it is a valid CSR
+// Approve determines if a CSR should be approved by WMCO, and if so, approves it by updating its status. This function
+// is a NOOP if the CSR should not be approved.
 func (a *Approver) Approve() error {
 	if a.k8sclientset == nil {
 		return fmt.Errorf("kubernetes clientSet should not be nil")
 	}
 
-	if valid, err := a.validateCSRContents(); !valid && err != nil {
-		// if the validation fails and error returned is nil, returns nil
-		return fmt.Errorf("could not validate contents for approval of CSR: %s: %w", a.csr.Name, err)
-
+	validForApproval, err := a.validateCSRContents()
+	if err != nil {
+		return fmt.Errorf("error determining if CSR %s should be approved: %w", a.csr.Name, err)
+	}
+	if !validForApproval {
+		return nil
 	}
 
 	a.csr.Status.Conditions = append(a.csr.Status.Conditions, certificates.CertificateSigningRequestCondition{
