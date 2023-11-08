@@ -461,7 +461,9 @@ func (nc *nodeConfig) newDrainHelper() *drain.Helper {
 		Force: true,
 		// Prevents erroring out in case a DaemonSet's pod is on the node
 		IgnoreAllDaemonSets: true,
-		Out:                 &OutWriter{nc.log},
+		// Prevents erroring out in case there is a workload with emptydir data
+		DeleteEmptyDirData: true,
+		Out:                &OutWriter{nc.log},
 	}
 }
 

@@ -165,6 +165,11 @@ func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 	err = tc.waitUntilDaemonsetScaled(ds.GetName(), int(gc.numberOfMachineNodes+gc.numberOfBYOHNodes))
 	require.NoError(t, err, "error waiting for DaemonSet pods to become ready")
 
+	dp, err := tc.deployEmptyDirVolumeWorkload()
+	require.NoError(t, err, "error creating Deployment")
+	defer tc.client.K8s.AppsV1().Deployments(dp.GetNamespace()).Delete(context.TODO(), dp.GetName(),
+		meta.DeleteOptions{})
+
 	// set expected node count to zero, since all Windows Nodes should be deleted in the test
 	expectedNodeCount := int32(0)
 	// Get all the Machines created by the e2e tests
@@ -220,6 +225,25 @@ func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 	// Cleanup wmco-test namespace created by us.
 	err = tc.deleteNamespace(tc.workloadNamespace)
 	require.NoError(t, err, "could not delete test namespace")
+}
+
+// Deploy an emptydir volume and wait until its pods have been made ready on each Windows node. emptydir
+// volumes should be able to be removed from a Node.
+func (tc *testContext) deployEmptyDirVolumeWorkload() (*apps.Deployment, error) {
+	winPodCommand := []string{powerShellExe, "-command", "while ($true) {Start-Sleep -Seconds 1}"}
+	volumeSource := core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{Medium: core.StorageMediumDefault}}
+	v, vm := getVolumeSpec("test-volume", volumeSource, "test-volume", "/test/")
+	volumes, volumeMounts := []core.Volume{v}, []core.VolumeMount{vm}
+
+	emptyDir, err := tc.createWindowsServerDeployment("windows-pod", winPodCommand, nil, volumes, volumeMounts)
+	if err != nil {
+		return nil, fmt.Errorf("could not create Windows deployment: %w", err)
+	}
+	err = tc.waitUntilDeploymentScaled(emptyDir.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for emptydir volumes to become ready: %w", err)
+	}
+	return emptyDir, nil
 }
 
 // DeployNOOPDaemonSet deploys a DaemonSet which will deploy pods in a sleep loop across all Windows nodes
