@@ -144,7 +144,7 @@ get_operator_sdk() {
 
   DOWNLOAD_DIR=/tmp/operator-sdk
   # TODO: Make this download the same version we have in go dependencies in gomod
-  wget --no-verbose -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v1.15.0/operator-sdk_linux_amd64 -o operator-sdk && chmod +x /tmp/operator-sdk || return
+  wget --no-verbose -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v1.32.0/operator-sdk_linux_amd64 -o operator-sdk && chmod +x /tmp/operator-sdk || return
   echo $DOWNLOAD_DIR
 }
 
@@ -224,6 +224,7 @@ run_WMCO() {
   fi
 
   transform_csv REPLACE_IMAGE $OPERATOR_IMAGE
+  transform_csv "imagePullPolicy: IfNotPresent" "imagePullPolicy: Always"
 
   # Validate the operator bundle manifests
   $OSDK bundle validate $MANIFEST_LOC
@@ -279,10 +280,10 @@ cleanup_WMCO() {
 
   # Cleanup the operator and revert changes made to the csv
   if ! OSDK_WMCO_management cleanup $OSDK; then
-      transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
+      revert_csv
       error-exit "operator cleanup failed"
   fi
-  transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
+  revert_csv
 
   # Remove the declared namespace
   oc delete ns $WMCO_DEPLOY_NAMESPACE
@@ -297,7 +298,13 @@ transform_csv() {
     echo incorrect parameter count for replace_csv_value $#
     return 1
   fi
-  sed -i "s|"$1"|"$2"|g" $MANIFEST_LOC/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+  sed -i "s|$1|$2|g" $MANIFEST_LOC/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+}
+
+# Revert the CSV back to it's original form
+revert_csv() {
+    transform_csv $OPERATOR_IMAGE REPLACE_IMAGE
+    transform_csv "imagePullPolicy: Always" "imagePullPolicy: IfNotPresent"
 }
 
 # creates the `windows-instances` ConfigMap
@@ -324,4 +331,29 @@ getWindowsInstanceCountFromConfigMap() {
    windows-instances \
    -n "${WMCO_DEPLOY_NAMESPACE}" \
    -o json | jq '.data | length'
+}
+
+# creates the a job and required RBAC to check the number of Windows nodes performing
+# parallel upgrade in the test cluster
+createParallelUpgradeCheckerResources() {
+  winNodesCount=$(oc get nodes -l kubernetes.io/os=windows  -o jsonpath='{.items[*].metadata.name}' | wc -w)
+  if [[ winNodesCount -lt 2 ]]; then
+    echo "Skipping parallel upgrade checker job, requires 2 or more nodes. Found ${winNodesCount} nodes"
+    return
+  fi
+  # get the latest tools image from the image stream
+  export TOOLS_IMAGE=$(oc get imagestreamtag tools:latest -n openshift -o jsonpath='{.tag.from.name}')
+  # set job' container image and create the job
+  JOB=$(sed -e "s|REPLACE_WITH_OPENSHIFT_TOOLS_IMAGE|${TOOLS_IMAGE}|g" hack/e2e/resources/parallel-upgrade-checker-job.yaml)
+  cat <<EOF | oc apply -f -
+${JOB}
+EOF
+}
+
+# creates the a job and required RBAC to check the number of Windows nodes performing
+# parallel upgrade in the test cluster
+deleteParallelUpgradeCheckerResources() {
+  oc delete -f hack/e2e/resources/parallel-upgrade-checker-job.yaml || {
+    echo "error deleting parallel upgrade checker job"
+  }
 }

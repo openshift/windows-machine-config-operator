@@ -39,7 +39,10 @@ import (
 // Pod permissions used to get OwnerReference corresponding to the current pod. This is required to ensure that
 // the operator pod is the leader in the given namespace. This will not be required if the leader election is done
 // by the manager, instead of the "leader" library
-//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+
+// ServiceAccount permissions used to watch operator on secrets.
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=watch
 
 var (
 	scheme   = runtime.NewScheme()

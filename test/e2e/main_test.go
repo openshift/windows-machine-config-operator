@@ -27,9 +27,6 @@ var (
 	numberOfBYOHNodes int
 	// privateKeyPath is the path of the private key file used to configure the Windows node
 	privateKeyPath string
-	// inTreeUpgrade indicates if tests should be ran to test upgrading from an in-tree storage solution to CSI.
-	// This will cause in tree storage volumes and related resources to be deployed where appropriate, instead of CSI.
-	inTreeUpgrade bool
 	// skipWorkloadDeletion indicates that worklaods should not be deleted when tests complete
 	skipWorkloadDeletion bool
 	// wmcoNamespace is the namespace WMCO is deployed to
@@ -169,9 +166,6 @@ func TestMain(m *testing.M) {
 			return nil
 		})
 	flag.Parse()
-	if val := os.Getenv("UPGRADE_FROM_IN_TREE"); val == "true" {
-		inTreeUpgrade = true
-	}
 
 	os.Exit(m.Run())
 }

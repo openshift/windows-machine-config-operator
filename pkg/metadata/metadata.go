@@ -23,6 +23,8 @@ const (
 	DesiredVersionAnnotation = "windowsmachineconfig.openshift.io/desired-version"
 	// RebootAnnotation indicates the node's underlying instance needs to be restarted
 	RebootAnnotation = "windowsmachineconfig.openshift.io/reboot-required"
+	// UpgradingLabel indicates the node's underlying instance is performing an upgrade
+	UpgradingLabel = "windowsmachineconfig.openshift.io/upgrading"
 )
 
 // generatePatch creates a patch applying the given operation onto each given annotation key and value
@@ -42,6 +44,24 @@ func generatePatch(op string, labels, annotations map[string]string) ([]*patch.J
 		}
 	}
 	return patches, nil
+}
+
+// removeLabel removes the given label from the node object
+func removeLabel(ctx context.Context, c client.Client, node *core.Node, label string) error {
+	_, present := node.GetLabels()[label]
+	if !present {
+		// label not present in node, nothing to remove
+		return nil
+	}
+	patchData, err := GenerateRemovePatch([]string{label}, []string{})
+	if err != nil {
+		return fmt.Errorf("error creating label remove patch: %w", err)
+	}
+	err = c.Patch(ctx, node, client.RawPatch(kubeTypes.JSONPatchType, patchData))
+	if err != nil {
+		return fmt.Errorf("error removing label from node %s: %w", node.GetName(), err)
+	}
+	return nil
 }
 
 // GenerateAddPatch creates a comma-separated list of operations to add all given labels and annotations from an object
@@ -173,4 +193,16 @@ func WaitForRebootAnnotationRemoval(ctx context.Context, c client.Client, nodeNa
 		return fmt.Errorf("timeout waiting for %s to be cleared: %w", RebootAnnotation, err)
 	}
 	return nil
+}
+
+// RemoveUpgradingLabel clears the upgrading label from the node reference, indicating the instance is
+// no longer upgrading
+func RemoveUpgradingLabel(ctx context.Context, c client.Client, node *core.Node) error {
+	return removeLabel(ctx, c, node, UpgradingLabel)
+}
+
+// ApplyUpgradingLabel applies the upgrading label to the given node reference indicating the instance
+// is performing an upgrade
+func ApplyUpgradingLabel(ctx context.Context, c client.Client, node *core.Node) error {
+	return ApplyLabelsAndAnnotations(ctx, c, *node, map[string]string{UpgradingLabel: "true"}, nil)
 }

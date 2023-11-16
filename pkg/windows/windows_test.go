@@ -3,8 +3,44 @@ package windows
 import (
 	"testing"
 
+	config "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 )
+
+func TestGetFilesToTransfer(t *testing.T) {
+	testCases := []struct {
+		name     string
+		platform *config.PlatformType
+	}{
+		{
+			name:     "test AWS",
+			platform: func() *config.PlatformType { t := config.AWSPlatformType; return &t }(),
+		},
+		{
+			name:     "test Azure",
+			platform: func() *config.PlatformType { t := config.AzurePlatformType; return &t }(),
+		},
+		{
+			name:     "test Nil",
+			platform: nil,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			files := getFilesToTransfer(test.platform)
+			if test.platform != nil && *test.platform == config.AzurePlatformType {
+				file := files[payload.AzureCloudNodeManagerPath]
+				assert.Equal(t, K8sDir, file)
+			} else {
+				_, exists := files[payload.AzureCloudNodeManagerPath]
+				assert.False(t, exists)
+			}
+		})
+	}
+}
 
 func TestSplitPath(t *testing.T) {
 	testCases := []struct {

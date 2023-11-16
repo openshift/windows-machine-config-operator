@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -65,7 +66,10 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 	err = tc.waitForWindowsNodeRemoval(true)
 	require.NoError(t, err, "Removing ConfigMap entries did not cause Windows node deletion")
 
-	// For each node that was deleted, check that all the expected services have been removed
+	trustedCABundle, err := tc.getProxyCABundle()
+	require.NoError(t, err)
+
+	// For each node that was deleted, check that all the expected services and proxy configuration have been removed
 	for _, node := range byohNodes {
 		t.Run(node.GetName(), func(t *testing.T) {
 			addr, err := controllers.GetAddress(node.Status.Addresses)
@@ -89,11 +93,33 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 			require.NoError(t, err, "error determining if ENV vars are removed")
 			assert.True(t, envVarsRemoved, "ENV vars not removed")
 
+			t.Run("Proxy certificate removal", func(t *testing.T) {
+				tc.checkCertsRemoved(t, addr, trustedCABundle)
+			})
+
 			t.Run("AWS metadata endpoint", func(t *testing.T) {
 				tc.checkAWSMetadataEndpointRouteIsRestored(t, addr)
 			})
 		})
 	}
+}
+
+// getProxyCABundle returns the expected CA bundle data based on cluster state
+func (tc *testContext) getProxyCABundle() (string, error) {
+	proxyEnabled, err := tc.client.ProxyEnabled()
+	if err != nil {
+		return "", fmt.Errorf("error checking if proxy is enabled in test environment: %w", err)
+	}
+	if !proxyEnabled {
+		return "", nil
+	}
+	// TODO: this only tests the user-provided certs, a subset of the required proxy certificates.
+	// Should be addressed with https://issues.redhat.com/browse/WINC-1144
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(userCABundleNamespace).Get(context.TODO(), userCABundleName, meta.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("error getting user-provided CA ConfigMap: %w", err)
+	}
+	return cm.Data[certificates.CABundleKey], nil
 }
 
 // checkDirsDoNotExist returns true if the required directories do not exist on the Windows instance with the given
@@ -137,7 +163,8 @@ func (tc *testContext) checkEnvVarsRemoved(address string) (bool, error) {
 			return false, nil
 		}
 		for _, svcName := range windows.RequiredServices {
-			svcEnvVars, err := tc.getProxyEnvVarsFromService(address, svcName)
+			svcEnvVars, err := tc.getProxyEnvVarsFromService(address, svcName,
+				fmt.Sprintf("%s-%s", svcName, "removed"))
 			if err != nil {
 				return false, fmt.Errorf("error retrieving service level ENV vars: %w", err)
 			}
@@ -192,6 +219,11 @@ func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 		meta.DeleteOptions{})
 	err = tc.waitUntilDaemonsetScaled(ds.GetName(), int(gc.numberOfMachineNodes+gc.numberOfBYOHNodes))
 	require.NoError(t, err, "error waiting for DaemonSet pods to become ready")
+
+	dp, err := tc.deployEmptyDirVolumeWorkload()
+	require.NoError(t, err, "error creating Deployment")
+	defer tc.client.K8s.AppsV1().Deployments(dp.GetNamespace()).Delete(context.TODO(), dp.GetName(),
+		meta.DeleteOptions{})
 
 	// set expected node count to zero, since all Windows Nodes should be deleted in the test
 	expectedNodeCount := int32(0)
@@ -248,6 +280,25 @@ func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 	// Cleanup wmco-test namespace created by us.
 	err = tc.deleteNamespace(tc.workloadNamespace)
 	require.NoError(t, err, "could not delete test namespace")
+}
+
+// Deploy an emptydir volume and wait until its pods have been made ready on each Windows node. emptydir
+// volumes should be able to be removed from a Node.
+func (tc *testContext) deployEmptyDirVolumeWorkload() (*apps.Deployment, error) {
+	winPodCommand := []string{powerShellExe, "-command", "while ($true) {Start-Sleep -Seconds 1}"}
+	volumeSource := core.VolumeSource{EmptyDir: &core.EmptyDirVolumeSource{Medium: core.StorageMediumDefault}}
+	v, vm := getVolumeSpec("test-volume", volumeSource, "test-volume", "/test/")
+	volumes, volumeMounts := []core.Volume{v}, []core.VolumeMount{vm}
+
+	emptyDir, err := tc.createWindowsServerDeployment("windows-pod", winPodCommand, nil, volumes, volumeMounts)
+	if err != nil {
+		return nil, fmt.Errorf("could not create Windows deployment: %w", err)
+	}
+	err = tc.waitUntilDeploymentScaled(emptyDir.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for emptydir volumes to become ready: %w", err)
+	}
+	return emptyDir, nil
 }
 
 // DeployNOOPDaemonSet deploys a DaemonSet which will deploy pods in a sleep loop across all Windows nodes

@@ -30,7 +30,7 @@ If you already have a configured cluster, move on to [Build](#build)
 ## Build
 
 ### Prerequisites
-- [Install operator-sdk version 1.15.0 on your machine](https://sdk.operatorframework.io/docs/installation/).
+- [Install operator-sdk version 1.32.0 on your machine](https://sdk.operatorframework.io/docs/installation/).
 
 To manually build, see the subheading
 [below](#build-the-operator-image). To build and deploy automatically using the OLM hack script, jump ahead to

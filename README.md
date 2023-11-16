@@ -221,16 +221,15 @@ Cluster autoscaling is supported for Windows instances.
 Windows instances brought up with WMCO are set up with the containerd container runtime. As WMCO installs and manages the container runtime,
 it is recommended not to preinstall containerd in MachineSet or BYOH Windows instances.
 
+### Cluster-wide proxy 
+WMCO supports using a [cluster-wide proxy](https://docs.openshift.com/container-platform/latest/networking/enable-cluster-wide-proxy.html)
+to route egress traffic from Windows nodes on OpenShift Container Platform.
+
 ## Limitations
 
 ### DeploymentConfigs
 Windows Nodes do not support workloads created via DeploymentConfigs. Please use a normal Deployment, or other method to
 deploy workloads.
-
-### Cluster-wide proxy 
-WMCO does not support adding Windows workloads using a [cluster-wide proxy](https://docs.openshift.com/container-platform/latest/networking/enable-cluster-wide-proxy.html)
-config for the OpenShift Container Platform. WMCO will not be able to automatically route proxy connections for Windows
-workloads.
 
 ### Storage
 At this time, only in-tree storage is supported in all cloud providers.

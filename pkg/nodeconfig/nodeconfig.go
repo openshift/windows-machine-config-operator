@@ -125,7 +125,7 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
-	win, err := windows.New(clusterDNS, instanceInfo, signer)
+	win, err := windows.New(clusterDNS, instanceInfo, signer, &platformType)
 	if err != nil {
 		return nil, fmt.Errorf("error instantiating Windows instance from VM: %w", err)
 	}
@@ -235,6 +235,10 @@ func (nc *nodeConfig) Configure() error {
 		// Uncordon the node now that it is fully configured
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, false); err != nil {
 			return fmt.Errorf("error uncordoning the node %s: %w", nc.node.GetName(), err)
+		}
+
+		if err := metadata.RemoveUpgradingLabel(context.TODO(), nc.client, nc.node); err != nil {
+			return fmt.Errorf("error removing upgrading label from node %s: %w", nc.node.GetName(), err)
 		}
 
 		nc.log.Info("instance has been configured as a worker node", "version",
@@ -498,7 +502,9 @@ func (nc *nodeConfig) newDrainHelper() *drain.Helper {
 		Force: true,
 		// Prevents erroring out in case a DaemonSet's pod is on the node
 		IgnoreAllDaemonSets: true,
-		Out:                 &OutWriter{nc.log},
+		// Prevents erroring out in case there is a workload with emptydir data
+		DeleteEmptyDirData: true,
+		Out:                &OutWriter{nc.log},
 	}
 }
 

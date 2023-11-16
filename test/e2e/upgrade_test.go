@@ -17,7 +17,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
-	"github.com/openshift/windows-machine-config-operator/test/e2e/providers/vsphere"
 )
 
 const (
@@ -31,6 +30,8 @@ const (
 	windowsWorkloadTesterJob = "windows-workload-tester"
 	// outdatedVersion is the 'previous' version in the simulated upgrade that the operator is being upgraded from
 	outdatedVersion = "old-version"
+	// parallelUpgradesCheckerJobName is a fixed name for the job that checks for the number of parallel upgrades
+	parallelUpgradesCheckerJobName = "parallel-upgrades-checker"
 )
 
 // upgradeTestSuite tests behaviour of the operator when an upgrade takes place.
@@ -207,9 +208,9 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 func TestUpgrade(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
-	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), false, false)
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), true, false)
 	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
-	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), false, true)
+	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), true, true)
 	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
 	// Basic testing to ensure the Node object is in a good state
@@ -217,20 +218,27 @@ func TestUpgrade(t *testing.T) {
 	t.Run("Node annotations", tc.testNodeAnnotations)
 	t.Run("Node Metadata", tc.testNodeMetadata)
 
-	if inTreeUpgrade {
-		// Deploy the CSI drivers and wait for a CSI node to be created
-		// This is a requirement for storage workloads to go back to ready
-		vsphereProvider, ok := tc.CloudProvider.(*vsphere.Provider)
-		require.True(t, ok, "in tree upgrade must be ran on vSphere")
-		require.NoError(t, vsphereProvider.EnsureWindowsCSIDrivers(tc.client.K8s))
-		log.Printf("waiting for csinodes to reflect driver deployment")
-		err = tc.waitForCSINodesWithDrivers(gc.allNodes())
-		require.NoError(t, err)
-	}
-
 	// test that any workloads deployed on the node have not been broken by the upgrade
 	t.Run("Workloads ready", tc.testWorkloadsAvailable)
 	t.Run("Node Logs", tc.testNodeLogs)
+	t.Run("Parallel Upgrades Checker", tc.testParallelUpgradesChecker)
+
+}
+
+// testParallelUpgradesChecker tests that the number of parallel upgrades does not exceed the max allowed
+// in the lifetime of the job execution. This test is run after the upgrade is complete.
+func (tc *testContext) testParallelUpgradesChecker(t *testing.T) {
+	// get current Windows node state
+	require.NoError(t, tc.loadExistingNodes(), "error getting the current Windows nodes in the cluster")
+	if len(gc.allNodes()) < 2 {
+		t.Skipf("Requires 2 or more nodes to run. Found %d nodes", len(gc.allNodes()))
+	}
+	failedPods, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
+		LabelSelector: "job-name=" + parallelUpgradesCheckerJobName, FieldSelector: "status.phase=Failed"})
+	require.NoError(t, err)
+	tc.writePodLogs("job-name=" + parallelUpgradesCheckerJobName)
+	require.Equal(t, 0, len(failedPods.Items), "parallel upgrades check failed",
+		"failed pod count", len(failedPods.Items))
 }
 
 // testWorkloadsAvailable tests that all workloads deployed on Windows nodes by the test suite are available
@@ -252,33 +260,4 @@ func (tc *testContext) testWorkloadsAvailable(t *testing.T) {
 			return true, nil
 		})
 	assert.NoError(t, err)
-}
-
-// waitForCSINodes waits for a CSINode to exist for each node with a driver loaded, indicating CSI functionality has
-// been enabled for the given node.
-func (tc *testContext) waitForCSINodesWithDrivers(nodes []v1.Node) error {
-	return wait.PollImmediate(retry.Interval, 10*time.Minute, func() (bool, error) {
-		csinodes, err := tc.client.K8s.StorageV1().CSINodes().List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			log.Printf("error listing CSINodes: %s", err)
-			return false, nil
-		}
-		for _, node := range nodes {
-			var ready bool
-			for _, csinode := range csinodes.Items {
-				if csinode.GetName() == node.GetName() {
-					if len(csinode.Spec.Drivers) != 1 {
-						log.Printf("CSINode for %s is missing driver", node.GetName())
-						break
-					}
-					ready = true
-					break
-				}
-			}
-			if !ready {
-				return false, nil
-			}
-		}
-		return true, nil
-	})
 }

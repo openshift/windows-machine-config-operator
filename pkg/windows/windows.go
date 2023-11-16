@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	config "github.com/openshift/api/config/v1"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -137,8 +138,6 @@ const (
 )
 
 var (
-	// filesToTransfer is a map of what files should be copied to the Windows VM and where they should be copied to
-	filesToTransfer map[*payload.FileInfo]string
 	// RequiredServices is a list of Windows services installed by WMCO. WICD owns all services aside from itself.
 	// The order of this slice matters due to service dependencies. If a service depends on another service, the
 	// dependent service should be placed before the service it depends on.
@@ -167,11 +166,22 @@ var (
 	}
 )
 
-// getFilesToTransfer returns the properly populated filesToTransfer map. Note this does not include the WICD binary.
-func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
-	if filesToTransfer != nil {
-		return filesToTransfer, nil
+// createPayload returns the map of files to transfer with generated file info
+func createPayload(platform *config.PlatformType) (map[*payload.FileInfo]string, error) {
+	srcDestPairs := getFilesToTransfer(platform)
+	files := make(map[*payload.FileInfo]string)
+	for src, dest := range srcDestPairs {
+		f, err := payload.NewFileInfo(src)
+		if err != nil {
+			return nil, fmt.Errorf("could not create FileInfo object for file %s: %w", src, err)
+		}
+		files[f] = dest
 	}
+	return files, nil
+}
+
+// getFilesToTransfer returns the properly populated filesToTransfer map. Note this does not include the WICD binary.
+func getFilesToTransfer(platform *config.PlatformType) map[string]string {
 	srcDestPairs := map[string]string{
 		payload.GcpGetValidHostnameScriptPath:  remoteDir,
 		payload.WinDefenderExclusionScriptPath: remoteDir,
@@ -183,7 +193,6 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		payload.WinOverlayCNIPlugin:            cniDir,
 		payload.KubeProxyPath:                  K8sDir,
 		payload.KubeletPath:                    K8sDir,
-		payload.AzureCloudNodeManagerPath:      K8sDir,
 		payload.KubeLogRunnerPath:              K8sDir,
 		payload.CSIProxyPath:                   K8sDir,
 		payload.ContainerdPath:                 ContainerdDir,
@@ -191,16 +200,11 @@ func getFilesToTransfer() (map[*payload.FileInfo]string, error) {
 		payload.ContainerdConfPath:             ContainerdDir,
 		payload.NetworkConfigurationScript:     remoteDir,
 	}
-	files := make(map[*payload.FileInfo]string)
-	for src, dest := range srcDestPairs {
-		f, err := payload.NewFileInfo(src)
-		if err != nil {
-			return nil, fmt.Errorf("could not create FileInfo object for file %s: %w", src, err)
-		}
-		files[f] = dest
+
+	if platform != nil && *platform == config.AzurePlatformType {
+		srcDestPairs[payload.AzureCloudNodeManagerPath] = K8sDir
 	}
-	filesToTransfer = files
-	return filesToTransfer, nil
+	return srcDestPairs
 }
 
 // GetK8sDir returns the location of the kubernetes executable directory
@@ -257,15 +261,22 @@ type windows struct {
 	log      logr.Logger
 	// defaultShellPowerShell indicates if the default SSH shell is PowerShell
 	defaultShellPowerShell bool
+	// filesToTransfer is the map of files needed for the windows VM
+	filesToTransfer map[*payload.FileInfo]string
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
-func New(clusterDNS string, instanceInfo *instance.Info, signer ssh.Signer) (Windows, error) {
+func New(clusterDNS string, instanceInfo *instance.Info, signer ssh.Signer, platform *config.PlatformType) (Windows, error) {
 	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
 	log.V(1).Info("initializing SSH connection")
 	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
 	if err != nil {
 		return nil, fmt.Errorf("unable to setup VM %s sshConnectivity: %w", instanceInfo.Address, err)
+	}
+
+	files, err := createPayload(platform)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create payload: %w", err)
 	}
 
 	return &windows{
@@ -274,6 +285,7 @@ func New(clusterDNS string, instanceInfo *instance.Info, signer ssh.Signer) (Win
 			instance:               instanceInfo,
 			log:                    log,
 			defaultShellPowerShell: defaultShellPowershell(conn),
+			filesToTransfer:        files,
 		},
 		nil
 }
@@ -652,11 +664,7 @@ func (vm *windows) removeDirectories() error {
 // transferFiles copies various files required for configuring the Windows node, to the VM.
 func (vm *windows) transferFiles() error {
 	vm.log.Info("transferring files")
-	filesToTransfer, err := getFilesToTransfer()
-	if err != nil {
-		return fmt.Errorf("error getting list of files to transfer: %w", err)
-	}
-	for src, dest := range filesToTransfer {
+	for src, dest := range vm.filesToTransfer {
 		if err := vm.EnsureFile(src, dest); err != nil {
 			return fmt.Errorf("error copying %s to %s: %w", src.Path, dest, err)
 		}
