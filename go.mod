@@ -8,9 +8,9 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.2.4
-	github.com/openshift/api v0.0.0-20231020115248-f404f2bc3524
-	github.com/openshift/client-go v0.0.0-20231018150822-6e226e2825a6
-	github.com/openshift/library-go v0.0.0-20231020125034-5a2d9fe760b3
+	github.com/openshift/api v0.0.0-20231116201359-a5824a0c15b6
+	github.com/openshift/client-go v0.0.0-20231110140829-a6ca51f6d5ba
+	github.com/openshift/library-go v0.0.0-20231115163822-d5b04e8d5cab
 	github.com/openshift/machine-config-operator v0.0.1-0.20231016145854-d14938550422
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
@@ -23,15 +23,15 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.26.0
 	golang.org/x/crypto v0.14.0
-	golang.org/x/mod v0.13.0
-	golang.org/x/sys v0.13.0
-	k8s.io/api v0.28.3
-	k8s.io/apimachinery v0.28.3
-	k8s.io/client-go v0.28.3
-	k8s.io/cloud-provider v0.28.3
+	golang.org/x/mod v0.14.0
+	golang.org/x/sys v0.14.0
+	k8s.io/api v0.28.4
+	k8s.io/apimachinery v0.28.4
+	k8s.io/client-go v0.28.4
+	k8s.io/cloud-provider v0.28.4
 	k8s.io/klog/v2 v2.100.1
-	k8s.io/kubectl v0.28.3
-	k8s.io/kubelet v0.28.3
+	k8s.io/kubectl v0.28.4
+	k8s.io/kubelet v0.28.4
 	sigs.k8s.io/controller-runtime v0.16.3
 )
 
@@ -99,7 +99,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
+	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/oauth2 v0.13.0 // indirect
 	golang.org/x/sync v0.4.0 // indirect
@@ -112,11 +112,11 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.28.3 // indirect
-	k8s.io/cli-runtime v0.28.3 // indirect
-	k8s.io/component-base v0.28.3 // indirect
-	k8s.io/component-helpers v0.28.3 // indirect
-	k8s.io/kube-openapi v0.0.0-20231010175941-2dd684a91f00 // indirect
+	k8s.io/apiextensions-apiserver v0.28.4 // indirect
+	k8s.io/cli-runtime v0.28.4 // indirect
+	k8s.io/component-base v0.28.4 // indirect
+	k8s.io/component-helpers v0.28.4 // indirect
+	k8s.io/kube-openapi v0.0.0-20231113174909-778a5567bc1e // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
