@@ -8,7 +8,7 @@ import (
 
 	ignCfg "github.com/coreos/ignition/v2/config/v3_4"
 	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_4/types"
-	mcfg "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfg "github.com/openshift/api/machineconfiguration/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )

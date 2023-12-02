@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	mapi "github.com/openshift/api/machine/v1beta1"
-	mcfg "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcfg "github.com/openshift/api/machineconfiguration/v1"
 	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/operator-framework/operator-lib/leader"
 	"github.com/spf13/pflag"
