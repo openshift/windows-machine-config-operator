@@ -208,6 +208,21 @@ WMCO is not responsible for Windows operating system updates. The cluster admini
 creating the VMs and hence, the cluster administrator is responsible for providing an updated image. The cluster 
 administrator can provide an updated image by changing the image in the MachineSet spec.
 
+### Blocked upgrades
+
+On vSphere clusters, when upgrading from WMCO v8 to v9, if WMCO detects persistent storage volumes being used by
+workloads running on a Node, the Node's upgrade will be blocked. This is to allow the user to deploy the
+appropriate CSI drivers on the cluster before upgrade. See the [storage section](#storage) for more information.
+Once the user has deployed the appropriate drivers, upgrades can be unblocked for each individual Node by labeling
+the node to allow the upgrade:
+```
+oc label nodes $NODE_NAME windowsmachineconfig.openshift.io/allow-upgrade=true
+```
+
+It is recommended to only allow the upgrade of one Node at a time, until it is confirmed that workloads which make
+use of persistent storage are able to successfully run on the upgraded Nodes.
+
+
 ## Enabled features
 
 ### Autoscaling Windows nodes
@@ -233,7 +248,10 @@ config for the OpenShift Container Platform. WMCO will not be able to automatica
 workloads.
 
 ### Storage
-At this time, only in-tree storage is supported in all cloud providers.
+Windows Nodes are running csi-proxy and are ready to use CSI drivers, however Windows CSI driver DaemonSets are not
+deployed as part of the product. In order to use persistent storage for Windows workloads, the cluster administrator
+must deploy the appropriate Windows CSI driver Daemonset. This should be done by following the documentation given
+by the chosen storage driver's provider. A list of drivers can be found [here](https://kubernetes-csi.github.io/docs/drivers.html#production-drivers).
 
 ### Pod Autoscaling
 [Horizontal](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html) and
