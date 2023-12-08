@@ -122,7 +122,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.25.16 // indirect
 	k8s.io/cli-runtime v0.25.16 // indirect
 	k8s.io/component-base v0.25.16 // indirect
-	k8s.io/kube-openapi v0.0.0-20231129212854-f0671cc7e66a // indirect
+	k8s.io/kube-openapi v0.0.0-20231206194836-bf4651e18aa8 // indirect
 	k8s.io/utils v0.0.0-20231127182322-b307cd553661 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.12.1 // indirect
