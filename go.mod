@@ -8,9 +8,9 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.2.4
-	github.com/openshift/api v0.0.0-20231129203025-7f2a17ecdd0a
-	github.com/openshift/client-go v0.0.0-20231121143148-910ca30a1a9a
-	github.com/openshift/library-go v0.0.0-20231129101644-c7f15dcc10f5
+	github.com/openshift/api v0.0.0-20231207204216-5efc6fca4b2d
+	github.com/openshift/client-go v0.0.0-20231205143348-30c04aae71b2
+	github.com/openshift/library-go v0.0.0-20231130204458-653f82d961a1
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -98,7 +98,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
+	golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb // indirect
 	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/oauth2 v0.13.0 // indirect
 	golang.org/x/sync v0.5.0 // indirect
@@ -115,7 +115,7 @@ require (
 	k8s.io/cli-runtime v0.28.4 // indirect
 	k8s.io/component-base v0.28.4 // indirect
 	k8s.io/component-helpers v0.28.4 // indirect
-	k8s.io/kube-openapi v0.0.0-20231113174909-778a5567bc1e // indirect
+	k8s.io/kube-openapi v0.0.0-20231206194836-bf4651e18aa8 // indirect
 	k8s.io/utils v0.0.0-20231127182322-b307cd553661 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
