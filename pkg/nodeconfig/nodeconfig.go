@@ -35,6 +35,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
+	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
@@ -293,20 +294,56 @@ func (nc *nodeConfig) getWICDServiceAccountSecret() (*core.Secret, error) {
 		return nil, err
 	}
 	// Go through all the secrets in the WMCO namespace, and find the token secret which contains the auth credentials
-	// for the WICD ServiceAccount. This secret's name will always have the form:
-	// ${service_account_name}-token-${random_string}.
-	tokenSecretPrefix := "windows-instance-config-daemon-token-"
+	// for the WICD ServiceAccount
 	var filteredSecrets []core.Secret
 	for _, secret := range secrets.Items {
-		if strings.HasPrefix(secret.Name, tokenSecretPrefix) {
+		if secret.Type != core.SecretTypeServiceAccountToken {
+			// skip non-serviceAccount token secrets
+			continue
+		}
+		if secret.Annotations[core.ServiceAccountNameKey] == windows.WicdServiceName {
 			filteredSecrets = append(filteredSecrets, secret)
 		}
 	}
-	if len(filteredSecrets) != 1 {
-		return nil, fmt.Errorf("expected 1 secret with '%s' prefix, found %d", tokenSecretPrefix, len(filteredSecrets))
+	if len(filteredSecrets) == 1 {
+		return &filteredSecrets[0], nil
 	}
-	return &filteredSecrets[0], nil
+	if len(filteredSecrets) > 1 {
+		return nil, fmt.Errorf("expected 1 secret for SA '%s', found %d", windows.WicdServiceName,
+			len(filteredSecrets))
+	}
+	// no secret token found for WICD service account, create one
+	return nc.createWICDServiceAccountTokenSecret()
+}
 
+// createWICDServiceAccountTokenSecret creates a secret with a long-lived API token for the WICD ServiceAccount and
+// waits for the secret data to be populated
+func (nc *nodeConfig) createWICDServiceAccountTokenSecret() (*core.Secret, error) {
+	ctx := context.TODO()
+	err := nc.client.Create(ctx, secrets.GenerateServiceAccountTokenSecret(nc.wmcoNamespace, windows.WicdServiceName))
+	if err != nil {
+		return nil, fmt.Errorf("error creating secret for WICD ServiceAccount: %w", err)
+	}
+	secret := &core.Secret{}
+	// wait for the secret data to be populated
+	err = wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true,
+		func(ctx context.Context) (done bool, err error) {
+			secret, err = nc.k8sclientset.CoreV1().Secrets(nc.wmcoNamespace).Get(ctx, windows.WicdServiceName,
+				meta.GetOptions{})
+			if err != nil {
+				return false, nil
+			}
+			caCert := secret.Data[core.ServiceAccountRootCAKey]
+			if caCert == nil {
+				return false, nil
+			}
+			token := secret.Data[core.ServiceAccountTokenKey]
+			if token == nil {
+				return false, nil
+			}
+			return true, nil
+		})
+	return secret, err
 }
 
 // createBootstrapFiles creates all prerequisite files on the node required to start kubelet using latest ignition spec
