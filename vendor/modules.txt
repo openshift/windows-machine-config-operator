@@ -257,7 +257,7 @@ github.com/monochromegane/go-gitignore
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
-# github.com/openshift/api v0.0.0-20231106214852-01c8600e6489
+# github.com/openshift/api v0.0.0-20231118005202-0f638a8a4705
 ## explicit; go 1.19
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -309,7 +309,7 @@ github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
 github.com/openshift/library-go/pkg/image/internal/reference
 github.com/openshift/library-go/pkg/image/reference
-# github.com/openshift/machine-config-operator v0.0.1-0.20231106161944-36b955cd2bc0
+# github.com/openshift/machine-config-operator v0.0.1-0.20231205071920-bf629e3885c9
 ## explicit; go 1.18
 github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1
 # github.com/operator-framework/api v0.16.0
@@ -833,7 +833,7 @@ k8s.io/klog/v2/internal/clock
 k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
-# k8s.io/kube-openapi v0.0.0-20231113174909-778a5567bc1e
+# k8s.io/kube-openapi v0.0.0-20231206194836-bf4651e18aa8
 ## explicit; go 1.19
 k8s.io/kube-openapi/pkg/cached
 k8s.io/kube-openapi/pkg/common
@@ -861,7 +861,7 @@ k8s.io/kubectl/pkg/validation
 ## explicit; go 1.19
 k8s.io/kubelet/config/v1beta1
 k8s.io/kubelet/pkg/apis/stats/v1alpha1
-# k8s.io/utils v0.0.0-20230726121419-3b25d923346b
+# k8s.io/utils v0.0.0-20231127182322-b307cd553661
 ## explicit; go 1.18
 k8s.io/utils/buffer
 k8s.io/utils/clock

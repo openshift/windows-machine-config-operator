@@ -8,10 +8,10 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.2.4
-	github.com/openshift/api v0.0.0-20231106214852-01c8600e6489
+	github.com/openshift/api v0.0.0-20231118005202-0f638a8a4705
 	github.com/openshift/client-go v0.0.0-20230120202327-72f107311084
 	github.com/openshift/library-go v0.0.0-20231115094609-5e510a6e9a52
-	github.com/openshift/machine-config-operator v0.0.1-0.20231106161944-36b955cd2bc0
+	github.com/openshift/machine-config-operator v0.0.1-0.20231205071920-bf629e3885c9
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -113,8 +113,8 @@ require (
 	k8s.io/apiextensions-apiserver v0.26.11 // indirect
 	k8s.io/cli-runtime v0.26.11 // indirect
 	k8s.io/component-base v0.26.11 // indirect
-	k8s.io/kube-openapi v0.0.0-20231113174909-778a5567bc1e // indirect
-	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
+	k8s.io/kube-openapi v0.0.0-20231206194836-bf4651e18aa8 // indirect
+	k8s.io/utils v0.0.0-20231127182322-b307cd553661 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.12.1 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.13.9 // indirect
