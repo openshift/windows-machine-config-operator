@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"reflect"
 	"strings"
 	"time"
@@ -33,7 +34,9 @@ import (
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	netutil "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -118,10 +121,66 @@ type ServiceController struct {
 	caBundle       string
 	// recorder to generate events
 	recorder record.EventRecorder
+	config   *rest.Config
+}
+
+func IsProxyInUse(cfg *rest.Config, ctx context.Context) error {
+	clientset, err := kubernetes.NewForConfig(cfg)
+	req := clientset.CoreV1().RESTClient().Get() //.AbsPath("/api/v1/nodes").SetHeader("Accept", "application/json")
+	//	httpReq := req.URL().RequestWithContext(req.Context())
+
+	// u := &url.URL{Scheme: "https", Host: req.URL().String()}
+	// if netutils.IsIPv6String(req.URL().String()) {
+	// 	u.Host = net.JoinHostPort(req.URL().String(), "1234")
+	// }
+
+	httpReq, err := http.NewRequest("GET", req.URL().Host, nil)
+	if err != nil {
+		klog.Infof("req build error: %s", err.Error())
+	}
+
+	proxy, err := netutil.SetOldTransportDefaults(&http.Transport{}).Proxy(httpReq)
+	if err != nil {
+		klog.Infof("proxy build error: %s", err.Error())
+	}
+	if proxy != nil {
+		klog.Infof("Connection to %q uses proxy %q. If that is not intended, adjust your proxy settings", req.URL(), proxy)
+	} else {
+		klog.Infof("Request NOT routed through proxy")
+	}
+
+	proxy, err = http.ProxyFromEnvironment(httpReq)
+	if err != nil {
+		return fmt.Errorf("couldn't get proxy from req: %w", err)
+	}
+	if proxy != nil {
+		klog.Infof("another method: %q uses proxy %q", httpReq.URL, proxy)
+	} else {
+		klog.Infof("other method: still NOT routed through proxy")
+	}
+
+	// result := req.Do(ctx)
+	// if result.Error() != nil {
+	// 	return fmt.Errorf("req failed to return valid result: %w", err)
+	// }
+	// obj, err := result.Get()
+	// if err != nil {
+	// 	return fmt.Errorf("no obj from result: %w", err)
+	// }
+	// nodes, ok := obj.(*core.NodeList)
+	// if !ok {
+	// 	return fmt.Errorf("not nodes: %w", err)
+	// }
+	// klog.Infof("got %d nodes", len(nodes.Items))
+	return nil
 }
 
 // Bootstrap starts all Windows services marked as necessary for node bootstrapping as defined in the given data
 func (sc *ServiceController) Bootstrap(desiredVersion string) error {
+	klog.Infof("from bootstrap")
+	if err := IsProxyInUse(sc.config, sc.ctx); err != nil {
+		return fmt.Errorf("err from bootstrap: %w", err)
+	}
 	var cm core.ConfigMap
 	err := sc.client.Get(sc.ctx,
 		client.ObjectKey{Namespace: sc.watchNamespace, Name: servicescm.NamePrefix + desiredVersion}, &cm)
@@ -170,13 +229,19 @@ func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle str
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
 	sc, err := NewServiceController(ctx, node.Name, watchNamespace,
-		Options{Client: ctrlMgr.GetClient(), caBundle: caBundle, recorder: ctrlMgr.GetEventRecorderFor(WICDController)})
+		Options{Client: ctrlMgr.GetClient(), caBundle: caBundle, recorder: ctrlMgr.GetEventRecorderFor(WICDController), Config: cfg})
 	if err != nil {
 		return err
 	}
 	if err = sc.SetupWithManager(ctx, ctrlMgr); err != nil {
 		return err
 	}
+
+	klog.Info("from WICD run controller")
+	if err := IsProxyInUse(sc.config, sc.ctx); err != nil {
+		return fmt.Errorf("err WICD run controller: %w", err)
+	}
+
 	klog.Info("Starting manager, awaiting events")
 	if err := ctrlMgr.Start(ctx); err != nil {
 		return err
@@ -190,7 +255,7 @@ func NewServiceController(ctx context.Context, nodeName, watchNamespace string, 
 	if err != nil {
 		return nil, err
 	}
-	return &ServiceController{client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
+	return &ServiceController{config: o.Config, client: o.Client, Manager: o.Mgr, ctx: ctx, nodeName: nodeName, psCmdRunner: o.cmdRunner,
 		watchNamespace: watchNamespace, caBundle: o.caBundle, recorder: o.recorder}, nil
 }
 

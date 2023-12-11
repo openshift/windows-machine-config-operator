@@ -41,6 +41,12 @@ import (
 // Otherwise, cleanup is based on the latest services ConfigMap.
 // TODO: remove services with the OpenShift managed tag in best effort cleanup https://issues.redhat.com/browse/WINC-853
 func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace string) error {
+	
+	klog.Infof("from cleanup")
+	if err := controller.IsProxyInUse(cfg, ctx); err != nil {
+		return fmt.Errorf("err from cleanup: %w", err)
+	}
+
 	// Cannot use a cached client as no manager will be started to populate cache
 	directClient, err := controller.NewDirectClient(cfg)
 	if err != nil {
