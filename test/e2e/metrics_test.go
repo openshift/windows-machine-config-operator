@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,8 +19,10 @@ import (
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 const (
@@ -254,6 +257,37 @@ func (tc *testContext) testNodeResourceUsage(t *testing.T) {
 			nodeStorage, isValidAmount := winNode.Status.Allocatable.StorageEphemeral().AsInt64()
 			assert.Truef(t, isValidAmount, "expected numeric quantity for node %s filesystem storage", winNode.Name)
 			assert.Truef(t, nodeStorage > 0, "expected strictly positive storage value but got %d", nodeStorage)
+		})
+	}
+}
+
+// testPodMetrics asserts that the expected metrics exist for a Windows pod
+func (tc *testContext) testPodMetrics(t *testing.T, podName string) {
+	// get route to access Prometheus server instance in monitoring namespace
+	prometheusRoute, err := tc.client.Route.Routes(monitoringNamespace).Get(context.TODO(), "prometheus-k8s", metav1.GetOptions{})
+	require.NoError(t, err, "error getting route")
+
+	prometheusToken, err := tc.getPrometheusToken()
+	require.NoError(t, err)
+
+	// The queries here should mirror those made in the OCP console
+	queries := []string{
+		fmt.Sprintf("pod:container_cpu_usage:sum{pod='%s',namespace='%s'}", podName, tc.workloadNamespace),
+		fmt.Sprintf("sum(container_memory_working_set_bytes{pod='%s',namespace='%s',container='',}) BY (pod, namespace)",
+			podName, tc.workloadNamespace),
+	}
+	for i, query := range queries {
+		t.Run("query "+strconv.Itoa(i), func(t *testing.T) {
+			err := wait.PollUntilContextTimeout(context.TODO(), retry.Interval, retry.ResourceChangeTimeout, true,
+				func(ctx context.Context) (done bool, err error) {
+					results, err := makePrometheusQuery(prometheusRoute.Spec.Host, query, prometheusToken)
+					if err != nil {
+						log.Printf("error making prometheus query, retrying: %s", err)
+						return false, nil
+					}
+					return len(results) == 1, nil
+				})
+			assert.NoError(t, err)
 		})
 	}
 }
