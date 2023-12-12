@@ -332,3 +332,28 @@ getWindowsInstanceCountFromConfigMap() {
    -n "${WMCO_DEPLOY_NAMESPACE}" \
    -o json | jq '.data | length'
 }
+
+# creates the a job and required RBAC to check the number of Windows nodes performing
+# parallel upgrade in the test cluster
+createParallelUpgradeCheckerResources() {
+  winNodesCount=$(oc get nodes -l kubernetes.io/os=windows  -o jsonpath='{.items[*].metadata.name}' | wc -w)
+  if [[ winNodesCount -lt 2 ]]; then
+    echo "Skipping parallel upgrade checker job, requires 2 or more nodes. Found ${winNodesCount} nodes"
+    return
+  fi
+  # get the latest tools image from the image stream
+  export TOOLS_IMAGE=$(oc get imagestreamtag tools:latest -n openshift -o jsonpath='{.tag.from.name}')
+  # set job' container image and create the job
+  JOB=$(sed -e "s|REPLACE_WITH_OPENSHIFT_TOOLS_IMAGE|${TOOLS_IMAGE}|g" hack/e2e/resources/parallel-upgrade-checker-job.yaml)
+  cat <<EOF | oc apply -f -
+${JOB}
+EOF
+}
+
+# creates the a job and required RBAC to check the number of Windows nodes performing
+# parallel upgrade in the test cluster
+deleteParallelUpgradeCheckerResources() {
+  oc delete -f hack/e2e/resources/parallel-upgrade-checker-job.yaml || {
+    echo "error deleting parallel upgrade checker job"
+  }
+}
