@@ -39,3 +39,9 @@ spec:
         - expr: |
             windows_cpu_info
           record: node_cpu_info
+        - expr: |
+            sum(rate(windows_container_cpu_usage_seconds_total[5m]) * on(container_id) group_left(namespace, pod, container) kube_pod_container_info{container_id!=""}) by (pod,namespace)
+          record: pod:container_cpu_usage:sum
+        - expr: |
+            label_replace(windows_container_memory_usage_private_working_set_bytes * on(container_id) group_left(namespace, pod, container) kube_pod_container_info{container_id!=""},"container","","","")
+          record: container_memory_working_set_bytes
