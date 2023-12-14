@@ -317,6 +317,65 @@ $(get_spec $infraID "" $provider $byoh)
 EOF
 }
 
+# get_nutanix_ms creates a MachineSet for Nutanix
+get_nutanix_ms() {
+
+  if [ "$#" -lt 3 ]; then
+    error-exit incorrect parameter count for get_nutanix_ms $#
+  fi
+
+  local infraID=$1
+  local provider=$2
+  local byoh=$3
+
+  # set Windows Server 2022 image name
+  imageName="nutanix-windows-server-openshift.qcow2"
+  providerSpec=$(oc get machines \
+                -n openshift-machine-api \
+                -l machine.openshift.io/cluster-api-machine-role=worker \
+                -o jsonpath="{.items[0].spec.providerSpec.value}" \
+  ) || {
+    error-exit "error getting providerSpec for ${provider} cluster ${infraID}"
+  }
+  if [ -z "$providerSpec" ]; then
+    error-exit "cannot find providerSpec for ${provider} cluster ${infraID}"
+  fi
+  clusterId=$(echo "${providerSpec}" | jq -r '.cluster.uuid')
+  credentialsSecret=$(echo "${providerSpec}" | jq -r '.credentialsSecret.name')
+  projectType=$(echo "${providerSpec}" | jq -r '.project.type')
+  subnetId=$(echo "${providerSpec}" | jq -r '.subnets[0].uuid')
+  # build machineset
+  cat <<EOF
+$(get_spec $infraID "" $provider $byoh)
+      providerSpec:
+        value:
+          apiVersion: machine.openshift.io/v1
+          bootType: ""
+          categories: null
+          cluster:
+            type: uuid
+            uuid: ${clusterId}
+          credentialsSecret:
+            name: ${credentialsSecret}
+          failureDomain: null
+          image:
+            name: ${imageName}
+            type: name
+          kind: NutanixMachineProviderConfig
+          memorySize: 16Gi
+          project:
+            type: ${projectType}
+          subnets:
+          - type: uuid
+            uuid: ${subnetId}
+          systemDiskSize: 120Gi
+          userDataSecret:
+            name: windows-user-data
+          vcpuSockets: 4
+          vcpusPerSocket: 1
+EOF
+}
+
 winver="2022"
 byoh=false
 while getopts ":w:b" opt; do
@@ -373,6 +432,9 @@ case "$platform" in
     ;;
     VSphere)
       ms=$(get_vsphere_ms $infraID $platform $byoh)
+    ;;
+    Nutanix)
+      ms=$(get_nutanix_ms $infraID $platform $byoh)
     ;;
     *)
       error-exit "platform '$platform' is not yet supported by this script"
