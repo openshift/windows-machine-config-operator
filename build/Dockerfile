@@ -1,4 +1,5 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.20-openshift-4.15 as build
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.21-openshift-4.16 as build
+
 LABEL stage=build
 
 # Silence go compliance shim output
