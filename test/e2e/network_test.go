@@ -412,6 +412,16 @@ func (tc *testContext) deleteNamespace(name string) error {
 // deployWindowsWebServer creates a deployment with a single Windows Server pod, listening on port 80
 func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity,
 	pvcToMount *v1.PersistentVolumeClaimVolumeSource) (*appsv1.Deployment, error) {
+	var volumes []v1.Volume
+	var volumeMounts []v1.VolumeMount
+	if pvcToMount != nil {
+		volumeName := pvcToMount.ClaimName
+		volumeSource := v1.VolumeSource{PersistentVolumeClaim: pvcToMount}
+		mountName := pvcToMount.ClaimName
+		mountPath := "C:\\mnt\\storage"
+		v, vm := getVolumeSpec(volumeName, volumeSource, mountName, mountPath)
+		volumes, volumeMounts = append([]v1.Volume{}, v), append([]v1.VolumeMount{}, vm)
+	}
 	// This will run a Server on the container, which can be reached with a GET request
 	winServerCommand := []string{powerShellExe, "-command",
 		"$listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start(); " +
@@ -420,7 +430,7 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 			"$content='<html><body><H1>Windows Container Web Server</H1></body></html>'; " +
 			"$buffer = [System.Text.Encoding]::UTF8.GetBytes($content); $response.ContentLength64 = $buffer.Length; " +
 			"$response.OutputStream.Write($buffer, 0, $buffer.Length); $response.Close(); };"}
-	winServerDeployment, err := tc.createWindowsServerDeployment(name, winServerCommand, affinity, pvcToMount)
+	winServerDeployment, err := tc.createWindowsServerDeployment(name, winServerCommand, affinity, volumes, volumeMounts)
 	if err != nil {
 		return nil, fmt.Errorf("could not create Windows deployment: %w", err)
 	}
@@ -431,6 +441,20 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 		return nil, fmt.Errorf("deployment was unable to scale: %w", err)
 	}
 	return winServerDeployment, nil
+}
+
+// getVolumeSpec returns a Volume and VolumeMount spec given the volume name, volume source, volume mount name and
+// mount path.
+func getVolumeSpec(volumeName string, volumeSource v1.VolumeSource, mountName string, mountPath string) (v1.Volume, v1.VolumeMount) {
+	volumes := v1.Volume{
+		Name:         volumeName,
+		VolumeSource: volumeSource,
+	}
+	volumeMounts := v1.VolumeMount{
+		Name:      mountName,
+		MountPath: mountPath,
+	}
+	return volumes, volumeMounts
 }
 
 // deleteDeployment deletes the deployment with the given name
@@ -472,26 +496,12 @@ func (tc *testContext) getWindowsServerContainerImage() string {
 // number of replicas will be set to 3 to allow for network testing across nodes. If pvcToMount is set, the pod will
 // mount the given pvc as a volume
 func (tc *testContext) createWindowsServerDeployment(name string, command []string, affinity *v1.Affinity,
-	pvcToMount *v1.PersistentVolumeClaimVolumeSource) (*appsv1.Deployment, error) {
+	volumes []v1.Volume, volumeMounts []v1.VolumeMount) (*appsv1.Deployment, error) {
 	deploymentsClient := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace)
 	replicaCount := int32(1)
 	// affinity being nil is a hint that the caller does not care which nodes the pods are deployed to
 	if affinity == nil {
 		replicaCount = int32(3)
-	}
-	var volumes []v1.Volume
-	var volumeMounts []v1.VolumeMount
-	if pvcToMount != nil {
-		volumes = append(volumes, v1.Volume{
-			Name: pvcToMount.ClaimName,
-			VolumeSource: v1.VolumeSource{
-				PersistentVolumeClaim: pvcToMount,
-			},
-		})
-		volumeMounts = append(volumeMounts, v1.VolumeMount{
-			Name:      pvcToMount.ClaimName,
-			MountPath: "C:\\mnt\\storage",
-		})
 	}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	containerUserName := "ContainerAdministrator"
