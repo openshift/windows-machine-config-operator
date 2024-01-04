@@ -368,9 +368,7 @@ func GetProxyVars() map[string]string {
 	for _, envVar := range WatchedEnvironmentVars {
 		value, found := os.LookupEnv(envVar)
 		if found {
-			// on Windows, hostname lists are separated by semicolons rather than the Linux default of commas
-			sanitizedVal := strings.ReplaceAll(value, ",", ";")
-			clusterWideProxyVars[envVar] = sanitizedVal
+			clusterWideProxyVars[envVar] = value
 		}
 	}
 	return clusterWideProxyVars
