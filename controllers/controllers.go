@@ -138,6 +138,10 @@ func (r *instanceReconciler) reconcileKubeletClientCA(ctx context.Context, bundl
 	// matches the signer subject.
 	kubeAPIServerServingCABytes, err := certificates.MergeCAsConfigMaps(initialCAConfigMap, bundleCAConfigMap,
 		"kube-apiserver-to-kubelet-signer")
+	if err != nil {
+		return fmt.Errorf("error merging the initial %s and current %s CA ConfigMaps %w", initialCAConfigMap,
+			bundleCAConfigMap, err)
+	}
 
 	// fetch all Windows nodes (Machine and BYOH instances)
 	winNodes := &core.NodeList{}
