@@ -51,7 +51,7 @@ func (p *Provider) CreatePVC(c client.Interface, namespace string, pv *core.Pers
 		},
 		Spec: core.PersistentVolumeClaimSpec{
 			AccessModes: []core.PersistentVolumeAccessMode{core.ReadWriteMany},
-			Resources: core.ResourceRequirements{
+			Resources: core.VolumeResourceRequirements{
 				Requests: core.ResourceList{core.ResourceStorage: resource.MustParse("1Gi")},
 			},
 			StorageClassName: &pv.Spec.StorageClassName,
