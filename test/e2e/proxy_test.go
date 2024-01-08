@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -41,6 +42,9 @@ const (
 	userCABundleNamespace = "openshift-config"
 )
 
+// noProxyList is a list of hostnames and/or CIDRs and/or IPs for which the proxy should not be used in the test env
+var noProxyList = []string{"google.com", "redhat.io", "static.redhat.com"}
+
 // proxyTestSuite contains the validation cases for cluster-wide proxy.
 // All subtests are skipped if a proxy is not enabled in the test environment.
 func proxyTestSuite(t *testing.T) {
@@ -61,8 +65,122 @@ func proxyTestSuite(t *testing.T) {
 	// the deletion of TrustedCAConfigMap, which the former relies on
 	t.Run("Certificate validation", tc.testCertsImport)
 	t.Run("Environment variables validation", tc.testEnvVars)
+
+	t.Run("External requests respect global proxy", tc.testProxyRequests)
+
 	t.Run("Certificate validation removal", tc.testCertsRemoval)
 	t.Run("Environment variables removal validation", tc.testEnvVarRemoval)
+}
+
+// testProxyRequest tests that external requests from each Windows node properly go through the proxy
+// and circumvent the proxy if the target address is specified in the NO_PROXY list
+func (tc *testContext) testProxyRequests(t *testing.T) {
+	clusterProxy, err := tc.client.Config.ConfigV1().Proxies().Get(context.TODO(), "cluster", meta.GetOptions{})
+	require.NoError(t, err)
+
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			addr, err := controllers.GetAddress(node.Status.Addresses)
+			require.NoError(t, err, "unable to get node address")
+
+			t.Run("HTTP_PROXY request", func(t *testing.T) {
+				httpUrl := "http://raw.githubusercontent.com/openshift/windows-machine-config-operator/master/README.md"
+				out, err := tc.curlHeadersOnly(addr, httpUrl)
+				require.NoErrorf(t, err, "unable to get curl response to URL %s", httpUrl)
+
+				httpProxyVarInUse, noProxyVarInUse, proxyAuthHeaderInUse := verifyCurlOutput(out,
+					clusterProxy.Status.HTTPProxy, clusterProxy.Status.NoProxy)
+
+				assert.Truef(t, httpProxyVarInUse, "expected http_proxy %s in request", clusterProxy.Status.HTTPProxy)
+				assert.Truef(t, noProxyVarInUse, "expected no_proxy %s in request", clusterProxy.Status.NoProxy)
+				assert.True(t, proxyAuthHeaderInUse, "Proxy-Authorization expected for proxied request")
+			})
+
+			t.Run("NO_PROXY request", func(t *testing.T) {
+				// using an endpoint that appears in the noProxyList const
+				nonProxiedUrl := noProxyList[0]
+				out, err := tc.curlHeadersOnly(addr, nonProxiedUrl)
+				require.NoErrorf(t, err, "unable to get curl response to URL %s", nonProxiedUrl)
+
+				httpProxyVarInUse, noProxyVarInUse, proxyAuthHeaderInUse := verifyCurlOutput(out,
+					clusterProxy.Status.HTTPProxy, clusterProxy.Status.NoProxy)
+
+				assert.False(t, httpProxyVarInUse, "http_proxy not expected in request to no_proxy URL")
+				assert.Truef(t, noProxyVarInUse, "expected no_proxy %s in request", clusterProxy.Status.NoProxy)
+				assert.False(t, proxyAuthHeaderInUse, "Proxy-Authorization header not expected for no_proxy request")
+			})
+		})
+	}
+}
+
+// curlHeadersOnly runs curl through Windows CMD to get all request headers and trace any redirects
+/*
+Example output:
+* Uses proxy env variable no_proxy == '.cluster.local,.svc,10.128.0.0/14,10.94.72.128/25,127.0.0.1,172.30.0.0/16,api-int.xxxxxxxxxxxxxx.vmc-ci.devcluster.openshift.com,google.com,localhost,redhat.io,static.redhat.com'
+* Uses proxy env variable http_proxy == 'http://XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX@10.94.72.159:3128'
+*   Trying 10.94.72.159:3128...
+* Connected to 10.94.72.159 (10.94.72.159) port 3128 (#0)
+* Proxy auth using Basic with user 'proxy-user1'
+> HEAD http://raw.githubusercontent.com/openshift/windows-machine-config-operator/master/README.md HTTP/1.1
+> Host: raw.githubusercontent.com
+> Proxy-Authorization: Basic XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+> User-Agent: curl/8.0.1
+> Accept: */ /*
+> Proxy-Connection: Keep-Alive
+>
+
+< HTTP/1.1 301 Moved Permanently
+< Content-Length: 0
+< Server: Varnish
+< Retry-After: 0
+< Location: https://raw.githubusercontent.com/openshift/windows-machine-config-operator/master/README.md
+< Accept-Ranges: bytes
+< Date: Wed, 10 Jan 2024 23:06:14 GMT
+< X-Served-By: cache-dfw-kdal2120069-DFW
+< X-Cache: HIT
+< X-Cache-Hits: 0
+< X-Timer: S1704927975.908992,VS0,VE0
+< Access-Control-Allow-Origin: *
+< Cross-Origin-Resource-Policy: cross-origin
+< Expires: Wed, 10 Jan 2024 23:11:14 GMT
+< Vary: Authorization,Accept-Encoding
+< X-Cache: MISS from 951.27.49.01.in-addr.arpa
+< X-Cache-Lookup: MISS from 951.27.49.01.in-addr.arpa:3128
+< Via: 1.1 varnish, 1.1 951.27.49.01.in-addr.arpa (squid/4.4)
+< Connection: keep-alive
+<
+...
+< HTTP/1.1 200 Connection established
+<
+...
+*/
+func (tc *testContext) curlHeadersOnly(nodeAddress, urlToCurl string) (string, error) {
+	command := fmt.Sprintf("cmd.exe /c curl -vsIL %s", urlToCurl)
+	return tc.runPowerShellSSHJob("curl-headers-only", command, nodeAddress)
+}
+
+// verifyCurlOutput parses the output of a curl request searching for any proxy variables in use and proxy headers
+func verifyCurlOutput(output, httpProxyURL, noProxyList string) (bool, bool, bool) {
+	// variables to look for in the curl output
+	expectedHttpProxyVal := fmt.Sprintf("http_proxy == '%s'", httpProxyURL)
+	expectedNoProxyVal := fmt.Sprintf("no_proxy == '%s'", noProxyList)
+	// regex to ensure proxy authorization appears in the curl request headers
+	proxyAuthHeaderRegex := regexp.MustCompile(`> Proxy-Authorization:*`)
+
+	var httpProxyVarFound, noProxyVarFound, viaHeaderFound bool
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, expectedHttpProxyVal) {
+			httpProxyVarFound = true
+		}
+		if strings.Contains(line, expectedNoProxyVal) {
+			noProxyVarFound = true
+		}
+		if proxyAuthHeaderRegex.MatchString(line) {
+			viaHeaderFound = true
+		}
+	}
+	return httpProxyVarFound, noProxyVarFound, viaHeaderFound
 }
 
 // testCertsImport tests that any additional certificates from the proxy's trusted bundle are imported by each node
@@ -244,7 +362,8 @@ func (tc *testContext) testEnvVars(t *testing.T) {
 func (tc *testContext) testEnvVarRemoval(t *testing.T) {
 	var patches []*patch.JSONPatch
 	patches = append(patches, patch.NewJSONPatch("remove", "/spec/httpProxy", nil),
-		patch.NewJSONPatch("remove", "/spec/httpsProxy", nil))
+		patch.NewJSONPatch("remove", "/spec/httpsProxy", nil),
+		patch.NewJSONPatch("remove", "/spec/noProxy", nil))
 	patchData, err := json.Marshal(patches)
 	require.NoErrorf(t, err, "%v", patches)
 	_, err = tc.client.Config.ConfigV1().Proxies().Patch(
@@ -349,6 +468,22 @@ func (tc *testContext) getEnvVar(addr, name, command string) (map[string]string,
 		return nil, fmt.Errorf("error running SSH job: %w", err)
 	}
 	return parseWindowsEnvVars(out), nil
+}
+
+// configureClusterNoProxy configures the cluster-wide proxy's bypass list with specific comma-separated URLs
+func (tc *testContext) configureClusterNoProxy(addresses []string) error {
+	commaSeparatedList := strings.Join(addresses[:], ",")
+	patches := []*patch.JSONPatch{patch.NewJSONPatch("replace", "/spec/noProxy", commaSeparatedList)}
+	patchData, err := json.Marshal(patches)
+	if err != nil {
+		return fmt.Errorf("unable to generate patch request body for %v: %w", patches, err)
+	}
+	_, err = tc.client.Config.ConfigV1().Proxies().Patch(context.TODO(), "cluster", types.JSONPatchType, patchData,
+		meta.PatchOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to patch %s: %w", string(patchData), err)
+	}
+	return nil
 }
 
 // configureUserCABundle configures the cluster-wide proxy with additional user-provided certificates
