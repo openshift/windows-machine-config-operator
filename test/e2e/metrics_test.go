@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	auth "k8s.io/api/authentication/v1"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -214,37 +215,19 @@ func (tc *testContext) testWindowsPrometheusRules(t *testing.T) {
 	}
 }
 
-// getPrometheusToken returns authorization token required to access Prometheus server
+// getPrometheusToken returns authorization token required to access Prometheus server, the default ExpirationSeconds
+// value is 1 hour
 func (tc *testContext) getPrometheusToken() (string, error) {
-	// get secrets from monitoring namespace
-	monitoringSecrets, err := tc.client.K8s.CoreV1().Secrets(monitoringNamespace).List(context.TODO(), metav1.ListOptions{})
+	tokenRequest := &auth.TokenRequest{
+		Spec: auth.TokenRequestSpec{},
+	}
+	token, err := tc.client.K8s.CoreV1().ServiceAccounts(monitoringNamespace).CreateToken(context.TODO(),
+		"prometheus-k8s", tokenRequest, metav1.CreateOptions{})
+
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("could not get bearer token for service account %s: %w", "prometheus-k8s", err)
 	}
-
-	// access prometheus-k8s-token-* secret
-	var secretName string
-	for _, secret := range monitoringSecrets.Items {
-		if strings.Contains(secret.Name, "prometheus-k8s-token") {
-			secretName = secret.Name
-			break
-		}
-	}
-
-	if len(secretName) == 0 {
-		return "", fmt.Errorf("could not get 'prometheus-k8s-token' secret")
-	}
-
-	secret, err := tc.client.K8s.CoreV1().Secrets(monitoringNamespace).Get(context.TODO(), secretName, metav1.GetOptions{})
-	if err != nil {
-		return "", err
-	}
-	token, ok := secret.Data["token"]
-
-	if !ok {
-		return "", fmt.Errorf("could not get bearer token for secret %v", secretName)
-	}
-	return string(token), nil
+	return token.Status.Token, nil
 }
 
 // ensureMonitoringIsEnabled adds the "openshift.io/cluster-monitoring:"true"" label to the
