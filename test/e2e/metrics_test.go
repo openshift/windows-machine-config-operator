@@ -5,8 +5,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -17,8 +19,10 @@ import (
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
 
 const (
@@ -153,16 +157,8 @@ func (tc *testContext) testWindowsPrometheusRules(t *testing.T) {
 	prometheusRoute, err := tc.client.Route.Routes(monitoringNamespace).Get(context.TODO(), "prometheus-k8s", metav1.GetOptions{})
 	require.NoError(t, err, "error getting route")
 
-	// get Authorization token
 	prometheusToken, err := tc.getPrometheusToken()
-	require.NoError(t, err, "Error getting Prometheus token")
-	// define authorization token required to call Prometheus API
-	var bearer = "Bearer " + prometheusToken
-	// InsecureSkipVerify is required to avoid errors due to bad certificate
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
+	require.NoError(t, err)
 
 	// Following tests carry out api calls to Prometheus server with all the queries defined in the Windows PrometheusRule
 	// object. The tests check if the query results have instances corresponding to configured Windows Nodes.
@@ -173,25 +169,8 @@ func (tc *testContext) testWindowsPrometheusRules(t *testing.T) {
 		}
 		for _, winRules := range rules.Rules {
 			t.Run("Query: "+winRules.Record, func(t *testing.T) {
-				// url consists of prometheus host, appended with a Record defined in the Windows PrometheusRuleObject
-				url := "https://" + prometheusRoute.Spec.Host + "/api/v1/query?query=" + winRules.Record
-				// create a Get request
-				req, err := http.NewRequest("GET", url, nil)
+				queryResult, err := makePrometheusQuery(prometheusRoute.Spec.Host, winRules.Record, prometheusToken)
 				require.NoError(t, err)
-				// add Authorization Header to get access Prometheus server
-				req.Header.Set("Authorization", bearer)
-
-				resp, err := client.Do(req)
-				require.NoError(t, err)
-				// Convert the request response as a data type.
-				body, _ := ioutil.ReadAll(resp.Body)
-				var promQuery = new(PrometheusQuery)
-				err = json.Unmarshal(body, &promQuery)
-				require.NoError(t, err)
-
-				// test if query status is successful
-				require.Equal(t, "success", promQuery.Status)
-				queryResult := promQuery.Data.Result
 
 				// test query result against every Windows node
 				for _, node := range gc.allNodes() {
@@ -280,4 +259,67 @@ func (tc *testContext) testNodeResourceUsage(t *testing.T) {
 			assert.Truef(t, nodeStorage > 0, "expected strictly positive storage value but got %d", nodeStorage)
 		})
 	}
+}
+
+// testPodMetrics asserts that the expected metrics exist for a Windows pod
+func (tc *testContext) testPodMetrics(t *testing.T, podName string) {
+	// get route to access Prometheus server instance in monitoring namespace
+	prometheusRoute, err := tc.client.Route.Routes(monitoringNamespace).Get(context.TODO(), "prometheus-k8s", metav1.GetOptions{})
+	require.NoError(t, err, "error getting route")
+
+	prometheusToken, err := tc.getPrometheusToken()
+	require.NoError(t, err)
+
+	// The queries here should mirror those made in the OCP console
+	queries := []string{
+		fmt.Sprintf("pod:container_cpu_usage:sum{pod='%s',namespace='%s'}", podName, tc.workloadNamespace),
+		fmt.Sprintf("sum(container_memory_working_set_bytes{pod='%s',namespace='%s',container='',}) BY (pod, namespace)",
+			podName, tc.workloadNamespace),
+	}
+	for i, query := range queries {
+		t.Run("query "+strconv.Itoa(i), func(t *testing.T) {
+			err := wait.PollUntilContextTimeout(context.TODO(), retry.Interval, retry.ResourceChangeTimeout, true,
+				func(ctx context.Context) (done bool, err error) {
+					results, err := makePrometheusQuery(prometheusRoute.Spec.Host, query, prometheusToken)
+					if err != nil {
+						log.Printf("error making prometheus query, retrying: %s", err)
+						return false, nil
+					}
+					return len(results) == 1, nil
+				})
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// makePrometheusQuery runs the given query against the prometheus server at the given address
+func makePrometheusQuery(address, query, token string) ([]Result, error) {
+	escapedQuery := url.QueryEscape(query)
+	url := "https://" + address + "/api/v1/query?query=" + escapedQuery
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error forming GET request %s: %w", url, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	tr := &http.Transport{
+		// InsecureSkipVerify is required to avoid errors due to bad certificate
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making GET request: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("request returned status code %d", resp.StatusCode)
+	}
+	var promQuery *PrometheusQuery
+	body, _ := io.ReadAll(resp.Body)
+	if err = json.Unmarshal(body, &promQuery); err != nil {
+		return nil, fmt.Errorf("error unmarshalling response %s: %w", string(body), err)
+	}
+	if promQuery.Status != "success" {
+		return nil, fmt.Errorf("query had status %s, expected 'success'", promQuery.Status)
+	}
+	return promQuery.Data.Result, nil
 }

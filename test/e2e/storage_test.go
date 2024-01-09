@@ -10,11 +10,11 @@ import (
 	"time"
 
 	config "github.com/openshift/api/config/v1"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/smb"
@@ -61,7 +61,7 @@ func testStorage(t *testing.T) {
 	// The deployment will not come to ready if the volume is not able to be attached to the pod. If the deployment is
 	// successful, storage is working as expected.
 	winServerDeployment, err := tc.deployWindowsWebServer("win-webserver-storage-test", affinity, pvcVolumeSource)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	if err == nil && !skipWorkloadDeletion {
 		defer func() {
 			err := tc.deleteDeployment(winServerDeployment.GetName())
@@ -70,6 +70,17 @@ func testStorage(t *testing.T) {
 			}
 		}()
 	}
+	t.Run("pod metrics", func(t *testing.T) {
+		if skipWorkloadDeletion {
+			t.Skip("skipped in upgrade job due to this testing a new feature in WMCO 10.15.0")
+		}
+		selectorString := labels.Set(winServerDeployment.Spec.Selector.MatchLabels).String()
+		podList, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), meta.ListOptions{
+			LabelSelector: selectorString})
+		require.NoError(t, err)
+		require.NotZero(t, len(podList.Items))
+		tc.testPodMetrics(t, podList.Items[0].GetName())
+	})
 }
 
 // createSMBPV creates a Persistent Volume backed by an SMB share created on one of the Windows Nodes
