@@ -74,7 +74,7 @@ $cni_template=$cni_template.Replace("provider_address",$provider_address)
 # Compare CNI config with existing file, and replace if necessary
 $existing_config=""
 if(Test-Path -Path c:\k\cni.conf) {
-    $existing_config= Get-Content -Path "c:\k\cni.conf"
+` + "    $existing_config=((Get-Content -Path \"c:\\k\\cni.conf\" -Raw) -Replace \"`r\",\"\")" + `
 }
 if($existing_config -ne $cni_template){
     Set-Content -Path "c:\k\cni.conf" -Value $cni_template -NoNewline
