@@ -129,9 +129,9 @@ func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service
 // kubeProxyConfiguration returns the Service definition for kube-proxy
 func kubeProxyConfiguration(debug bool) servicescm.Service {
 	sanitizedSubnetAnnotation := strings.ReplaceAll(nodeconfig.HybridOverlaySubnet, ".", "\\.")
-	cmd := fmt.Sprintf("%s -log-file=%s %s --windows-service --proxy-mode=kernelspace --feature-gates=WinOverlay=true "+
+	cmd := fmt.Sprintf("%s -log-file=%s %s --windows-service --proxy-mode=kernelspace --feature-gates=WinOverlay=true,WinDSR=true "+
 		"--hostname-override=NODE_NAME --kubeconfig=%s --cluster-cidr=NODE_SUBNET "+
-		"--network-name=%s --source-vip=ENDPOINT_IP --enable-dsr=false", windows.KubeLogRunnerPath, windows.KubeProxyLog,
+		"--network-name=%s --source-vip=ENDPOINT_IP --enable-dsr=true", windows.KubeLogRunnerPath, windows.KubeProxyLog,
 		windows.KubeProxyPath, windows.KubeconfigPath, windows.OVNKubeOverlayNetwork)
 	// Set log level
 	cmd = fmt.Sprintf("%s %s", cmd, klogVerbosityArg(debug))
