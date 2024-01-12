@@ -8,7 +8,7 @@ require (
 	github.com/coreos/ignition/v2 v2.14.0
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.2.4
-	github.com/openshift/api v0.0.0-20231118175506-8ed884e28fa6
+	github.com/openshift/api v0.0.0-20240103200955-7ca3a4634e46
 	github.com/openshift/client-go v0.0.0-20221019143426-16aed247da5c
 	github.com/openshift/library-go v0.0.0-20231120144800-ba257b06bf7b
 	github.com/openshift/machine-config-operator v0.0.1-0.20231107213001-ef25c81205a6
@@ -56,16 +56,16 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
+	github.com/emicklei/go-restful/v3 v3.11.2 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.7.0 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect
 	github.com/go-logr/zapr v1.2.3 // indirect
-	github.com/go-openapi/jsonpointer v0.20.0 // indirect
-	github.com/go-openapi/jsonreference v0.20.2 // indirect
-	github.com/go-openapi/swag v0.22.4 // indirect
+	github.com/go-openapi/jsonpointer v0.20.2 // indirect
+	github.com/go-openapi/jsonreference v0.20.4 // indirect
+	github.com/go-openapi/swag v0.22.7 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.2.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -122,8 +122,8 @@ require (
 	k8s.io/apiextensions-apiserver v0.25.16 // indirect
 	k8s.io/cli-runtime v0.25.16 // indirect
 	k8s.io/component-base v0.25.16 // indirect
-	k8s.io/kube-openapi v0.0.0-20231129212854-f0671cc7e66a // indirect
-	k8s.io/utils v0.0.0-20231127182322-b307cd553661 // indirect
+	k8s.io/kube-openapi v0.0.0-20240105020646-a37d4de58910 // indirect
+	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.12.1 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.13.9 // indirect
