@@ -61,6 +61,7 @@ func GenerateUserData(platformType oconfig.PlatformType, publicKey ssh.PublicKey
 
 // generateUserDataWithPubKey returns the Windows user data for the given pubKey
 func generateUserDataWithPubKey(pubKey string) string {
+	windowsExporterPort := "9182"
 	return `function Get-RandomPassword {
 				Add-Type -AssemblyName 'System.Web'
 				return [System.Web.Security.Membership]::GeneratePassword(16, 2)
@@ -82,6 +83,7 @@ func generateUserDataWithPubKey(pubKey string) string {
 			$firewallRuleName = "ContainerLogsPort"
 			$containerLogsPort = "10250"
 			New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $containerLogsPort -EdgeTraversalPolicy Allow
+			New-NetFirewallRule -DisplayName "WindowsExporter" -Direction Inbound -Action Allow -Protocol TCP -LocalPort "` + windowsExporterPort + `" -EdgeTraversalPolicy Allow
 			Set-Service -Name sshd -StartupType 'Automatic'
 			Start-Service sshd
 			(Get-Content -path C:\ProgramData\ssh\sshd_config) | ForEach-Object {
