@@ -206,10 +206,14 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 	for _, arg := range kubeletArgs {
 		kubeletServiceCmd += fmt.Sprintf(" %s", arg)
 	}
-	if platform == config.NonePlatformType {
-		// special case substitution handled in WICD itself
-		kubeletServiceCmd = fmt.Sprintf("%s --node-ip=%s", kubeletServiceCmd, NodeIPVar)
-	}
+
+	// explicitly set node ip and resolves to the first IPv4 address of the default gateway
+	kubeletServiceCmd = fmt.Sprintf("%s --node-ip=%s", kubeletServiceCmd, NodeIPVar)
+	preScripts = append(preScripts, servicescm.PowershellPreScript{
+		VariableName: NodeIPVar,
+		Path: "(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | " +
+			"Get-NetIpAddress -AddressFamily IPv4 -ifIndex {$_.ifIndex}[0]).IPAddress",
+	})
 	return servicescm.Service{
 		Name:                   windows.KubeletServiceName,
 		Command:                kubeletServiceCmd,
