@@ -362,13 +362,11 @@ func GetProxyVars() map[string]string {
 	}
 	// if clusterWideProxyVars is not already cached, initialize it. We never expect these values to change during
 	// runtime as OLM restarts the operator when the global cluster proxy config changes
-	clusterWideProxyVars = make(map[string]string, 3)
+	clusterWideProxyVars = make(map[string]string, len(WatchedEnvironmentVars))
 	for _, envVar := range WatchedEnvironmentVars {
 		value, found := os.LookupEnv(envVar)
 		if found {
-			// on Windows, hostname lists are separated by semicolons rather than the Linux default of commas
-			sanitizedVal := strings.ReplaceAll(value, ",", ";")
-			clusterWideProxyVars[envVar] = sanitizedVal
+			clusterWideProxyVars[envVar] = value
 		}
 	}
 	return clusterWideProxyVars
