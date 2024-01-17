@@ -61,7 +61,6 @@ func creationTestSuite(t *testing.T) {
 	t.Run("Node Metadata", tc.testNodeMetadata)
 	t.Run("Services ConfigMap validation", tc.testServicesConfigMap)
 	t.Run("Services running", tc.testExpectedServicesRunning)
-	t.Run("NodeIP Arg", tc.testNodeIPArg)
 	t.Run("NodeTaint validation", tc.testNodeTaint)
 	t.Run("CSR Validation", tc.testCSRApproval)
 	t.Run("Certificates", tc.testCertificates)

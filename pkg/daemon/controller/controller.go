@@ -58,10 +58,8 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/winsvc"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
-	"github.com/openshift/windows-machine-config-operator/pkg/services"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
-	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
 // WICDController is the name of the WICD controller in logs and other outputs
@@ -451,35 +449,6 @@ func (sc *ServiceController) expectedServiceCommand(expected servicescm.Service)
 	}
 	for key, value := range psVars {
 		expectedCmd = strings.ReplaceAll(expectedCmd, key, value)
-	}
-	// TODO: This goes against WICD design principles and needs to be changed https://issues.redhat.com/browse/WINC-896
-	// WICD should not have special casing like this, and should use the services ConfigMap as its source of truth
-	if strings.Contains(expectedCmd, services.NodeIPVar) {
-		// Set NodeIP to IPv4 value by matching this instance's addresses to those in the Windows instances ConfigMap
-		instances, err := wiparser.GetInstances(sc.client, sc.watchNamespace)
-		if err != nil {
-			return "", err
-		}
-		addrs, err := LocalInterfaceAddresses()
-		if err != nil {
-			return "", err
-		}
-		nodeIPValue := ""
-		for _, addr := range addrs {
-			ipv4Addr := getUsableIPv4(addr)
-			if ipv4Addr == nil {
-				continue
-			}
-			for _, instance := range instances {
-				if instance.IPv4Address == ipv4Addr.String() {
-					nodeIPValue = instance.IPv4Address
-				}
-			}
-		}
-		if nodeIPValue == "" {
-			return "", fmt.Errorf("unable to find IPv4 address to use as Node IP for this instance")
-		}
-		expectedCmd = strings.ReplaceAll(expectedCmd, services.NodeIPVar, nodeIPValue)
 	}
 	return expectedCmd, nil
 }

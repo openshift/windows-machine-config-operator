@@ -176,48 +176,6 @@ func (tc *testContext) testNodeMetadata(t *testing.T) {
 	})
 }
 
-// testNodeIPArg tests that the node-ip kubelet arg is set only when platform type == none
-func (tc *testContext) testNodeIPArg(t *testing.T) {
-	nodeIPArg := "--node-ip"
-
-	// Nodes configured from Machines should never have the node-ip arg set
-	t.Run("machines", func(t *testing.T) {
-		if numberOfMachineNodes == 0 {
-			t.Skip("0 expected machine nodes")
-		}
-		for _, node := range gc.machineNodes {
-			out, err := tc.getKubeletServiceBinPath(&node)
-			require.NoError(t, err, "error getting kubelet binpath")
-			assert.NotContains(t, out, nodeIPArg,
-				"node-ip arg should not be set for nodes configured from Machines")
-		}
-	})
-
-	// BYOH nodes should only have the node-ip arg set when platform type == 'none'
-	t.Run("byoh", func(t *testing.T) {
-		if numberOfBYOHNodes == 0 {
-			t.Skip("0 expected byoh nodes")
-		}
-		for _, node := range gc.byohNodes {
-			t.Run(node.GetName(), func(t *testing.T) {
-				out, err := tc.getKubeletServiceBinPath(&node)
-				require.NoError(t, err, "error getting kubelet binpath")
-
-				// node-ip flag should only be set when platform type == 'none'
-				if tc.CloudProvider.GetType() == config.NonePlatformType {
-					// TODO: Check the actual value of this and compare to the value stored in the ConfigMap
-					//       https://issues.redhat.com/browse/WINC-671
-					assert.Contains(t, out, nodeIPArg, "node-ip arg must be present on platform 'none'")
-				} else {
-					assert.NotContains(t, out, nodeIPArg,
-						"node-ip arg should not be set for platforms other than 'none'")
-				}
-			})
-		}
-
-	})
-}
-
 // getKubeletServiceBinPath returns the binpath of the kubelet service. This includes the kubelet executable path and
 // arguments.
 func (tc *testContext) getKubeletServiceBinPath(node *core.Node) (string, error) {
