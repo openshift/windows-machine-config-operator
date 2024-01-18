@@ -208,6 +208,12 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 func TestUpgrade(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
+
+	// In the case that upgrading a Machine node require the deletion of the VM, bootstrap CSRs will need to be approved
+	// Ensure the machine approver is scaled, as it may not be depending on the order of tests ran
+	err = tc.scaleMachineApprover(1)
+	require.NoError(t, err)
+
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfMachineNodes), true, false)
 	assert.NoError(t, err, "timed out waiting for Windows Machine nodes")
 	err = tc.waitForConfiguredWindowsNodes(int32(numberOfBYOHNodes), true, true)

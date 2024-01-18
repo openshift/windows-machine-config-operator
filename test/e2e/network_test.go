@@ -501,7 +501,7 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 	deploymentsClient := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace)
 	replicaCount := int32(1)
 	// affinity being nil is a hint that the caller does not care which nodes the pods are deployed to
-	if affinity == nil {
+	if affinity == nil && volumes == nil {
 		replicaCount = int32(3)
 	}
 	windowsServerImage := tc.getWindowsServerContainerImage()
