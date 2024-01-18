@@ -165,12 +165,10 @@ function get-commits {
   mapfile -t MERGE_COMMITS < <(git rev-list --format=oneline --merges "$start_hash...$end_hash")
 }
 
-function get-jira-fix-version {
+function query-jira-issue {
   local jira_id=$1
   local result
   local exitcode
-  local fix_version_count
-  local fix_version
   local url="https://issues.redhat.com/rest/api/2/issue/$jira_id"
   result=$(curl -s "$url")
   exitcode=$?
@@ -178,12 +176,18 @@ function get-jira-fix-version {
     print-error "Unable to curl server. (error: $exitcode, url: $url)"
     exit 1
   fi
-  if [[ "$result" == *"Login Required"* ]]; then
+  echo -E "$result"
+}
+
+function get-jira-fix-version {
+  local query_result=$1
+  local fix_version_count
+  local fix_version
+  if [[ "$query_result" == *"Login Required"* ]]; then
     echo "Restricted"
     return
   fi
-
-  fix_version_count=$(echo -E "$result" | jq '.fields.fixVersions | length')
+  fix_version_count=$(echo -E "$query_result" | jq '.fields.fixVersions | length')
   if [ "$fix_version_count" -gt 1 ]; then
     echo "Multiple"
     return
@@ -191,17 +195,28 @@ function get-jira-fix-version {
     echo "Undefined"
     return
   else
-    fix_version=$(echo -E "$result" | jq -r '.fields.fixVersions[0].name')
+    fix_version=$(echo -E "$query_result" | jq -r '.fields.fixVersions[0].name')
     echo "$fix_version"
   fi
 }
 
+function get-jira-status {
+  local query_result=$1
+  local status
+  if [[ "$query_result" == *"Login Required"* ]]; then
+    echo "Restricted"
+    return
+  fi
+  status=$(echo -E "$query_result" | jq -r '.fields.status.name')
+  echo "$status"
+}
+
 function list-commits {
   local color=$1
-  local -r format="%-40s %-4s %-65.65s %-13s %-11s %-13s\n"
+  local -r format="%-40s %-4s %-65.65s %-13s %-13s %-13s %-13s\n"
   printf "${BLUE}"
-  printf "$format" "Commit Hash" "PR#" "PR Title" "Jira ID" "Fix Version" "Errata Status"
-  printf "%s %s %s %s %s %s\n" "$(printf "=%.0s" {1..40})" "$(printf "=%.0s" {1..4})" "$(printf "=%.0s" {1..65})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..11})" "$(printf "=%.0s" {1..13})"
+  printf "$format" "Commit Hash" "PR#" "PR Title" "Jira ID" "Fix Version" "JIRA Status" "Errata Status"
+  printf "%s %s %s %s %s %s %s\n" "$(printf "=%.0s" {1..40})" "$(printf "=%.0s" {1..4})" "$(printf "=%.0s" {1..65})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})"
   printf "$color"
   for commit in "${MERGE_COMMITS[@]}"
   do
@@ -209,21 +224,27 @@ function list-commits {
     local pr_num=""
     local pr_title=""
     local jira_id=""
+    local query_result=""
     local jira_fix_version=""
+    local jira_status=""
     local attached=""
     commit_hash=$(echo "$commit" | awk '{ print $1 }')
     pr_num=$(echo "$commit" | awk '{ print substr($5,2) }')
     pr_title=$(gh pr view "$pr_num" --json title | jq -r .title)
     jira_id=$(echo "$pr_title" | grep -Eo '(WINC|OCPBUGS)-[0-9]*' | head -1) || true
     if [ -n "$jira_id" ]; then
-      jira_fix_version=$(get-jira-fix-version "$jira_id")
-      if [[ "$ERRATA_JIRA_IDS" == *"$jira_id"* ]]; then
-        attached="${GREEN}Attached${color}"
-      else
-        attached="${YELLOW}Not Attached${color}"
+      query_result=$(query-jira-issue $jira_id)
+      if [ -n "$query_result" ]; then
+        jira_fix_version=$(get-jira-fix-version "$query_result")
+        jira_status=$(get-jira-status "$query_result")
+        if [[ "$ERRATA_JIRA_IDS" == *"$jira_id"* ]]; then
+          attached="${GREEN}Attached${color}"
+        else
+          attached="${YELLOW}Not Attached${color}"
+        fi
       fi
     fi
-    printf "$format" "$commit_hash" "$pr_num" "$pr_title" "$jira_id" "$jira_fix_version" "$attached"
+    printf "$format" "$commit_hash" "$pr_num" "$pr_title" "$jira_id" "$jira_fix_version" "$jira_status" "$attached"
   done
   printf "${NORMAL}"
 }
