@@ -723,10 +723,8 @@ func (tc *testContext) testCSRApproval(t *testing.T) {
 		}
 	}
 
-	// Scale the Cluster Machine Approver deployment back to 1.
-	expectedPodCount := int32(1)
-	err := tc.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
-		&expectedPodCount)
+	// Revert changes to the cluster machine approver
+	err := tc.scaleMachineApprover(1)
 	require.NoError(t, err, "failed to scale up Cluster Machine Approver pods")
 }
 
