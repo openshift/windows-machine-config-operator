@@ -94,8 +94,13 @@ func (tc *testContext) createSMBPV() (*core.PersistentVolume, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting address: %w", err)
 	}
+	openSMBPortCommand := "New-NetFirewallRule -DisplayName 'SMB' -Direction Inbound -Action Allow -Protocol TCP " +
+		"-LocalPort 445 -EdgeTraversalPolicy Allow"
+	if out, err := tc.runPowerShellSSHJob("open-smb-port", openSMBPortCommand, addr); err != nil {
+		return nil, fmt.Errorf("error opening SMB port %s: %w", out, err)
+	}
 	if err := tc.checkSMBPortOpen(addr); err != nil {
-		return nil, fmt.Errorf("port unreachable")
+		return nil, fmt.Errorf("smb port unreachable")
 	}
 	username := "SMBUser"
 	password := generateWindowsPassword()
