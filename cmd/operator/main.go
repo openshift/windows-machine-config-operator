@@ -132,7 +132,7 @@ func main() {
 	}
 
 	if err := payload.PopulateNetworkConfScript(clusterConfig.Network().GetServiceCIDR(), windows.OVNKubeOverlayNetwork,
-		windows.HNSPSModule, windows.CNIDir, windows.CniConfDir+"\\cni.conf"); err != nil {
+		windows.HNSPSModule, windows.CniConfDir+"\\cni.conf"); err != nil {
 		setupLog.Error(err, "unable to generate CNI config script")
 		os.Exit(1)
 	}
