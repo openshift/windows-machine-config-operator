@@ -89,6 +89,9 @@ func (tc *testContext) createSMBPV() (*core.PersistentVolume, error) {
 	}
 	node := gc.allNodes()[0]
 	addr, err := controllers.GetAddress(node.Status.Addresses)
+	if err != nil {
+		return nil, fmt.Errorf("error getting address: %w", err)
+	}
 	if err := tc.checkSMBPortOpen(addr); err != nil {
 		return nil, fmt.Errorf("port unreachable")
 	}
@@ -99,9 +102,6 @@ func (tc *testContext) createSMBPV() (*core.PersistentVolume, error) {
 		"New-LocalUser -Name '%s' -Password $Password;"+
 		"mkdir /smbshare;"+
 		"New-SmbShare -Name '%s' -Path C:\\smbshare -FullAccess '%s'", password, username, shareName, username)
-	if err != nil {
-		return nil, fmt.Errorf("error getting address: %w", err)
-	}
 	if out, err := tc.runPowerShellSSHJob("create-smb-share", createShareCommand, addr); err != nil {
 		return nil, fmt.Errorf("error creating SMB share %s: %w", out, err)
 	}
