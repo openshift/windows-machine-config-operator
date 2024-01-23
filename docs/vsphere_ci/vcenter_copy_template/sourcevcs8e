@@ -1,0 +1,6 @@
+export GOVC_URL=https://vcs8e-vc.ocp2.dev.cluster.com
+export GOVC_USERNAME=xxxxxxx@vsphere.local
+export GOVC_PASSWORD='xxxxxxx'
+export GOVC_INSECURE=true
+export GOVC_DATACENTER=IBMCloud
+export GOVC_RESOURCE_POOL='QE Resource Pool'
