@@ -48,6 +48,7 @@ func creationTestSuite(t *testing.T) {
 	proxyEnabled, err := tc.client.ProxyEnabled()
 	require.NoErrorf(t, err, "error checking if proxy is enabled in test environment")
 	if proxyEnabled {
+		require.NoError(t, tc.configureClusterNoProxy(noProxyList))
 		require.NoError(t, tc.configureUserCABundle())
 	}
 
