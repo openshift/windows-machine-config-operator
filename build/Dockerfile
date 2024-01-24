@@ -6,6 +6,10 @@ LABEL stage=build
 ENV GO_COMPLIANCE_INFO=0
 ENV GO_COMPLIANCE_DEBUG=0
 
+# Set go toolchain to local, this prevents it from
+# downloading the latest version
+ENV GOTOOLCHAIN=local
+
 # dos2unix is needed to build CNI plugins
 RUN yum install -y dos2unix
 
