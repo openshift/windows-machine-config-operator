@@ -162,7 +162,7 @@ function add-build-tag {
 function get-commits {
   local start_hash=$1
   local end_hash=$2
-  mapfile -t MERGE_COMMITS < <(git rev-list --format=oneline --merges "$start_hash...$end_hash")
+  mapfile -t MERGE_COMMITS < <(git log --pretty='%h %cr %s' --merges "$start_hash...$end_hash")
 }
 
 function query-jira-issue {
@@ -213,14 +213,15 @@ function get-jira-status {
 
 function list-commits {
   local color=$1
-  local -r format="%-40s %-4s %-65.65s %-13s %-13s %-13s %-13s\n"
+  local -r format="%-8s %-14s %-4s %-65.65s %-13s %-13s %-13s %-13s\n"
   printf "${BLUE}"
-  printf "$format" "Commit Hash" "PR#" "PR Title" "Jira ID" "Fix Version" "JIRA Status" "Errata Status"
-  printf "%s %s %s %s %s %s %s\n" "$(printf "=%.0s" {1..40})" "$(printf "=%.0s" {1..4})" "$(printf "=%.0s" {1..65})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})"
+  printf "$format" "Commit" "Merged" "PR#" "PR Title" "Jira ID" "Fix Version" "JIRA Status" "Errata Status"
+  printf "%s %s %s %s %s %s %s %s\n" "$(printf "=%.0s" {1..8})" "$(printf "=%.0s" {1..14})" "$(printf "=%.0s" {1..4})" "$(printf "=%.0s" {1..65})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})" "$(printf "=%.0s" {1..13})"
   printf "$color"
   for commit in "${MERGE_COMMITS[@]}"
   do
     local commit_hash=""
+    local commit_date=""
     local pr_num=""
     local pr_title=""
     local jira_id=""
@@ -229,7 +230,8 @@ function list-commits {
     local jira_status=""
     local attached=""
     commit_hash=$(echo "$commit" | awk '{ print $1 }')
-    pr_num=$(echo "$commit" | awk '{ print substr($5,2) }')
+    commit_date=$(echo "$commit" | awk -F" " '{ print $2,$3,$4 }')
+    pr_num=$(echo "$commit" | awk '{ print substr($8,2) }')
     pr_title=$(gh pr view "$pr_num" --json title | jq -r .title)
     jira_id=$(echo "$pr_title" | grep -Eo '(WINC|OCPBUGS)-[0-9]*' | head -1) || true
     if [ -n "$jira_id" ]; then
@@ -244,7 +246,7 @@ function list-commits {
         fi
       fi
     fi
-    printf "$format" "$commit_hash" "$pr_num" "$pr_title" "$jira_id" "$jira_fix_version" "$jira_status" "$attached"
+    printf "$format" "$commit_hash" "$commit_date" "$pr_num" "$pr_title" "$jira_id" "$jira_fix_version" "$jira_status" "$attached"
   done
   printf "${NORMAL}"
 }
