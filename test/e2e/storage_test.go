@@ -55,12 +55,10 @@ func testStorage(t *testing.T) {
 		}()
 	}
 	pvcVolumeSource := &core.PersistentVolumeClaimVolumeSource{ClaimName: pvc.GetName()}
-	affinity, err := getAffinityForNode(&gc.allNodes()[0])
-	require.NoError(t, err)
 
 	// The deployment will not come to ready if the volume is not able to be attached to the pod. If the deployment is
 	// successful, storage is working as expected.
-	winServerDeployment, err := tc.deployWindowsWebServer("win-webserver-storage-test", affinity, pvcVolumeSource)
+	winServerDeployment, err := tc.deployWindowsWebServer("win-webserver-storage-test", nil, pvcVolumeSource)
 	require.NoError(t, err)
 	if err == nil && !skipWorkloadDeletion {
 		defer func() {

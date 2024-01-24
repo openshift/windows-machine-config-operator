@@ -93,13 +93,13 @@ In case no firewall rule exist, you must create it by running the following Powe
     New-NetFirewallRule -DisplayName 'OpenSSH Server (sshd)' -LocalPort 22 -Enabled True -Direction Inbound -Protocol TCP -Action Allow 
 ```
 
-## 4. Set up incoming connection for container logs
+## 4. Set up incoming connection for container logs and metrics
 
-Create a new firewall rule in the Windows VM to allow incoming connections for container logs, usually 
-on TCP port `10250` by running the following PowerShell command:
+Create new firewall rules in the Windows VM to allow incoming connections for container logs and metrics:
 
 ```powershell
     New-NetFirewallRule -DisplayName "ContainerLogsPort" -LocalPort 10250 -Enabled True -Direction Inbound -Protocol TCP -Action Allow -EdgeTraversalPolicy Allow
+    New-NetFirewallRule -DisplayName "WindowsExporter" -LocalPort 9182 -Enabled True -Direction Inbound -Protocol TCP -Action Allow -EdgeTraversalPolicy Allow
 ```
 
 ## 5. Install Windows OS updates

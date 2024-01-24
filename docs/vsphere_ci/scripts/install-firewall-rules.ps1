@@ -3,8 +3,9 @@
 # USAGE
 #    ./install-firewall-rules.ps1 
 
-# create firewall rule to allow Container Logs on port 10250
+# Allow incoming connections for container logs and metrics
 New-NetFirewallRule -DisplayName "ContainerLogsPort" -LocalPort 10250 -Enabled True -Direction Inbound -Protocol TCP -Action Allow -EdgeTraversalPolicy Allow
+New-NetFirewallRule -DisplayName "WindowsExporter" -LocalPort 9182 -Enabled True -Direction Inbound -Protocol TCP -Action Allow -EdgeTraversalPolicy Allow
 
 # success
 exit 0
