@@ -1,7 +1,7 @@
 
 variable "os-iso-path" {
   type    = string
-  default = "[WorkloadDatastore] windows-iso-images/winsrv2022_sep_2021_x64_dvd.iso"
+  default = "[vsanDatastore] windows-iso-images/winsrv2022_sep_2021_x64_dvd.iso"
 }
 
 variable "vm-elevated-password" {
@@ -32,17 +32,22 @@ variable "vmtools-iso-path" {
 
 variable "vsphere-cluster" {
   type    = string
-  default = "Cluster-1"
+  default = "DEVQEcluster"
 }
 
 variable "vsphere-datacenter" {
   type    = string
-  default = "SDDC-Datacenter"
+  default = "DEVQEdatacenter"
+}
+
+variable "vsphere-network" {
+  type    = string
+  default = "/DEVQEdatacenter/network/devqe-segment-xxx"
 }
 
 variable "vsphere-datastore" {
   type    = string
-  default = "WorkloadDatastore"
+  default = "vsanDatastore"
 }
 
 variable "vsphere-password" {
@@ -78,7 +83,7 @@ source "vsphere-iso" "windows-server-2022" {
   insecure_connection  = "true"
   iso_paths            = ["${var.os-iso-path}", "${var.vmtools-iso-path}"]
   network_adapters {
-    network      = "dev-segment"
+    network      = "${var.vsphere-network}"
     network_card = "vmxnet3"
   }
   password         = "${var.vsphere-password}"
