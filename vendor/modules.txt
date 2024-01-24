@@ -173,7 +173,7 @@ github.com/go-openapi/jsonpointer
 ## explicit; go 1.19
 github.com/go-openapi/jsonreference
 github.com/go-openapi/jsonreference/internal
-# github.com/go-openapi/swag v0.22.7
+# github.com/go-openapi/swag v0.22.8
 ## explicit; go 1.19
 github.com/go-openapi/swag
 # github.com/gogo/protobuf v1.3.2
@@ -328,7 +328,7 @@ github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
 github.com/openshift/library-go/pkg/image/internal/reference
 github.com/openshift/library-go/pkg/image/reference
-# github.com/openshift/machine-config-operator v0.0.1-0.20231107213001-ef25c81205a6
+# github.com/openshift/machine-config-operator v0.0.1-0.20240119211543-c5d256635445
 ## explicit; go 1.18
 github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1
 # github.com/operator-framework/api v0.16.0
@@ -846,7 +846,7 @@ k8s.io/klog/v2/internal/clock
 k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
-# k8s.io/kube-openapi v0.0.0-20240105020646-a37d4de58910 => k8s.io/kube-openapi v0.0.0-20220928191237-829ce0c27909
+# k8s.io/kube-openapi v0.0.0-20240117194847-208609032b15 => k8s.io/kube-openapi v0.0.0-20220928191237-829ce0c27909
 ## explicit; go 1.18
 k8s.io/kube-openapi/pkg/builder3/util
 k8s.io/kube-openapi/pkg/common
