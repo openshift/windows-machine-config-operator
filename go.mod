@@ -8,9 +8,9 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.2.4
-	github.com/openshift/api v0.0.0-20240111203005-e04828eaf17a
+	github.com/openshift/api v0.0.0-20240116035456-11ed2fbcb805
 	github.com/openshift/client-go v0.0.0-20240109161853-2425b4b6d3b3
-	github.com/openshift/library-go v0.0.0-20240111120724-db0c36cd2185
+	github.com/openshift/library-go v0.0.0-20240117151256-95b334bccb5d
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -24,13 +24,13 @@ require (
 	golang.org/x/crypto v0.18.0
 	golang.org/x/mod v0.14.0
 	golang.org/x/sys v0.16.0
-	k8s.io/api v0.28.5
-	k8s.io/apimachinery v0.28.5
-	k8s.io/client-go v0.28.5
-	k8s.io/cloud-provider v0.28.5
+	k8s.io/api v0.28.6
+	k8s.io/apimachinery v0.28.6
+	k8s.io/client-go v0.28.6
+	k8s.io/cloud-provider v0.28.6
 	k8s.io/klog/v2 v2.100.1
-	k8s.io/kubectl v0.28.5
-	k8s.io/kubelet v0.28.5
+	k8s.io/kubectl v0.28.6
+	k8s.io/kubelet v0.28.6
 	sigs.k8s.io/controller-runtime v0.16.3
 )
 
@@ -56,7 +56,7 @@ require (
 	github.com/go-logr/zapr v1.2.4 // indirect
 	github.com/go-openapi/jsonpointer v0.20.2 // indirect
 	github.com/go-openapi/jsonreference v0.20.4 // indirect
-	github.com/go-openapi/swag v0.22.7 // indirect
+	github.com/go-openapi/swag v0.22.8 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
@@ -97,7 +97,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20240112132812-db7319d0e0e3 // indirect
+	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a // indirect
 	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/oauth2 v0.13.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
@@ -110,11 +110,11 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.28.5 // indirect
-	k8s.io/cli-runtime v0.28.5 // indirect
-	k8s.io/component-base v0.28.5 // indirect
-	k8s.io/component-helpers v0.28.5 // indirect
-	k8s.io/kube-openapi v0.0.0-20240105020646-a37d4de58910 // indirect
+	k8s.io/apiextensions-apiserver v0.28.6 // indirect
+	k8s.io/cli-runtime v0.28.6 // indirect
+	k8s.io/component-base v0.28.6 // indirect
+	k8s.io/component-helpers v0.28.6 // indirect
+	k8s.io/kube-openapi v0.0.0-20240117194847-208609032b15 // indirect
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
