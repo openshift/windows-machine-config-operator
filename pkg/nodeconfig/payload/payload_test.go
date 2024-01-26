@@ -64,48 +64,6 @@ $cni_template=@'
 }
 '@
 
-# from https://github.com/kubernetes-sigs/sig-windows-tools/blob/fbe00b42e2a5cca06bc182e1b6ee579bd65ed1b5/hostprocess/flannel/kube-proxy/start.ps1
-function GetSourceVip($NetworkName)
-{
-    mkdir -force c:\k\cni\sourcevip | Out-Null
-    $sourceVipJson = [io.Path]::Combine("c:\k\cni", "sourcevip",  "sourceVip.json")
-    $sourceVipRequest = [io.Path]::Combine("c:\k\cni", "sourcevip", "sourceVipRequest.json")
-
-    if (Test-Path $sourceVipJson) {
-        $sourceVipJSONData = Get-Content $sourceVipJson | ConvertFrom-Json
-        $vip = $sourceVipJSONData.ip4.ip.Split("/")[0]
-        return $vip
-    }
-
-    $hnsNetwork = Get-HnsNetwork | ? Name -EQ $NetworkName.ToLower()
-    $subnet = $hnsNetwork.Subnets[0].AddressPrefix
-
-    $ipamConfig = @"
-    {"cniVersion": "0.2.0", "name": "$NetworkName", "ipam":{"type":"host-local","ranges":[[{"subnet":"$subnet"}]],"dataDir":"/var/lib/cni/networks"}}
-"@
-
-    $ipamConfig | Out-File $sourceVipRequest
-
-    $env:CNI_COMMAND="ADD"
-    $env:CNI_CONTAINERID="dummy"
-    $env:CNI_NETNS="dummy"
-    $env:CNI_IFNAME="dummy"
-    $env:CNI_PATH="c:\k\cni"
-
-    # reserve an ip address for source VIP, a requirement for kubeproxy in overlay mode
-    Get-Content $sourceVipRequest | c:\k\cni\host-local.exe | Out-File $sourceVipJson
-
-    Remove-Item env:CNI_COMMAND
-    Remove-Item env:CNI_CONTAINERID
-    Remove-Item env:CNI_NETNS
-    Remove-Item env:CNI_IFNAME
-    Remove-Item env:CNI_PATH
-
-    $sourceVipJSONData = Get-Content $sourceVipJson | ConvertFrom-Json
-    $vip = $sourceVipJSONData.ip4.ip.Split("/")[0]
-    return $vip
-}
-
 # Generate CNI Config
 $hns_network=Get-HnsNetwork  | where { $_.Name -eq 'OVNKubernetesHNSNetwork'}
 $subnet=$hns_network.Subnets.AddressPrefix
@@ -115,18 +73,25 @@ $cni_template=$cni_template.Replace("provider_address",$provider_address)
 
 # Compare CNI config with existing file, and replace if necessary
 $existing_config=""
-if(Test-Path -Path c:\k\cni\config\cni.conf) {
-` + "    $existing_config=((Get-Content -Path \"c:\\k\\cni\\config\\cni.conf\" -Raw) -Replace \"`r\",\"\")" + `
+if(Test-Path -Path c:\k\cni.conf) {
+` + "    $existing_config=((Get-Content -Path \"c:\\k\\cni.conf\" -Raw) -Replace \"`r\",\"\")" + `
 }
 if($existing_config -ne $cni_template){
-    Set-Content -Path "c:\k\cni\config\cni.conf" -Value $cni_template -NoNewline
+    Set-Content -Path "c:\k\cni.conf" -Value $cni_template -NoNewline
 }
 
-# Return source VIP for HNS network
-(GetSourceVip("OVNKubernetesHNSNetwork"))
+# Create HNS endpoint if it doesn't exist
+$endpoint = Invoke-HNSRequest GET endpoints | where { $_.Name -eq 'VIPEndpoint'}
+if( $endpoint -eq $null) {
+    $endpoint = New-HnsEndpoint -NetworkId $hns_network.ID -Name "VIPEndpoint"
+    Attach-HNSHostEndpoint -EndpointID $endpoint.ID -CompartmentID 1
+}
+
+# Return HNS endpoint IP
+(Get-NetIPConfiguration -AllCompartments -All -Detailed | where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()
 `
 	actual, err := generateNetworkConfigScript("10.0.0.1/32",
-		"OVNKubernetesHNSNetwork", "c:\\k\\hns.psm1", "c:\\k\\cni", "c:\\k\\cni\\config\\cni.conf")
+		"OVNKubernetesHNSNetwork", "c:\\k\\hns.psm1", "c:\\k\\cni.conf")
 	require.NoError(t, err)
 	assert.Equal(t, string(expectedOut), actual)
 }

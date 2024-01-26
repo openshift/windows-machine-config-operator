@@ -46,10 +46,10 @@ const (
 	HybridOverlayLogDir = logDir + "\\hybrid-overlay"
 	// wicdLogDir is the remote wicd log directory
 	wicdLogDir = logDir + "\\wicd"
-	// CNIDir is the directory for storing CNI binaries
-	CNIDir = K8sDir + "\\cni"
+	// cniDir is the directory for storing CNI binaries
+	cniDir = K8sDir + "\\cni"
 	// CniConfDir is the directory for storing CNI configuration
-	CniConfDir = CNIDir + "\\config"
+	CniConfDir = cniDir + "\\config"
 	// ContainerdDir is the directory for storing Containerd binary
 	ContainerdDir = K8sDir + "\\containerd"
 	// ContainerdPath is the location of the containerd exe
@@ -151,7 +151,7 @@ var (
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		remoteDir,
-		CNIDir,
+		cniDir,
 		CniConfDir,
 		logDir,
 		KubeletLogDir,
@@ -188,9 +188,9 @@ func getFilesToTransfer(platform *config.PlatformType) map[string]string {
 		payload.HybridOverlayPath:              K8sDir,
 		payload.HNSPSModule:                    remoteDir,
 		payload.WindowsExporterPath:            K8sDir,
-		payload.WinBridgeCNIPlugin:             CNIDir,
-		payload.HostLocalCNIPlugin:             CNIDir,
-		payload.WinOverlayCNIPlugin:            CNIDir,
+		payload.WinBridgeCNIPlugin:             cniDir,
+		payload.HostLocalCNIPlugin:             cniDir,
+		payload.WinOverlayCNIPlugin:            cniDir,
 		payload.KubeProxyPath:                  K8sDir,
 		payload.KubeletPath:                    K8sDir,
 		payload.KubeLogRunnerPath:              K8sDir,
