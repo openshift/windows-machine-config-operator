@@ -130,48 +130,6 @@ $cni_template=@'
 }
 '@
 
-# from https://github.com/kubernetes-sigs/sig-windows-tools/blob/fbe00b42e2a5cca06bc182e1b6ee579bd65ed1b5/hostprocess/flannel/kube-proxy/start.ps1
-function GetSourceVip($NetworkName)
-{
-    mkdir -force CNI_DIR\sourcevip | Out-Null
-    $sourceVipJson = [io.Path]::Combine("CNI_DIR", "sourcevip",  "sourceVip.json")
-    $sourceVipRequest = [io.Path]::Combine("CNI_DIR", "sourcevip", "sourceVipRequest.json")
-
-    if (Test-Path $sourceVipJson) {
-        $sourceVipJSONData = Get-Content $sourceVipJson | ConvertFrom-Json
-        $vip = $sourceVipJSONData.ip4.ip.Split("/")[0]
-        return $vip
-    }
-
-    $hnsNetwork = Get-HnsNetwork | ? Name -EQ $NetworkName.ToLower()
-    $subnet = $hnsNetwork.Subnets[0].AddressPrefix
-
-    $ipamConfig = @"
-    {"cniVersion": "0.2.0", "name": "$NetworkName", "ipam":{"type":"host-local","ranges":[[{"subnet":"$subnet"}]],"dataDir":"/var/lib/cni/networks"}}
-"@
-
-    $ipamConfig | Out-File $sourceVipRequest
-
-    $env:CNI_COMMAND="ADD"
-    $env:CNI_CONTAINERID="dummy"
-    $env:CNI_NETNS="dummy"
-    $env:CNI_IFNAME="dummy"
-    $env:CNI_PATH="CNI_DIR"
-
-    # reserve an ip address for source VIP, a requirement for kubeproxy in overlay mode
-    Get-Content $sourceVipRequest | CNI_DIR\host-local.exe | Out-File $sourceVipJson
-
-    Remove-Item env:CNI_COMMAND
-    Remove-Item env:CNI_CONTAINERID
-    Remove-Item env:CNI_NETNS
-    Remove-Item env:CNI_IFNAME
-    Remove-Item env:CNI_PATH
-
-    $sourceVipJSONData = Get-Content $sourceVipJson | ConvertFrom-Json
-    $vip = $sourceVipJSONData.ip4.ip.Split("/")[0]
-    return $vip
-}
-
 # Generate CNI Config
 $hns_network=Get-HnsNetwork  | where { $_.Name -eq 'HNS_NETWORK'}
 $subnet=$hns_network.Subnets.AddressPrefix
@@ -188,8 +146,15 @@ if($existing_config -ne $cni_template){
     Set-Content -Path "CNI_CONFIG_PATH" -Value $cni_template -NoNewline
 }
 
-# Return source VIP for HNS network
-(GetSourceVip("HNS_NETWORK"))
+# Create HNS endpoint if it doesn't exist
+$endpoint = Invoke-HNSRequest GET endpoints | where { $_.Name -eq 'VIPEndpoint'}
+if( $endpoint -eq $null) {
+    $endpoint = New-HnsEndpoint -NetworkId $hns_network.ID -Name "VIPEndpoint"
+    Attach-HNSHostEndpoint -EndpointID $endpoint.ID -CompartmentID 1
+}
+
+# Return HNS endpoint IP
+(Get-NetIPConfiguration -AllCompartments -All -Detailed | where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()
 `
 )
 
@@ -212,9 +177,9 @@ func NewFileInfo(path string) (*FileInfo, error) {
 }
 
 // PopulateNetworkConfScript creates the .ps1 file responsible for CNI configuration
-func PopulateNetworkConfScript(clusterCIDR, hnsNetworkName, hnsPSModulePath, cniDir, cniConfigPath string) error {
+func PopulateNetworkConfScript(clusterCIDR, hnsNetworkName, hnsPSModulePath, cniConfigPath string) error {
 	scriptContents, err := generateNetworkConfigScript(clusterCIDR, hnsNetworkName,
-		hnsPSModulePath, cniDir, cniConfigPath)
+		hnsPSModulePath, cniConfigPath)
 	if err != nil {
 		return err
 	}
@@ -223,14 +188,13 @@ func PopulateNetworkConfScript(clusterCIDR, hnsNetworkName, hnsPSModulePath, cni
 
 // generateNetworkConfigScript generates the contents of the .ps1 file responsible for CNI configuration
 func generateNetworkConfigScript(clusterCIDR, hnsNetworkName, hnsPSModulePath,
-	cniDir, cniConfig string) (string, error) {
+	cniConfigPath string) (string, error) {
 	networkConfScript := networkConfTemplate
 	for key, val := range map[string]string{
 		"HNS_NETWORK":          hnsNetworkName,
 		"SERVICE_NETWORK_CIDR": clusterCIDR,
 		"HNS_MODULE_PATH":      hnsPSModulePath,
-		"CNI_DIR":              cniDir,
-		"CNI_CONFIG_PATH":      cniConfig,
+		"CNI_CONFIG_PATH":      cniConfigPath,
 	} {
 		networkConfScript = strings.ReplaceAll(networkConfScript, key, val)
 	}
