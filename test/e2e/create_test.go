@@ -101,7 +101,7 @@ func (tc *testContext) testWindowsNodeCreation(t *testing.T) {
 // these logs can will be written to the artifact directory
 func (tc *testContext) nodelessLogCollection(name, address string) error {
 	// recurse through all files in /var/log and print the file name and file contents
-	cmd := "Get-ChildItem -Path /var/log -Recurse | ForEach-Object {Write-Output $_.FullName; Get-Content $_.FullName}"
+	cmd := "Get-ChildItem -Path /var/log -Recurse | ForEach-Object {Write-Output $_.FullName; Get-Content $_.FullName}; Get-Item -Path /k/cni/config/cni.conf | ForEach-Object {Write-Output $_.FullName; Get-Content $_.FullName};"
 	_, err := tc.runPowerShellSSHJob("print-logs-"+name, cmd, address)
 	return err
 }
