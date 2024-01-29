@@ -658,6 +658,7 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 	falseBool := false
 	trueBool := true
 	kubeAPIQPS := int32(50)
+	emptyString := ""
 	return kubeletconfig.KubeletConfiguration{
 		TypeMeta: meta.TypeMeta{
 			Kind:       "KubeletConfiguration",
@@ -698,6 +699,9 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		RegisterWithTaints: []core.Taint{
 			{Key: "os", Value: "Windows", Effect: core.TaintEffectNoSchedule},
 		},
+		// Set to empty string to override the default. Network configuration in Windows is stored in the
+		// registry database rather than files like in Linux.
+		ResolverConfig: &emptyString,
 	}
 }
 

@@ -237,7 +237,6 @@ func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]stri
 		"--cert-dir=" + certDirectory,
 		"--windows-service",
 		"--node-labels=" + nodeconfig.WindowsOSLabel,
-		"--resolv-conf=",
 		// Allows the kubelet process to get more CPU time slices when compared to other processes running on the
 		// Windows host.
 		// See: https://kubernetes.io/docs/concepts/configuration/windows-resource-management/#resource-management-cpu
