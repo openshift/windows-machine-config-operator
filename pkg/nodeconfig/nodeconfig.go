@@ -692,6 +692,12 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 			"memory":            "1Gi",
 		},
 		ContainerRuntimeEndpoint: "npipe://./pipe/containerd-containerd",
+		// Registers the Kubelet with Windows specific taints so that linux pods won't get scheduled onto
+		// Windows nodes. Explicitly set RegisterNode to ensure RegisterWithTaints takes effect.
+		RegisterNode: &trueBool,
+		RegisterWithTaints: []core.Taint{
+			{Key: "os", Value: "Windows", Effect: core.TaintEffectNoSchedule},
+		},
 	}
 }
 
