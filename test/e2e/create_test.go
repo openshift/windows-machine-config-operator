@@ -33,10 +33,6 @@ const (
 	// vmConfigurationTime is the maximum amount of time expected for a Windows VM to be fully configured and ready for WMCO
 	// after the hardware is provisioned.
 	vmConfigurationTime = 10 * time.Minute
-
-	machineApproverNamespace   = "openshift-cluster-machine-approver"
-	machineApproverDeployment  = "machine-approver"
-	machineApproverPodSelector = "app=machine-approver"
 )
 
 func creationTestSuite(t *testing.T) {
@@ -353,9 +349,7 @@ func (tc *testContext) disableClusterMachineApprover() error {
 	// Scale the Cluster Machine Approver Deployment to 0
 	// This is required for testing BYOH CSR approval feature so that BYOH instances
 	// CSR's are not approved by Cluster Machine Approver
-	expectedPodCount := int32(0)
-	return tc.scaleDeployment(machineApproverNamespace, machineApproverDeployment, machineApproverPodSelector,
-		&expectedPodCount)
+	return tc.scaleMachineApprover(0)
 }
 
 // setPowerShellDefaultShell changes the instance backed by the given Machine to have a default SSH shell of PowerShell
@@ -605,4 +599,11 @@ func (tc *testContext) scaleDeployment(namespace, name, selector string, expecte
 		return fmt.Errorf("error waiting for deployment %s/%s to be scaled: %w", namespace, name, err)
 	}
 	return nil
+}
+
+// scaleMachineApprover scales the machine-approver deployment to the given replica count
+func (tc *testContext) scaleMachineApprover(replicas int) error {
+	replicaCount := int32(replicas)
+	return tc.scaleDeployment("openshift-cluster-machine-approver", "machine-approver", "app=machine-approver",
+		&replicaCount)
 }
