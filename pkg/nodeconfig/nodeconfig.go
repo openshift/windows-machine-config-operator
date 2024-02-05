@@ -24,10 +24,12 @@ import (
 	cloudproviderapi "k8s.io/cloud-provider/api"
 	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	"k8s.io/kubectl/pkg/drain"
+	kubeletconfigv1 "k8s.io/kubelet/config/v1"
 	kubeletconfig "k8s.io/kubelet/config/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
+	"sigs.k8s.io/yaml"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
@@ -393,10 +395,13 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 	if _, ok := kubeletArgs[ignition.CloudConfigOption]; ok {
 		filesToTransfer[ignition.CloudConfigPath] = windows.K8sDir + "\\" + filepath.Base(ignition.CloudConfigPath)
 	}
+	filesToTransfer[ignition.ECRCredentialProviderPath] = windows.CredentialProviderConfig
+
 	filePathsToContents, err := translateIgnitionFilesForWindows(filesToTransfer, ign.GetFiles())
 	if err != nil {
 		return nil, fmt.Errorf("error processing ignition files: %w", err)
 	}
+
 	filePathsToContents[windows.K8sDir+"\\"+KubeletClientCAFilename] = string(ign.GetKubeletCAData())
 	return filePathsToContents, nil
 }
@@ -695,10 +700,38 @@ func translateIgnitionFilesForWindows(ignToWindowsPaths map[string]string, ignit
 			if err != nil {
 				return nil, fmt.Errorf("could not decode %s: %w", ignFile.Node.Path, err)
 			}
+			// Special casing for the ECRCredentialProviderConfig, as the contents needs to be modified for Windows
+			if ignFile.Node.Path == ignition.ECRCredentialProviderPath {
+				contents.Data, err = modifyCredentialProviderConfig(contents.Data)
+				if err != nil {
+					return nil, err
+				}
+			}
 			filePathsToContents[dest] = string(contents.Data)
 		}
 	}
 	return filePathsToContents, nil
+}
+
+// modifyCredentialProviderConfig takes the contents of a CredentialProviderConfig yaml file, and returns one which
+// points to '*.exe' files, instead of binaries without extensions. This is needed for the referenced files to be
+// properly run on Windows.
+func modifyCredentialProviderConfig(fileContents []byte) ([]byte, error) {
+	providerConf := kubeletconfigv1.CredentialProviderConfig{}
+	err := yaml.Unmarshal(fileContents, &providerConf)
+	if err != nil {
+		return []byte{}, fmt.Errorf("could not unmarshal provider config: %w", err)
+	}
+	for i := range providerConf.Providers {
+		if !strings.HasSuffix(providerConf.Providers[i].Name, ".exe") {
+			providerConf.Providers[i].Name += ".exe"
+		}
+	}
+	fileContents, err = yaml.Marshal(&providerConf)
+	if err != nil {
+		return []byte{}, fmt.Errorf("error marshalling provider config: %w", err)
+	}
+	return fileContents, nil
 }
 
 // CreatePubKeyHashAnnotation returns a formatted string which can be used for a public key annotation on a node.
