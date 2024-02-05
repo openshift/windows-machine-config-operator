@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
+	config "k8s.io/kubelet/config/v1"
+	"sigs.k8s.io/yaml"
 )
 
 func TestNewKubeConfigFromSecret(t *testing.T) {
@@ -110,4 +112,39 @@ func TestCreateKubeletConf(t *testing.T) {
 			assert.Equal(t, test.expectedSpec, actualSpec)
 		})
 	}
+}
+
+func TestModifyCredentialProviderConfig(t *testing.T) {
+	input := config.CredentialProviderConfig{
+		Providers: []config.CredentialProvider{
+			{
+				Name:        "quay-provider",
+				MatchImages: []string{"*.quay.io"},
+			},
+			{
+				Name:        "other-provider.exe",
+				MatchImages: []string{"*.other.io"},
+			},
+		},
+	}
+	expected := config.CredentialProviderConfig{
+		Providers: []config.CredentialProvider{
+			{
+				Name:        "quay-provider.exe",
+				MatchImages: []string{"*.quay.io"},
+			},
+			{
+				Name:        "other-provider.exe",
+				MatchImages: []string{"*.other.io"},
+			},
+		},
+	}
+	inputBytes, err := yaml.Marshal(input)
+	require.NoError(t, err)
+	outputBytes, err := modifyCredentialProviderConfig(inputBytes)
+	require.NoError(t, err)
+	output := config.CredentialProviderConfig{}
+	err = yaml.Unmarshal(outputBytes, &output)
+	require.NoError(t, err)
+	assert.Equal(t, expected, output)
 }

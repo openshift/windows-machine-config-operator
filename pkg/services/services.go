@@ -209,6 +209,10 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 
 	// explicitly set node ip and resolves to the first IPv4 address of the default gateway
 	kubeletServiceCmd = fmt.Sprintf("%s --node-ip=%s", kubeletServiceCmd, NodeIPVar)
+	if platform == config.AWSPlatformType {
+		kubeletServiceCmd = fmt.Sprintf("%s --image-credential-provider-bin-dir=%s --image-credential-provider-config=%s",
+			kubeletServiceCmd, windows.K8sDir, windows.CredentialProviderConfig)
+	}
 	preScripts = append(preScripts, servicescm.PowershellPreScript{
 		VariableName: NodeIPVar,
 		Path: "(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | " +
