@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
@@ -59,20 +61,9 @@ func testStorage(t *testing.T) {
 		}()
 	}
 	pvcVolumeSource := &core.PersistentVolumeClaimVolumeSource{ClaimName: pvc.GetName()}
-	selectedNode := &gc.allNodes()[0]
-	affinity, err := getAffinityForNode(selectedNode)
-	require.NoError(t, err)
-	if inTreeUpgrade {
-		patch, err := metadata.GenerateAddPatch(map[string]string{storageTestLabel: "true"}, nil)
-		require.NoError(t, err)
-		_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), selectedNode.GetName(), types.JSONPatchType, patch,
-			meta.PatchOptions{})
-		require.NoError(t, err, "error labeling node for upgrade test")
-	}
-
 	// The deployment will not come to ready if the volume is not able to be attached to the pod. If the deployment is
 	// successful, storage is working as expected.
-	winServerDeployment, err := tc.deployWindowsWebServer("win-webserver-storage-test", affinity, pvcVolumeSource)
+	winServerDeployment, err := tc.deployWindowsWebServer("win-webserver-storage-test", nil, pvcVolumeSource)
 	assert.NoError(t, err)
 	if err == nil && !skipWorkloadDeletion {
 		defer func() {
@@ -82,4 +73,35 @@ func testStorage(t *testing.T) {
 			}
 		}()
 	}
+	if inTreeUpgrade {
+		err = tc.labelPodsNode(winServerDeployment.Spec.Selector.MatchLabels, map[string]string{storageTestLabel: "true"})
+		require.NoError(t, err)
+	}
+}
+
+// labelPodNode labels the Node which has the pod with matchLabels scheduled to it. Throws an error if more than one pod
+// matches the labels.
+func (tc *testContext) labelPodsNode(matchLabels map[string]string, labelsToApply map[string]string) error {
+	if matchLabels == nil {
+		return fmt.Errorf("nill matchLabels")
+	}
+	podList, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), meta.ListOptions{
+		LabelSelector: labels.Set(matchLabels).String()})
+	if err != nil {
+		return fmt.Errorf("error listing pods: %w", err)
+	}
+	if len(podList.Items) != 1 {
+		return fmt.Errorf("expected 1 matching pod, instead found %d: %v", len(podList.Items), podList.Items)
+	}
+	nodeName := podList.Items[0].Spec.NodeName
+	if nodeName == "" {
+		return fmt.Errorf("pod not scheduled to a Node")
+	}
+	patch, err := metadata.GenerateAddPatch(labelsToApply, nil)
+	if err != nil {
+		return err
+	}
+	_, err = tc.client.K8s.CoreV1().Nodes().Patch(context.TODO(), nodeName, types.JSONPatchType, patch,
+		meta.PatchOptions{})
+	return err
 }
