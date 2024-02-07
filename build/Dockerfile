@@ -47,7 +47,7 @@ RUN make kube-proxy
 # Build azure-cloud-node-manager
 WORKDIR /build/windows-machine-config-operator/cloud-provider-azure/
 COPY cloud-provider-azure/ .
-RUN GOOS=windows go build -o azure-cloud-node-manager.exe ./cmd/cloud-node-manager
+RUN GOOS=windows go build -buildvcs=false -o azure-cloud-node-manager.exe ./cmd/cloud-node-manager
 
 # Build CNI plugins
 WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
