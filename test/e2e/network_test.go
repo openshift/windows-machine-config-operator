@@ -18,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	nodev1 "k8s.io/api/node/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -503,6 +504,10 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 	if affinity == nil && volumes == nil {
 		replicaCount = int32(3)
 	}
+	rcName, err := tc.getRuntimeClassName()
+	if err != nil {
+		return nil, err
+	}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	containerUserName := "ContainerAdministrator"
 	runAsNonRoot := false
@@ -528,13 +533,6 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 					OS: &v1.PodOS{
 						Name: v1.Windows,
 					},
-					Tolerations: []v1.Toleration{
-						{
-							Key:    "os",
-							Value:  "Windows",
-							Effect: v1.TaintEffectNoSchedule,
-						},
-					},
 					Containers: []v1.Container{
 						// Windows web server
 						{
@@ -559,8 +557,8 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 							VolumeMounts: volumeMounts,
 						},
 					},
-					NodeSelector: map[string]string{"kubernetes.io/os": "windows"},
-					Volumes:      volumes,
+					RuntimeClassName: &rcName,
+					Volumes:          volumes,
 				},
 			},
 		},
@@ -637,8 +635,7 @@ func (tc *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, continuo
 
 // createLinuxJob creates a job which will run the provided command with a ubi8 image
 func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.Job, error) {
-	linuxNodeSelector := map[string]string{"kubernetes.io/os": "linux"}
-	return tc.createJob(name, ubi8Image, command, linuxNodeSelector, []v1.Toleration{}, nil, &v1.PodOS{Name: v1.Linux})
+	return tc.createJob(name, ubi8Image, command, nil, nil, &v1.PodOS{Name: v1.Linux})
 }
 
 // createWinCurlerJob creates a Job to curl Windows server at given IP address
@@ -660,17 +657,19 @@ func (tc *testContext) getWinCurlerCommand(winServerIP string) string {
 
 // createWindowsServerJob creates a job which will run the provided PowerShell command with a Windows Server image
 func (tc *testContext) createWindowsServerJob(name, pwshCommand string, affinity *v1.Affinity) (*batchv1.Job, error) {
-	windowsNodeSelector := map[string]string{"kubernetes.io/os": "windows"}
-	windowsTolerations := []v1.Toleration{{Key: "os", Value: "Windows", Effect: v1.TaintEffectNoSchedule}}
+	rcName, err := tc.getRuntimeClassName()
+	if err != nil {
+		return nil, err
+	}
 	windowsOS := &v1.PodOS{Name: v1.Windows}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	command := []string{powerShellExe, "-command", pwshCommand}
-	return tc.createJob(name, windowsServerImage, command, windowsNodeSelector, windowsTolerations, affinity, windowsOS)
+	return tc.createJob(name, windowsServerImage, command, &rcName, affinity, windowsOS)
 }
 
 // createJob creates a job on the cluster using the given parameters
-func (tc *testContext) createJob(name, image string, command []string, selector map[string]string,
-	tolerations []v1.Toleration, affinity *v1.Affinity, os *v1.PodOS) (*batchv1.Job, error) {
+func (tc *testContext) createJob(name, image string, command []string, runtimeClassName *string, affinity *v1.Affinity,
+	os *v1.PodOS) (*batchv1.Job, error) {
 	jobsClient := tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -679,10 +678,10 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 		Spec: batchv1.JobSpec{
 			Template: v1.PodTemplateSpec{
 				Spec: v1.PodSpec{
-					Affinity:      affinity,
-					OS:            os,
-					RestartPolicy: v1.RestartPolicyNever,
-					Tolerations:   tolerations,
+					Affinity:         affinity,
+					OS:               os,
+					RestartPolicy:    v1.RestartPolicyNever,
+					RuntimeClassName: runtimeClassName,
 					Containers: []v1.Container{
 						{
 							Name:            name,
@@ -691,7 +690,6 @@ func (tc *testContext) createJob(name, image string, command []string, selector 
 							Command:         command,
 						},
 					},
-					NodeSelector: selector,
 				},
 			},
 		},
@@ -756,5 +754,59 @@ func (tc *testContext) writePodLogs(labelSelector string) {
 	logsErr := ioutil.WriteFile(outputFile, []byte(logs), os.ModePerm)
 	if logsErr != nil {
 		log.Printf("Unable to write pod logs with label %s to file %s", labelSelector, outputFile)
+	}
+}
+
+// getRuntimeClassName returns the name of a runtime class for the given server version. If one does not exist on the
+// cluster, it will be created.
+func (tc *testContext) getRuntimeClassName() (string, error) {
+	build, ok := windows.BuildNumber[tc.windowsServerVersion]
+	if !ok {
+		return "", fmt.Errorf("no known build number for server version %s", tc.windowsServerVersion)
+	}
+	rcName := "windows" + string(tc.windowsServerVersion)
+	rc, err := tc.client.K8s.NodeV1().RuntimeClasses().Get(context.TODO(), rcName, metav1.GetOptions{})
+	if err == nil {
+		return rc.GetName(), nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return "", err
+	}
+	rc = newRuntimeClass(rcName, build)
+	rc, err = tc.client.K8s.NodeV1().RuntimeClasses().Create(context.TODO(), rc, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("error creating RuntimeClass: %w", err)
+	}
+	return rc.GetName(), nil
+}
+
+// newRuntimeClass returns a runtime class for the given windows build
+func newRuntimeClass(name, windowsBuild string) *nodev1.RuntimeClass {
+	return &nodev1.RuntimeClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		// the handler for containerd
+		Handler: "runhcs-wcow-process",
+		Scheduling: &nodev1.Scheduling{
+			NodeSelector: map[string]string{
+				v1.LabelOSStable:     string(v1.Windows),
+				v1.LabelArchStable:   "amd64",
+				v1.LabelWindowsBuild: windowsBuild,
+			},
+			Tolerations: []v1.Toleration{
+				{
+					Key:    "os",
+					Value:  string(v1.Windows),
+					Effect: v1.TaintEffectNoSchedule,
+				},
+				// K8s documentation suggests using lowercase "windows", but WMCO registers nodes with uppercase "Windows".
+				{
+					Key:    "os",
+					Value:  "Windows",
+					Effect: v1.TaintEffectNoSchedule,
+				},
+			},
+		},
 	}
 }
