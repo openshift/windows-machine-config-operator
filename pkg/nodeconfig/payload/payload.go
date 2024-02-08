@@ -138,7 +138,10 @@ $cni_template=$cni_template.Replace("provider_address",$provider_address)
 # Compare CNI config with existing file, and replace if necessary
 $existing_config=""
 if(Test-Path -Path CNI_CONFIG_PATH) {
-` + "    $existing_config=((Get-Content -Path \"CNI_CONFIG_PATH\" -Raw) -Replace \"`r\",\"\")" + `
+    $config_file_content=(Get-Content -Path CNI_CONFIG_PATH -Raw)
+    if($config_file_content -ne $null) {
+` + "        $existing_config=$config_file_content.Replace(\"`r\",\"\")" + `
+    }
 }
 if($existing_config -ne $cni_template){
     Set-Content -Path "CNI_CONFIG_PATH" -Value $cni_template -NoNewline
