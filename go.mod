@@ -8,9 +8,9 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.4.1
-	github.com/openshift/api v0.0.0-20240125191952-1e2afa0f76cf
+	github.com/openshift/api v0.0.0-20240212125214-04ea3891d9cb
 	github.com/openshift/client-go v0.0.0-20240125160436-aa5df63097c4
-	github.com/openshift/library-go v0.0.0-20240126142105-b5320774c6c4
+	github.com/openshift/library-go v0.0.0-20240207105404-126b47137408
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -31,7 +31,7 @@ require (
 	k8s.io/klog/v2 v2.110.1
 	k8s.io/kubectl v0.29.1
 	k8s.io/kubelet v0.29.1
-	sigs.k8s.io/controller-runtime v0.16.3
+	sigs.k8s.io/controller-runtime v0.16.4
 )
 
 require (
@@ -99,7 +99,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20240119083558-1b970713d09a // indirect
+	golang.org/x/exp v0.0.0-20240205201215-2c58cdc269a3 // indirect
 	golang.org/x/net v0.20.0 // indirect
 	golang.org/x/oauth2 v0.15.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
@@ -116,7 +116,7 @@ require (
 	k8s.io/cli-runtime v0.29.1 // indirect
 	k8s.io/component-base v0.29.1 // indirect
 	k8s.io/component-helpers v0.29.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20240126223410-2919ad4fcfec // indirect
+	k8s.io/kube-openapi v0.0.0-20240209001042-7a0d5b415232 // indirect
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
