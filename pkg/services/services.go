@@ -228,7 +228,6 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 // generateKubeletArgs returns the kubelet args required during initial kubelet start up
 func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]string, error) {
 	certDirectory := "c:\\var\\lib\\kubelet\\pki\\"
-	windowsTaints := "os=Windows:NoSchedule"
 	windowsPriorityClass := "ABOVE_NORMAL_PRIORITY_CLASS"
 	// TODO: Removal of deprecated flags to be done in https://issues.redhat.com/browse/WINC-924
 	kubeletArgs := []string{
@@ -237,11 +236,7 @@ func generateKubeletArgs(argsFromIgnition map[string]string, debug bool) ([]stri
 		"--kubeconfig=" + windows.KubeconfigPath,
 		"--cert-dir=" + certDirectory,
 		"--windows-service",
-		// Registers the Kubelet with Windows specific taints so that linux pods won't get scheduled onto
-		// Windows nodes.
-		"--register-with-taints=" + windowsTaints,
 		"--node-labels=" + nodeconfig.WindowsOSLabel,
-		"--resolv-conf=",
 		// Allows the kubelet process to get more CPU time slices when compared to other processes running on the
 		// Windows host.
 		// See: https://kubernetes.io/docs/concepts/configuration/windows-resource-management/#resource-management-cpu
