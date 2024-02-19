@@ -25,13 +25,13 @@ require (
 	golang.org/x/crypto v0.16.0
 	golang.org/x/mod v0.14.0
 	golang.org/x/sys v0.15.0
-	k8s.io/api v0.27.10
-	k8s.io/apimachinery v0.27.10
-	k8s.io/client-go v0.27.10
-	k8s.io/cloud-provider v0.27.10
+	k8s.io/api v0.27.11
+	k8s.io/apimachinery v0.27.11
+	k8s.io/client-go v0.27.11
+	k8s.io/cloud-provider v0.27.11
 	k8s.io/klog/v2 v2.100.1
-	k8s.io/kubectl v0.27.10
-	k8s.io/kubelet v0.27.10
+	k8s.io/kubectl v0.27.11
+	k8s.io/kubelet v0.27.11
 	sigs.k8s.io/controller-runtime v0.15.3
 )
 
@@ -110,10 +110,10 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.27.10 // indirect
-	k8s.io/cli-runtime v0.27.10 // indirect
-	k8s.io/component-base v0.27.10 // indirect
-	k8s.io/component-helpers v0.27.10 // indirect
+	k8s.io/apiextensions-apiserver v0.27.11 // indirect
+	k8s.io/cli-runtime v0.27.11 // indirect
+	k8s.io/component-base v0.27.11 // indirect
+	k8s.io/component-helpers v0.27.11 // indirect
 	k8s.io/kube-openapi v0.0.0-20240209001042-7a0d5b415232 // indirect
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
