@@ -22,6 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
@@ -63,25 +64,42 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 	testCases := []struct {
 		name            string
 		curlerOS        operatingSystem
+		webserverOS     operatingSystem
 		useClusterIPSVC bool
 	}{
 		{
-			name:            "linux and windows",
+			name:            "linux curling windows",
+			webserverOS:     windowsOS,
 			curlerOS:        linux,
 			useClusterIPSVC: false,
 		},
 		{
-			name:            "windows and windows",
+			name:            "windows curling windows",
+			webserverOS:     windowsOS,
 			curlerOS:        windowsOS,
 			useClusterIPSVC: false,
 		},
 		{
-			name:            "linux and windows through a clusterIP svc",
+			name:            "linux curling windows through a clusterIP svc",
+			webserverOS:     windowsOS,
 			curlerOS:        linux,
 			useClusterIPSVC: true,
 		},
 		{
-			name:            "windows and windows through a clusterIP svc",
+			name:            "windows curling windows through a clusterIP svc",
+			webserverOS:     windowsOS,
+			curlerOS:        windowsOS,
+			useClusterIPSVC: true,
+		},
+		{
+			name:            "windows curling linux",
+			webserverOS:     linux,
+			curlerOS:        windowsOS,
+			useClusterIPSVC: false,
+		},
+		{
+			name:            "windows curling linux through a clusterIP svc",
+			webserverOS:     linux,
 			curlerOS:        windowsOS,
 			useClusterIPSVC: true,
 		},
@@ -90,6 +108,15 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 	firstNodeAffinity, err := getAffinityForNode(&gc.allNodes()[0])
 	require.NoError(t, err, "could not get affinity for node")
 
+	linuxServerDeployment, err := tc.deployLinuxWebServer()
+	require.NoError(t, err)
+	defer tc.deleteDeployment(linuxServerDeployment.GetName())
+	linuxServerClusterIP, err := tc.createService(linuxServerDeployment.GetName(), 8080, v1.ServiceTypeClusterIP,
+		*linuxServerDeployment.Spec.Selector)
+	require.NoError(t, err)
+	defer tc.deleteService(linuxServerClusterIP.GetName())
+	linuxServerIP, err := tc.getPodIP(*linuxServerDeployment.Spec.Selector)
+	require.NoError(t, err)
 	for _, node := range gc.allNodes() {
 		t.Run(node.Name, func(t *testing.T) {
 			affinity, err := getAffinityForNode(&node)
@@ -114,18 +141,29 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 			require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeployment.Spec.Selector)
 
 			// Create a clusterIP service which can be used to reach the Windows webserver
-			intermediarySVC, err := tc.createService(winServerDeployment.Name, v1.ServiceTypeClusterIP, *winServerDeployment.Spec.Selector)
+			intermediarySVC, err := tc.createService(winServerDeployment.Name, 80, v1.ServiceTypeClusterIP, *winServerDeployment.Spec.Selector)
 			require.NoError(t, err, "could not create service")
 			defer tc.deleteService(intermediarySVC.Name)
 
 			for _, tt := range testCases {
 				t.Run(tt.name, func(t *testing.T) {
 					var curlerJob *batchv1.Job
-					// Depending on the test the curler pod will reach the Windows webserver either directly or through a
+					// Depending on the test the curler pod will reach the webserver either directly or through a
 					// clusterIP service.
-					endpointIP := winServerIP
-					if tt.useClusterIPSVC {
-						endpointIP = intermediarySVC.Spec.ClusterIP
+					var endpointIP string
+					if tt.webserverOS == windowsOS {
+						if tt.useClusterIPSVC {
+							endpointIP = intermediarySVC.Spec.ClusterIP
+						} else {
+							endpointIP = winServerIP
+
+						}
+					} else {
+						if tt.useClusterIPSVC {
+							endpointIP = linuxServerClusterIP.Spec.ClusterIP
+						} else {
+							endpointIP = linuxServerIP + ":8080"
+						}
 					}
 
 					// create the curler job based on the specified curlerOS
@@ -267,7 +305,7 @@ func (tc *testContext) testNorthSouthNetworking(t *testing.T) {
 // getThroughLoadBalancer does a GET request to the given webserver through a load balancer service
 func (tc *testContext) getThroughLoadBalancer(webserver *appsv1.Deployment) error {
 	// Create a load balancer svc to expose the webserver
-	loadBalancer, err := tc.createService(webserver.Name, v1.ServiceTypeLoadBalancer, *webserver.Spec.Selector)
+	loadBalancer, err := tc.createService(webserver.Name, 80, v1.ServiceTypeLoadBalancer, *webserver.Spec.Selector)
 	if err != nil {
 		return fmt.Errorf("could not create load balancer for Windows Server: %w", err)
 	}
@@ -313,7 +351,8 @@ func retryGET(url string) (*http.Response, error) {
 }
 
 // createService creates a new service of type serviceType for pods matching the label selector
-func (tc *testContext) createService(name string, serviceType v1.ServiceType, selector metav1.LabelSelector) (*v1.Service, error) {
+func (tc *testContext) createService(name string, targetPort int32, serviceType v1.ServiceType,
+	selector metav1.LabelSelector) (*v1.Service, error) {
 	svcSpec := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: name + "-",
@@ -322,8 +361,9 @@ func (tc *testContext) createService(name string, serviceType v1.ServiceType, se
 			Type: serviceType,
 			Ports: []v1.ServicePort{
 				{
-					Protocol: v1.ProtocolTCP,
-					Port:     80,
+					Protocol:   v1.ProtocolTCP,
+					Port:       80,
+					TargetPort: intstr.FromInt32(targetPort),
 				},
 			},
 			Selector: selector.MatchLabels,
@@ -443,6 +483,83 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 		return nil, fmt.Errorf("deployment was unable to scale: %w", err)
 	}
 	return winServerDeployment, nil
+}
+
+// deployLinuxWebServer deploys an apache webserver
+func (tc *testContext) deployLinuxWebServer() (*appsv1.Deployment, error) {
+	name := "linux-webserver"
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: name,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": name,
+				},
+			},
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": name,
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:            "apache",
+							Image:           "registry.access.redhat.com/ubi8/httpd-24:1-299",
+							ImagePullPolicy: v1.PullIfNotPresent,
+							Ports: []v1.ContainerPort{
+								{
+									Protocol:      v1.ProtocolTCP,
+									ContainerPort: 8080,
+								},
+							},
+							VolumeMounts: []v1.VolumeMount{
+								{
+									Name:      "html",
+									ReadOnly:  true,
+									MountPath: "/var/www/html/",
+								},
+							},
+						},
+					},
+					InitContainers: []v1.Container{
+						{
+							Name:    "index-creator",
+							Image:   tc.toolsImage,
+							Command: []string{"bash"},
+							Args:    []string{"-c", "echo '<!DOCTYPE html><html><head><title>Hello world</title></head><body><p>Hello world</p></body></html>' > /var/www/html/index.html"},
+							VolumeMounts: []v1.VolumeMount{
+								{
+									Name:      "html",
+									ReadOnly:  false,
+									MountPath: "/var/www/html/",
+								},
+							},
+						},
+					},
+					Volumes: []v1.Volume{
+						{
+							Name: "html",
+							VolumeSource: v1.VolumeSource{
+								EmptyDir: &v1.EmptyDirVolumeSource{},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Create Deployment
+	deploy, err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).Create(context.TODO(), deployment, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("could not create deployment: %w", err)
+	}
+	err = tc.waitUntilDeploymentScaled(deploy.GetName())
+	return deploy, err
 }
 
 // getVolumeSpec returns a Volume and VolumeMount spec given the volume name, volume source, volume mount name and

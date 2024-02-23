@@ -183,7 +183,7 @@ func (tc *testContext) deployWindowsWorkloadAndTester() (func(), error) {
 		return nil, fmt.Errorf("error creating Windows Webserver deployment for upgrade test: %w", err)
 	}
 	// create a clusterIP service which can be used to reach the Windows webserver
-	intermediarySVC, err := tc.createService(deployment.Name, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
+	intermediarySVC, err := tc.createService(deployment.Name, 80, v1.ServiceTypeClusterIP, *deployment.Spec.Selector)
 	if err != nil {
 		_ = tc.deleteDeployment(deployment.Name)
 		return nil, fmt.Errorf("error creating service for deployment %s: %w", deployment.Name, err)
