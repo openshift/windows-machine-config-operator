@@ -25,7 +25,7 @@ get_OCP_version() {
   fi
   local WMCO_VERSION=$1
   local OCP_VER_MAJOR=4
-  local WMCO_VER_MAJOR=${WMCO_VERSION:0:1}
+  local WMCO_VER_MAJOR=$(echo $WMCO_VERSION | cut -d. -f1)
   # OCP 4.6 maps to WMCO 1.y.z making the WMCO major version always five
   # versions behind OCP Y version
   local DIFFERENCE=5
