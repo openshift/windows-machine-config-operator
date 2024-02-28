@@ -30,6 +30,11 @@ get_OCP_version() {
   # versions behind OCP Y version
   local DIFFERENCE=5
   local OCP_VER_MINOR=$(($DIFFERENCE+$WMCO_VER_MAJOR))
+  # starting on WMCO 10.y.z, the WMCO y-stream follows OCP y-stream
+  if [ "$WMCO_VER_MAJOR" -ge 10 ]; then
+    WMCO_VER_MINOR=$(echo $WMCO_VERSION | cut -d. -f2)
+    OCP_VER_MINOR=${WMCO_VER_MINOR}
+  fi
   echo $OCP_VER_MAJOR.$OCP_VER_MINOR
 }
 
