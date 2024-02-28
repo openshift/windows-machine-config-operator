@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# defines the operator-sdk version used across the hack scripts, e.g. pre-release.sh
+export OPERATOR_SDK_VERSION=v1.32.0
+
 # Default is false unless test is running in COMMUNITY branch
 COMMUNITY=${COMMUNITY:-false}
 
@@ -142,10 +145,20 @@ get_operator_sdk() {
     return
   fi
 
-  DOWNLOAD_DIR=/tmp/operator-sdk
+  OPERATOR_SDK_DOWNLOAD_DIR=$(mktemp -d)
+  OPERATOR_SDK_DOWNLOAD_URL="https://github.com/operator-framework/operator-sdk/releases/download"
   # TODO: Make this download the same version we have in go dependencies in gomod
-  wget --no-verbose -O $DOWNLOAD_DIR https://github.com/operator-framework/operator-sdk/releases/download/v1.32.0/operator-sdk_linux_amd64 -o operator-sdk && chmod +x /tmp/operator-sdk || return
-  echo $DOWNLOAD_DIR
+  wget --no-verbose "${OPERATOR_SDK_DOWNLOAD_URL}"/"${OPERATOR_SDK_VERSION}"/operator-sdk_linux_amd64 \
+    -O "${OPERATOR_SDK_DOWNLOAD_DIR}"/operator-sdk \
+    -o "${OPERATOR_SDK_DOWNLOAD_DIR}"/operator-sdk.log || {
+      echo "Failed to download operator-sdk version ${OPERATOR_SDK_VERSION}"
+      return
+  }
+  chmod +x "${OPERATOR_SDK_DOWNLOAD_DIR}"/operator-sdk || {
+    echo "Failed to make operator-sdk executable"
+    return
+  }
+  echo "${OPERATOR_SDK_DOWNLOAD_DIR}/operator-sdk"
 }
 
 get_packagemanifests_version() {
