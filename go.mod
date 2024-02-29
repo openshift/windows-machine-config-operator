@@ -11,7 +11,7 @@ require (
 	github.com/openshift/api v0.0.0-20240103200955-7ca3a4634e46
 	github.com/openshift/client-go v0.0.0-20221019143426-16aed247da5c
 	github.com/openshift/library-go v0.0.0-20231120144800-ba257b06bf7b
-	github.com/openshift/machine-config-operator v0.0.1-0.20240214134445-f9a34f91a7f0
+	github.com/openshift/machine-config-operator v0.0.1-0.20240219215131-27f73f8c5ee5
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -56,7 +56,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/emicklei/go-restful/v3 v3.11.2 // indirect
+	github.com/emicklei/go-restful/v3 v3.11.3 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.7.0 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
@@ -122,7 +122,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.25.16 // indirect
 	k8s.io/cli-runtime v0.25.16 // indirect
 	k8s.io/component-base v0.25.16 // indirect
-	k8s.io/kube-openapi v0.0.0-20240209001042-7a0d5b415232 // indirect
+	k8s.io/kube-openapi v0.0.0-20240224005224-582cce78233b // indirect
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.12.1 // indirect
