@@ -115,7 +115,7 @@ github.com/coreos/vcontext/validate
 # github.com/davecgh/go-spew v1.1.1
 ## explicit
 github.com/davecgh/go-spew/spew
-# github.com/emicklei/go-restful/v3 v3.11.2
+# github.com/emicklei/go-restful/v3 v3.11.3
 ## explicit; go 1.13
 github.com/emicklei/go-restful/v3
 github.com/emicklei/go-restful/v3/log
@@ -158,7 +158,7 @@ github.com/go-openapi/jsonpointer
 ## explicit; go 1.19
 github.com/go-openapi/jsonreference
 github.com/go-openapi/jsonreference/internal
-# github.com/go-openapi/swag v0.22.8
+# github.com/go-openapi/swag v0.22.9
 ## explicit; go 1.19
 github.com/go-openapi/swag
 # github.com/gogo/protobuf v1.3.2
@@ -309,7 +309,7 @@ github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
 github.com/openshift/library-go/pkg/image/internal/reference
 github.com/openshift/library-go/pkg/image/reference
-# github.com/openshift/machine-config-operator v0.0.1-0.20240123065051-ae739351e6e7
+# github.com/openshift/machine-config-operator v0.0.1-0.20240209042051-3562d8acf833
 ## explicit; go 1.18
 github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1
 # github.com/operator-framework/api v0.16.0
@@ -531,7 +531,7 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/api v0.26.13
+# k8s.io/api v0.26.14
 ## explicit; go 1.19
 k8s.io/api/admission/v1
 k8s.io/api/admission/v1beta1
@@ -587,11 +587,11 @@ k8s.io/api/scheduling/v1beta1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apiextensions-apiserver v0.26.13
+# k8s.io/apiextensions-apiserver v0.26.14
 ## explicit; go 1.19
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1
-# k8s.io/apimachinery v0.26.13
+# k8s.io/apimachinery v0.26.14
 ## explicit; go 1.19
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -645,12 +645,12 @@ k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/netutil
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/cli-runtime v0.26.13
+# k8s.io/cli-runtime v0.26.14
 ## explicit; go 1.19
 k8s.io/cli-runtime/pkg/genericclioptions
 k8s.io/cli-runtime/pkg/printers
 k8s.io/cli-runtime/pkg/resource
-# k8s.io/client-go v0.26.13
+# k8s.io/client-go v0.26.14
 ## explicit; go 1.19
 k8s.io/client-go/applyconfigurations/admissionregistration/v1
 k8s.io/client-go/applyconfigurations/admissionregistration/v1alpha1
@@ -807,11 +807,11 @@ k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/cloud-provider v0.26.13
+# k8s.io/cloud-provider v0.26.14
 ## explicit; go 1.19
 k8s.io/cloud-provider/api
 k8s.io/cloud-provider/node/helpers
-# k8s.io/component-base v0.26.13
+# k8s.io/component-base v0.26.14
 ## explicit; go 1.19
 k8s.io/component-base/cli/flag
 k8s.io/component-base/config
@@ -833,7 +833,7 @@ k8s.io/klog/v2/internal/clock
 k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
-# k8s.io/kube-openapi v0.0.0-20240117194847-208609032b15
+# k8s.io/kube-openapi v0.0.0-20240224005224-582cce78233b
 ## explicit; go 1.21
 k8s.io/kube-openapi/pkg/cached
 k8s.io/kube-openapi/pkg/common
@@ -845,7 +845,7 @@ k8s.io/kube-openapi/pkg/spec3
 k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/util/proto/validation
 k8s.io/kube-openapi/pkg/validation/spec
-# k8s.io/kubectl v0.26.13
+# k8s.io/kubectl v0.26.14
 ## explicit; go 1.19
 k8s.io/kubectl/pkg/cmd/util
 k8s.io/kubectl/pkg/drain
@@ -857,7 +857,7 @@ k8s.io/kubectl/pkg/util/openapi/validation
 k8s.io/kubectl/pkg/util/templates
 k8s.io/kubectl/pkg/util/term
 k8s.io/kubectl/pkg/validation
-# k8s.io/kubelet v0.26.13
+# k8s.io/kubelet v0.26.14
 ## explicit; go 1.19
 k8s.io/kubelet/config/v1beta1
 k8s.io/kubelet/pkg/apis/stats/v1alpha1
