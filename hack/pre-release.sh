@@ -11,7 +11,6 @@ CVP=false
 BASEIMAGE=false
 DISTGIT=false
 GITLAB=false
-OPERATOR_SDK_VERSION=v1.32.0
 
 # codes for printing and resetting pink text
 PINK='\033[95m'
