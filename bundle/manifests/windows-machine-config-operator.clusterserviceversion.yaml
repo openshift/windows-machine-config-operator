@@ -418,7 +418,13 @@ spec:
                 image: REPLACE_IMAGE
                 imagePullPolicy: IfNotPresent
                 name: manager
-                resources: {}
+                resources:
+                  limits:
+                    cpu: 200m
+                    memory: 600Mi
+                  requests:
+                    cpu: 20m
+                    memory: 300Mi
               dnsPolicy: ClusterFirstWithHostNet
               hostNetwork: true
               nodeSelector:

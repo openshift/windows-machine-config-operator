@@ -38,6 +38,13 @@ spec:
         image: controller:latest
         name: manager
         imagePullPolicy: IfNotPresent
+        resources:
+         limits:
+            cpu: 200m
+            memory: 600Mi
+         requests:
+            cpu: 20m
+            memory: 300Mi
         env:
           - name: WATCH_NAMESPACE
             valueFrom:
