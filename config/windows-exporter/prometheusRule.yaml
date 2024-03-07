@@ -45,3 +45,6 @@ spec:
         - expr: |
             label_replace(windows_container_memory_usage_private_working_set_bytes * on(container_id) group_left(namespace, pod, container) kube_pod_container_info{container_id!=""},"container","","","")
           record: container_memory_working_set_bytes
+        - expr: |
+            windows_container_available
+          record: kubelet_running_pods
