@@ -28,13 +28,26 @@ get_OCP_version() {
   fi
   local WMCO_VERSION=$1
   local OCP_VER_MAJOR=4
-  local WMCO_VER_MAJOR=${WMCO_VERSION:0:1}
-  # OCP 4.6 maps to WMCO 1.y.z making the WMCO major version always five
-  # versions behind OCP Y version
-  local DIFFERENCE=5
-  local OCP_VER_MINOR=$(($DIFFERENCE+$WMCO_VER_MAJOR))
-  echo $OCP_VER_MAJOR.$OCP_VER_MINOR
-}
+
+  # Extract the first value of the version
+  first_value=$(echo $WMCO_VERSION | cut -d '.' -f 1)
+
+  #if the version's x value is over 10, then do it the new way
+  if [ $first_value -ge 10 ]; then
+    OCP_VER_MINOR=$(echo $WMCO_VERSION | cut -d '.' -f 2)
+    echo $OCP_VER_MAJOR.$OCP_VER_MINOR
+  else
+   #calculate it the old way, for old versions
+
+    local WMCO_VER_MAJOR=${WMCO_VERSION:0:1}
+    # OCP 4.6 maps to WMCO 1.y.z making the WMCO major version always five
+    # versions behind OCP Y version
+    local DIFFERENCE=5
+    local OCP_VER_MINOR=$(($DIFFERENCE+$WMCO_VER_MAJOR))
+    echo $OCP_VER_MAJOR.$OCP_VER_MINOR
+  fi
+
+ }
 
 # Accepts one argument, the OCP version.
 get_rhel_version(){
