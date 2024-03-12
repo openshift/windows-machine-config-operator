@@ -23,7 +23,7 @@ COPY .gitignore .gitignore
 COPY Makefile Makefile
 COPY build build
 COPY cmd cmd
-COPY controllers controllers
+COPY internal/controller internal/controller
 COPY hack hack
 COPY pkg pkg
 COPY .git .git

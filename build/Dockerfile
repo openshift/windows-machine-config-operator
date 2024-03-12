@@ -85,7 +85,7 @@ COPY vendor vendor
 COPY .gitignore .gitignore
 COPY build build
 COPY cmd cmd
-COPY controllers controllers
+COPY internal/controller internal/controller
 COPY hack hack
 COPY pkg pkg
 RUN make build

@@ -5,7 +5,7 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/internal/controller"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
 )
 
