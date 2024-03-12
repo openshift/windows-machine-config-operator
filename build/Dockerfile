@@ -63,6 +63,11 @@ WORKDIR /build/windows-machine-config-operator/cloud-provider-azure/
 COPY cloud-provider-azure/ .
 RUN GOOS=windows go build -o azure-cloud-node-manager.exe ./cmd/cloud-node-manager
 
+# Build ecr-credential-provider
+WORKDIR /build/windows-machine-config-operator/cloud-provider-aws/
+COPY cloud-provider-aws/ .
+RUN env -u VERSION GOOS=windows make ecr-credential-provider
+
 # Build CNI plugins
 WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
 COPY containernetworking-plugins/ .
@@ -105,6 +110,7 @@ RUN make build-daemon
 #│   └── containerd_conf.toml
 #├── csi-proxy/
 #│   ├── csi-proxy.exe
+#├── ecr-credential-provider.exe
 #├── generated/
 #├── hybrid-overlay-node.exe
 #├── kube-node/
@@ -133,6 +139,9 @@ COPY --from=build /build/windows-machine-config-operator/windows_exporter/window
 
 # Copy azure-cloud-node-manager.exe
 COPY --from=build /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe .
+
+# Copy ecr-credential-provider
+COPY --from=build /build/windows-machine-config-operator/cloud-provider-aws/ecr-credential-provider ecr-credential-provider.exe
 
 # Copy containerd.exe, containerd-shim-runhcs-v1.exe and containerd config containerd_conf.toml
 WORKDIR /payload/containerd/
