@@ -1,0 +1,4 @@
+export GOVC_URL=https://vcenter.ibmc.devcluster.openshift.com
+export GOVC_USERNAME=xxxxxxx@ibmc.devcluster.openshift.com
+export GOVC_PASSWORD='xxxxxxx'
+export GOVC_INSECURE=true
