@@ -58,6 +58,8 @@ const (
 	ContainerdPath = ContainerdDir + "\\containerd.exe"
 	// ContainerdConfPath is the location of containerd config file
 	ContainerdConfPath = ContainerdDir + "\\containerd_conf.toml"
+	// containerdConfigDir is the remote directory for containerd registry config
+	containerdConfigDir = ContainerdDir + "\\registries"
 	// containerdLogDir is the remote containerd log directory
 	containerdLogDir = logDir + "\\containerd"
 	// ContainerdLogPath is the location of the containerd log file
@@ -165,6 +167,7 @@ var (
 		HybridOverlayLogDir,
 		ContainerdDir,
 		containerdLogDir,
+		containerdConfigDir,
 		podManifestDirectory,
 		K8sDir,
 	}
