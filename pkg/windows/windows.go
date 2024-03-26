@@ -128,8 +128,6 @@ const (
 	// cmdExitNoStatus is part of the error message returned when a command takes too long to report status back to
 	// PowerShell.
 	cmdExitNoStatus = "command exited without exit status or exit signal"
-	// removeHNSCommand is the Windows command used to remove HNS network.
-	removeHNSCommand = "Remove-HnsNetwork"
 	// ManagedTag indicates that the service being described is managed by OpenShift. This ensures that all services
 	// created as part of Node configuration can be searched for by checking their description for this string
 	ManagedTag = "OpenShift managed"
@@ -402,12 +400,6 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 
 	out, err := vm.interact.run(cmd)
 	if err != nil {
-		// Hack to not print the error log for "sc.exe qc" returning 1060 for non existent services
-		// and not print error when the command takes too long to return after removing HNS networks.
-		if !(strings.Contains(cmd, serviceQueryCmd) && strings.Contains(out, serviceNotFound)) &&
-			!(strings.Contains(err.Error(), cmdExitNoStatus) && strings.HasSuffix(cmd, removeHNSCommand+";\"")) {
-			vm.log.Error(err, "error running", "cmd", cmd, "out", out)
-		}
 		return out, fmt.Errorf("error running %s: %w", cmd, err)
 	}
 	vm.log.V(1).Info("run", "cmd", cmd, "out", out)
