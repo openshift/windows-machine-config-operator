@@ -353,11 +353,11 @@ func retrieveCertContext(store windows.Handle, targetCert *x509.Certificate) (*w
 		}
 
 		if current.Equal(targetCert) {
-			klog.Infof("found %s existing system certificate", certContext.CertInfo.Subject)
+			klog.Infof("found %s existing system certificate", targetCert.Subject.String())
 			return certContext, nil
 		}
 	}
-	klog.Infof("target cert not found in root system store: %s", targetCert.Subject)
+	klog.Infof("target cert not found in root system store: %s", targetCert.Subject.String())
 	return nil, nil
 }
 
