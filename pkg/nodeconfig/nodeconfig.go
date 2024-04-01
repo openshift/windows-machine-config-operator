@@ -12,7 +12,6 @@ import (
 	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
-	clientset "github.com/openshift/client-go/config/clientset/versioned"
 	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
@@ -28,7 +27,6 @@ import (
 	kubeletconfig "k8s.io/kubelet/config/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/yaml"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
@@ -196,11 +194,6 @@ func (nc *nodeConfig) Configure() error {
 				nc.node.GetName(), err)
 		}
 
-		ownedByCCM, err := isCloudControllerOwnedByCCM()
-		if err != nil {
-			return fmt.Errorf("unable to check if cloud controller owned by cloud controller manager: %w", err)
-		}
-
 		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdKC); err != nil {
 			return fmt.Errorf("configuring WICD failed: %w", err)
 		}
@@ -220,10 +213,9 @@ func (nc *nodeConfig) Configure() error {
 			return fmt.Errorf("error getting node object: %w", err)
 		}
 
-		// If we deploy on Azure with CCM support, we have to explicitly remove the cloud taint, because cloud node
-		// manager running on the node can't do it itself, due to lack of RBAC permissions given by the node
-		// kubeconfig it uses.
-		if ownedByCCM && nc.platformType == configv1.AzurePlatformType {
+		// If we deploy on Azure, we have to explicitly remove the cloud taint, because the cloud node manager running
+		// on the node can't do it itself, due to lack of RBAC permissions given by the node kubeconfig it uses.
+		if nc.platformType == configv1.AzurePlatformType {
 			// TODO: The proper long term solution is to run this as a pod and give it the correct permissions
 			// via service account. This isn't currently possible as we are unable to build Windows container images
 			// due to shortcomings in our build system.
@@ -467,22 +459,6 @@ func createKubeletConf(clusterServiceCIDR string) (string, error) {
 	kubeletConfigData = append(kubeletConfigData, enforceNodeAllocatable...)
 
 	return string(kubeletConfigData), nil
-}
-
-// isCloudControllerOwnedByCCM checks if Cloud Controllers are managed by Cloud Controller Manager (CCM)
-// instead of Kube Controller Manager.
-func isCloudControllerOwnedByCCM() (bool, error) {
-	cfg, err := crclientcfg.GetConfig()
-	if err != nil {
-		return false, fmt.Errorf("unable to get config to talk to kubernetes api server: %w", err)
-	}
-
-	client, err := clientset.NewForConfig(cfg)
-	if err != nil {
-		return false, fmt.Errorf("unable to get client from the given config: %w", err)
-	}
-
-	return cluster.IsCloudControllerOwnedByCCM(client)
 }
 
 // setNode finds the Node associated with the VM that has been configured, and sets the node field of the
