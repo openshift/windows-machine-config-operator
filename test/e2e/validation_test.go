@@ -26,7 +26,6 @@ import (
 	cloudproviderapi "k8s.io/cloud-provider/api"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
-	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
@@ -538,15 +537,11 @@ func (tc *testContext) testExpectedServicesRunning(t *testing.T) {
 // expectedWindowsServices returns a map of the names of the WMCO owned Windows services, with a value indicating if it
 // should or should not be running on the instance.
 func (tc *testContext) expectedWindowsServices(alwaysRequiredSvcs []string) (map[string]bool, error) {
-	ownedByCCM, err := cluster.IsCloudControllerOwnedByCCM(tc.client.Config)
-	if err != nil {
-		return nil, err
-	}
 	serviceMap := make(map[string]bool)
 	for _, svc := range alwaysRequiredSvcs {
 		serviceMap[svc] = true
 	}
-	if ownedByCCM && tc.CloudProvider.GetType() == config.AzurePlatformType {
+	if tc.CloudProvider.GetType() == config.AzurePlatformType {
 		serviceMap[windows.AzureCloudNodeManagerServiceName] = true
 	} else {
 		serviceMap[windows.AzureCloudNodeManagerServiceName] = false

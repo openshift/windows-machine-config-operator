@@ -27,7 +27,7 @@ const (
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
 // will be enabled for services that support it.
 func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort string, platform config.PlatformType,
-	ccmEnabled, debug bool) (*servicescm.Data, error) {
+	debug bool) (*servicescm.Data, error) {
 	kubeletConfiguration, err := getKubeletServiceConfiguration(kubeletArgsFromIgnition, debug, platform)
 	if err != nil {
 		return nil, fmt.Errorf("could not determine kubelet service configuration spec: %w", err)
@@ -47,7 +47,7 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 		kubeProxyConfiguration(debug),
 		csiProxyConfiguration(debug),
 	}
-	if platform == config.AzurePlatformType && ccmEnabled {
+	if platform == config.AzurePlatformType {
 		*services = append(*services, azureCloudNodeManagerConfiguration())
 	}
 	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
