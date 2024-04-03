@@ -32,6 +32,7 @@ require (
 	k8s.io/kubectl v0.28.8
 	k8s.io/kubelet v0.28.8
 	sigs.k8s.io/controller-runtime v0.16.5
+	sigs.k8s.io/yaml v1.3.0
 )
 
 require (
@@ -119,5 +120,4 @@ require (
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.14.3-0.20230601165947-6ce0bf390ce3 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.3.0 // indirect
-	sigs.k8s.io/yaml v1.3.0 // indirect
 )

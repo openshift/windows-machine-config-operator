@@ -6,6 +6,8 @@ excludes:
   - matchtype: name
     regexp: ^testdata$
   - matchtype: path
+    regexp: cloud-provider-aws
+  - matchtype: path
     regexp: cloud-provider-azure
   - matchtype: path
     regexp: container*
