@@ -260,7 +260,7 @@ github.com/munnerz/goautoneg
 # github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f
 ## explicit
 github.com/mxk/go-flowrate/flowrate
-# github.com/openshift/api v0.0.0-20240401200911-ab1b479a063f
+# github.com/openshift/api v0.0.0-20240405191225-abd990ce290b
 ## explicit; go 1.21
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -273,7 +273,7 @@ github.com/openshift/api/machineconfiguration/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/route/v1
-# github.com/openshift/client-go v0.0.0-20240325151210-66398bfc44e1
+# github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
 ## explicit; go 1.21
 github.com/openshift/client-go/config/applyconfigurations/config/v1
 github.com/openshift/client-go/config/applyconfigurations/config/v1alpha1
@@ -307,7 +307,7 @@ github.com/openshift/client-go/route/applyconfigurations/internal
 github.com/openshift/client-go/route/applyconfigurations/route/v1
 github.com/openshift/client-go/route/clientset/versioned/scheme
 github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
-# github.com/openshift/library-go v0.0.0-20240329173834-0f907b20fed1
+# github.com/openshift/library-go v0.0.0-20240408090355-0b298992f8cc
 ## explicit; go 1.21
 github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
@@ -419,7 +419,7 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
-# golang.org/x/crypto v0.21.0
+# golang.org/x/crypto v0.22.0
 ## explicit; go 1.18
 golang.org/x/crypto/blowfish
 golang.org/x/crypto/cast5
@@ -436,16 +436,16 @@ golang.org/x/crypto/openpgp/packet
 golang.org/x/crypto/openpgp/s2k
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8
+# golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0
 ## explicit; go 1.20
 golang.org/x/exp/maps
-# golang.org/x/mod v0.16.0
+# golang.org/x/mod v0.17.0
 ## explicit; go 1.18
 golang.org/x/mod/internal/lazyregexp
 golang.org/x/mod/modfile
 golang.org/x/mod/module
 golang.org/x/mod/semver
-# golang.org/x/net v0.22.0
+# golang.org/x/net v0.24.0
 ## explicit; go 1.18
 golang.org/x/net/html
 golang.org/x/net/html/atom
@@ -459,10 +459,10 @@ golang.org/x/net/proxy
 ## explicit; go 1.18
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
-# golang.org/x/sync v0.6.0
+# golang.org/x/sync v0.7.0
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
-# golang.org/x/sys v0.18.0
+# golang.org/x/sys v0.19.0
 ## explicit; go 1.18
 golang.org/x/sys/cpu
 golang.org/x/sys/plan9
@@ -471,7 +471,7 @@ golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
 golang.org/x/sys/windows/svc
 golang.org/x/sys/windows/svc/mgr
-# golang.org/x/term v0.18.0
+# golang.org/x/term v0.19.0
 ## explicit; go 1.18
 golang.org/x/term
 # golang.org/x/text v0.14.0
@@ -865,7 +865,7 @@ k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
-# k8s.io/kube-openapi v0.0.0-20240322212309-b815d8309940
+# k8s.io/kube-openapi v0.0.0-20240403164606-bc84c2ddaf99
 ## explicit; go 1.20
 k8s.io/kube-openapi/pkg/cached
 k8s.io/kube-openapi/pkg/common
