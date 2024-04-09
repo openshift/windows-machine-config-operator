@@ -26,6 +26,7 @@ set -euo pipefail
 # * Run this script ./hack/errata-check.sh <branch_name>
 
 # Set variables
+JIRA_API_TOKEN_PATH="$HOME/.jira/token"
 ERRATA_API_URL="https://errata.devel.redhat.com/api/v1/erratum"
 RED=$(tput setaf 1)
 GREEN=$(tput setaf 2)
@@ -170,7 +171,14 @@ function query-jira-issue {
   local result
   local exitcode
   local url="https://issues.redhat.com/rest/api/2/issue/$jira_id"
-  result=$(curl -s "$url")
+  local auth_header
+  # Optionally authenticate with JIRA using the user's Personal Access Token
+  if [[ -f $JIRA_API_TOKEN_PATH && -s $JIRA_API_TOKEN_PATH ]]; then
+    auth_header="Authorization: Bearer $(cat $JIRA_API_TOKEN_PATH)"
+    result=$(curl -s -H "$auth_header" "$url")
+  else
+    result=$(curl -s "$url")
+  fi
   exitcode=$?
   if [ $exitcode -ne 0 ]; then
     print-error "Unable to curl server. (error: $exitcode, url: $url)"
