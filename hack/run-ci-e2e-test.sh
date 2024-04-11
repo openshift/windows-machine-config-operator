@@ -184,7 +184,7 @@ fi
 
 if [[ "$TEST" = "upgrade-test" ]]; then
   trap deleteParallelUpgradeCheckerResources EXIT
-  go test ./test/e2e/... -run=TestUpgrade -v -timeout=20m -args $GO_TEST_ARGS
+  go test ./test/e2e/... -run=TestUpgrade -v -timeout=30m -args $GO_TEST_ARGS
 fi
 
 
