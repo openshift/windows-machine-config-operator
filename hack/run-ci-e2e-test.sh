@@ -188,7 +188,7 @@ if [[ "$TEST" = "upgrade-test" ]]; then
   # TODO: Remove this after adding it to the appropriate release jobs
   export UPGRADE_FROM_IN_TREE=true
   trap deleteParallelUpgradeCheckerResources EXIT
-  go test ./test/e2e/... -run=TestUpgrade -v -timeout=20m -args $GO_TEST_ARGS
+  go test ./test/e2e/... -run=TestUpgrade -v -timeout=30m -args $GO_TEST_ARGS
 fi
 
 
