@@ -150,6 +150,22 @@ rules:
 - apiGroups:
   - config.openshift.io
   resources:
+  - imagedigestmirrorsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - imagetagmirrorsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - config.openshift.io
+  resources:
   - infrastructures
   verbs:
   - get
