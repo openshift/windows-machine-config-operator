@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/registries"
 )
 
 //+kubebuilder:rbac:groups="config.openshift.io",resources=imagedigestmirrorsets,verbs=get;list;watch
@@ -66,6 +67,18 @@ func NewRegistryReconciler(mgr manager.Manager, clusterConfig cluster.Config,
 // related to image registry config and aims to move the current state of the cluster closer to the desired state.
 func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	r.log = r.log.WithValues(RegistryController, req.NamespacedName)
+
+	// List all IDMS/ITMS resources
+	imageDigestMirrorSetList := &config.ImageDigestMirrorSetList{}
+	if err = r.client.List(ctx, imageDigestMirrorSetList); err != nil {
+		return ctrl.Result{}, fmt.Errorf("error getting IDMS list: %w", err)
+	}
+	imageTagMirrorSetList := &config.ImageTagMirrorSetList{}
+	if err = r.client.List(ctx, imageTagMirrorSetList); err != nil {
+		return ctrl.Result{}, fmt.Errorf("error getting ITMS list: %w", err)
+	}
+
+	_ = registries.NewRegistryConfig(imageDigestMirrorSetList.Items, imageTagMirrorSetList.Items)
 
 	return ctrl.Result{}, nil
 }
