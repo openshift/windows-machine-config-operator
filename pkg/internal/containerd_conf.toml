@@ -134,7 +134,7 @@ version = 2
       key_model = "node"
 
     [plugins."io.containerd.grpc.v1.cri".registry]
-      config_path = ""
+      config_path = "C:\\k\\containerd\\registries"
 
       [plugins."io.containerd.grpc.v1.cri".registry.auths]
 
