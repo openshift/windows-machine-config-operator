@@ -31,6 +31,8 @@ const (
 	RenderedWorkerPrefix = "rendered-worker-"
 	// CloudConfigPath is the path to the cloud config file as defined in ignition
 	CloudConfigPath = "/etc/kubernetes/cloud.conf"
+	// CloudConfigPath is the path to the ecr credential provider config as defined in ignition
+	ECRCredentialProviderPath = "/etc/kubernetes/credential-providers/ecr-credential-provider.yaml"
 )
 
 // Ignition is a representation of an Ignition resource

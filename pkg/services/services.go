@@ -210,6 +210,12 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 		// special case substitution handled in WICD itself
 		kubeletServiceCmd = fmt.Sprintf("%s --node-ip=%s", kubeletServiceCmd, NodeIPVar)
 	}
+
+	// explicitly set node ip and resolves to the first IPv4 address of the default gateway
+	if platform == config.AWSPlatformType {
+		kubeletServiceCmd = fmt.Sprintf("%s --image-credential-provider-bin-dir=%s --image-credential-provider-config=%s",
+			kubeletServiceCmd, windows.K8sDir, windows.CredentialProviderConfig)
+	}
 	return servicescm.Service{
 		Name:                   windows.KubeletServiceName,
 		Command:                kubeletServiceCmd,

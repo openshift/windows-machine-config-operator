@@ -34,6 +34,8 @@ const (
 	HNSPSModule = remoteDir + "\\hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
 	K8sDir = "C:\\k"
+	// CredentialProviderConfig is the config file for the credential provider
+	CredentialProviderConfig = K8sDir + "\\credential-provider-config.yaml"
 	// KubeconfigPath is the remote location of the kubelet's kubeconfig
 	KubeconfigPath = K8sDir + "\\kubeconfig"
 	// logDir is the remote kubernetes log directory
@@ -72,6 +74,8 @@ const (
 	NetworkConfScriptPath = remoteDir + "\\network-conf.ps1"
 	// AzureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
 	AzureCloudNodeManagerPath = K8sDir + "\\" + payload.AzureCloudNodeManager
+	// ECRCredentialProviderPath is the location of ecr credential provider exe
+	ECRCredentialProviderPath = K8sDir + "\\ecr-credential-provider.exe"
 	// podManifestDirectory is the directory needed by kubelet for the static pods
 	// We shouldn't override if the pod manifest directory already exists
 	podManifestDirectory = K8sDir + "\\etc\\kubernetes\\manifests"
@@ -201,7 +205,13 @@ func getFilesToTransfer(platform *config.PlatformType) map[string]string {
 		payload.NetworkConfigurationScript:     remoteDir,
 	}
 
-	if platform != nil && *platform == config.AzurePlatformType {
+	if platform == nil {
+		return srcDestPairs
+	}
+	switch *platform {
+	case config.AWSPlatformType:
+		srcDestPairs[payload.ECRCredentialProviderPath] = K8sDir
+	case config.AzurePlatformType:
 		srcDestPairs[payload.AzureCloudNodeManagerPath] = K8sDir
 	}
 	return srcDestPairs

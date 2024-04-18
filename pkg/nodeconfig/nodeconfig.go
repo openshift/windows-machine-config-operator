@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	clientset "github.com/openshift/client-go/config/clientset/versioned"
@@ -23,10 +24,12 @@ import (
 	cloudproviderapi "k8s.io/cloud-provider/api"
 	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	"k8s.io/kubectl/pkg/drain"
+	kubeletconfigv1 "k8s.io/kubelet/config/v1"
 	kubeletconfig "k8s.io/kubelet/config/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
+	"sigs.k8s.io/yaml"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/certificates"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
@@ -387,31 +390,19 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 		return nil, err
 	}
 
-	filesToTransfer := map[string]struct{}{}
+	// create a map of 'ignition files':'desired path on a Windows instance'
+	filesToTransfer := map[string]string{}
 	if _, ok := kubeletArgs[ignition.CloudConfigOption]; ok {
-		filesToTransfer[ignition.CloudConfigPath] = struct{}{}
+		filesToTransfer[ignition.CloudConfigPath] = windows.K8sDir + "\\" + filepath.Base(ignition.CloudConfigPath)
 	}
-	filePathsToContents := make(map[string]string)
-	// process kubelet-ca
+	filesToTransfer[ignition.ECRCredentialProviderPath] = windows.CredentialProviderConfig
+
+	filePathsToContents, err := translateIgnitionFilesForWindows(filesToTransfer, ign.GetFiles())
+	if err != nil {
+		return nil, fmt.Errorf("error processing ignition files: %w", err)
+	}
+
 	filePathsToContents[windows.K8sDir+"\\"+KubeletClientCAFilename] = string(ign.GetKubeletCAData())
-	// loop through all the files in the ignition if they are files to transfer
-	if len(filesToTransfer) == 0 {
-		return filePathsToContents, nil
-	}
-	// For each new file in the ignition file check if is a file we are interested in and, if so, decode its contents
-	for _, ignFile := range ign.GetFiles() {
-		if _, ok := filesToTransfer[ignFile.Node.Path]; ok {
-			if ignFile.Contents.Source == nil {
-				return nil, fmt.Errorf("could not process %s: File is empty", ignFile.Node.Path)
-			}
-			contents, err := dataurl.DecodeString(*ignFile.Contents.Source)
-			if err != nil {
-				return nil, fmt.Errorf("could not decode %s: %w", ignFile.Node.Path, err)
-			}
-			fileName := filepath.Base(ignFile.Node.Path)
-			filePathsToContents[windows.K8sDir+"\\"+fileName] = string(contents.Data)
-		}
-	}
 	return filePathsToContents, nil
 }
 
@@ -693,6 +684,54 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		},
 		ContainerRuntimeEndpoint: "npipe://./pipe/containerd-containerd",
 	}
+}
+
+// translateIgnitionFilesForWindows returns a mapping of Windows file paths and contents, as specified by the given
+// ignition file entries. The argument ignToWindowsPaths should be a mapping of the ignition files the caller is
+// interested in, and the desired path for the file on Windows instances.
+func translateIgnitionFilesForWindows(ignToWindowsPaths map[string]string, ignitionFiles []ignCfgTypes.File) (map[string]string, error) {
+	filePathsToContents := make(map[string]string)
+	for _, ignFile := range ignitionFiles {
+		if dest, ok := ignToWindowsPaths[ignFile.Node.Path]; ok {
+			if ignFile.Contents.Source == nil {
+				return nil, fmt.Errorf("could not process %s: File is empty", ignFile.Node.Path)
+			}
+			contents, err := dataurl.DecodeString(*ignFile.Contents.Source)
+			if err != nil {
+				return nil, fmt.Errorf("could not decode %s: %w", ignFile.Node.Path, err)
+			}
+			// Special casing for the ECRCredentialProviderConfig, as the contents needs to be modified for Windows
+			if ignFile.Node.Path == ignition.ECRCredentialProviderPath {
+				contents.Data, err = modifyCredentialProviderConfig(contents.Data)
+				if err != nil {
+					return nil, err
+				}
+			}
+			filePathsToContents[dest] = string(contents.Data)
+		}
+	}
+	return filePathsToContents, nil
+}
+
+// modifyCredentialProviderConfig takes the contents of a CredentialProviderConfig yaml file, and returns one which
+// points to '*.exe' files, instead of binaries without extensions. This is needed for the referenced files to be
+// properly run on Windows.
+func modifyCredentialProviderConfig(fileContents []byte) ([]byte, error) {
+	providerConf := kubeletconfigv1.CredentialProviderConfig{}
+	err := yaml.Unmarshal(fileContents, &providerConf)
+	if err != nil {
+		return []byte{}, fmt.Errorf("could not unmarshal provider config: %w", err)
+	}
+	for i := range providerConf.Providers {
+		if !strings.HasSuffix(providerConf.Providers[i].Name, ".exe") {
+			providerConf.Providers[i].Name += ".exe"
+		}
+	}
+	fileContents, err = yaml.Marshal(&providerConf)
+	if err != nil {
+		return []byte{}, fmt.Errorf("error marshalling provider config: %w", err)
+	}
+	return fileContents, nil
 }
 
 // CreatePubKeyHashAnnotation returns a formatted string which can be used for a public key annotation on a node.
