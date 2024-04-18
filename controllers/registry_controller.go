@@ -79,6 +79,7 @@ func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	}
 
 	_ = registries.NewRegistryConfig(imageDigestMirrorSetList.Items, imageTagMirrorSetList.Items)
+	// TODO: transfer generated config files to Windows nodes as part of WINC-1222
 
 	return ctrl.Result{}, nil
 }

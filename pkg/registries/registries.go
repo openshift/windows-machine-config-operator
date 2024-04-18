@@ -1,6 +1,7 @@
 package registries
 
 import (
+	"fmt"
 	"sort"
 
 	config "github.com/openshift/api/config/v1"
@@ -135,5 +136,32 @@ func mergeMirrors(existingMirrors, newMirrors []mirror) []mirror {
 	for _, m := range uniqueMirrors {
 		result = append(result, m)
 	}
+	return result
+}
+
+// generateConfig is a serialization method that generates a valid TOML representation from a mirrorSet object.
+// Results in content usable as a containerd image registry configuration file.
+func (ms *mirrorSet) generateConfig() string {
+	result := ""
+
+	if ms.mirrorSourcePolicy == config.AllowContactingSource {
+		result += fmt.Sprintf("server = \"https://%s\"", ms.source)
+		result += "\r\n\r\n"
+	}
+
+	for _, m := range ms.mirrors {
+		result += fmt.Sprintf("[host.\"https://%s\"]", m.host)
+		result += "\r\n"
+
+		var hostCapabilities string
+		if m.resolveTags {
+			hostCapabilities = "  capabilities = [\"pull\", \"resolve\"]"
+		} else {
+			hostCapabilities = "  capabilities = [\"pull\"]"
+		}
+		result += hostCapabilities
+		result += "\r\n"
+	}
+
 	return result
 }

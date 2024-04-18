@@ -7,6 +7,79 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestGenerateConfig(t *testing.T) {
+	testCases := []struct {
+		name           string
+		input          mirrorSet
+		expectedOutput string
+	}{
+		{
+			name: "basic one digest mirror",
+			input: mirrorSet{
+				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				mirrors: []mirror{
+					{"example.io/example/ubi-minimal", false},
+				},
+				mirrorSourcePolicy: config.AllowContactingSource,
+			},
+			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n",
+		},
+		{
+			name: "basic one tag mirror",
+			input: mirrorSet{
+				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				mirrors: []mirror{
+					{"example.io/example/ubi-minimal", true},
+				},
+				mirrorSourcePolicy: config.AllowContactingSource,
+			},
+			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+		},
+		{
+			name: "one digest mirror never contact source",
+			input: mirrorSet{
+				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				mirrors: []mirror{
+					{"example.io/example/ubi-minimal", false},
+				},
+				mirrorSourcePolicy: config.NeverContactSource,
+			},
+			expectedOutput: "[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n",
+		},
+		{
+			name: "one tag mirror never contact source",
+			input: mirrorSet{
+				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				mirrors: []mirror{
+					{"example.io/example/ubi-minimal", true},
+				},
+				mirrorSourcePolicy: config.NeverContactSource,
+			},
+			expectedOutput: "[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+		},
+		{
+			name: "multiple mirrors",
+			input: mirrorSet{
+				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				mirrors: []mirror{
+					{"example.io/example/ubi-minimal", false},
+					{"mirror.example.com/redhat", false},
+					{"mirror.example.net/image", true},
+				},
+				mirrorSourcePolicy: config.AllowContactingSource,
+			},
+			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			out := test.input.generateConfig()
+			assert.Equal(t, out, test.expectedOutput)
+		})
+	}
+}
+
 func TestMergeMirrorSets(t *testing.T) {
 	testCases := []struct {
 		name  string
