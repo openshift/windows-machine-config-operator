@@ -356,7 +356,7 @@ var (
 					reportProblemsToJiraComponent("Networking/ovn-kubernetes").
 					contactPerson("tssurya").
 					productScope(ocpSpecific).
-					enableIn(TechPreviewNoUpgrade).
+					enableIn(Default, TechPreviewNoUpgrade).
 					mustRegister()
 
 	FeatureGateNetworkLiveMigration = newFeatureGate("NetworkLiveMigration").
@@ -365,6 +365,13 @@ var (
 					productScope(ocpSpecific).
 					enableIn(Default, TechPreviewNoUpgrade).
 					mustRegister()
+
+	FeatureGateNetworkDiagnosticsConfig = newFeatureGate("NetworkDiagnosticsConfig").
+						reportProblemsToJiraComponent("Networking/cluster-network-operator").
+						contactPerson("kyrtapz").
+						productScope(ocpSpecific).
+						enableIn(TechPreviewNoUpgrade).
+						mustRegister()
 
 	FeatureGateHardwareSpeed = newFeatureGate("HardwareSpeed").
 					reportProblemsToJiraComponent("etcd").
