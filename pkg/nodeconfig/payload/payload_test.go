@@ -24,7 +24,6 @@ $cni_template=@'
     },
     "ipam":{
         "type":"host-local",
-        "subnet":"ovn_host_subnet"
     },
     "policies":[
     {
@@ -66,8 +65,6 @@ $cni_template=@'
 
 # Generate CNI Config
 $hns_network=Get-HnsNetwork  | where { $_.Name -eq 'OVNKubernetesHNSNetwork'}
-$subnet=$hns_network.Subnets.AddressPrefix
-$cni_template=$cni_template.Replace("ovn_host_subnet",$subnet)
 $provider_address=$hns_network.ManagementIP
 $cni_template=$cni_template.Replace("provider_address",$provider_address)
 
