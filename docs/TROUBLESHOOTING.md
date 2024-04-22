@@ -12,8 +12,8 @@ oc logs -f deployment/windows-machine-config-operator -n openshift-windows-machi
 File a GitHub issue and attach the logs to the issue along with the *MachineSet* used.
 
 ## Windows Server 2019 LTSC (1809) nodes never become Ready
-Ensure that you have not configured the cluster with a
-[custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vSphere) as that is not a supported feature in 1809.
+Ensure that you have not [configured the cluster network](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/configuring-hybrid-networking.html) with a
+custom VXLAN port, as that is not a supported feature in 1809.
 
 ## Accessing a Windows node
 Windows nodes cannot be accessed using `oc debug node` as that requires running a privileged pod on the node which is

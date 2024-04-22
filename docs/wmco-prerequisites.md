@@ -37,7 +37,7 @@ these errors, only use the appropriate version according to the cloud provider i
 *Please note that the Windows Server 2022 image must contain the OS-level container networking patch [KB5012637](https://support.microsoft.com/en-us/topic/april-25-2022-kb5012637-os-build-20348-681-preview-2233d69c-d4a5-4be9-8c24-04a450861a8d).*
 
 ## Supported Networking
-[OVNKubernetes hybrid networking](setup-hybrid-OVNKubernetes-cluster.md) is the only supported networking configuration.
+[OVNKubernetes hybrid networking](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/configuring-hybrid-networking.html) is the only supported networking configuration.
 The following tables outline the type of networking configuration and Windows Server versions to be used based on your 
 cloud provider. The network configuration must be completed during the installation of the cluster.
   
@@ -50,7 +50,7 @@ Note:
 | AWS            | Hybrid OVNKubernetes                                                                           |
 | Azure          | Hybrid OVNKubernetes                                                                           |
 | GCP            | Hybrid OVNKubernetes                                                                           |
-| VMware vSphere | Hybrid OVNKubernetes with a [Custom VXLAN port](setup-hybrid-OVNKubernetes-cluster.md#vsphere) |
+| VMware vSphere | Hybrid OVNKubernetes with a [Custom VXLAN port](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/configuring-hybrid-networking.html) |
 | Nutanix        | Hybrid OVNKubernetes                                                                           |
 
 | Hybrid OVNKubernetes | Supported Windows Server version                                                                                                  |
