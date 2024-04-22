@@ -8,9 +8,9 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.4.1
-	github.com/openshift/api v0.0.0-20240405191225-abd990ce290b
-	github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
-	github.com/openshift/library-go v0.0.0-20240408090355-0b298992f8cc
+	github.com/openshift/api v0.0.0-20240422085825-2624175e9673
+	github.com/openshift/client-go v0.0.0-20240415214935-be70f772f157
+	github.com/openshift/library-go v0.0.0-20240422143640-fad649cbbd63
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -24,13 +24,13 @@ require (
 	golang.org/x/crypto v0.22.0
 	golang.org/x/mod v0.17.0
 	golang.org/x/sys v0.19.0
-	k8s.io/api v0.29.3
-	k8s.io/apimachinery v0.29.3
-	k8s.io/client-go v0.29.3
-	k8s.io/cloud-provider v0.29.3
+	k8s.io/api v0.29.4
+	k8s.io/apimachinery v0.29.4
+	k8s.io/client-go v0.29.4
+	k8s.io/cloud-provider v0.29.4
 	k8s.io/klog/v2 v2.120.1
-	k8s.io/kubectl v0.29.3
-	k8s.io/kubelet v0.29.3
+	k8s.io/kubectl v0.29.4
+	k8s.io/kubelet v0.29.4
 	sigs.k8s.io/controller-runtime v0.16.5
 	sigs.k8s.io/yaml v1.4.0
 )
@@ -98,7 +98,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0 // indirect
+	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/oauth2 v0.15.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
@@ -111,11 +111,11 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.29.3 // indirect
-	k8s.io/cli-runtime v0.29.3 // indirect
-	k8s.io/component-base v0.29.3 // indirect
-	k8s.io/component-helpers v0.29.3 // indirect
-	k8s.io/kube-openapi v0.0.0-20240403164606-bc84c2ddaf99 // indirect
+	k8s.io/apiextensions-apiserver v0.29.4 // indirect
+	k8s.io/cli-runtime v0.29.4 // indirect
+	k8s.io/component-base v0.29.4 // indirect
+	k8s.io/component-helpers v0.29.4 // indirect
+	k8s.io/kube-openapi v0.0.0-20240411171206-dc4e619f62f3 // indirect
 	k8s.io/utils v0.0.0-20240310230437-4693a0247e57 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
