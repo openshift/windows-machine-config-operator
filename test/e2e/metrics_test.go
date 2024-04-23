@@ -275,6 +275,8 @@ func (tc *testContext) testPodMetrics(t *testing.T, podName string) {
 		fmt.Sprintf("pod:container_cpu_usage:sum{pod='%s',namespace='%s'}", podName, tc.workloadNamespace),
 		fmt.Sprintf("sum(container_memory_working_set_bytes{pod='%s',namespace='%s',container='',}) BY (pod, namespace)",
 			podName, tc.workloadNamespace),
+		fmt.Sprintf("pod_interface_network:container_network_receive_bytes:irate5m{pod='%s',namespace='%s'}", podName, tc.workloadNamespace),
+		fmt.Sprintf("pod_interface_network:container_network_transmit_bytes_total:irate5m{pod='%s',namespace='%s'}", podName, tc.workloadNamespace),
 	}
 	for i, query := range queries {
 		t.Run("query "+strconv.Itoa(i), func(t *testing.T) {
