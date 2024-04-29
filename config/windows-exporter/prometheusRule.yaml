@@ -45,3 +45,9 @@ spec:
         - expr: |
             label_replace(windows_container_memory_usage_private_working_set_bytes * on(container_id) group_left(namespace, pod, container) kube_pod_container_info{container_id!=""},"container","","","")
           record: container_memory_working_set_bytes
+        - expr: |
+            sum(irate(windows_container_network_receive_bytes_total[5m]) * on(container_id) group_left(namespace, pod, interface) kube_pod_container_info{container_id!=""}) by (pod,namespace)
+          record: pod_interface_network:container_network_receive_bytes:irate5m
+        - expr: |
+            sum(irate(windows_container_network_transmit_bytes_total[5m]) * on(container_id) group_left(namespace, pod, interface) kube_pod_container_info{container_id!=""}) by (pod,namespace)
+          record: pod_interface_network:container_network_transmit_bytes_total:irate5m
