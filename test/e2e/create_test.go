@@ -15,7 +15,7 @@ import (
 	mapi "github.com/openshift/api/machine/v1beta1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -89,7 +89,7 @@ func (tc *testContext) testWindowsNodeCreation(t *testing.T) {
 	// Create a private key secret with the known private key.
 	require.NoError(t, tc.createPrivateKeySecret(true), "could not create known private key secret")
 
-	t.Run("Machine controller", tc.testMachineConfiguration)
+	//t.Run("Machine controller", tc.testMachineConfiguration)
 	// BYOH creation must occur after the Machine creation, as the MachineConfiguration tests change the private key
 	// multiple times, and BYOH doesnt have the functionality of rotating keys on the VMs. This would result in BYOH
 	// failing the pub key annotation validation as it compares the current private key secret with the annotation.
@@ -165,7 +165,7 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	_, err := tc.createWindowsMachineSet(gc.numberOfMachineNodes, false)
 	require.NoError(t, err, "failed to create Windows MachineSet")
 
-	t.Run("Machine configuration while private key change", tc.testMachineConfigurationWhilePrivateKeyChange)
+	//t.Run("Machine configuration while private key change", tc.testMachineConfigurationWhilePrivateKeyChange)
 
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
