@@ -179,9 +179,9 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 // SSH authentication error. This could be considered a platform-agnostic test (except for vSphere where the private
 // key is baked in the VM template) so we run it only on Azure.
 func (tc *testContext) testMachineConfigurationWhilePrivateKeyChange(t *testing.T) {
-	if tc.CloudProvider.GetType() != config.AzurePlatformType {
-		t.Skip("test disabled, exclusively runs on Azure")
-	}
+	//if tc.CloudProvider.GetType() != config.AzurePlatformType {
+	//	t.Skip("test disabled, exclusively runs on Azure")
+	//}
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
 
