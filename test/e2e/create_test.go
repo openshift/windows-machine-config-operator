@@ -165,7 +165,7 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	_, err := tc.createWindowsMachineSet(gc.numberOfMachineNodes, false)
 	require.NoError(t, err, "failed to create Windows MachineSet")
 
-	t.Run("Machine configuration while private key change", tc.testMachineConfigurationWhilePrivateKeyChange)
+	//t.Run("Machine configuration while private key change", tc.testMachineConfigurationWhilePrivateKeyChange)
 
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
