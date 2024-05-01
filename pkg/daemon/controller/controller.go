@@ -373,12 +373,10 @@ func (sc *ServiceController) reconcileServices(services []servicescm.Service) er
 				return err
 			}
 			defer winSvcObj.Close()
-			klog.Infof("reconciling existing service %s", service.Name)
 		}
 		if err := sc.reconcileService(winSvcObj, service); err != nil {
 			return err
 		}
-		klog.Infof("successfully reconciled service %s", service.Name)
 	}
 	return nil
 }
