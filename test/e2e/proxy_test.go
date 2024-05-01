@@ -561,7 +561,7 @@ func generateCertificate() (string, error) {
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 	}
-	certPrivKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	certPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return "", err
 	}
