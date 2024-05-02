@@ -399,6 +399,14 @@ spec:
           - securitycontextconstraints
           verbs:
           - use
+        - apiGroups:
+          - monitoring.coreos.com
+          resources:
+          - servicemonitors
+          verbs:
+          - create
+          - get
+          - delete
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator

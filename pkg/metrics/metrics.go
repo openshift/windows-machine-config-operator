@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strconv"
 
+	monv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	monclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,6 +28,7 @@ import (
 //+kubebuilder:rbac:groups="",resources=endpoints,verbs=create;get;delete;update;patch
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=list
+//+kubebuilder:rbac:groups="monitoring.coreos.com",resources=servicemonitors,verbs=create,get,delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=*
 
 var (
@@ -228,6 +231,9 @@ func (c *Config) Configure(ctx context.Context) error {
 	if !enabled {
 		return nil
 	}
+	if err := c.ensureServiceMonitor(); err != nil {
+		return fmt.Errorf("error ensuring serviceMonitor exists: %w", err)
+	}
 	// In the case of an operator restart, a previous Endpoint object will be deleted and a new one will
 	// be created to ensure we have a correct spec.
 	var subsets []v1.EndpointSubset
@@ -296,6 +302,83 @@ func (c *Config) createEndpoint(subsets []v1.EndpointSubset) error {
 		newEndpoint, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("error creating metrics Endpoint: %w", err)
+	}
+	return nil
+}
+
+// ensureServiceMonitor creates a serviceMonitor object in the operator namespace if it does not exist.
+func (c *Config) ensureServiceMonitor() error {
+	// get existing serviceMonitor object if it exists
+	existingSM, err := c.ServiceMonitors(c.namespace).Get(context.TODO(), WindowsMetricsResource, metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("error retrieving %s serviceMonitor: %w", WindowsMetricsResource, err)
+	}
+
+	serverName := fmt.Sprintf("%s.%s.svc", WindowsMetricsResource, c.namespace)
+
+	expectedSM := &monv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      WindowsMetricsResource,
+			Namespace: c.namespace,
+			Labels: map[string]string{
+				"name": WindowsMetricsResource,
+			},
+		},
+		Spec: monv1.ServiceMonitorSpec{
+			Endpoints: []monv1.Endpoint{
+				{
+					HonorLabels:     true,
+					Interval:        "30s",
+					Path:            "/metrics",
+					Port:            "metrics",
+					Scheme:          "https",
+					BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
+					TLSConfig: &monv1.TLSConfig{
+						CAFile: "/etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt",
+						SafeTLSConfig: monv1.SafeTLSConfig{
+							ServerName: serverName,
+						},
+					},
+					RelabelConfigs: []*monv1.RelabelConfig{
+						{
+							Action:      "replace",
+							Regex:       "(.*)",
+							Replacement: "$1",
+							TargetLabel: "instance",
+							SourceLabels: []monv1.LabelName{
+								"__meta_kubernetes_endpoint_address_target_name",
+							},
+						},
+					},
+				},
+			},
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": WindowsMetricsResource,
+				},
+			},
+		},
+	}
+
+	if err == nil {
+		// check if existing serviceMonitor's contents are as expected, delete it if not
+		if existingSM.Name == expectedSM.Name && existingSM.Namespace == expectedSM.Namespace &&
+			reflect.DeepEqual(existingSM.Spec, expectedSM.Spec) {
+			return nil
+		}
+		err = c.ServiceMonitors(c.namespace).Delete(context.TODO(), WindowsMetricsResource,
+			metav1.DeleteOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to delete service monitor %s/%s: %w", c.namespace, WindowsMetricsResource,
+				err)
+		}
+		log.Info("Deleted malformed resource", "serviceMonitor", WindowsMetricsResource,
+			"namespace", c.namespace)
+	}
+
+	_, err = c.ServiceMonitors(c.namespace).Create(context.TODO(), expectedSM, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("error creating service monitor: %w", err)
 	}
 	return nil
 }
