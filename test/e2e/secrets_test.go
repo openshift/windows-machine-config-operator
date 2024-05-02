@@ -208,7 +208,7 @@ func (tc *testContext) waitForBYOHPrivateKeyUpdate() error {
 // generatePrivateKey generates a random RSA private key
 func generatePrivateKey() ([]byte, error) {
 	var keyData []byte
-	key, err := rsa.GenerateKey(rand.Reader, 1024)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, fmt.Errorf("error generating key: %w", err)
 	}
