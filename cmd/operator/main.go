@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	openshiftconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	mcfg "github.com/openshift/api/machineconfiguration/v1"
 	operators "github.com/operator-framework/api/pkg/operators/v2"
@@ -54,6 +55,7 @@ func init() {
 	utilruntime.Must(mapi.AddToScheme(scheme))
 	utilruntime.Must(operators.AddToScheme(scheme))
 	utilruntime.Must(mcfg.Install(scheme))
+	utilruntime.Must(openshiftconfig.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -199,6 +201,16 @@ func main() {
 	}
 	if err = nodeReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create Node controller")
+		os.Exit(1)
+	}
+
+	registryReconciler, err := controllers.NewRegistryReconciler(mgr, clusterConfig, watchNamespace)
+	if err != nil {
+		setupLog.Error(err, "unable to create registry reconciler")
+		os.Exit(1)
+	}
+	if err = registryReconciler.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create registry controller")
 		os.Exit(1)
 	}
 
