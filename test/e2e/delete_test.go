@@ -72,7 +72,7 @@ func (tc *testContext) testBYOHRemoval(t *testing.T) {
 	// For each node that was deleted, check that all the expected services and proxy configuration have been removed
 	for _, node := range byohNodes {
 		t.Run(node.GetName(), func(t *testing.T) {
-			addr, err := controllers.GetAddress(node.Status.Addresses)
+			addr, err := tc.getAddress(node.Status.Addresses)
 			require.NoError(t, err, "unable to get node address")
 			svcs, err := tc.getWinServices(addr)
 			require.NoError(t, err, "error getting service map")

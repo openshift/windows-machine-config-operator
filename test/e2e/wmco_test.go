@@ -2,11 +2,15 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net"
 	"testing"
 	"time"
 
+	config "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/require"
+	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
@@ -97,4 +101,20 @@ func (tc *testContext) collectWindowsInstanceLogs() {
 		}
 	}
 
+}
+
+// getAddress returns an address that can be used to reach a Windows node. This can be either an IPv4 or dns address,
+// except on vSphere where only a DNS address is returned due to reverse DNS lookup issues in internal infrastructure
+func (tc *testContext) getAddress(addresses []core.NodeAddress) (string, error) {
+	for _, addr := range addresses {
+		if addr.Type == core.NodeInternalDNS ||
+			(addr.Type == core.NodeInternalIP && tc.CloudProvider.GetType() != config.VSpherePlatformType) {
+			// filter out ipv6
+			if net.ParseIP(addr.Address) != nil && net.ParseIP(addr.Address).To4() == nil {
+				continue
+			}
+			return addr.Address, nil
+		}
+	}
+	return "", fmt.Errorf("no usable address")
 }

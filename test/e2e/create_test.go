@@ -127,7 +127,7 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 		Data: make(map[string]string),
 	}
 	for _, machine := range machines.Items {
-		addr, err := controllers.GetAddress(machine.Status.Addresses)
+		addr, err := tc.getAddress(machine.Status.Addresses)
 		if err != nil {
 			return fmt.Errorf("unable to get usable address: %w", err)
 		}
