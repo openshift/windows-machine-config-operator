@@ -54,6 +54,8 @@ func New(c client.Client) (*Ignition, error) {
 		return nil, err
 	}
 
+	log.V(1).Info("parsing", "machineconfig", renderedWorker.GetName(), "raw config", renderedWorker.Spec.Config.Raw)
+
 	configuration, report, err := ignCfg.ParseCompatibleVersion(renderedWorker.Spec.Config.Raw)
 	if err != nil || report.IsFatal() {
 		return nil, fmt.Errorf("failed to parse MachineConfig ignition: %v\nReport: %v", err, report)
