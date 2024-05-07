@@ -11,7 +11,7 @@ require (
 	github.com/openshift/api v0.0.0-20231118005202-0f638a8a4705
 	github.com/openshift/client-go v0.0.0-20230120202327-72f107311084
 	github.com/openshift/library-go v0.0.0-20231115094609-5e510a6e9a52
-	github.com/openshift/machine-config-operator v0.0.1-0.20240311215229-88140227ee7d
+	github.com/openshift/machine-config-operator v0.0.1-0.20240507083853-bb00d4f6f57a
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -22,9 +22,9 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.24.0
-	golang.org/x/crypto v0.19.0
-	golang.org/x/mod v0.15.0
-	golang.org/x/sys v0.17.0
+	golang.org/x/crypto v0.22.0
+	golang.org/x/mod v0.17.0
+	golang.org/x/sys v0.19.0
 	k8s.io/api v0.26.15
 	k8s.io/apimachinery v0.26.15
 	k8s.io/client-go v0.26.15
@@ -99,9 +99,9 @@ require (
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.21.0 // indirect
+	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/oauth2 v0.13.0 // indirect
-	golang.org/x/term v0.17.0 // indirect
+	golang.org/x/term v0.19.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
@@ -113,8 +113,8 @@ require (
 	k8s.io/apiextensions-apiserver v0.26.15 // indirect
 	k8s.io/cli-runtime v0.26.15 // indirect
 	k8s.io/component-base v0.26.15 // indirect
-	k8s.io/kube-openapi v0.0.0-20240322212309-b815d8309940 // indirect
-	k8s.io/utils v0.0.0-20240310230437-4693a0247e57 // indirect
+	k8s.io/kube-openapi v0.0.0-20240430033511-f0e62f92d13f // indirect
+	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.12.1 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.13.9 // indirect
