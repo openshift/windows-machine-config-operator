@@ -269,7 +269,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := configMapReconciler.EnsureWICDRBAC(); err != nil {
+	if err := configMapReconciler.EnsureWICDRBAC(ctx); err != nil {
 		setupLog.Error(err, "error ensuring WICD RBAC resources exist", "namespace", watchNamespace)
 		os.Exit(1)
 	}
