@@ -1,6 +1,6 @@
 # Windows Machine Config Operator
 
-## Introduction
+## Introduction -
 The Windows Machine Config Operator configures Windows instances into nodes, enabling Windows container workloads to
 be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/4.5/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
 or by specifying existing instances through a ConfigMap. The operator will do all the necessary steps to configure the instance so that it
