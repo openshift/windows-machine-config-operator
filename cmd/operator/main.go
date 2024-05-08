@@ -182,6 +182,7 @@ func main() {
 			watchNamespace)
 		os.Exit(1)
 	}
+	setupLog.Info("operator", "namespace", watchNamespace)
 
 	// Setup all Controllers
 	winMachineReconciler, err := controllers.NewWindowsMachineReconciler(mgr, clusterConfig, watchNamespace)
