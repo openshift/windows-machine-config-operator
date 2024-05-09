@@ -157,8 +157,8 @@ func (pc *PrometheusNodeConfig) Configure() error {
 		if err := pc.syncMetricsEndpoint(windowsIPList); err != nil {
 			return fmt.Errorf("error updating endpoints object with list of endpoint addresses: %w", err)
 		}
+		log.Info("Prometheus configured", "endpoints", WindowsMetricsResource, "port", Port, "name", PortName)
 	}
-	log.Info("Prometheus configured", "endpoints", WindowsMetricsResource, "port", Port, "name", PortName)
 	return nil
 }
 
