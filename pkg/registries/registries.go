@@ -140,19 +140,28 @@ func mergeMirrors(existingMirrors, newMirrors []mirror) []mirror {
 }
 
 // generateConfig is a serialization method that generates a valid TOML representation from a mirrorSet object.
-// Results in content usable as a containerd image registry configuration file.
+// Results in content usable as a containerd image registry configuration file. Returns empty string if no mirrors exist
 func (ms *mirrorSet) generateConfig() string {
 	result := ""
-
-	if ms.mirrorSourcePolicy == config.AllowContactingSource {
-		result += fmt.Sprintf("server = \"https://%s\"", ms.source)
-		result += "\r\n\r\n"
+	if len(ms.mirrors) == 0 {
+		return result
 	}
 
+	fallbackServer := ms.source
+	if ms.mirrorSourcePolicy == config.NeverContactSource {
+		// set the fallback server to the first mirror to ensure the source is never contacted, even if all mirrors fail
+		fallbackServer = ms.mirrors[0].host
+	}
+	result += fmt.Sprintf("server = \"https://%s\"", fallbackServer)
+	result += "\r\n\r\n"
+
+	// Each mirror should result in an entry followed by a set of settings for interacting with the mirror host
 	for _, m := range ms.mirrors {
 		result += fmt.Sprintf("[host.\"https://%s\"]", m.host)
 		result += "\r\n"
 
+		// Specify the operations the registry host may perform. IDMS mirrors can only be pulled by directly by digest,
+		// whereas ITMS mirrors have the additional resolve capability, which allows converting a tag name into a digest
 		var hostCapabilities string
 		if m.resolveTags {
 			hostCapabilities = "  capabilities = [\"pull\", \"resolve\"]"
