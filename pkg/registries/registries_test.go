@@ -44,10 +44,10 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: "[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n",
+			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n",
 		},
 		{
-			name: "one tag mirror never contact source",
+			name: "tags mirror never contact source",
 			input: mirrorSet{
 				source: "registry.access.redhat.com/ubi9/ubi-minimal",
 				mirrors: []mirror{
@@ -55,7 +55,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: "[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
 		},
 		{
 			name: "multiple mirrors",
@@ -69,6 +69,19 @@ func TestGenerateConfig(t *testing.T) {
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
 			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+		},
+		{
+			name: "multiple mirrors never contact source",
+			input: mirrorSet{
+				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				mirrors: []mirror{
+					{"example.io/example/ubi-minimal", false},
+					{"mirror.example.com/redhat", false},
+					{"mirror.example.net/image", true},
+				},
+				mirrorSourcePolicy: config.NeverContactSource,
+			},
+			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
 		},
 	}
 
