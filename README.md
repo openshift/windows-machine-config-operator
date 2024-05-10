@@ -271,10 +271,6 @@ WMCO / Windows nodes does not work with the following products:
 * [OpenShift monitoring of user defined project](https://docs.openshift.com/container-platform/latest/monitoring/enabling-monitoring-for-user-defined-projects.html#enabling-monitoring-for-user-defined-projects)
 * [HugePages](https://kubernetes.io/docs/tasks/manage-hugepages/scheduling-hugepages/)
 
-### Accessing secure registries
-Windows nodes managed by WMCO do not support pulling container images from secure private registries. 
-It is recommended to use images from public registries or pre-pull the images in the VM image.
-
 ### Trunk port
 WMCO does not support adding Windows nodes to a cluster through a trunk port. The only supported networking setup for adding Windows nodes is through an access port carrying the VLAN traffic.
 
