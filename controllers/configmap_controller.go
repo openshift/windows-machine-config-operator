@@ -189,8 +189,6 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, r.reconcileServices(ctx, configMap)
 	case wiparser.InstanceConfigMap:
 		return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
-	case certificates.KubeAPIServerServingCAConfigMapName:
-		return ctrl.Result{}, r.reconcileKubeletClientCA(ctx, configMap)
 	case certificates.ProxyCertsConfigMap:
 		return ctrl.Result{}, r.reconcileProxyCerts(ctx, configMap)
 	default:
@@ -401,8 +399,7 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return r.isValidConfigMap(e.Object)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return r.isValidConfigMap(e.ObjectNew) ||
-				r.isKubeAPIServerServingCAConfigMap(e.ObjectNew)
+			return r.isValidConfigMap(e.ObjectNew)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return r.isValidConfigMap(e.Object)
@@ -671,11 +668,4 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding() error {
 		r.log.Info("Created resource", "ClusterRoleBinding", expectedCRB.Name)
 	}
 	return err
-}
-
-// isKubeAPIServerServingCAConfigMap returns true if the provided object matches the ConfigMap that contains the
-// CA for the kubelet to recognize the kube-apiserver client certificate
-func (r *ConfigMapReconciler) isKubeAPIServerServingCAConfigMap(obj client.Object) bool {
-	return obj.GetNamespace() == certificates.KubeApiServerOperatorNamespace &&
-		obj.GetName() == certificates.KubeAPIServerServingCAConfigMapName
 }
