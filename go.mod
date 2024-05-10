@@ -11,7 +11,7 @@ require (
 	github.com/openshift/api v0.0.0-20240304080513-3e8192a10b13
 	github.com/openshift/client-go v0.0.0-20230807132528-be5346fb33cb
 	github.com/openshift/library-go v0.0.0-20231213084759-840298df1eee
-	github.com/openshift/machine-config-operator v0.0.1-0.20240419230850-c29fe458496f
+	github.com/openshift/machine-config-operator v0.0.1-0.20240506123320-83d66a9228fe
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -115,8 +115,8 @@ require (
 	k8s.io/cli-runtime v0.27.13 // indirect
 	k8s.io/component-base v0.27.13 // indirect
 	k8s.io/component-helpers v0.27.13 // indirect
-	k8s.io/kube-openapi v0.0.0-20240411171206-dc4e619f62f3 // indirect
-	k8s.io/utils v0.0.0-20240310230437-4693a0247e57 // indirect
+	k8s.io/kube-openapi v0.0.0-20240430033511-f0e62f92d13f // indirect
+	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.13.2 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.14.1 // indirect
