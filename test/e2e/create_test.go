@@ -48,6 +48,9 @@ func creationTestSuite(t *testing.T) {
 		require.NoError(t, tc.configureUserCABundle())
 	}
 
+	_, err = tc.createMirrorSet()
+	require.NoErrorf(t, err, "error creating mirror set %s", testMirrorSetName)
+
 	if !t.Run("Creation", tc.testWindowsNodeCreation) {
 		// No point in running the other tests if creation failed
 		return
