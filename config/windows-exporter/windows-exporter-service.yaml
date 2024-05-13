@@ -4,6 +4,8 @@ metadata:
   name: windows-exporter
   labels:
     name: windows-exporter
+  annotations:
+    service.alpha.openshift.io/serving-cert-secret-name: windows-machine-config-operator-tls
 spec:
   ports:
     - name: metrics

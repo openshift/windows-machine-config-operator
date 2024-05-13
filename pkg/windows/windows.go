@@ -545,7 +545,7 @@ func (vm *windows) Bootstrap(desiredVer, watchNamespace, wicdKubeconfigContents 
 	if err := vm.transferFiles(); err != nil {
 		return fmt.Errorf("error transferring files to Windows VM: %w", err)
 	}
-
+	
 	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --kubeconfig %s --namespace %s",
 		wicdPath, desiredVer, wicdKubeconfigPath, watchNamespace)
 	if out, err := vm.Run(wicdBootstrapCmd, true); err != nil {
