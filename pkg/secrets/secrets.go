@@ -21,6 +21,8 @@ const (
 	PrivateKeySecret = "cloud-private-key"
 	// PrivateKeySecretKey is the key within the private key secret which holds the private key
 	PrivateKeySecretKey = "private-key.pem"
+	// TLSSecret is the name of the TLS secret that servica-ca-operator creates
+	TLSSecret = "windows-machine-config-operator-tls"
 )
 
 // GetPrivateKey fetches the specified secret and extracts the private key data

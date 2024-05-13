@@ -163,11 +163,17 @@ func (nc *nodeConfig) Configure() error {
 	}
 
 	wmcoVersion := version.Get()
+
+	tlsSecret := &core.Secret{}
+	err = nc.client.Get(context.TODO(), types.NamespacedName{Name: secrets.TLSSecret,
+		Namespace: nc.wmcoNamespace}, tlsSecret)
+	if err != nil {
+		return fmt.Errorf("unable to get secret %s: %w", nc.wmcoNamespace, err)
+	}
 	// Start all required services to bootstrap a node object using WICD
-	if err := nc.Windows.Bootstrap(wmcoVersion, nc.wmcoNamespace, wicdKC); err != nil {
+	if err := nc.Windows.Bootstrap(wmcoVersion, nc.wmcoNamespace, wicdKC, tlsSecret.Data); err != nil {
 		return fmt.Errorf("bootstrapping the Windows instance failed: %w", err)
 	}
-
 	// Perform rest of the configuration with the kubelet running
 	err = func() error {
 		if nc.node == nil {
