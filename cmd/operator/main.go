@@ -215,7 +215,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	secretReconciler := controllers.NewSecretReconciler(mgr, clusterConfig.Platform(), watchNamespace)
+	secretReconciler, err := controllers.NewSecretReconciler(mgr, clusterConfig, watchNamespace)
+	if err != nil {
+		setupLog.Error(err, "unable to create Secret reconciler")
+		os.Exit(1)
+	}
 	if err = secretReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create Secret controller")
 		os.Exit(1)
