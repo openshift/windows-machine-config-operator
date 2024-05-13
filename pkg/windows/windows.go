@@ -54,7 +54,10 @@ const (
 	CniConfDir = cniDir + "\\config"
 	// ContainerdDir is the directory for storing Containerd binary
 	ContainerdDir = K8sDir + "\\containerd"
-	// ContainerdPath is the location of the containerd exe
+	// TLSDir is the directory for storing WMCO tls certs
+	TLSDir = K8sDir + "\\tls"
+	// TLSConfPath is the location of TLS config files
+	TLSConfPath    = TLSDir + "\\webconfig.yaml"
 	ContainerdPath = ContainerdDir + "\\containerd.exe"
 	// ContainerdConfPath is the location of containerd config file
 	ContainerdConfPath = ContainerdDir + "\\containerd_conf.toml"
@@ -120,7 +123,7 @@ const (
 	// WindowsExporterServiceCommand specifies metrics for the windows_exporter service to collect
 	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
 	WindowsExporterServiceCommand = windowsExporterPath + " --collectors.enabled " +
-		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info"
+		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info --web.config.file " + TLSConfPath
 	// serviceQueryCmd is the Windows command used to query a service
 	serviceQueryCmd = "sc.exe qc "
 	// serviceNotFound is part of the error output returned when a service does not exist. 1060 is an error code
@@ -168,6 +171,7 @@ var (
 		containerdConfigDir,
 		podManifestDirectory,
 		K8sDir,
+		TLSDir,
 	}
 )
 
@@ -203,6 +207,7 @@ func getFilesToTransfer(platform *config.PlatformType) map[string]string {
 		payload.ContainerdPath:                 ContainerdDir,
 		payload.HcsshimPath:                    ContainerdDir,
 		payload.ContainerdConfPath:             ContainerdDir,
+		payload.TlsConfPath:                    TLSDir,
 		payload.NetworkConfigurationScript:     remoteDir,
 	}
 
