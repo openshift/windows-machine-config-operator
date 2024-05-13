@@ -53,7 +53,12 @@ const (
 	CniConfDir = cniDir + "\\config"
 	// ContainerdDir is the directory for storing Containerd binary
 	ContainerdDir = K8sDir + "\\containerd"
-	// ContainerdPath is the location of the containerd exe
+	// TLSDir is the directory for storing WMCO tls certs
+	TLSDir = K8sDir + "\\tls"
+	// TLSConfPath is the location of TLS config files
+	TLSConfPath = TLSDir + "\\windows-exporter-webconfig.yaml"
+	// TLSCertsPath is the location of TLS cert files
+	TLSCertsPath   = TLSDir + "\\certs"
 	ContainerdPath = ContainerdDir + "\\containerd.exe"
 	// ContainerdConfPath is the location of containerd config file
 	ContainerdConfPath = ContainerdDir + "\\containerd_conf.toml"
@@ -69,8 +74,8 @@ const (
 	WicdServiceName = "windows-instance-config-daemon"
 	// wicdPath is the path to the WICD executable
 	wicdPath = K8sDir + "\\windows-instance-config-daemon.exe"
-	// windowsExporterPath is the location of the windows_exporter.exe
-	windowsExporterPath = K8sDir + "\\windows_exporter.exe"
+	// WindowsExporterPath is the location of the windows_exporter.exe
+	WindowsExporterPath = K8sDir + "\\windows_exporter.exe"
 	// NetworkConfScriptPath is the location of the network configuration script
 	NetworkConfScriptPath = remoteDir + "\\network-conf.ps1"
 	// AzureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
@@ -116,10 +121,6 @@ const (
 	WindowsExporterServiceName = "windows_exporter"
 	// AzureCloudNodeManagerServiceName is the name of the azure cloud node manager service
 	AzureCloudNodeManagerServiceName = "cloud-node-manager"
-	// WindowsExporterServiceCommand specifies metrics for the windows_exporter service to collect
-	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
-	WindowsExporterServiceCommand = windowsExporterPath + " --collectors.enabled " +
-		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info"
 	// serviceQueryCmd is the Windows command used to query a service
 	serviceQueryCmd = "sc.exe qc "
 	// serviceNotFound is part of the error output returned when a service does not exist. 1060 is an error code
@@ -176,6 +177,7 @@ var (
 		ContainerdConfigDir,
 		podManifestDirectory,
 		K8sDir,
+		TLSDir,
 	}
 )
 
@@ -211,6 +213,7 @@ func getFilesToTransfer(platform *config.PlatformType) map[string]string {
 		payload.ContainerdPath:                 ContainerdDir,
 		payload.HcsshimPath:                    ContainerdDir,
 		payload.ContainerdConfPath:             ContainerdDir,
+		payload.TLSConfPath:                    TLSDir,
 		payload.NetworkConfigurationScript:     remoteDir,
 	}
 

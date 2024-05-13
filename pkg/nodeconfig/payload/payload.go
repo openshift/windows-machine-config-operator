@@ -63,9 +63,13 @@ const (
 	CSIProxyPath = payloadDirectory + "csi-proxy/csi-proxy.exe"
 	// WindowsExporterName is the name of the Windows metrics exporter executable
 	WindowsExporterName = "windows_exporter.exe"
+	// WindowsExporterDirectory is the directory for storing the windows-exporter binary and the TLS webconfig file
+	WindowsExporterDirectory = "windows-exporter/"
 	// WindowsExporterPath contains the path of the windows_exporter binary. The container image should already have
 	// this binary mounted
-	WindowsExporterPath = payloadDirectory + WindowsExporterName
+	WindowsExporterPath = payloadDirectory + WindowsExporterDirectory + WindowsExporterName
+	// TLSConfPath contains the path of the TLS config file
+	TLSConfPath = payloadDirectory + WindowsExporterDirectory + "windows-exporter-webconfig.yaml"
 	// ECRCredentialProviderPath is the path to ecr-credential-provider.exe
 	ECRCredentialProviderPath = payloadDirectory + "ecr-credential-provider.exe"
 	// AzureCloudNodeManager is the name of the cloud node manager for Azure platform
