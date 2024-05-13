@@ -121,7 +121,9 @@ RUN make build-daemon
 #│   ├── gcp-get-hostname.ps1
 #│   ├── windows-defender-exclusion.ps1
 #│   └── hns.psm1
-#├── windows_exporter.exe
+#├── windows-exporter/
+#│   ├── windows_exporter.exe
+#│   └── windows-exporter-webconfig.yaml
 #└── windows-instance-config-daemon.exe
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
@@ -134,8 +136,10 @@ COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windo
 # Copy hybrid-overlay-node.exe
 COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
 
-# Copy windows_exporter.exe
+# Copy windows_exporter.exe and TLS windows-exporter-webconfig.yaml
+WORKDIR /payload/windows-exporter
 COPY --from=build /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe .
+COPY pkg/internal/windows-exporter-webconfig.yaml .
 
 # Copy azure-cloud-node-manager.exe
 COPY --from=build /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe .
