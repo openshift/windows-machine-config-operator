@@ -3,15 +3,54 @@ package registries
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	config "github.com/openshift/api/config/v1"
 )
 
+// imagePathSeparator separates the repo name, namespaces, and image name in an OCI-compliant image name
+const imagePathSeparator = "/"
+
 // mirror represents a mirrored image repo entry in a registry configuration file
 type mirror struct {
+	// host is the mirror image location. Can include the registry hostname/IP address, port, and namespace path
 	host string
 	// resolveTags indicates to the container runtime if this mirror is allowed to resolve an image tag into a digest
 	resolveTags bool
+}
+
+// newMirror constructs a new mirror object with proper host name structure to be used in containerd registry config
+func newMirror(sourceImageLocation, mirrorImageLocation string, resolveTags bool) mirror {
+	mirrorHost := ""
+	// containerd appends any shared namespaces between source and mirror locations to the mirror's host entry in the
+	// registry config file to construct the full mirror image location
+	if sourceImageLocation != mirrorImageLocation {
+		// truncate the mirror to drop any shared namespaces since containerd automatically appends them on image pull
+		mirrorHost = extractMirrorURL(sourceImageLocation, mirrorImageLocation)
+	} else {
+		// special case if source and mirror are the same. Do not drop the host repo name to avoid an empty host entry
+		mirrorHost = extractHostname(mirrorImageLocation)
+	}
+	return mirror{host: mirrorHost, resolveTags: resolveTags}
+}
+
+// extractMirrorURL drops the common suffix from the second repo, returning only the unique leading URL and namespaces
+func extractMirrorURL(source, mirror string) string {
+	sourceParts := strings.Split(source, imagePathSeparator)
+	mirrorParts := strings.Split(mirror, imagePathSeparator)
+	uniqueMirrorParts := mirrorParts
+
+	// Process until the end of either repo string
+	for i := 0; i < len(sourceParts) && i < len(mirrorParts); i++ {
+		// Check if suffix piece is equal, starting from the backs of the lists
+		if sourceParts[len(sourceParts)-1-i] != mirrorParts[len(mirrorParts)-1-i] {
+			// break when something different is found to retain all pieces after the last common element
+			break
+		}
+		// Remove common suffix piece
+		uniqueMirrorParts = uniqueMirrorParts[:len(uniqueMirrorParts)-1]
+	}
+	return strings.Join(uniqueMirrorParts, imagePathSeparator)
 }
 
 // mirrorSet holds the mirror registry information for a single source image repo
@@ -22,6 +61,23 @@ type mirrorSet struct {
 	mirrors []mirror
 	// mirrorSourcePolicy defines the fallback policy if fails to pull image from the mirrors
 	mirrorSourcePolicy config.MirrorSourcePolicy
+}
+
+// newMirrorSet constructs an object with proper source and mirror name structures to be used in containerd registry config
+func newMirrorSet(srcImage string, mirrorLocations []config.ImageMirror, resolveTags bool,
+	mirrorSourcePolicy config.MirrorSourcePolicy) mirrorSet {
+	truncatedMirrors := []mirror{}
+	for _, m := range mirrorLocations {
+		truncatedMirrors = append(truncatedMirrors, newMirror(srcImage, string(m), resolveTags))
+	}
+	return mirrorSet{source: extractHostname(srcImage), mirrors: truncatedMirrors, mirrorSourcePolicy: mirrorSourcePolicy}
+}
+
+// extractHostname extracts just the initial host repo from a full image location
+// e.g. mcr.microsoft.com would be extracted from mcr.microsoft.com/oss/kubernetes/pause:3.9
+func extractHostname(fullImage string) string {
+	parts := strings.Split(fullImage, imagePathSeparator)
+	return parts[0]
 }
 
 // registryConfig represents a system-wide image registry configuration
@@ -36,26 +92,14 @@ func NewRegistryConfig(idmsItems []config.ImageDigestMirrorSet, idtsItems []conf
 
 	for _, idms := range idmsItems {
 		for _, entry := range idms.Spec.ImageDigestMirrors {
-			set := &mirrorSet{
-				source:             entry.Source,
-				mirrorSourcePolicy: entry.MirrorSourcePolicy,
-			}
-			for _, image := range entry.Mirrors {
-				set.mirrors = append(set.mirrors, mirror{host: string(image), resolveTags: false})
-			}
-			allMirrorSets = append(allMirrorSets, *set)
+			set := newMirrorSet(entry.Source, entry.Mirrors, false, entry.MirrorSourcePolicy)
+			allMirrorSets = append(allMirrorSets, set)
 		}
 	}
 	for _, itms := range idtsItems {
 		for _, entry := range itms.Spec.ImageTagMirrors {
-			set := &mirrorSet{
-				source:             entry.Source,
-				mirrorSourcePolicy: entry.MirrorSourcePolicy,
-			}
-			for _, image := range entry.Mirrors {
-				set.mirrors = append(set.mirrors, mirror{host: string(image), resolveTags: true})
-			}
-			allMirrorSets = append(allMirrorSets, *set)
+			set := newMirrorSet(entry.Source, entry.Mirrors, true, entry.MirrorSourcePolicy)
+			allMirrorSets = append(allMirrorSets, set)
 		}
 	}
 
