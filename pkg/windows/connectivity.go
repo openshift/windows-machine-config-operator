@@ -1,6 +1,7 @@
 package windows
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -33,12 +34,16 @@ func newAuthErr(err error) *AuthErr {
 }
 
 type connectivity interface {
-	// run executes the given command on the remote system
-	run(cmd string) (string, error)
-	// transfer reads from reader and creates a file in the remote VM directory, creating the remote directory if needed
-	transfer(reader io.Reader, filename, remoteDir string) error
 	// init initialises the connectivity medium
 	init() error
+	// run executes the given command on the remote system
+	run(cmd string) (string, error)
+	// createSFTPClient initializes an SFTP client from the existing SSH client. Caller should close the connection.
+	createSFTPClient() (*sftp.Client, error)
+	// transfer reads from reader and creates a file in the remote VM directory, creating the remote directory if needed
+	transfer(*sftp.Client, io.Reader, string, string) error
+	// transferFiles transfers the given files to a given remote directory
+	transferFiles(*sftp.Client, map[string][]byte, string) error
 }
 
 // sshConnectivity encapsulates the information needed to connect to the Windows VM over ssh
@@ -125,27 +130,30 @@ func (c *sshConnectivity) run(cmd string) (string, error) {
 	return string(out), err
 }
 
-// transfer uses FTP to copy from reader to the remote VM directory, creating the directory if needed
-func (c *sshConnectivity) transfer(reader io.Reader, filename, remoteDir string) error {
+func (c *sshConnectivity) createSFTPClient() (*sftp.Client, error) {
 	if c.sshClient == nil {
-		return fmt.Errorf("transfer cannot be called with nil SSH client")
+		return nil, fmt.Errorf("cannot be called with nil SSH client")
 	}
 
-	ftp, err := sftp.NewClient(c.sshClient)
+	sftpClient, err := sftp.NewClient(c.sshClient)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer func() {
-		if err := ftp.Close(); err != nil {
-			c.log.Error(err, "error closing FTP connection")
-		}
-	}()
-	if err := ftp.MkdirAll(remoteDir); err != nil {
+	return sftpClient, nil
+}
+
+func (c *sshConnectivity) transfer(sftpClient *sftp.Client, reader io.Reader, filename, remoteDir string) error {
+	if sftpClient == nil {
+		return fmt.Errorf("transfer cannot be called with nil SFTP client")
+	}
+
+	// Create the destination directory, no-op if it already exists
+	if err := sftpClient.MkdirAll(remoteDir); err != nil {
 		return fmt.Errorf("error creating remote directory %s: %w", remoteDir, err)
 	}
 
 	remoteFile := remoteDir + "\\" + filename
-	dstFile, err := ftp.Create(remoteFile)
+	dstFile, err := sftpClient.Create(remoteFile)
 	if err != nil {
 		return fmt.Errorf("error initializing %s file on Windows VM: %w", remoteFile, err)
 	}
@@ -157,7 +165,27 @@ func (c *sshConnectivity) transfer(reader io.Reader, filename, remoteDir string)
 
 	// Forcefully close the file so that we can execute it later in the case of binaries
 	if err := dstFile.Close(); err != nil {
-		c.log.Error(err, "error closing remote file", "file", remoteFile)
+		//return fmt.Errorf("error closing remote file %s: %w", remoteFile, err)
+		c.log.Error(err, "error closing remote file", "file")
+	}
+	return nil
+}
+
+func (c *sshConnectivity) transferFiles(sftpClient *sftp.Client, files map[string][]byte, remoteDir string) error {
+	for workingPath, content := range files {
+		reader := bytes.NewReader(content)
+
+		// Construct the full destination path the file will be copied to
+		dstPath := remoteDir + "\\" + workingPath
+		// Get the directory that will be written into, without trailing slash, and the base file name
+		splitIndex := strings.LastIndexByte(dstPath, '\\')
+		writeDir := dstPath[:splitIndex]
+		filename := dstPath[splitIndex+1:]
+
+		err := c.transfer(sftpClient, reader, filename, writeDir)
+		if err != nil {
+			return fmt.Errorf("failed to transfer file %s to %s: %w", filename, writeDir, err)
+		}
 	}
 	return nil
 }

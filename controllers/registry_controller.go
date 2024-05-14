@@ -21,13 +21,20 @@ import (
 	"fmt"
 
 	config "github.com/openshift/api/config/v1"
+	core "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/registries"
+	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 //+kubebuilder:rbac:groups="config.openshift.io",resources=imagedigestmirrorsets,verbs=get;list;watch
@@ -68,19 +75,36 @@ func NewRegistryReconciler(mgr manager.Manager, clusterConfig cluster.Config,
 func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	r.log = r.log.WithValues(RegistryController, req.NamespacedName)
 
-	// List all IDMS/ITMS resources
-	imageDigestMirrorSetList := &config.ImageDigestMirrorSetList{}
-	if err = r.client.List(ctx, imageDigestMirrorSetList); err != nil {
-		return ctrl.Result{}, fmt.Errorf("error getting IDMS list: %w", err)
-	}
-	imageTagMirrorSetList := &config.ImageTagMirrorSetList{}
-	if err = r.client.List(ctx, imageTagMirrorSetList); err != nil {
-		return ctrl.Result{}, fmt.Errorf("error getting ITMS list: %w", err)
+	configFiles, err := registries.GenerateConfigFiles(ctx, r.client)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
-	_ = registries.NewRegistryConfig(imageDigestMirrorSetList.Items, imageTagMirrorSetList.Items)
-	// TODO: transfer generated config files to Windows nodes as part of WINC-1222
+	// Transfer the generated registry config folder to each Windows node, completely replacing any existing config
+	nodes := &core.NodeList{}
+	if err := r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
+		return ctrl.Result{}, err
+	}
+	r.signer, err = signer.Create(types.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret},
+		r.client)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
+	}
+	for _, node := range nodes.Items {
+		winInstance, err := r.instanceFromNode(&node)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("unable to create instance object from node: %w", err)
+		}
+		nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+			winInstance, r.signer, nil, nil, r.platform)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)
+		}
 
+		if err := nc.Windows.ReplaceDir(configFiles, windows.ContainerdConfigDir); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	return ctrl.Result{}, nil
 }
 

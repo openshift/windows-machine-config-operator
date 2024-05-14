@@ -58,8 +58,8 @@ const (
 	ContainerdPath = ContainerdDir + "\\containerd.exe"
 	// ContainerdConfPath is the location of containerd config file
 	ContainerdConfPath = ContainerdDir + "\\containerd_conf.toml"
-	// containerdConfigDir is the remote directory for containerd registry config
-	containerdConfigDir = ContainerdDir + "\\registries"
+	// ContainerdConfigDir is the remote directory for containerd registry config
+	ContainerdConfigDir = ContainerdDir + "\\registries"
 	// containerdLogDir is the remote containerd log directory
 	containerdLogDir = logDir + "\\containerd"
 	// ContainerdLogPath is the location of the containerd log file
@@ -165,7 +165,7 @@ var (
 		HybridOverlayLogDir,
 		ContainerdDir,
 		containerdLogDir,
-		containerdConfigDir,
+		ContainerdConfigDir,
 		podManifestDirectory,
 		K8sDir,
 	}
@@ -238,6 +238,9 @@ type Windows interface {
 	// FileExists returns true if a specific file exists at the given path and checksum on the Windows VM. Set an
 	// empty checksum (checksum == "") to disable checksum check.
 	FileExists(string, string) (bool, error)
+	// ReplaceDir transfers the given files to their given paths within the remote directory the Windows instance.
+	// The destination dir will only contain the given files after this function is called, clearing existing content.
+	ReplaceDir(map[string][]byte, string) error
 	// Run executes the given command remotely on the Windows VM over a ssh connection and returns the combined output
 	// of stdout and stderr. If the bool is set, it implies that the cmd is to be execute in PowerShell. This function
 	// should be used in scenarios where you want to execute a command that runs in the background. In these cases we
@@ -335,10 +338,15 @@ func (vm *windows) EnsureFileContent(contents []byte, filename string, remoteDir
 		return nil
 	}
 	vm.log.V(1).Info("copy", "file content", filename, "remote dir", remoteDir)
-	if err := vm.interact.transfer(bytes.NewReader(contents), filename, remoteDir); err != nil {
+
+	c, err := vm.interact.createSFTPClient()
+	if err != nil {
+		return fmt.Errorf("Failed to create SFTP client: %w", err)
+	}
+	if err := vm.interact.transfer(c, bytes.NewReader(contents), filename, remoteDir); err != nil {
 		return fmt.Errorf("unable to copy %s content to remote dir %s: %w", filename, remoteDir, err)
 	}
-	return nil
+	return c.Close()
 }
 
 func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
@@ -362,10 +370,15 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 		}
 	}()
 	vm.log.V(1).Info("copy", "local file", file.Path, "remote dir", remoteDir)
-	if err := vm.interact.transfer(f, filepath.Base(file.Path), remoteDir); err != nil {
+
+	c, err := vm.interact.createSFTPClient()
+	if err != nil {
+		return fmt.Errorf("Failed to create SFTP client: %w", err)
+	}
+	if err := vm.interact.transfer(c, f, filepath.Base(file.Path), remoteDir); err != nil {
 		return fmt.Errorf("unable to transfer %s to remote dir %s: %w", file.Path, remoteDir, err)
 	}
-	return nil
+	return c.Close()
 }
 
 func (vm *windows) FileExists(path, checksum string) (bool, error) {
@@ -389,6 +402,26 @@ func (vm *windows) FileExists(path, checksum string) (bool, error) {
 	}
 	// file exist with diff content
 	return false, nil
+}
+
+func (vm *windows) ReplaceDir(files map[string][]byte, remoteDir string) error {
+	vm.log.V(1).Info("publishing", "remote destination dir", remoteDir, "number of files", len(files))
+
+	if out, err := vm.Run(rmDirCmd(remoteDir), true); err != nil {
+		return fmt.Errorf("unable to remove directory %s, out: %s, err: %s", remoteDir, out, err)
+	}
+	if out, err := vm.Run(mkdirCmd(remoteDir), false); err != nil {
+		return fmt.Errorf("unable to create remote directory %s, out: %s: %w", remoteDir, out, err)
+	}
+
+	sftpClient, err := vm.interact.createSFTPClient()
+	if err != nil {
+		return fmt.Errorf("Failed to create SFTP client: %w", err)
+	}
+	if err = vm.interact.transferFiles(sftpClient, files, remoteDir); err != nil {
+		return err
+	}
+	return sftpClient.Close()
 }
 
 func (vm *windows) Run(cmd string, psCmd bool) (string, error) {

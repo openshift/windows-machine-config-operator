@@ -1,11 +1,13 @@
 package registries
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // mirror represents a mirrored image repo entry in a registry configuration file
@@ -71,13 +73,9 @@ func extractHostname(fullImage string) string {
 	return parts[0]
 }
 
-// registryConfig represents a system-wide image registry configuration
-type registryConfig struct {
-	sourceConfigs []mirrorSet
-}
-
-// NewRegistryConfig creates a new RegistryConfig object by extracting and merging the contents of the given mirror sets
-func NewRegistryConfig(idmsItems []config.ImageDigestMirrorSet, idtsItems []config.ImageTagMirrorSet) *registryConfig {
+// getMirrorSets extracts and merges the contents of the given mirror sets.
+// The resulting slice of mirrorSets represents a system-wide image registry configuration.
+func getMirrorSets(idmsItems []config.ImageDigestMirrorSet, idtsItems []config.ImageTagMirrorSet) []mirrorSet {
 	// Each member of the allMirrorSets collection represents the registry configuration for a specific source
 	var allMirrorSets []mirrorSet
 
@@ -94,12 +92,16 @@ func NewRegistryConfig(idmsItems []config.ImageDigestMirrorSet, idtsItems []conf
 		}
 	}
 
-	return &registryConfig{sourceConfigs: mergeMirrorSets(allMirrorSets)}
+	return mergeMirrorSets(allMirrorSets)
 }
 
 // mergeMirrorSets consolidates duplicate entries in the given slice (based on the source) since we do not want to
 // generate multiple config files for the same source image repo. Output is sorted to ensure it is deterministic.
 func mergeMirrorSets(baseMirrorSets []mirrorSet) []mirrorSet {
+	if len(baseMirrorSets) == 0 {
+		return []mirrorSet{}
+	}
+
 	// Map to keep track of unique mirrorSets by source
 	uniqueMirrorSets := make(map[string]mirrorSet)
 
@@ -208,4 +210,28 @@ func (ms *mirrorSet) generateConfig() string {
 	}
 
 	return result
+}
+
+// GenerateConfigFiles uses cluster resources to generate the containerd mirror registry configuration files
+func GenerateConfigFiles(ctx context.Context, c client.Client) (map[string][]byte, error) {
+	// List IDMS/ITMS resources
+	imageDigestMirrorSetList := &config.ImageDigestMirrorSetList{}
+	if err := c.List(ctx, imageDigestMirrorSetList); err != nil {
+		return nil, fmt.Errorf("error getting IDMS list: %w", err)
+	}
+	imageTagMirrorSetList := &config.ImageTagMirrorSetList{}
+	if err := c.List(ctx, imageTagMirrorSetList); err != nil {
+		return nil, fmt.Errorf("error getting ITMS list: %w", err)
+	}
+
+	registryConf := getMirrorSets(imageDigestMirrorSetList.Items, imageTagMirrorSetList.Items)
+
+	// configFiles is a map from file path on the Windows node to the file content
+	configFiles := make(map[string][]byte)
+	for _, ms := range registryConf {
+		// fileShortPath is the file path within containerd's config directory
+		fileShortPath := fmt.Sprintf("%s\\hosts.toml", ms.source)
+		configFiles[fileShortPath] = []byte(ms.generateConfig())
+	}
+	return configFiles, nil
 }

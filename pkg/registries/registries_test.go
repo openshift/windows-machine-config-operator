@@ -7,6 +7,217 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestGetMirrorSets(t *testing.T) {
+	testCases := []struct {
+		name           string
+		inputIDMS      []config.ImageDigestMirrorSet
+		inputITMS      []config.ImageTagMirrorSet
+		expectedOutput []mirrorSet
+	}{
+		{
+			name:           "No items",
+			inputIDMS:      []config.ImageDigestMirrorSet{},
+			inputITMS:      []config.ImageTagMirrorSet{},
+			expectedOutput: []mirrorSet{},
+		},
+		{
+			name: "One IDMS item",
+			inputIDMS: []config.ImageDigestMirrorSet{
+				{
+					Spec: config.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []config.ImageDigestMirrors{
+							{
+								Source:             "source1",
+								Mirrors:            []config.ImageMirror{"mirror1"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+						},
+					},
+				},
+			},
+			inputITMS: []config.ImageTagMirrorSet{},
+			expectedOutput: []mirrorSet{
+				{
+					source:             "source1",
+					mirrors:            []mirror{{host: "mirror1", resolveTags: false}},
+					mirrorSourcePolicy: config.AllowContactingSource,
+				},
+			},
+		},
+		{
+			name:      "One ITMS item",
+			inputIDMS: []config.ImageDigestMirrorSet{},
+			inputITMS: []config.ImageTagMirrorSet{
+				{
+					Spec: config.ImageTagMirrorSetSpec{
+						ImageTagMirrors: []config.ImageTagMirrors{
+							{
+								Source:             "source2",
+								Mirrors:            []config.ImageMirror{"mirror2"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+						},
+					},
+				},
+			},
+			expectedOutput: []mirrorSet{
+				{
+					source:             "source2",
+					mirrors:            []mirror{{host: "mirror2", resolveTags: true}},
+					mirrorSourcePolicy: config.AllowContactingSource,
+				},
+			},
+		},
+		{
+			name: "1 IDMS and 1 ITMS",
+			inputIDMS: []config.ImageDigestMirrorSet{
+				{
+					Spec: config.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []config.ImageDigestMirrors{
+							{
+								Source:             "source1",
+								Mirrors:            []config.ImageMirror{"mirror1"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+						},
+					},
+				},
+			},
+			inputITMS: []config.ImageTagMirrorSet{
+				{
+					Spec: config.ImageTagMirrorSetSpec{
+						ImageTagMirrors: []config.ImageTagMirrors{
+							{
+								Source:             "source2",
+								Mirrors:            []config.ImageMirror{"mirror2"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+						},
+					},
+				},
+			},
+			expectedOutput: []mirrorSet{
+				{
+					source:             "source1",
+					mirrors:            []mirror{{host: "mirror1", resolveTags: false}},
+					mirrorSourcePolicy: config.AllowContactingSource,
+				},
+				{
+					source:             "source2",
+					mirrors:            []mirror{{host: "mirror2", resolveTags: true}},
+					mirrorSourcePolicy: config.AllowContactingSource,
+				},
+			},
+		},
+		{
+			name: "Mix of overlapping IDMS and 1 ITMS",
+			inputIDMS: []config.ImageDigestMirrorSet{
+				{
+					Spec: config.ImageDigestMirrorSetSpec{
+						ImageDigestMirrors: []config.ImageDigestMirrors{
+							{
+								Source:             "vmc.ci.openshift.org/ci-op/pipeline",
+								Mirrors:            []config.ImageMirror{"devcluster.openshift.com:5000/pipeline"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+						},
+					},
+				},
+			},
+			inputITMS: []config.ImageTagMirrorSet{
+				{
+					Spec: config.ImageTagMirrorSetSpec{
+						ImageTagMirrors: []config.ImageTagMirrors{
+							{
+								Source:             "mcr.microsoft.com/oss/kubernetes/pause",
+								Mirrors:            []config.ImageMirror{"quay.io/testuser/oss/kubernetes/pause"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+							{
+								Source:             "mcr.microsoft.com/powershell",
+								Mirrors:            []config.ImageMirror{"quay.io/testuser/testnamespace/powershell"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+							{
+								Source:             "registry.k8s.io/sig-storage/csi-provisioner",
+								Mirrors:            []config.ImageMirror{"devcluster.openshift.com:5000/sig-storage/csi-provisioner"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+							{
+								Source:             "registry.access.redhat.com/ubi9/ubi-minimal",
+								Mirrors:            []config.ImageMirror{"devcluster.openshift.com:5000/ubi9/ubi-minimal"},
+								MirrorSourcePolicy: config.AllowContactingSource,
+							},
+							{
+								Source:             "registry.access.redhat.com/ubi8/ubi-minimal",
+								Mirrors:            []config.ImageMirror{"random.io/ubi8/ubi-minimal"},
+								MirrorSourcePolicy: config.NeverContactSource,
+							},
+						},
+					},
+				},
+			},
+			expectedOutput: []mirrorSet{
+				{
+					source: "mcr.microsoft.com",
+					mirrors: []mirror{
+						{
+							host:        "quay.io/testuser",
+							resolveTags: true,
+						},
+						{
+							host:        "quay.io/testuser/testnamespace",
+							resolveTags: true,
+						},
+					},
+					mirrorSourcePolicy: "AllowContactingSource"},
+				{
+					source: "registry.access.redhat.com",
+					mirrors: []mirror{
+						{
+							host:        "devcluster.openshift.com:5000",
+							resolveTags: true,
+						},
+						{
+							host:        "random.io",
+							resolveTags: true,
+						},
+					},
+					mirrorSourcePolicy: "NeverContactSource",
+				},
+				{
+					source: "registry.k8s.io",
+					mirrors: []mirror{
+						{
+							host:        "devcluster.openshift.com:5000",
+							resolveTags: true,
+						},
+					},
+					mirrorSourcePolicy: "AllowContactingSource",
+				},
+				{
+					source: "vmc.ci.openshift.org",
+					mirrors: []mirror{
+						{
+							host:        "devcluster.openshift.com:5000",
+							resolveTags: false,
+						},
+					},
+					mirrorSourcePolicy: "AllowContactingSource",
+				},
+			},
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			out := getMirrorSets(test.inputIDMS, test.inputITMS)
+			assert.Equal(t, test.expectedOutput, out)
+			//assert.True(t, reflect.DeepEqual(out, test.expectedOutput))
+		})
+	}
+}
+
 func TestGenerateConfig(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -100,6 +311,11 @@ func TestMergeMirrorSets(t *testing.T) {
 		// expectedOutput's sources and mirror orders matter since result is expected to be sorted alphabetically
 		expectedOutput []mirrorSet
 	}{
+		{
+			name:           "empty mirrorset",
+			input:          []mirrorSet{},
+			expectedOutput: []mirrorSet{},
+		},
 		{
 			name: "same source but different mirrors",
 			input: []mirrorSet{
