@@ -3,15 +3,46 @@ package registries
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	config "github.com/openshift/api/config/v1"
 )
 
 // mirror represents a mirrored image repo entry in a registry configuration file
 type mirror struct {
+	// host is the mirror image target location. Can include the registry hostname/IP address, port, and namespace path
 	host string
 	// resolveTags indicates to the container runtime if this mirror is allowed to resolve an image tag into a digest
 	resolveTags bool
+}
+
+func newMirror(sourceImageLocation, mirrorImageLocation string, resolveTags bool) mirror {
+	mirrorHost := ""
+	if sourceImageLocation == mirrorImageLocation {
+		// special case if source and mirror are the same
+		mirrorHost = extractHostname(mirrorImageLocation)
+	} else {
+		// truncate the mirror to drop any shared namespaces since containerd automatically appends them on image pull
+		mirrorHost = dropCommonSuffix(sourceImageLocation, mirrorImageLocation)
+	}
+	return mirror{host: mirrorHost, resolveTags: resolveTags}
+}
+
+// dropCommonSuffix drops the common suffix from the second repo, returning only the unique leading URL and namespaces
+func dropCommonSuffix(source, mirror string) string {
+	sourceParts := strings.Split(source, "/")
+	mirrorParts := strings.Split(mirror, "/")
+	uniqueMirrorParts := mirrorParts
+
+	// Process until we hit the end of either repo string
+	for i := 0; i < len(sourceParts) && i < len(mirrorParts); i++ {
+		// Check if suffix piece is equal, starting from the backs of the lists
+		if sourceParts[len(sourceParts)-1-i] == mirrorParts[len(mirrorParts)-1-i] {
+			// Remove common suffix piece
+			uniqueMirrorParts = uniqueMirrorParts[:len(uniqueMirrorParts)-1]
+		}
+	}
+	return strings.Join(uniqueMirrorParts, "/")
 }
 
 // mirrorSet holds the mirror registry information for a single source image repo
@@ -22,6 +53,22 @@ type mirrorSet struct {
 	mirrors []mirror
 	// mirrorSourcePolicy defines the fallback policy if fails to pull image from the mirrors
 	mirrorSourcePolicy config.MirrorSourcePolicy
+}
+
+func newMirrorSet(srcImage string, mirrorLocations []config.ImageMirror, resolveTags bool,
+	mirrorSourcePolicy config.MirrorSourcePolicy) mirrorSet {
+	truncatedMirrors := []mirror{}
+	for _, m := range mirrorLocations {
+		truncatedMirrors = append(truncatedMirrors, newMirror(srcImage, string(m), resolveTags))
+	}
+	return mirrorSet{source: extractHostname(srcImage), mirrors: truncatedMirrors, mirrorSourcePolicy: mirrorSourcePolicy}
+}
+
+// extractHostname extracts just the initial host repo from a full image location
+// e.g. mcr.microsoft.com would be extracted from mcr.microsoft.com/oss/kubernetes/pause:3.9
+func extractHostname(fullImage string) string {
+	parts := strings.Split(fullImage, "/")
+	return parts[0]
 }
 
 // registryConfig represents a system-wide image registry configuration
@@ -36,26 +83,14 @@ func NewRegistryConfig(idmsItems []config.ImageDigestMirrorSet, idtsItems []conf
 
 	for _, idms := range idmsItems {
 		for _, entry := range idms.Spec.ImageDigestMirrors {
-			set := &mirrorSet{
-				source:             entry.Source,
-				mirrorSourcePolicy: entry.MirrorSourcePolicy,
-			}
-			for _, image := range entry.Mirrors {
-				set.mirrors = append(set.mirrors, mirror{host: string(image), resolveTags: false})
-			}
-			allMirrorSets = append(allMirrorSets, *set)
+			set := newMirrorSet(entry.Source, entry.Mirrors, false, entry.MirrorSourcePolicy)
+			allMirrorSets = append(allMirrorSets, set)
 		}
 	}
 	for _, itms := range idtsItems {
 		for _, entry := range itms.Spec.ImageTagMirrors {
-			set := &mirrorSet{
-				source:             entry.Source,
-				mirrorSourcePolicy: entry.MirrorSourcePolicy,
-			}
-			for _, image := range entry.Mirrors {
-				set.mirrors = append(set.mirrors, mirror{host: string(image), resolveTags: true})
-			}
-			allMirrorSets = append(allMirrorSets, *set)
+			set := newMirrorSet(entry.Source, entry.Mirrors, true, entry.MirrorSourcePolicy)
+			allMirrorSets = append(allMirrorSets, set)
 		}
 	}
 
