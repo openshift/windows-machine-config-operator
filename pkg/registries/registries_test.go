@@ -328,3 +328,82 @@ func TestMergeMirrors(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractMirrorURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		mirror   string
+		expected string
+	}{
+		{
+			name:     "Exact match",
+			source:   "example.com/path/to/resource",
+			mirror:   "example.com/path/to/resource",
+			expected: "",
+		},
+		{
+			name:     "Different domain",
+			source:   "example.com/path/to/resource",
+			mirror:   "example.org/path/to/resource",
+			expected: "example.org",
+		},
+		{
+			name:     "Last letter equal but no namespace match",
+			source:   "example.com/path/to/resource/x",
+			mirror:   "example.com/path/to/resourceax",
+			expected: "example.com/path/to/resourceax",
+		},
+		{
+			name:     "Different tags",
+			source:   "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022",
+			mirror:   "quay.io/powershell:23",
+			expected: "quay.io/powershell:23",
+		},
+		{
+			name:     "Different domain with tag",
+			source:   "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022",
+			mirror:   "quay.io/powershell:lts-nanoserver-ltsc2022",
+			expected: "quay.io",
+		},
+		{
+			name:     "1 leading namespace",
+			source:   "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022",
+			mirror:   "quay.io/random_namespace/powershell:lts-nanoserver-ltsc2022",
+			expected: "quay.io/random_namespace",
+		},
+		{
+			name:     "2 leading namespaces",
+			source:   "mcr.microsoft.com/windows/servercore:ltsc2022",
+			mirror:   "quay.io/mohashai/random_namespace/windows/servercore:ltsc2022",
+			expected: "quay.io/mohashai/random_namespace",
+		},
+		{
+			name:     "Matching higher level namespace",
+			source:   "foo1/fah/different/foo2",
+			mirror:   "foo1/fah/something/foo2",
+			expected: "foo1/fah/something",
+		},
+		{
+			name:     "Matching higher level namespace with longer source",
+			source:   "foo1/fah/hello/different/foo2",
+			mirror:   "foo1/fah/something/foo2",
+			expected: "foo1/fah/something",
+		},
+		{
+			name:     "Matching higher level namespace with longer mirror",
+			source:   "foo1/fah/different/foo2",
+			mirror:   "foo1/fah/hello/something/foo2",
+			expected: "foo1/fah/hello/something",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractMirrorURL(tt.source, tt.mirror)
+			if result != tt.expected {
+				t.Errorf("Expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
