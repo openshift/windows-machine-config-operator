@@ -35,6 +35,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
+	"github.com/openshift/windows-machine-config-operator/pkg/registries"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -150,6 +151,9 @@ func (nc *nodeConfig) Configure() error {
 	}
 
 	if err := nc.createBootstrapFiles(); err != nil {
+		return err
+	}
+	if err := nc.createRegistryConfigFiles(); err != nil {
 		return err
 	}
 	if cluster.IsProxyEnabled() {
@@ -368,6 +372,15 @@ func (nc *nodeConfig) write(pathToData map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// createBootstrapFiles creates all files on the node required for containerd to mirror images
+func (nc *nodeConfig) createRegistryConfigFiles() error {
+	configFiles, err := registries.GenerateConfigFiles(context.TODO(), nc.client)
+	if err != nil {
+		return err
+	}
+	return nc.Windows.ReplaceDir(configFiles, windows.ContainerdConfigDir)
 }
 
 // createFilesFromIgnition returns the contents and write locations on the instance for any file it can create from
