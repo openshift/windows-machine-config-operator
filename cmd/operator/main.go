@@ -182,6 +182,7 @@ func main() {
 			watchNamespace)
 		os.Exit(1)
 	}
+	setupLog.Info("operator", "namespace", watchNamespace)
 
 	// Setup all Controllers
 	winMachineReconciler, err := controllers.NewWindowsMachineReconciler(mgr, clusterConfig, watchNamespace)
@@ -268,7 +269,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := configMapReconciler.EnsureWICDRBAC(); err != nil {
+	if err := configMapReconciler.EnsureWICDRBAC(ctx); err != nil {
 		setupLog.Error(err, "error ensuring WICD RBAC resources exist", "namespace", watchNamespace)
 		os.Exit(1)
 	}

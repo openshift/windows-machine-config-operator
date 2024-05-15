@@ -572,17 +572,17 @@ func (r *ConfigMapReconciler) EnsureTrustedCAConfigMapExists() error {
 }
 
 // EnsureWICDRBAC ensures the WICD RBAC resources exist as expected
-func (r *ConfigMapReconciler) EnsureWICDRBAC() error {
-	if err := r.ensureWICDRoleBinding(); err != nil {
+func (r *ConfigMapReconciler) EnsureWICDRBAC(ctx context.Context) error {
+	if err := r.ensureWICDRoleBinding(ctx); err != nil {
 		return err
 	}
-	return r.ensureWICDClusterRoleBinding()
+	return r.ensureWICDClusterRoleBinding(ctx)
 }
 
 // ensureWICDRoleBinding ensures the WICD RoleBinding resource exists as expected.
 // Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
-func (r *ConfigMapReconciler) ensureWICDRoleBinding() error {
-	existingRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Get(context.TODO(), wicdRBACResourceName,
+func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
+	existingRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Get(ctx, wicdRBACResourceName,
 		meta.GetOptions{})
 	if err != nil && !k8sapierrors.IsNotFound(err) {
 		return fmt.Errorf("unable to get RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
@@ -609,16 +609,17 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding() error {
 			reflect.DeepEqual(existingRB.Subjects, expectedRB.Subjects) {
 			return nil
 		}
-		err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Delete(context.TODO(), wicdRBACResourceName,
+		err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Delete(ctx, wicdRBACResourceName,
 			meta.DeleteOptions{})
 		if err != nil {
 			return fmt.Errorf("unable to delete RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
 		}
 		r.log.Info("Deleted malformed resource", "RoleBinding",
-			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: existingRB.Name})
+			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: existingRB.Name},
+			"RoleRef", existingRB.RoleRef.Name, "Subjects", existingRB.Subjects)
 	}
 	// create proper resource if it does not exist
-	_, err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Create(context.TODO(), expectedRB,
+	_, err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Create(ctx, expectedRB,
 		meta.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
@@ -630,8 +631,8 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding() error {
 
 // ensureWICDClusterRoleBinding ensures the WICD ClusterRoleBinding resource exists as expected.
 // Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
-func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding() error {
-	existingCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Get(context.TODO(), wicdRBACResourceName,
+func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) error {
+	existingCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Get(ctx, wicdRBACResourceName,
 		meta.GetOptions{})
 	if err != nil && !k8sapierrors.IsNotFound(err) {
 		return err
@@ -658,15 +659,16 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding() error {
 			reflect.DeepEqual(existingCRB.Subjects, expectedCRB.Subjects) {
 			return nil
 		}
-		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(context.TODO(), wicdRBACResourceName,
+		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(ctx, wicdRBACResourceName,
 			meta.DeleteOptions{})
 		if err != nil {
 			return err
 		}
-		r.log.Info("Deleted malformed resource", "ClusterRoleBinding", existingCRB.Name)
+		r.log.Info("Deleted malformed resource", "ClusterRoleBinding", existingCRB.Name,
+			"RoleRef", existingCRB.RoleRef.Name, "Subjects", existingCRB.Subjects)
 	}
 	// create proper resource if it does not exist
-	_, err = r.k8sclientset.RbacV1().ClusterRoleBindings().Create(context.TODO(), expectedCRB, meta.CreateOptions{})
+	_, err = r.k8sclientset.RbacV1().ClusterRoleBindings().Create(ctx, expectedCRB, meta.CreateOptions{})
 	if err == nil {
 		r.log.Info("Created resource", "ClusterRoleBinding", expectedCRB.Name)
 	}
