@@ -325,7 +325,7 @@ func GetDNS(subnet string) (string, error) {
 
 // IsProxyEnabled returns whether a global egress proxy is active in the cluster
 func IsProxyEnabled() bool {
-	return len(GetProxyVars()) > 0
+	return true //len(GetProxyVars()) > 0
 }
 
 // GetProxyVars returns a map of the proxy variables and values from the WMCO container's environment. The presence of

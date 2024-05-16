@@ -8,6 +8,8 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 // mirror represents a mirrored image repo entry in a registry configuration file
@@ -180,6 +182,9 @@ func (ms *mirrorSet) generateConfig() string {
 			hostCapabilities = "  capabilities = [\"pull\"]"
 		}
 		result += hostCapabilities
+		result += "\r\n"
+
+		result += fmt.Sprintf("  ca = \"%s\"", strings.ReplaceAll(windows.TrustedCABundlePath, "\\", "\\\\"))
 		result += "\r\n"
 	}
 
