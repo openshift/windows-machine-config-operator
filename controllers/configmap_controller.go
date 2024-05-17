@@ -509,8 +509,14 @@ func (r *ConfigMapReconciler) ensureTrustedCABundleInNodes(ctx context.Context, 
 	if err := r.client.List(ctx, winNodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
 		return fmt.Errorf("error listing nodes: %w", err)
 	}
+
+	cm, err := r.k8sclientset.CoreV1().ConfigMaps("openshift-config").Get(ctx, "user-ca-bundle", meta.GetOptions{})
+	if err != nil {
+		return err
+	}
+
 	for _, node := range winNodes.Items {
-		if err := r.ensureTrustedCABundleInNode(ctx, caData, node); err != nil {
+		if err := r.ensureTrustedCABundleInNode(ctx, cm.Data, node); err != nil {
 			return fmt.Errorf("error ensuring trusted CA bundle is up-to-date on node %s: %w", node.Name, err)
 		}
 	}

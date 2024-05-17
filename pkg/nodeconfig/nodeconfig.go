@@ -590,11 +590,13 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 
 // ensureTrustedCABundle gets the trusted CA ConfigMap and ensures the cert bundle on the instance has up-to-date data
 func (nc *nodeConfig) ensureTrustedCABundle() error {
+	//this configmap is created and managed by the machine-config-operator
 	trustedCA := &core.ConfigMap{}
-	if err := nc.client.Get(context.TODO(), types.NamespacedName{Namespace: nc.wmcoNamespace,
-		Name: certificates.ProxyCertsConfigMap}, trustedCA); err != nil {
-		return fmt.Errorf("unable to get ConfigMap %s: %w", certificates.ProxyCertsConfigMap, err)
+	if err := nc.client.Get(context.TODO(), types.NamespacedName{Namespace: "openshift-config",
+		Name: "user-ca-bundle"}, trustedCA); err != nil {
+		return fmt.Errorf("unable to get ConfigMap %s: %w", "user-ca-bundle", err)
 	}
+	
 	return nc.UpdateTrustedCABundleFile(trustedCA.Data)
 }
 
