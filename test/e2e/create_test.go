@@ -15,7 +15,7 @@ import (
 	mapi "github.com/openshift/api/machine/v1beta1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,6 +34,41 @@ const (
 	// after the hardware is provisioned.
 	vmConfigurationTime = 10 * time.Minute
 )
+
+// getCloudPrivateKey returns the private key present within the cloud-private-key secret
+func (tc *testContext) createPullSecret() error {
+	privateKeySecret, err := tc.client.K8s.CoreV1().Secrets("openshift-config").Get(context.TODO(),
+		"pull-secret", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to retrieve cloud private key secret: %w", err)
+	}
+
+	_, err = tc.client.K8s.CoreV1().Secrets(tc.workloadNamespace).Get(context.TODO(),
+		"pull-secret", metav1.GetOptions{})
+	if err == nil {
+		return nil
+	}
+
+	if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to retrieve pulls secret: %w", err)
+	}
+
+	wmcoTestPullSecret := v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pull-secret",
+		},
+		Data: privateKeySecret.Data,
+		Type: v1.SecretTypeDockerConfigJson,
+	}
+
+	_, err = tc.client.K8s.CoreV1().Secrets(tc.workloadNamespace).Create(context.TODO(), &wmcoTestPullSecret,
+		metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create pull secret: %w", err)
+	}
+
+	return nil
+}
 
 func creationTestSuite(t *testing.T) {
 	tc, err := NewTestContext()
