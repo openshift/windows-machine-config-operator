@@ -125,13 +125,8 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 			// Deploy a webserver pod on the new node. This is prone to timing out due to having to pull the Windows image
 			// So trying multiple times
 			var winServerDeployment *appsv1.Deployment
-			for i := 0; i < deploymentRetries; i++ {
-				winServerDeployment, err = tc.deployWindowsWebServer("win-webserver-"+strings.ToLower(
-					node.Status.NodeInfo.MachineID), affinity, nil)
-				if err == nil {
-					break
-				}
-			}
+			winServerDeployment, err = tc.deployWindowsWebServer("win-webserver-"+strings.ToLower(
+				node.Status.NodeInfo.MachineID), affinity, nil)
 			require.NoError(t, err, "could not create Windows Server deployment")
 			defer tc.deleteDeployment(winServerDeployment.Name)
 			tc.collectDeploymentLogs(winServerDeployment)
