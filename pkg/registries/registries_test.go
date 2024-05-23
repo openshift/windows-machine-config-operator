@@ -237,7 +237,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
-			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n",
+			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n  skip_verify = true\r\n",
 		},
 		{
 			name: "basic one tag mirror",
@@ -248,7 +248,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
-			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  skip_verify = true\r\n",
 		},
 		{
 			name: "one digest mirror never contact source",
@@ -259,7 +259,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n",
+			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n  skip_verify = true\r\n",
 		},
 		{
 			name: "tags mirror never contact source",
@@ -270,7 +270,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  skip_verify = true\r\n",
 		},
 		{
 			name: "multiple mirrors",
@@ -283,7 +283,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
-			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n  [host.\"https://mirror.example.com/redhat\".header]\r\n    authorization = \"Basic x\"\r\n\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  [host.\"https://mirror.example.net/image\".header]\r\n    authorization = \"Basic x+xxx==\"\r\n",
+			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n  skip_verify = true\r\n\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n  skip_verify = true\r\n  [host.\"https://mirror.example.com/redhat\".header]\r\n    authorization = \"Basic x\"\r\n\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  skip_verify = true\r\n  [host.\"https://mirror.example.net/image\".header]\r\n    authorization = \"Basic x+xxx==\"\r\n",
 		},
 		{
 			name: "multiple mirrors never contact source",
@@ -296,7 +296,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n  [host.\"https://mirror.example.com/redhat\".header]\r\n    authorization = \"Basic x\"\r\n\r\n[host.\"https://mirror.example.net\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  [host.\"https://mirror.example.net\".header]\r\n    authorization = \"Basic x+xxx==\"\r\n",
+			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n  skip_verify = true\r\n\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n  skip_verify = true\r\n  [host.\"https://mirror.example.com/redhat\".header]\r\n    authorization = \"Basic x\"\r\n\r\n[host.\"https://mirror.example.net\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  skip_verify = true\r\n  [host.\"https://mirror.example.net\".header]\r\n    authorization = \"Basic x+xxx==\"\r\n",
 		},
 	}
 

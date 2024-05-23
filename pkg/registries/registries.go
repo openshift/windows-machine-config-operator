@@ -212,6 +212,10 @@ func (ms *mirrorSet) generateConfig(secretsConfig dockerConfigJSON) string {
 		result += hostCapabilities
 		result += "\r\n"
 
+		// TODO: Remove this when we support TLS auth using CA certs - https://issues.redhat.com/browse/WINC-1291
+		result += "  skip_verify = true"
+		result += "\r\n"
+
 		// Extract the auth token if one exists for the mirror repo
 		authToken := ""
 		if entry, ok := secretsConfig.Auths[extractHostname(m.host)]; ok {
