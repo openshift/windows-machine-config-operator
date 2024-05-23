@@ -500,17 +500,17 @@ func (r *ConfigMapReconciler) reconcileProxyCerts(ctx context.Context, trustedCA
 	if err := r.ensureProxyCertsCMIsValid(ctx, trustedCA.GetLabels()[InjectionRequestLabel]); err != nil {
 		return err
 	}
-	return r.ensureTrustedCABundleInNodes(ctx, trustedCA.Data)
+	return r.ensureTrustedCABundleInNodes(ctx)
 }
 
 // ensureTrustedCABundleInNodes copies over the trust CA bundle onto each Windows instance in the cluster
-func (r *ConfigMapReconciler) ensureTrustedCABundleInNodes(ctx context.Context, caData map[string]string) error {
+func (r *ConfigMapReconciler) ensureTrustedCABundleInNodes(ctx context.Context) error {
 	winNodes := &core.NodeList{}
 	if err := r.client.List(ctx, winNodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
 		return fmt.Errorf("error listing nodes: %w", err)
 	}
 	for _, node := range winNodes.Items {
-		if err := r.ensureTrustedCABundleInNode(ctx, caData, node); err != nil {
+		if err := r.ensureTrustedCABundleInNode(ctx, node); err != nil {
 			return fmt.Errorf("error ensuring trusted CA bundle is up-to-date on node %s: %w", node.Name, err)
 		}
 	}
@@ -518,7 +518,7 @@ func (r *ConfigMapReconciler) ensureTrustedCABundleInNodes(ctx context.Context, 
 }
 
 // ensureTrustedCABundleInNodes places the trusted CA bundle data into a file on the given node
-func (r *ConfigMapReconciler) ensureTrustedCABundleInNode(ctx context.Context, caData map[string]string, node core.Node) error {
+func (r *ConfigMapReconciler) ensureTrustedCABundleInNode(ctx context.Context, node core.Node) error {
 	winInstance, err := r.instanceFromNode(&node)
 	if err != nil {
 		return err
@@ -528,7 +528,7 @@ func (r *ConfigMapReconciler) ensureTrustedCABundleInNode(ctx context.Context, c
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
 	}
-	return nc.UpdateTrustedCABundleFile(caData)
+	return nc.SyncTrustedCABundle()
 }
 
 // ensureProxyCertsCMIsValid ensures the trusted CA ConfigMap has the expected injection request. Patches the object if not.
