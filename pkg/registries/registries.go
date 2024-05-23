@@ -2,11 +2,14 @@ package registries
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
+	core "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -178,7 +181,7 @@ func mergeMirrors(existingMirrors, newMirrors []mirror) []mirror {
 
 // generateConfig is a serialization method that generates a valid TOML representation from a mirrorSet object.
 // Results in content usable as a containerd image registry configuration file. Returns empty string if no mirrors exist
-func (ms *mirrorSet) generateConfig() string {
+func (ms *mirrorSet) generateConfig(secretsConfig dockerConfigJSON) string {
 	result := ""
 	if len(ms.mirrors) == 0 {
 		return result
@@ -190,10 +193,11 @@ func (ms *mirrorSet) generateConfig() string {
 		fallbackServer = ms.mirrors[0].host
 	}
 	result += fmt.Sprintf("server = \"https://%s\"", fallbackServer)
-	result += "\r\n\r\n"
+	result += "\r\n"
 
 	// Each mirror should result in an entry followed by a set of settings for interacting with the mirror host
 	for _, m := range ms.mirrors {
+		result += "\r\n"
 		result += fmt.Sprintf("[host.\"https://%s\"]", m.host)
 		result += "\r\n"
 
@@ -207,6 +211,19 @@ func (ms *mirrorSet) generateConfig() string {
 		}
 		result += hostCapabilities
 		result += "\r\n"
+
+		// Extract the auth token if one exists for the mirror repo
+		authToken := ""
+		if entry, ok := secretsConfig.Auths[extractHostname(m.host)]; ok {
+			authToken = entry["auth"]
+		}
+		if authToken != "" {
+			// Add the authorization token as a request header
+			result += fmt.Sprintf("  [host.\"https://%s\".header]", m.host)
+			result += "\r\n"
+			result += fmt.Sprintf("    authorization = \"Basic %s\"", authToken)
+			result += "\r\n"
+		}
 	}
 
 	return result
@@ -226,12 +243,38 @@ func GenerateConfigFiles(ctx context.Context, c client.Client) (map[string][]byt
 
 	registryConf := getMirrorSets(imageDigestMirrorSetList.Items, imageTagMirrorSetList.Items)
 
+	// Check for registry authorization credentials
+	pullSecret := &core.Secret{}
+	err := c.Get(context.TODO(), types.NamespacedName{Namespace: "openshift-config", Name: "pull-secret"}, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("error getting pull secret: %w", err)
+	}
+	var secretsConfig dockerConfigJSON
+	err = json.Unmarshal(pullSecret.Data[core.DockerConfigJsonKey], &secretsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling to DockerConfigJSON: %w", err)
+	}
+
 	// configFiles is a map from file path on the Windows node to the file content
 	configFiles := make(map[string][]byte)
 	for _, ms := range registryConf {
 		// fileShortPath is the file path within containerd's config directory
 		fileShortPath := fmt.Sprintf("%s\\hosts.toml", ms.source)
-		configFiles[fileShortPath] = []byte(ms.generateConfig())
+		configFiles[fileShortPath] = []byte(ms.generateConfig(secretsConfig))
 	}
 	return configFiles, nil
+}
+
+// dockerConfigJSON represents a docker config file specifying the image pull credentials for certain repositories
+type dockerConfigJSON struct {
+	// Auths is a map of repository name to credentials, having the following example form:
+	/* {
+	     "cloud.openshift.com": { "auth": "x==" },
+	     "quay.io": { "auth": "xx==" },
+	     "registry.ci.openshift.org": { "auth": "x+xxx==" },
+	     "registry.connect.redhat.com": { "auth": "x" },
+	     "registry.redhat.io": { "auth": "x" }
+	   }
+	*/
+	Auths map[string]map[string]string `json:"auths"`
 }

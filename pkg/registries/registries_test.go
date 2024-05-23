@@ -219,6 +219,10 @@ func TestGetMirrorSets(t *testing.T) {
 }
 
 func TestGenerateConfig(t *testing.T) {
+	secretsConfig := dockerConfigJSON{Auths: map[string]map[string]string{
+		"mirror.example.com": {"auth": "x"},
+		"mirror.example.net": {"auth": "x+xxx=="},
+	}}
 	testCases := []struct {
 		name           string
 		input          mirrorSet
@@ -279,7 +283,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
-			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n  [host.\"https://mirror.example.com/redhat\".header]\r\n    authorization = \"Basic x\"\r\n\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  [host.\"https://mirror.example.net/image\".header]\r\n    authorization = \"Basic x+xxx==\"\r\n",
 		},
 		{
 			name: "multiple mirrors never contact source",
@@ -288,18 +292,18 @@ func TestGenerateConfig(t *testing.T) {
 				mirrors: []mirror{
 					{"example.io/example/ubi-minimal", false},
 					{"mirror.example.com/redhat", false},
-					{"mirror.example.net/image", true},
+					{"mirror.example.net", true},
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n  [host.\"https://mirror.example.com/redhat\".header]\r\n    authorization = \"Basic x\"\r\n\r\n[host.\"https://mirror.example.net\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  [host.\"https://mirror.example.net\".header]\r\n    authorization = \"Basic x+xxx==\"\r\n",
 		},
 	}
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			out := test.input.generateConfig()
-			assert.Equal(t, out, test.expectedOutput)
+			out := test.input.generateConfig(secretsConfig)
+			assert.Equal(t, test.expectedOutput, out)
 		})
 	}
 }
