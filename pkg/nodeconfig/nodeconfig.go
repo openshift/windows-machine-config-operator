@@ -12,6 +12,7 @@ import (
 	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_4/types"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
+	mcfg "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
@@ -62,6 +63,8 @@ const (
 	mcoNamespace = "openshift-machine-config-operator"
 	// mcoBootstrapSecret is the resource name that holds the cert and token required to create the bootstrap kubeconfig
 	mcoBootstrapSecret = "node-bootstrapper-token"
+	// MccName is the name of the Machine Config Controller object
+	MccName = "machine-config-controller"
 )
 
 // nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
@@ -156,10 +159,8 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.createRegistryConfigFiles(); err != nil {
 		return err
 	}
-	if cluster.IsProxyEnabled() {
-		if err := nc.ensureTrustedCABundle(); err != nil {
-			return err
-		}
+	if err := nc.SyncTrustedCABundle(); err != nil {
+		return err
 	}
 	wicdKC, err := nc.generateWICDKubeconfig()
 	if err != nil {
@@ -588,20 +589,36 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 	return nil
 }
 
-// ensureTrustedCABundle gets the trusted CA ConfigMap and ensures the cert bundle on the instance has up-to-date data
-func (nc *nodeConfig) ensureTrustedCABundle() error {
-	trustedCA := &core.ConfigMap{}
+// SyncTrustedCABundle builds the trusted CA ConfigMap from image registry certificates and the proxy trust bundle
+// and ensures the cert bundle on the instance has up-to-date data
+func (nc *nodeConfig) SyncTrustedCABundle() error {
+	caBundle := ""
+	var cc mcfg.ControllerConfig
 	if err := nc.client.Get(context.TODO(), types.NamespacedName{Namespace: nc.wmcoNamespace,
-		Name: certificates.ProxyCertsConfigMap}, trustedCA); err != nil {
-		return fmt.Errorf("unable to get ConfigMap %s: %w", certificates.ProxyCertsConfigMap, err)
+		Name: MccName}, &cc); err != nil {
+		return err
 	}
-	return nc.UpdateTrustedCABundleFile(trustedCA.Data)
+	for _, bundle := range cc.Spec.ImageRegistryBundleUserData {
+		caBundle += appendToCABundle(bundle)
+	}
+	for _, bundle := range cc.Spec.ImageRegistryBundleData {
+		caBundle += appendToCABundle(bundle)
+	}
+	if cluster.IsProxyEnabled() {
+		proxyCA := &core.ConfigMap{}
+		if err := nc.client.Get(context.TODO(), types.NamespacedName{Namespace: nc.wmcoNamespace,
+			Name: certificates.ProxyCertsConfigMap}, proxyCA); err != nil {
+			return fmt.Errorf("unable to get ConfigMap %s: %w", certificates.ProxyCertsConfigMap, err)
+		}
+		caBundle += proxyCA.Data[certificates.CABundleKey]
+	}
+	return nc.UpdateTrustedCABundleFile(caBundle)
 }
 
 // UpdateTrustedCABundleFile updates the file containing the trusted CA bundle in the Windows node, if needed
-func (nc *nodeConfig) UpdateTrustedCABundleFile(data map[string]string) error {
+func (nc *nodeConfig) UpdateTrustedCABundleFile(data string) error {
 	dir, fileName := windows.SplitPath(windows.TrustedCABundlePath)
-	return nc.Windows.EnsureFileContent([]byte(data[certificates.CABundleKey]), fileName, dir)
+	return nc.Windows.EnsureFileContent([]byte(data), fileName, dir)
 }
 
 // generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret
@@ -739,4 +756,10 @@ func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
 	pubKey := string(ssh.MarshalAuthorizedKey(key))
 	trimmedKey := strings.TrimSuffix(pubKey, "\n")
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(trimmedKey)))
+}
+
+// appendToCABundle returns a formatted string containing CA bundle's file name and data, the output is appended to an
+// existing CA bundle string
+func appendToCABundle(bundle mcfg.ImageRegistryBundle) string {
+	return fmt.Sprintf("# %s\n%s\n\n", strings.ReplaceAll(bundle.File, "..", ":"), bundle.Data)
 }
