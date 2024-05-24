@@ -18,7 +18,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
     features.operators.openshift.io/token-auth-gcp: "false"
-    olm.skipRange: '>=10.15.0 <10.16.0'
+    olm.skipRange: '>=10.16.0 <10.17.0'
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     operators.openshift.io/valid-subscription: '["Red Hat OpenShift support for Windows
@@ -27,7 +27,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat
-  name: windows-machine-config-operator.v10.16.0
+  name: windows-machine-config-operator.v10.17.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -35,8 +35,8 @@ spec:
   description: |-
     ### Introduction
     The Windows Machine Config Operator configures Windows Machines into nodes, enabling Windows container workloads to
-    be run on OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/4.16/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
-    or by specifying existing instances through a [ConfigMap](https://docs.openshift.com/container-platform/4.16/windows_containers/byoh-windows-instance.html)
+    be run on OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/4.17/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
+    or by specifying existing instances through a [ConfigMap](https://docs.openshift.com/container-platform/4.17/windows_containers/byoh-windows-instance.html)
     The operator completes all the necessary steps to configure the Windows instance so that it can join the cluster as a worker node.
 
     Usage of this operator requires an OpenShift Container Platform for Windows Containers subscription. Users looking to
@@ -46,8 +46,8 @@ spec:
 
     ### Pre-requisites
     * A Red Hat OpenShift Container Platform for Windows Containers [subscription](https://access.redhat.com/support/policy/updates/openshift#windows)
-    * OCP 4.16 cluster running on Azure, AWS, GCP or vSphere configured with hybrid OVN Kubernetes networking
-    * [WMCO prerequisites](https://docs.openshift.com/container-platform/4.16/windows_containers/understanding-windows-container-workloads.html#wmco-prerequisites__understanding-windows-container-workloads)
+    * OCP 4.17 cluster running on Azure, AWS, GCP or vSphere configured with hybrid OVN Kubernetes networking
+    * [WMCO prerequisites](https://docs.openshift.com/container-platform/4.17/windows_containers/understanding-windows-container-workloads.html#wmco-prerequisites__understanding-windows-container-workloads)
 
     ### Usage
     Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
@@ -57,7 +57,7 @@ spec:
     oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
     ```
     We strongly recommend not using the same
-    [private key](https://docs.openshift.com/container-platform/4.16/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default)
+    [private key](https://docs.openshift.com/container-platform/4.17/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default)
     used when installing the cluster
 
     Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
@@ -142,9 +142,9 @@ spec:
                 server: <vCenter Server FQDN/IP>
     ```
     Example MachineSet for other cloud providers:
-    - [AWS](https://docs.openshift.com/container-platform/4.16/windows_containers/creating_windows_machinesets/creating-windows-machineset-aws.html)
-    - [Azure](https://docs.openshift.com/container-platform/4.16/windows_containers/creating_windows_machinesets/creating-windows-machineset-azure.html)
-    - [GCP](https://docs.openshift.com/container-platform/4.16/windows_containers/creating_windows_machinesets/creating-windows-machineset-gcp.html)
+    - [AWS](https://docs.openshift.com/container-platform/4.17/windows_containers/creating_windows_machinesets/creating-windows-machineset-aws.html)
+    - [Azure](https://docs.openshift.com/container-platform/4.17/windows_containers/creating_windows_machinesets/creating-windows-machineset-azure.html)
+    - [GCP](https://docs.openshift.com/container-platform/4.17/windows_containers/creating_windows_machinesets/creating-windows-machineset-gcp.html)
 
     ### Limitations
     #### DeploymentConfigs
@@ -153,7 +153,7 @@ spec:
 
     ### Reporting issues
     Support for this distribution of WMCO requires a Red Hat OpenShfit subscription. Support should be requested through the Red Hat Customer Portal.
-    Please read through the [troubleshooting document](https://docs.openshift.com/container-platform/4.16/support/troubleshooting/troubleshooting-windows-container-workload-issues.html)
+    Please read through the [troubleshooting document](https://docs.openshift.com/container-platform/4.17/support/troubleshooting/troubleshooting-windows-container-workload-issues.html)
     before opening a support case.
   displayName: Windows Machine Config Operator
   icon:
@@ -513,4 +513,4 @@ spec:
   minKubeVersion: 1.29.0
   provider:
     name: Red Hat
-  version: 10.16.0
+  version: 10.17.0
