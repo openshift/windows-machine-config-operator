@@ -52,6 +52,7 @@ func TestWMCO(t *testing.T) {
 	// individual test suites after the operator is running
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
 	t.Run("create", creationTestSuite)
+	t.Run("image mirroring", testImageMirroring)
 	t.Run("network", testNetwork)
 	t.Run("storage", testStorage)
 	t.Run("service reconciliation", testDependentServiceChanges)
