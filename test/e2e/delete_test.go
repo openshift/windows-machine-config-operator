@@ -33,6 +33,7 @@ const remotePowerShellCmdPrefix = "powershell.exe -NonInteractive -ExecutionPoli
 func deletionTestSuite(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
+	t.Run("Mirror settings cleared from nodes", tc.testMirrorSettingsCleared)
 	t.Run("Deletion", tc.testWindowsNodeDeletion)
 }
 
