@@ -1196,8 +1196,8 @@ github.com/openshift/client-go v0.0.0-20221019143426-16aed247da5c h1:CV76yFOTXmq
 github.com/openshift/client-go v0.0.0-20221019143426-16aed247da5c/go.mod h1:lFMO8mLHXWFzSdYvGNo8ivF9SfF6zInA8ZGw4phRnUE=
 github.com/openshift/library-go v0.0.0-20231120144800-ba257b06bf7b h1:CG9GWAhubQ1dFEGc9jnfTGWRg8Obc1bO+KLNamCQGGg=
 github.com/openshift/library-go v0.0.0-20231120144800-ba257b06bf7b/go.mod h1:KPBAXGaq7pPmA+1wUVtKr5Axg3R68IomWDkzaOxIhxM=
-github.com/openshift/machine-config-operator v0.0.1-0.20240328082117-33a010772d60 h1:yquUJ13YjPb5dihdpo15HUunf2F/5HGiGS4dgJCYHzg=
-github.com/openshift/machine-config-operator v0.0.1-0.20240328082117-33a010772d60/go.mod h1:LbP4+qcTPzBcFDz9FyQ/mNfVkpp8YsAg1fjF3TysWZo=
+github.com/openshift/machine-config-operator v0.0.1-0.20240517173717-dd2a0b3f915b h1:8bCtPb2OGmWcOMAMxSmAd8DzE9HGluBKMp/X0/mwl1Q=
+github.com/openshift/machine-config-operator v0.0.1-0.20240517173717-dd2a0b3f915b/go.mod h1:LbP4+qcTPzBcFDz9FyQ/mNfVkpp8YsAg1fjF3TysWZo=
 github.com/operator-framework/api v0.5.2/go.mod h1:L7IvLd/ckxJEJg/t4oTTlnHKAJIP/p51AvEslW3wYdY=
 github.com/operator-framework/api v0.16.0 h1:swUOhVv7QDszxBTwYM8QAtyeqI4EQHNVAiKMS+xjakY=
 github.com/operator-framework/api v0.16.0/go.mod h1:kk8xJahHJR3bKqrA+A+1VIrhOTmyV76k+ARv+iV+u1Q=
