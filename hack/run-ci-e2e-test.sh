@@ -153,6 +153,8 @@ if [[ "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
 fi
 
 if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
+  printf "\n####### Testing image mirroring #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/image_mirroring -v -timeout=10m -args $GO_TEST_ARGS
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/network -v -timeout=20m -args $GO_TEST_ARGS
   printf "\n####### Testing storage #######\n" >> "$ARTIFACT_DIR"/wmco.log
