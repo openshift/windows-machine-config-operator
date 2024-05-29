@@ -278,8 +278,10 @@ func getHostnameCmd(platformType config.PlatformType) string {
 		return "Invoke-RestMethod -UseBasicParsing -Uri http://169.254.169.254/latest/meta-data/local-hostname"
 	case config.GCPPlatformType:
 		return windows.GcpGetHostnameScriptRemotePath
+	case config.VSpherePlatformType:
+		return windows.GetHostnameFQDNCommand
 	default:
-		// by default use the original hostname
+		// by default do not override the hostname, the cloud provider determines the name of the node
 		return ""
 	}
 }

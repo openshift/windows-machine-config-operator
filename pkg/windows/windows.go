@@ -139,6 +139,15 @@ const (
 	wicdKubeconfigPath = K8sDir + "\\wicd-kubeconfig"
 	// TrustedCABundlePath is the location of the trusted CA bundle file
 	TrustedCABundlePath = remoteDir + "\\ca-bundle.crt"
+	// GetHostnameFQDNCommand is the PowerShell command to get the FQDN hostname of the Windows instance
+	GetHostnameFQDNCommand = "$output = Invoke-Expression 'ipconfig /all'; " +
+		"$hostNameLine = ($output -split '`n') | Where-Object { $_ -match 'Host Name' }; " +
+		"$dnsSuffixLine = ($output -split '`n') | Where-Object { $_ -match 'Primary Dns Suffix' }; " +
+		"$hostName = ($hostNameLine -split ':')[1].Trim(); " +
+		"$dnsSuffix = ($dnsSuffixLine -split ':')[1].Trim(); " +
+		"if (-not $dnsSuffix) { return $hostName }; " +
+		"$fqdn = $hostName + '.' + $dnsSuffix; " +
+		"return $fqdn"
 )
 
 var (
@@ -227,6 +236,8 @@ func GetK8sDir() string {
 type Windows interface {
 	// GetIPv4Address returns the IPv4 address of the associated instance.
 	GetIPv4Address() string
+	// GetHostname returns the FQDN of the associated instance including the domain name, if any
+	GetHostname() (string, error)
 	// EnsureFile ensures the given file exists within the specified directory on the Windows VM. The file will be copied
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
@@ -318,6 +329,14 @@ func defaultShellPowershell(conn connectivity) bool {
 
 func (vm *windows) GetIPv4Address() string {
 	return vm.instance.IPv4Address
+}
+
+func (vm *windows) GetHostname() (string, error) {
+	hostName, err := vm.Run(GetHostnameFQDNCommand, true)
+	if err != nil {
+		return "", fmt.Errorf("error getting the host name, with stdout %s: %w", hostName, err)
+	}
+	return strings.TrimSpace(hostName), nil
 }
 
 func (vm *windows) EnsureFileContent(contents []byte, filename string, remoteDir string) error {
@@ -613,11 +632,11 @@ func (vm *windows) ensureHostNameAndContainersFeature() error {
 
 // isHostNameChangeNeeded tells if we need to update the host name of the Windows VM
 func (vm *windows) isHostNameChangeNeeded() (bool, error) {
-	out, err := vm.Run("hostname", true)
+	hostName, err := vm.GetHostname()
 	if err != nil {
-		return false, fmt.Errorf("error getting the host name, with stdout %s: %w", out, err)
+		return false, err
 	}
-	return !strings.Contains(out, vm.instance.NewHostname), nil
+	return !strings.Contains(hostName, vm.instance.NewHostname), nil
 }
 
 // changeHostName changes the hostName of the Windows VM to match the expected value

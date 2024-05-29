@@ -325,11 +325,7 @@ func findHostName(instanceInfo *instance.Info, instanceSigner ssh.Signer) (strin
 		return "", fmt.Errorf("error instantiating Windows instance: %w", err)
 	}
 	// get the instance host name  by running hostname command on remote VM
-	hostName, err := win.Run("hostname", true)
-	if err != nil {
-		return "", fmt.Errorf("error getting the host name, with stdout %s: %w", hostName, err)
-	}
-	return hostName, nil
+	return win.GetHostname()
 }
 
 // matchesDNS returns true if the node name passed matches with the instance address of any of the instances present
