@@ -232,7 +232,7 @@ wmco-img:
 
 .PHONY: kubelet
 kubelet:
-	KUBE_GIT_VERSION=$(KUBELET_GIT_VERSION) KUBE_BUILD_PLATFORMS=windows/amd64 make -C kubelet WHAT=cmd/kubelet
+	KUBE_GIT_VERSION=$(KUBELET_GIT_VERSION) GOFLAGS=-buildvcs=false KUBE_BUILD_PLATFORMS=windows/amd64 make -C kubelet WHAT=cmd/kubelet
 
 .PHONY: kube-proxy
 kube-proxy:
