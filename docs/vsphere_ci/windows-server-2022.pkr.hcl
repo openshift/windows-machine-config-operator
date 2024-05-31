@@ -27,7 +27,7 @@ variable "vm-template-name" {
 
 variable "vmtools-iso-path" {
   type    = string
-  default = "[WorkloadDatastore] windows-iso-images/vmtools-v11360-windows.iso"
+  default = "[vsanDatastore] windows-iso-images/vmtools-v1240-23259341-windows.iso"
 }
 
 variable "vsphere-cluster" {

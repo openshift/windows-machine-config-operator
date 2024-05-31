@@ -80,8 +80,11 @@ build file](windows-server-2022.pkr.hcl) in the repository.
 In order to use the provided [reference build file](windows-server-2022.pkr.hcl) as a valid configuration with Packer, you **must**
 adjust the following variables:
 
-- `<vmtools-iso-path>` Path where VMWare Tools ISO is available in vSphere datacenter
-  (default: `[] /usr/lib/vmware/isoimages/windows.iso`)
+- `<vmtools-iso-path>` Path where VMWare Tools ISO is available in vSphere datacenter. To download the VMWare Tools 
+  ISO for Windows, navigate to the [VMWare Tools download page](https://packages.vmware.com/tools/releases/) and
+  download the ISO for the version that matches the ESXi version. The ISO should be uploaded to a datastore accessible
+  by the vSphere cluster. For example, `[vsanDatastore] windows-iso-images/vmtools-v1240-23259341-windows.iso`
+
 - `<os-iso-path>` Path where Windows OS ISO is available in vSphere datacenter
 - `<vm-template-folder>` Name of the folder where the VM templates will be created by Packer
 - `<vm-template-name>` Name of the VM template that will be created by Packer
