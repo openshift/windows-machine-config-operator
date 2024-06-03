@@ -19,15 +19,13 @@ metadata:
 spec:
   params:
   - name: dockerfile
-    value: build/Dockerfile.konflux
+    value: Dockerfile
   - name: git-url
     value: '{{source_url}}'
   - name: image-expires-after
     value: 5d
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/openshift-windows-machine-config-operator-master:on-pr-{{revision}}
-  - name: path-context
-    value: .
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-master:on-pr-{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
@@ -230,9 +228,9 @@ spec:
       taskRef:
         params:
         - name: name
-          value: buildah-10gb
+          value: buildah
         - name: bundle
-          value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-10gb:0.1
+          value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.1@sha256:13447a7b6a20e51875124c3510a4b6e86119f7b3ba89e2c997e0befefefb65f4
         - name: kind
           value: task
         resolver: bundles
@@ -433,7 +431,7 @@ spec:
         - ReadWriteOnce
         resources:
           requests:
-            storage: 7Gi
+            storage: 1Gi
       status: {}
   - name: git-auth
     secret:
