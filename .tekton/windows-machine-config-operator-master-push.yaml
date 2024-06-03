@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   annotations:
-    build.appstudio.openshift.io/repo: https://github.com/sebsoto/windows-machine-config-operator?rev={{revision}}
+    build.appstudio.openshift.io/repo: https://github.com/openshift/windows-machine-config-operator?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
@@ -22,9 +22,7 @@ spec:
   - name: git-url
     value: '{{source_url}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/openshift-windows-machine-config-operator-master:{{revision}}
-  - name: path-context
-    value: .
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-master:{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
