@@ -12,6 +12,7 @@
 [submodule "windows_exporter"]
 	path = windows_exporter
 	url = https://github.com/openshift/prometheus-community-windows_exporter
+	branch = release-4.13
 [submodule "kubelet"]
 	path = kubelet
 	url = https://github.com/openshift/kubernetes
