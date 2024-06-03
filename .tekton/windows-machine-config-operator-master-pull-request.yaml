@@ -25,9 +25,7 @@ spec:
   - name: image-expires-after
     value: 5d
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/openshift-windows-machine-config-operator-master:on-pr-{{revision}}
-  - name: path-context
-    value: .
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-master:on-pr-{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
