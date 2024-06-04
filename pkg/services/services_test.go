@@ -28,6 +28,11 @@ func TestGetHostnameCmd(t *testing.T) {
 			platformType: config.GCPPlatformType,
 			expected:     "C:\\Temp\\gcp-get-hostname.ps1",
 		},
+		{
+			name:         "VSphere platform",
+			platformType: config.VSpherePlatformType,
+			expected:     "$output = Invoke-Expression 'ipconfig /all'; $hostNameLine = ($output -split '`n') | Where-Object { $_ -match 'Host Name' }; $dnsSuffixLine = ($output -split '`n') | Where-Object { $_ -match 'Primary Dns Suffix' }; $hostName = ($hostNameLine -split ':')[1].Trim(); $dnsSuffix = ($dnsSuffixLine -split ':')[1].Trim(); if (-not $dnsSuffix) { return $hostName }; $fqdn = $hostName + '.' + $dnsSuffix; return $fqdn",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
