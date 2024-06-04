@@ -25,9 +25,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -100,6 +103,8 @@ func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)
 		}
+
+		r.log.Info("updating containerd config", "directory", windows.ContainerdConfigDir, "node", node.Name)
 		// TODO: If this flakes for any one node, we have to loop over all nodes again and re-transfer the directory to
 		// all nodes. We should fix this as part of https://issues.redhat.com/browse/WINC-1306
 		if err := nc.Windows.ReplaceDir(configFiles, windows.ContainerdConfigDir); err != nil {
@@ -111,8 +116,22 @@ func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *registryReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	mirrorSetPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return true
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+	}
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&config.ImageDigestMirrorSet{}).
-		Watches(&config.ImageTagMirrorSet{}, &handler.EnqueueRequestForObject{}).
+		For(&config.ImageDigestMirrorSet{}, builder.WithPredicates(mirrorSetPredicate)).
+		Watches(&config.ImageTagMirrorSet{}, &handler.EnqueueRequestForObject{}, builder.WithPredicates(mirrorSetPredicate)).
 		Complete(r)
 }
