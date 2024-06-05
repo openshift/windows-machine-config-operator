@@ -1,17 +1,58 @@
 package registries
 
 import (
+	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	config "github.com/openshift/api/config/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// imagePathSeparator separates the repo name, namespaces, and image name in an OCI-compliant image name
+const imagePathSeparator = "/"
 
 // mirror represents a mirrored image repo entry in a registry configuration file
 type mirror struct {
+	// host is the mirror image location. Can include the registry hostname/IP address, port, and namespace path
 	host string
 	// resolveTags indicates to the container runtime if this mirror is allowed to resolve an image tag into a digest
 	resolveTags bool
+}
+
+// newMirror constructs a new mirror object with proper host name structure to be used in containerd registry config
+func newMirror(sourceImageLocation, mirrorImageLocation string, resolveTags bool) mirror {
+	mirrorHost := ""
+	// containerd appends any shared namespaces between source and mirror locations to the mirror's host entry in the
+	// registry config file to construct the full mirror image location
+	if sourceImageLocation != mirrorImageLocation {
+		// truncate the mirror to drop any shared namespaces since containerd automatically appends them on image pull
+		mirrorHost = extractMirrorURL(sourceImageLocation, mirrorImageLocation)
+	} else {
+		// special case if source and mirror are the same. Do not drop the host repo name to avoid an empty host entry
+		mirrorHost = extractHostname(mirrorImageLocation)
+	}
+	return mirror{host: mirrorHost, resolveTags: resolveTags}
+}
+
+// extractMirrorURL drops the common suffix from the second repo, returning only the unique leading URL and namespaces
+func extractMirrorURL(source, mirror string) string {
+	sourceParts := strings.Split(source, imagePathSeparator)
+	mirrorParts := strings.Split(mirror, imagePathSeparator)
+	uniqueMirrorParts := mirrorParts
+
+	// Process until the end of either repo string
+	for i := 0; i < len(sourceParts) && i < len(mirrorParts); i++ {
+		// Check if suffix piece is equal, starting from the backs of the lists
+		if sourceParts[len(sourceParts)-1-i] != mirrorParts[len(mirrorParts)-1-i] {
+			// break when something different is found to retain all pieces after the last common element
+			break
+		}
+		// Remove common suffix piece
+		uniqueMirrorParts = uniqueMirrorParts[:len(uniqueMirrorParts)-1]
+	}
+	return strings.Join(uniqueMirrorParts, imagePathSeparator)
 }
 
 // mirrorSet holds the mirror registry information for a single source image repo
@@ -24,47 +65,52 @@ type mirrorSet struct {
 	mirrorSourcePolicy config.MirrorSourcePolicy
 }
 
-// registryConfig represents a system-wide image registry configuration
-type registryConfig struct {
-	sourceConfigs []mirrorSet
+// newMirrorSet constructs an object with proper source and mirror name structures to be used in containerd registry config
+func newMirrorSet(srcImage string, mirrorLocations []config.ImageMirror, resolveTags bool,
+	mirrorSourcePolicy config.MirrorSourcePolicy) mirrorSet {
+	truncatedMirrors := []mirror{}
+	for _, m := range mirrorLocations {
+		truncatedMirrors = append(truncatedMirrors, newMirror(srcImage, string(m), resolveTags))
+	}
+	return mirrorSet{source: extractHostname(srcImage), mirrors: truncatedMirrors, mirrorSourcePolicy: mirrorSourcePolicy}
 }
 
-// NewRegistryConfig creates a new RegistryConfig object by extracting and merging the contents of the given mirror sets
-func NewRegistryConfig(idmsItems []config.ImageDigestMirrorSet, idtsItems []config.ImageTagMirrorSet) *registryConfig {
+// extractHostname extracts just the initial host repo from a full image location
+// e.g. mcr.microsoft.com would be extracted from mcr.microsoft.com/oss/kubernetes/pause:3.9
+func extractHostname(fullImage string) string {
+	parts := strings.Split(fullImage, imagePathSeparator)
+	return parts[0]
+}
+
+// getMergedMirrorSets extracts and merges the contents of the given mirror sets.
+// The resulting slice of mirrorSets represents a system-wide image registry configuration.
+func getMergedMirrorSets(idmsItems []config.ImageDigestMirrorSet, idtsItems []config.ImageTagMirrorSet) []mirrorSet {
 	// Each member of the allMirrorSets collection represents the registry configuration for a specific source
 	var allMirrorSets []mirrorSet
 
 	for _, idms := range idmsItems {
 		for _, entry := range idms.Spec.ImageDigestMirrors {
-			set := &mirrorSet{
-				source:             entry.Source,
-				mirrorSourcePolicy: entry.MirrorSourcePolicy,
-			}
-			for _, image := range entry.Mirrors {
-				set.mirrors = append(set.mirrors, mirror{host: string(image), resolveTags: false})
-			}
-			allMirrorSets = append(allMirrorSets, *set)
+			set := newMirrorSet(entry.Source, entry.Mirrors, false, entry.MirrorSourcePolicy)
+			allMirrorSets = append(allMirrorSets, set)
 		}
 	}
 	for _, itms := range idtsItems {
 		for _, entry := range itms.Spec.ImageTagMirrors {
-			set := &mirrorSet{
-				source:             entry.Source,
-				mirrorSourcePolicy: entry.MirrorSourcePolicy,
-			}
-			for _, image := range entry.Mirrors {
-				set.mirrors = append(set.mirrors, mirror{host: string(image), resolveTags: true})
-			}
-			allMirrorSets = append(allMirrorSets, *set)
+			set := newMirrorSet(entry.Source, entry.Mirrors, true, entry.MirrorSourcePolicy)
+			allMirrorSets = append(allMirrorSets, set)
 		}
 	}
 
-	return &registryConfig{sourceConfigs: mergeMirrorSets(allMirrorSets)}
+	return mergeMirrorSets(allMirrorSets)
 }
 
 // mergeMirrorSets consolidates duplicate entries in the given slice (based on the source) since we do not want to
 // generate multiple config files for the same source image repo. Output is sorted to ensure it is deterministic.
 func mergeMirrorSets(baseMirrorSets []mirrorSet) []mirrorSet {
+	if len(baseMirrorSets) == 0 {
+		return []mirrorSet{}
+	}
+
 	// Map to keep track of unique mirrorSets by source
 	uniqueMirrorSets := make(map[string]mirrorSet)
 
@@ -140,19 +186,29 @@ func mergeMirrors(existingMirrors, newMirrors []mirror) []mirror {
 }
 
 // generateConfig is a serialization method that generates a valid TOML representation from a mirrorSet object.
-// Results in content usable as a containerd image registry configuration file.
+// Results in content usable as a containerd image registry configuration file. Returns empty string if no mirrors exist
 func (ms *mirrorSet) generateConfig() string {
-	result := ""
-
-	if ms.mirrorSourcePolicy == config.AllowContactingSource {
-		result += fmt.Sprintf("server = \"https://%s\"", ms.source)
-		result += "\r\n\r\n"
+	if len(ms.mirrors) == 0 {
+		return ""
 	}
 
+	result := ""
+
+	fallbackServer := ms.source
+	if ms.mirrorSourcePolicy == config.NeverContactSource {
+		// set the fallback server to the first mirror to ensure the source is never contacted, even if all mirrors fail
+		fallbackServer = ms.mirrors[0].host
+	}
+	result += fmt.Sprintf("server = \"https://%s\"", fallbackServer)
+	result += "\r\n\r\n"
+
+	// Each mirror should result in an entry followed by a set of settings for interacting with the mirror host
 	for _, m := range ms.mirrors {
 		result += fmt.Sprintf("[host.\"https://%s\"]", m.host)
 		result += "\r\n"
 
+		// Specify the operations the registry host may perform. IDMS mirrors can only be pulled by directly by digest,
+		// whereas ITMS mirrors have the additional resolve capability, which allows converting a tag name into a digest
 		var hostCapabilities string
 		if m.resolveTags {
 			hostCapabilities = "  capabilities = [\"pull\", \"resolve\"]"
@@ -164,4 +220,28 @@ func (ms *mirrorSet) generateConfig() string {
 	}
 
 	return result
+}
+
+// GenerateConfigFiles uses cluster resources to generate the containerd mirror registry configuration files
+func GenerateConfigFiles(ctx context.Context, c client.Client) (map[string][]byte, error) {
+	// List IDMS/ITMS resources
+	imageDigestMirrorSetList := &config.ImageDigestMirrorSetList{}
+	if err := c.List(ctx, imageDigestMirrorSetList); err != nil {
+		return nil, fmt.Errorf("error getting IDMS list: %w", err)
+	}
+	imageTagMirrorSetList := &config.ImageTagMirrorSetList{}
+	if err := c.List(ctx, imageTagMirrorSetList); err != nil {
+		return nil, fmt.Errorf("error getting ITMS list: %w", err)
+	}
+
+	registryConf := getMergedMirrorSets(imageDigestMirrorSetList.Items, imageTagMirrorSetList.Items)
+
+	// configFiles is a map from file path on the Windows node to the file content
+	configFiles := make(map[string][]byte)
+	for _, ms := range registryConf {
+		// fileShortPath is the file path within containerd's config directory
+		fileShortPath := fmt.Sprintf("%s\\hosts.toml", ms.source)
+		configFiles[fileShortPath] = []byte(ms.generateConfig())
+	}
+	return configFiles, nil
 }
