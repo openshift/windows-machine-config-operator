@@ -1,10 +1,14 @@
 package registries
 
 import (
+	"encoding/json"
 	"testing"
 
 	config "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	core "k8s.io/api/core/v1"
+	"k8s.io/kubernetes/pkg/credentialprovider"
 )
 
 func TestGetMergedMirrorSets(t *testing.T) {
@@ -219,6 +223,12 @@ func TestGetMergedMirrorSets(t *testing.T) {
 }
 
 func TestGenerateConfig(t *testing.T) {
+	pullSecret := core.Secret{
+		Data: map[string][]byte{
+			core.DockerConfigJsonKey: []byte(`{"auths":{"mirror.example.com":{"auth":"dXNlcjpwYXNz"},"mirror.example.net":{"auth":"dXNlcm5hbWU6cGFzc3dvcmQ="}}}`),
+		},
+	}
+
 	testCases := []struct {
 		name           string
 		input          mirrorSet
@@ -288,7 +298,7 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
-			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+			expectedOutput: "server = \"https://registry.access.redhat.com/ubi9/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n  [host.\"https://mirror.example.com/redhat\".header]\r\n    authorization = \"Basic dXNlcjpwYXNz\"\r\n\r\n[host.\"https://mirror.example.net/image\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  [host.\"https://mirror.example.net/image\".header]\r\n    authorization = \"Basic dXNlcm5hbWU6cGFzc3dvcmQ=\"\r\n",
 		},
 		{
 			name: "multiple mirrors never contact source",
@@ -301,14 +311,18 @@ func TestGenerateConfig(t *testing.T) {
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n[host.\"https://mirror.example.net\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n",
+			expectedOutput: "server = \"https://example.io/example/ubi-minimal\"\r\n\r\n[host.\"https://example.io/example/ubi-minimal\"]\r\n  capabilities = [\"pull\"]\r\n\r\n[host.\"https://mirror.example.com/redhat\"]\r\n  capabilities = [\"pull\"]\r\n  [host.\"https://mirror.example.com/redhat\".header]\r\n    authorization = \"Basic dXNlcjpwYXNz\"\r\n\r\n[host.\"https://mirror.example.net\"]\r\n  capabilities = [\"pull\", \"resolve\"]\r\n  [host.\"https://mirror.example.net\".header]\r\n    authorization = \"Basic dXNlcm5hbWU6cGFzc3dvcmQ=\"\r\n",
 		},
 	}
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
-			out := test.input.generateConfig()
-			assert.Equal(t, out, test.expectedOutput)
+			var secretsConfig credentialprovider.DockerConfigJSON
+			err := json.Unmarshal(pullSecret.Data[core.DockerConfigJsonKey], &secretsConfig)
+			require.NoError(t, err)
+
+			out := test.input.generateConfig(secretsConfig)
+			assert.Equal(t, test.expectedOutput, out)
 		})
 	}
 }
