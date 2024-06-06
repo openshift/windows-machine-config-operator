@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -100,6 +101,17 @@ func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service
 	hybridOverlayServiceCmd := fmt.Sprintf("%s --node NODE_NAME --bootstrap-kubeconfig=%s --cert-dir=%s --cert-duration=24h "+
 		"--windows-service --logfile "+"%s\\hybrid-overlay.log", windows.HybridOverlayPath, windows.KubeconfigPath, windows.CniConfDir,
 		windows.HybridOverlayLogDir)
+	//TODO: (jtanenba) THIS NEEDS TO BE REMOVED WHEN https://github.com/openshift/cluster-network-operator/pull/2261 merges
+	// HACK start
+	// this is to solve a chicken and egg issue. In order for the CNO to create the certs in CniConfDir the WMCO has to consume it for windows nodes, but
+	// in order for the WMCO to consume the Certs successfully the CNO has to create them.
+	if entries, _ := os.ReadDir(windows.CniConfDir); len(entries) == 0 {
+		hybridOverlayServiceCmd = fmt.Sprintf("%s --node NODE_NAME --k8s-kubeconfig %s --windows-service "+
+			"--logfile "+"%s\\hybrid-overlay.log", windows.HybridOverlayPath, windows.KubeconfigPath,
+			windows.HybridOverlayLogDir)
+
+	}
+	// HACK END
 	if len(vxlanPort) > 0 {
 		hybridOverlayServiceCmd = fmt.Sprintf("%s --hybrid-overlay-vxlan-port %s", hybridOverlayServiceCmd, vxlanPort)
 	}
