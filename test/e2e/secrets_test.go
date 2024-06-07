@@ -158,10 +158,10 @@ func testPrivateKeyChange(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
 
-	// This test cannot be run on vSphere because this random key is not part of the vSphere template image.
-	// Moreover this test is platform agnostic so is not needed to be run for every supported platform.
-	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
-		t.Skipf("Skipping for %s", config.VSpherePlatformType)
+	// This test cannot be run on vSphere environments because this random key is not part of the vSphere template
+	// image. Moreover this test is platform agnostic so is not needed to be run for every supported platform.
+	if tc.CloudProvider.GetType() != config.AWSPlatformType {
+		t.Skipf("Skipping for %s", tc.CloudProvider.GetType())
 	}
 	// Load the state of nodes before the test begins, this is required to determine if new Machine nodes were created
 	require.NoError(t, tc.loadExistingNodes())
