@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
@@ -130,8 +131,42 @@ func (r *registryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return true
 		},
 	}
+	secretPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return isGlobalPullSecret(e.Object)
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			// get update event only when secret data is changed
+			if isGlobalPullSecret(e.ObjectNew) {
+				if string(e.ObjectOld.(*core.Secret).Data[core.DockerConfigJsonKey][:]) !=
+					string(e.ObjectNew.(*core.Secret).Data[core.DockerConfigJsonKey][:]) {
+					return true
+				}
+			}
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return isGlobalPullSecret(e.Object)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return isGlobalPullSecret(e.Object)
+		},
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&config.ImageDigestMirrorSet{}, builder.WithPredicates(mirrorSetPredicate)).
 		Watches(&config.ImageTagMirrorSet{}, &handler.EnqueueRequestForObject{}, builder.WithPredicates(mirrorSetPredicate)).
+		Watches(&core.Secret{}, handler.EnqueueRequestsFromMapFunc(r.mapToRegistryRequest), builder.WithPredicates(secretPredicate)).
 		Complete(r)
+}
+
+// mapToRegistryRequest is a mapping function that returns one request upon a nameless/namespaceless object
+func (r *registryReconciler) mapToRegistryRequest(_ context.Context, _ client.Object) []reconcile.Request {
+	// construct a request in order to queue up a reconcile; the object's inner data is not used by this controller
+	return []reconcile.Request{{}}
+}
+
+// isGlobalPullSecret returns true if the provided object is the cluster's global pull secret
+func isGlobalPullSecret(obj client.Object) bool {
+	return obj.GetName() == registries.GlobalPullSecretName && obj.GetNamespace() == registries.GlobalPullSecretNamespace
 }
