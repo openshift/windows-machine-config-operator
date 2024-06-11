@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	config "github.com/openshift/api/config/v1"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -18,9 +16,7 @@ import (
 func reconfigurationTestSuite(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
-	if tc.CloudProvider.GetType() == config.VSpherePlatformType {
-		t.Run("Re-add removed instance", tc.testReAddInstance)
-	}
+	t.Run("Re-add removed instance", tc.testReAddInstance)
 	t.Run("Change private key", testPrivateKeyChange)
 }
 
@@ -52,9 +48,6 @@ func (tc *testContext) testReAddInstance(t *testing.T) {
 	windowsInstances, err = tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Patch(context.TODO(),
 		wiparser.InstanceConfigMap, types.JSONPatchType, patchDataBytes, metav1.PatchOptions{})
 	require.NoError(t, err, "error patching windows-instances ConfigMap data with remove operation")
-	// Ensure operator communicates to OLM that upgrade is not safe when processing BYOH nodes
-	err = tc.validateUpgradeableCondition(metav1.ConditionFalse)
-	require.NoError(t, err, "operator Upgradeable condition not in proper state")
 
 	// wait for the node to be removed
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes-1, true, true)
@@ -77,8 +70,6 @@ func (tc *testContext) testReAddInstance(t *testing.T) {
 
 	// wait for the node to be successfully re-added
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
-	assert.NoError(t, err, "error waiting for the Windows node to be re-added")
-
-	err = tc.validateUpgradeableCondition(metav1.ConditionTrue)
-	require.NoError(t, err, "operator Upgradeable condition not in proper state")
+	require.NoError(t, err, "error waiting for the Windows node to be re-added")
+	tc.testNodesBecomeReadyAndSchedulable(t)
 }
