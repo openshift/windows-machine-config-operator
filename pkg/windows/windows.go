@@ -138,7 +138,7 @@ const (
 	// wicdKubeconfigPath is the path of the kubeconfig used by WICD
 	wicdKubeconfigPath = K8sDir + "\\wicd-kubeconfig"
 	// TrustedCABundlePath is the location of the trusted CA bundle file
-	TrustedCABundlePath = remoteDir + "\\ca-bundle.crt"
+	TrustedCABundlePath = K8sDir + "\\ca-bundle.crt"
 	// GetHostnameFQDNCommand is the PowerShell command to get the FQDN hostname of the Windows instance
 	GetHostnameFQDNCommand = "$output = Invoke-Expression 'ipconfig /all'; " +
 		"$hostNameLine = ($output -split '`n') | Where-Object { $_ -match 'Host Name' }; " +
