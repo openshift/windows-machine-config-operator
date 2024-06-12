@@ -115,8 +115,16 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, fmt.Errorf("error determining if CCM owns cloud controller: %w", err)
 	}
+
+	//HACK looking for the namespace that indicates the openshift-network-node-identity plugin is enabled
+	admissionPlugin := true
+	if _, err := clientset.CoreV1().Namespaces().Get(context.TODO(), "openshift-network-node-identity", meta.GetOptions{}); err != nil && k8sapierrors.IsNotFound(err) {
+		admissionPlugin = false
+	}
+
 	svcData, err := services.GenerateManifest(argsFromIgnition, clusterConfig.Network().VXLANPort(),
-		clusterConfig.Platform(), ccmEnabled, ctrl.Log.V(1).Enabled())
+		clusterConfig.Platform(), ccmEnabled, ctrl.Log.V(1).Enabled(),
+		admissionPlugin)
 	if err != nil {
 		return nil, fmt.Errorf("error generating expected Windows service state: %w", err)
 	}
