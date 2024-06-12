@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
@@ -101,16 +102,15 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ControllerConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	mccName := "machine-config-controller"
 	mccPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			return e.Object.GetName() == mccName
+			return e.Object.GetName() == nodeconfig.MccName
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return e.ObjectNew.GetName() == mccName
+			return e.ObjectNew.GetName() == nodeconfig.MccName
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return e.Object.GetName() == mccName
+			return e.Object.GetName() == nodeconfig.MccName
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
