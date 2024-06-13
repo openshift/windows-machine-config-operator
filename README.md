@@ -225,6 +225,23 @@ it is recommended not to preinstall containerd in MachineSet or BYOH Windows ins
 WMCO supports using a [cluster-wide proxy](https://docs.openshift.com/container-platform/latest/networking/enable-cluster-wide-proxy.html)
 to route egress traffic from Windows nodes on OpenShift Container Platform.
 
+### Running in a disconnected/airgapped environment
+WMCO supports running in a disconnected environment.
+Please follow the [disconnected mirroring docs](https://docs.openshift.com/container-platform/latest/installing/disconnected_install/index.html)
+in order to mirror and run WMCO on your cluster.
+
+Nodes can be added through both MachineSets and the windows-instances ConfigMap.
+The image specified in MachineSets has an extra requirement of having [the OpenSSH.Server~~~~0.0.1.0 Windows capability installed](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows).
+This is normally installed by WMCO using the Machine's user-data, and is needed to configure a Windows instance.
+
+In order to run Windows workloads on Nodes, the image `mcr.microsoft.com/oss/kubernetes/pause:3.9` must be mirrored.
+See [Image configuration resources](https://docs.openshift.com/container-platform/latest/openshift_images/image-configuration.html) for general information on image mirroring.
+
+Windows images mirrored through ImageDigestMirrorSet and ImageTagMirrorSet have specific naming requirements.
+The mirrored image's final portion of the namespace and the image name must match the image being mirrored.
+For example, when mirroring the image `mcr.microsoft.com/oss/kubernetes/pause:3.9`, the mirror must have the format
+`$mirrorRegistry/$optionalNamespace/kubernetes/pause:3.9`
+
 ## Limitations
 
 ### DeploymentConfigs
