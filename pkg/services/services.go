@@ -2,7 +2,6 @@ package services
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -27,7 +26,7 @@ const (
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
 // will be enabled for services that support it.
 func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort string, platform config.PlatformType,
-	ccmEnabled, debug bool) (*servicescm.Data, error) {
+	ccmEnabled, debug, admissionPlugin bool) (*servicescm.Data, error) {
 	kubeletConfiguration, err := getKubeletServiceConfiguration(kubeletArgsFromIgnition, debug, platform)
 	if err != nil {
 		return nil, fmt.Errorf("could not determine kubelet service configuration spec: %w", err)
@@ -43,7 +42,7 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 	},
 		containerdConfiguration(debug),
 		kubeletConfiguration,
-		hybridOverlayConfiguration(vxlanPort, debug),
+		hybridOverlayConfiguration(vxlanPort, debug, admissionPlugin),
 		kubeProxyConfiguration(debug),
 		csiProxyConfiguration(debug),
 	}
@@ -97,21 +96,16 @@ func azureCloudNodeManagerConfiguration() servicescm.Service {
 }
 
 // hybridOverlayConfiguration returns the Service definition for hybrid-overlay
-func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service {
+func hybridOverlayConfiguration(vxlanPort string, debug, admissionPlugin bool) servicescm.Service {
 	hybridOverlayServiceCmd := fmt.Sprintf("%s --node NODE_NAME --bootstrap-kubeconfig=%s --cert-dir=%s --cert-duration=24h "+
 		"--windows-service --logfile "+"%s\\hybrid-overlay.log", windows.HybridOverlayPath, windows.KubeconfigPath, windows.CniConfDir,
 		windows.HybridOverlayLogDir)
-	//TODO: (jtanenba) THIS NEEDS TO BE REMOVED WHEN https://github.com/openshift/cluster-network-operator/pull/2261 merges
-	// HACK start
-	// this is to solve a chicken and egg issue. In order for the CNO to create the certs in CniConfDir the WMCO has to consume it for windows nodes, but
-	// in order for the WMCO to consume the Certs successfully the CNO has to create them.
-	if entries, _ := os.ReadDir(windows.CniConfDir); len(entries) == 0 {
+	if !admissionPlugin {
 		hybridOverlayServiceCmd = fmt.Sprintf("%s --node NODE_NAME --k8s-kubeconfig %s --windows-service "+
 			"--logfile "+"%s\\hybrid-overlay.log", windows.HybridOverlayPath, windows.KubeconfigPath,
 			windows.HybridOverlayLogDir)
 
 	}
-	// HACK END
 	if len(vxlanPort) > 0 {
 		hybridOverlayServiceCmd = fmt.Sprintf("%s --hybrid-overlay-vxlan-port %s", hybridOverlayServiceCmd, vxlanPort)
 	}
