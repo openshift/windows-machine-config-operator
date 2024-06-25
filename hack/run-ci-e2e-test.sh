@@ -135,10 +135,15 @@ fi
 
 echo "Testing against Windows Server $WIN_VER"
 
+# MIRROR_REGISTRY_HOST holds the container mirror registry URL, its value will be set in CI
+MIRROR_REGISTRY_HOST=${MIRROR_REGISTRY_HOST:-}
+
 # The bool flags in golang does not respect key value pattern. They follow -flag=x pattern.
 # -flag x is allowed for non-boolean flags only(https://golang.org/pkg/flag/)
 
-GO_TEST_ARGS="$BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH --wmco-namespace=$WMCO_DEPLOY_NAMESPACE --windows-server-version=$WIN_VER"
+GO_TEST_ARGS="$BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH --wmco-namespace=$WMCO_DEPLOY_NAMESPACE --windows-server-version=$WIN_VER --mirror-registry=$MIRROR_REGISTRY_HOST"
+echo "Running tests with arguments: $GO_TEST_ARGS"
+
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
 go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $GO_TEST_ARGS

@@ -753,7 +753,7 @@ func (tc *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, continuo
 
 // createLinuxJob creates a job which will run the provided command with a ubi8 image
 func (tc *testContext) createLinuxJob(name string, command []string) (*batchv1.Job, error) {
-	return tc.createJob(name, ubi8Image, command, nil, nil, &v1.PodOS{Name: v1.Linux})
+	return tc.createJob(name, ubi8Image, command, nil, nil, &v1.PodOS{Name: v1.Linux}, nil)
 }
 
 // createWinCurlerJob creates a Job to curl Windows server at given IP address
@@ -782,12 +782,12 @@ func (tc *testContext) createWindowsServerJob(name, pwshCommand string, affinity
 	windowsOS := &v1.PodOS{Name: v1.Windows}
 	windowsServerImage := tc.getWindowsServerContainerImage()
 	command := []string{powerShellExe, "-command", pwshCommand}
-	return tc.createJob(name, windowsServerImage, command, &rcName, affinity, windowsOS)
+	return tc.createJob(name, windowsServerImage, command, &rcName, affinity, windowsOS, nil)
 }
 
 // createJob creates a job on the cluster using the given parameters
 func (tc *testContext) createJob(name, image string, command []string, runtimeClassName *string, affinity *v1.Affinity,
-	os *v1.PodOS) (*batchv1.Job, error) {
+	os *v1.PodOS, pullSecret []v1.LocalObjectReference) (*batchv1.Job, error) {
 	jobsClient := tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -808,6 +808,7 @@ func (tc *testContext) createJob(name, image string, command []string, runtimeCl
 							Command:         command,
 						},
 					},
+					ImagePullSecrets: pullSecret,
 				},
 			},
 		},
