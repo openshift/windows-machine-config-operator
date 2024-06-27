@@ -305,8 +305,8 @@ func (sc *ServiceController) reconcileEnvVarsAndCerts(envVars map[string]string,
 		return false, err
 	}
 	// Reconcile certs but only process the error after determining reboot status in case error happened after cert changes
-	certsUpdated, err := certs.Reconcile(sc.caBundle)
-	if certsUpdated || envVarsUpdated {
+	err = certs.Reconcile(sc.caBundle)
+	if envVarsUpdated {
 		// If there's any changes, an instance restart is required to ensure all processes pick up the updates.
 		// Applying the reboot annotation results in an event picked up by WMCO's node controller to reboot the instance
 		if annotationErr := metadata.ApplyRebootAnnotation(sc.ctx, sc.client, node); annotationErr != nil {

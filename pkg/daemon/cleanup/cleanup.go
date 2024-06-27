@@ -71,9 +71,9 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		return err
 	}
 
-	certsRemoved, err := certs.Reconcile("")
+	err = certs.Reconcile("")
 	// rebooting instance to unset the environment variables and available certifictes at the process level as expected
-	if envVarsRemoved || certsRemoved {
+	if envVarsRemoved {
 		// Applying the reboot annotation results in an event picked up by WMCO's node controller to reboot the instance
 		if annotationErr := metadata.ApplyRebootAnnotation(ctx, directClient, *node); annotationErr != nil {
 			return fmt.Errorf("error setting reboot annotation on node %s: %w", node.Name, annotationErr)

@@ -39,17 +39,15 @@ import (
 const importedCABundleFile = "C:\\k\\imported-certs.pem"
 
 // Reconcile ensures the node's system certificates match the expected state as given by the trusted CA bundle file.
-// Returns a boolean whether any certs needed to be reconciled.
-// If this function returns true and a non-nil error, the instance must be rebooted anyway.
-func Reconcile(caBundlePath string) (bool, error) {
+func Reconcile(caBundlePath string) error {
 	// caBundlePath will be empty when a cluster-wide proxy is being removed or not in use
 	certChange, err := reconcileCerts(caBundlePath)
 	if err != nil {
-		return false, err
+		return err
 	}
 	// An error updating the imported bundle file will be self-corrected on the next reconcile, since it is the source
 	// of truth for determining whether certs need to be updated
-	return certChange, updateImportedCABundle(caBundlePath, certChange)
+	return updateImportedCABundle(caBundlePath, certChange)
 }
 
 // reconcileCerts reconciles any discrepency between expected and existing Windows certificates by importing or
