@@ -10,6 +10,11 @@ spec:
     interval: 30s
     path: /metrics
     port: metrics
+    scheme: https
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
+      serverName: windows-exporter.openshift-windows-machine-config-operator.svc
     relabelings:
     - action: replace
       regex: (.*)

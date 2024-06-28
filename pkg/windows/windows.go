@@ -54,7 +54,10 @@ const (
 	CniConfDir = cniDir + "\\config"
 	// ContainerdDir is the directory for storing Containerd binary
 	ContainerdDir = K8sDir + "\\containerd"
-	// ContainerdPath is the location of the containerd exe
+	// TLSDir is the directory for storing WMCO tls certs
+	TLSDir = K8sDir + "\\tls"
+	// TLSConfPath is the location of TLS config files
+	TLSConfPath    = TLSDir + "\\webconfig.yaml"
 	ContainerdPath = ContainerdDir + "\\containerd.exe"
 	// ContainerdConfPath is the location of containerd config file
 	ContainerdConfPath = ContainerdDir + "\\containerd_conf.toml"
@@ -120,7 +123,7 @@ const (
 	// WindowsExporterServiceCommand specifies metrics for the windows_exporter service to collect
 	// and expose metrics at endpoint with default port :9182 and default URL path /metrics
 	WindowsExporterServiceCommand = windowsExporterPath + " --collectors.enabled " +
-		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info"
+		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info --web.config.file " + TLSConfPath
 	// serviceQueryCmd is the Windows command used to query a service
 	serviceQueryCmd = "sc.exe qc "
 	// serviceNotFound is part of the error output returned when a service does not exist. 1060 is an error code
@@ -177,6 +180,7 @@ var (
 		ContainerdConfigDir,
 		podManifestDirectory,
 		K8sDir,
+		TLSDir,
 	}
 )
 
@@ -212,6 +216,7 @@ func getFilesToTransfer(platform *config.PlatformType) map[string]string {
 		payload.ContainerdPath:                 ContainerdDir,
 		payload.HcsshimPath:                    ContainerdDir,
 		payload.ContainerdConfPath:             ContainerdDir,
+		payload.TlsConfPath:                    TLSDir,
 		payload.NetworkConfigurationScript:     remoteDir,
 	}
 
@@ -260,7 +265,7 @@ type Windows interface {
 	// RebootAndReinitialize reboots the instance and re-initializes the Windows SSH client
 	RebootAndReinitialize() error
 	// Bootstrap prepares the Windows instance and runs the WICD bootstrap command
-	Bootstrap(string, string, string) error
+	Bootstrap(string, string, string, map[string][]byte) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, string) error
 	// RemoveFilesAndNetworks removes all files and networks created by WMCO
@@ -526,7 +531,7 @@ func (vm *windows) RemoveFilesAndNetworks() error {
 	return nil
 }
 
-func (vm *windows) Bootstrap(desiredVer, watchNamespace, wicdKubeconfigContents string) error {
+func (vm *windows) Bootstrap(desiredVer, watchNamespace, wicdKubeconfigContents string, tlsData map[string][]byte) error {
 	vm.log.Info("configuring")
 
 	// Stop any services that may be running. This prevents the node being shown as Ready after a failed configuration.
@@ -540,10 +545,9 @@ func (vm *windows) Bootstrap(desiredVer, watchNamespace, wicdKubeconfigContents 
 	if err := vm.createDirectories(); err != nil {
 		return fmt.Errorf("error creating directories on Windows VM: %w", err)
 	}
-	if err := vm.transferFiles(); err != nil {
+	if err := vm.transferFiles(tlsData); err != nil {
 		return fmt.Errorf("error transferring files to Windows VM: %w", err)
 	}
-
 	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --kubeconfig %s --namespace %s",
 		wicdPath, desiredVer, wicdKubeconfigPath, watchNamespace)
 	if out, err := vm.Run(wicdBootstrapCmd, true); err != nil {
@@ -737,12 +741,18 @@ func (vm *windows) removeDirectories() error {
 }
 
 // transferFiles copies various files required for configuring the Windows node, to the VM.
-func (vm *windows) transferFiles() error {
+func (vm *windows) transferFiles(tlsData map[string][]byte) error {
 	vm.log.Info("transferring files")
 	for src, dest := range vm.filesToTransfer {
 		if err := vm.EnsureFile(src, dest); err != nil {
 			return fmt.Errorf("error copying %s to %s: %w", src.Path, dest, err)
 		}
+	}
+	if err := vm.EnsureFileContent(tlsData["tls.crt"], "tls.crt", TLSDir); err != nil {
+		return fmt.Errorf("unable to transfer TLS certs: %w", err)
+	}
+	if err := vm.EnsureFileContent(tlsData["tls.key"], "tls.key", TLSDir); err != nil {
+		return fmt.Errorf("unable to transfer TLS key: %w", err)
 	}
 	return nil
 }
