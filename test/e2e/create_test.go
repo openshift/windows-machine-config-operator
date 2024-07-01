@@ -602,3 +602,38 @@ func (tc *testContext) scaleMachineApprover(replicas int) error {
 	return tc.scaleDeployment("openshift-cluster-machine-approver", "machine-approver", "app=machine-approver",
 		&replicaCount)
 }
+
+// createPullSecret creates a pull secret in the operator test namespace
+func (tc *testContext) createPullSecret() error {
+	wmcoPullSecretName := "pull-secret"
+	_, err := tc.client.K8s.CoreV1().Secrets(tc.workloadNamespace).Get(context.TODO(),
+		wmcoPullSecretName, metav1.GetOptions{})
+	if err == nil {
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to retrieve pull secret: %w", err)
+	}
+
+	pullSecret, err := tc.client.K8s.CoreV1().Secrets("openshift-config").Get(context.TODO(),
+		wmcoPullSecretName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to retrieve pull secret: %w", err)
+	}
+
+	wmcoPullSecret := v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: wmcoPullSecretName,
+		},
+		Data: pullSecret.Data,
+		Type: v1.SecretTypeDockerConfigJson,
+	}
+
+	_, err = tc.client.K8s.CoreV1().Secrets(tc.workloadNamespace).Create(context.TODO(), &wmcoPullSecret,
+		metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create pull secret: %w", err)
+	}
+
+	return nil
+}

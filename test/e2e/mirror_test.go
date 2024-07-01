@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	config "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	batch "k8s.io/api/batch/v1"
+	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -40,6 +43,7 @@ func testImageMirroring(t *testing.T) {
 		// No point in running the rest of the tests if settings aren't applied
 		return
 	}
+	t.Run("Workload using a mirrored container image", tc.testWorkloadWithMirroredImage)
 }
 
 // setNumBaseRegistryConfigFiles updates the numBaseRegistryConfigFiles variable
@@ -185,4 +189,40 @@ func (tc *testContext) createMirrorSet() (*config.ImageTagMirrorSet, error) {
 	}
 	// Create the ImageTagMirrorSet in the cluster
 	return tc.client.Config.ConfigV1().ImageTagMirrorSets().Create(context.TODO(), itms, meta.CreateOptions{})
+}
+
+// testWorkloadWithMirroredImage runs a job using an image from a mirror registry URL
+func (tc *testContext) testWorkloadWithMirroredImage(t *testing.T) {
+	if tc.mirrorRegistry == "" {
+		t.Skip("test disabled, container mirror registry is exclusively setup for the disconnected job")
+	}
+	for _, node := range gc.allNodes() {
+		t.Run(node.Name, func(t *testing.T) {
+			nodeAffinity, err := getAffinityForNode(&node)
+			require.NoError(t, err, "could not get node affinity")
+			mirrorImage := tc.mirrorRegistry + "/" + strings.Split(tc.getWindowsServerContainerImage(), "/")[1]
+			winJob, err := tc.createWindowsServerJobWithMirrorImage("test-powershell-mirror", mirrorImage,
+				"Get-Help", nodeAffinity)
+			require.NoError(t, err, "could not create Windows test job")
+			defer tc.deleteJob(winJob.Name)
+
+			_, err = tc.waitUntilJobSucceeds(winJob.Name)
+			assert.NoError(t, err, "Windows test job failed")
+		})
+	}
+}
+
+// createWindowsServerJobWithMirrorImage creates a job to run the given PowerShell command with the specified container image
+func (tc *testContext) createWindowsServerJobWithMirrorImage(name, containerImage, pwshCommand string,
+	affinity *core.Affinity) (*batch.Job, error) {
+	rcName, err := tc.getRuntimeClassName()
+	if err != nil {
+		return nil, err
+	}
+	windowsOS := &core.PodOS{Name: core.Windows}
+	command := []string{powerShellExe, "-command", pwshCommand}
+	pullSecret := []core.LocalObjectReference{{
+		Name: "pull-secret",
+	}}
+	return tc.createJob(name, containerImage, command, &rcName, affinity, windowsOS, pullSecret)
 }

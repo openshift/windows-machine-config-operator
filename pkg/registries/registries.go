@@ -13,8 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/credentialprovider"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 // imagePathSeparator separates the repo name, namespaces, and image name in an OCI-compliant image name
@@ -229,9 +227,6 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 			hostCapabilities = "  capabilities = [\"pull\"]"
 		}
 		result += hostCapabilities
-		result += "\r\n"
-
-		result += fmt.Sprintf("  ca = \"%s\"", strings.ReplaceAll(windows.TrustedCABundlePath, "\\", "\\\\"))
 		result += "\r\n"
 
 		// Extract the mirror repo's authorization credentials, if one exists
