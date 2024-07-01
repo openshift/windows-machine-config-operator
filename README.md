@@ -238,9 +238,11 @@ In order to run Windows workloads on Nodes, the image `mcr.microsoft.com/oss/kub
 See [Image configuration resources](https://docs.openshift.com/container-platform/latest/openshift_images/image-configuration.html) for general information on image mirroring.
 
 Windows images mirrored through ImageDigestMirrorSet and ImageTagMirrorSet have specific naming requirements.
-The mirrored image's final portion of the namespace and the image name must match the image being mirrored.
+The mirrored image's suffix (final portion of namespaces and the image name) must match that of the source image.
 For example, when mirroring the image `mcr.microsoft.com/oss/kubernetes/pause:3.9`, the mirror must have the format
-`$mirrorRegistry/$optionalNamespace/kubernetes/pause:3.9`
+`$mirrorRegistry/[$optionalNamespaces/]oss/kubernetes/pause:3.9` where `$optionalNamespaces` can be any number of
+leading namespaces. Some valid values could be: `$mirrorRegistry/oss/kubernetes/pause:3.9`,
+`$mirrorRegistry/custom/oss/kubernetes/pause:3.9`, `$mirrorRegistry/x/y/z/oss/kubernetes/pause:3.9`.
 
 ## Limitations
 
