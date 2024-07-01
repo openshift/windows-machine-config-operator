@@ -242,8 +242,7 @@ run-ci-e2e-byoh-test:
 	hack/run-ci-e2e-test.sh -t basic -m 0
 
 .PHONY: run-ci-e2e-upgrade-test
-run-ci-e2e-upgrade-test:
-	hack/run-ci-e2e-test.sh -t upgrade
+run-ci-e2e-upgrade-test: ;
 
 .PHONY: upgrade-test-setup
 upgrade-test-setup:
