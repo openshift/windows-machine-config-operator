@@ -34,6 +34,7 @@ func TestWMCO(t *testing.T) {
 	// Create the namespace test resources can be deployed in, as well as required resources within said namespace.
 	require.NoError(t, tc.ensureNamespace(tc.workloadNamespace, tc.workloadNamespaceLabels), "error creating test namespace")
 	require.NoError(t, tc.ensureTestRunnerRBAC(), "error creating test runner RBAC")
+	require.NoError(t, tc.createPullSecret(), "error creating pull secret in test namespace")
 
 	// When the upgrade test is run from CI, the namespace that gets created does not have the required monitoring
 	// label, so we ensure that it gets applied and the WMCO deployment is restarted.
