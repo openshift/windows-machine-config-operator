@@ -461,13 +461,9 @@ func (tc *testContext) runJob(name string, command []string) (string, error) {
 	}
 
 	// Wait for the job to complete then gather and return the pod output
-	if err = tc.waitUntilJobSucceeds(job.GetName()); err != nil {
-		return "", fmt.Errorf("error waiting for job to succeed: %w", err)
-	}
-	labelSelector := "job-name=" + job.Name
-	logs, err := tc.getLogs(labelSelector)
+	logs, err := tc.waitUntilJobSucceeds(job.GetName())
 	if err != nil {
-		return "", fmt.Errorf("error getting logs from job pod: %w", err)
+		return "", fmt.Errorf("error waiting for job to succeed: %w", err)
 	}
 	return logs, nil
 }

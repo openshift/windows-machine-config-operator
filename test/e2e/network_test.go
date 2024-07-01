@@ -183,7 +183,7 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 					}
 					defer tc.deleteJob(curlerJob.Name)
 
-					err = tc.waitUntilJobSucceeds(curlerJob.Name)
+					_, err = tc.waitUntilJobSucceeds(curlerJob.Name)
 					assert.NoError(t, err, "could not curl the Windows server")
 				})
 			}
@@ -196,7 +196,8 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 					serviceDNS, nodeAffinity)
 				require.NoError(t, err)
 				defer tc.deleteJob(curler.GetName())
-				assert.NoError(t, tc.waitUntilJobSucceeds(curler.GetName()))
+				_, err = tc.waitUntilJobSucceeds(curler.Name)
+				assert.NoError(t, err)
 			})
 		})
 	}
@@ -220,7 +221,7 @@ func (tc *testContext) testPodDNSResolution(t *testing.T) {
 		nil)
 	require.NoError(t, err, "could not create Windows tester job")
 	defer tc.deleteJob(winJob.Name)
-	err = tc.waitUntilJobSucceeds(winJob.Name)
+	_, err = tc.waitUntilJobSucceeds(winJob.Name)
 	assert.NoError(t, err, "Windows tester job failed")
 }
 
@@ -827,31 +828,34 @@ func (tc *testContext) deleteJob(name string) error {
 	return jobsClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
-// waitUntilJobSucceeds will return an error if the job fails or reaches a timeout
-func (tc *testContext) waitUntilJobSucceeds(name string) error {
+// waitUntilJobSucceeds will return an error if the job fails or reaches a timeout and return logs on success
+func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 	var job *batchv1.Job
 	var err error
 	var labelSelector string
 	for i := 0; i < retryCount; i++ {
 		job, err = tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
-			return err
+			return "", err
 		}
 		labelSelector = "job-name=" + job.Name
+		tc.writePodLogs(labelSelector)
 		if job.Status.Succeeded > 0 {
-			tc.writePodLogs(labelSelector)
-			return nil
+			logs, err := tc.getLogs(labelSelector)
+			if err != nil {
+				log.Printf("Unable to get logs associated with pod: %s", labelSelector)
+			}
+			return logs, nil
 		}
 		if job.Status.Failed > 0 {
-			tc.writePodLogs(labelSelector)
 			events, _ := tc.getPodEvents(name)
-			return fmt.Errorf("job %v failed: %v", job, events)
+			return "", fmt.Errorf("job %v failed: %v", job, events)
 		}
 		time.Sleep(retryInterval)
 	}
 	tc.writePodLogs(labelSelector)
 	events, _ := tc.getPodEvents(name)
-	return fmt.Errorf("job %v timed out: %v", job, events)
+	return "", fmt.Errorf("job %v timed out: %v", job, events)
 }
 
 // writePodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts dir

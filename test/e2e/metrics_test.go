@@ -61,7 +61,7 @@ func (tc *testContext) testWindowsExporter(t *testing.T) {
 			// delete the job created
 			defer tc.deleteJob(linuxCurlerJob.Name)
 
-			err = tc.waitUntilJobSucceeds(linuxCurlerJob.Name)
+			_, err = tc.waitUntilJobSucceeds(linuxCurlerJob.Name)
 			assert.NoError(t, err, "could not curl the Windows VM metrics endpoint from a linux container")
 		})
 	}
