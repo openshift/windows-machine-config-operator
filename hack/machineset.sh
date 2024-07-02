@@ -123,12 +123,12 @@ $(get_spec $infraID $az $provider $byoh)
             - filters:
                 - name: tag:Name
                   values:
-                    - ${infraID}-worker-sg
+                    - ${infraID}-node
           subnet:
             filters:
               - name: tag:Name
                 values:
-                  - ${infraID}-private-${az}
+                  - ${infraID}-subnet-private-${az}
           tags:
             - name: kubernetes.io/cluster/${infraID}
               value: owned
