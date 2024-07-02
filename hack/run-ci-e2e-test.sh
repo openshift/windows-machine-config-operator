@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash2
 set -o errexit
 set -o nounset
 set -o pipefail
