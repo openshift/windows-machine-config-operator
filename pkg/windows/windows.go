@@ -95,6 +95,8 @@ const (
 	KubeletConfigPath = K8sDir + "\\kubelet.conf"
 	// KubeletLog is the location of the kubelet log file
 	KubeletLog = KubeletLogDir + "\\kubelet.log"
+	// KubeProxyConfigPath is the location of the kube proxy configuration file
+	KubeProxyConfigPath = K8sDir + "\\kube-proxy.conf"
 	// KubeProxyLog is the location of the kube-proxy log file
 	KubeProxyLog = KubeProxyLogDir + "\\kube-proxy.log"
 	// KubeProxyPath is the location of the kube-proxy exe

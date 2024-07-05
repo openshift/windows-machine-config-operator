@@ -8,7 +8,36 @@ import (
 )
 
 func TestGenerateNetworkConfigScript(t *testing.T) {
-	expectedOut := `# This script ensures the contents of the CNI config file is correct, and returns the HNS endpoint IP
+	expectedOut := `# This script ensures the contents of the CNI config file is correct, and creates the kube-proxy config file.
+
+param(
+    [string]$hostnameOverride,
+    [string]$clusterCIDR,
+    [string]$kubeConfigPath,
+    [string]$kubeProxyConfigPath,
+    [string]$verbosity
+)
+  # this compares the config with the existing config, and replaces if necessary
+  function Compare-And-Replace-Config {
+    param (
+        [string]$ConfigPath,
+        [string]$NewConfigContent
+    )
+    
+    # Read existing config content
+    $existing_config = ""
+    if (Test-Path -Path $ConfigPath) {
+        $config_file_content = Get-Content -Path $ConfigPath -Raw
+        if ($config_file_content -ne $null) {
+` + "        $existing_config=$config_file_content.Replace(\"`r\",\"\")" + `
+        }
+    }
+    
+    if ($existing_config -ne $NewConfigContent) {
+        Set-Content -Path $ConfigPath -Value $NewConfigContent -NoNewline
+    }
+  }
+
 $ErrorActionPreference = "Stop"
 Import-Module -DisableNameChecking c:\k\hns.psm1
 
@@ -71,17 +100,7 @@ $cni_template=$cni_template.Replace("ovn_host_subnet",$subnet)
 $provider_address=$hns_network.ManagementIP
 $cni_template=$cni_template.Replace("provider_address",$provider_address)
 
-# Compare CNI config with existing file, and replace if necessary
-$existing_config=""
-if(Test-Path -Path c:\k\cni.conf) {
-    $config_file_content=(Get-Content -Path c:\k\cni.conf -Raw)
-    if($config_file_content -ne $null) {
-` + "        $existing_config=$config_file_content.Replace(\"`r\",\"\")" + `
-    }
-}
-if($existing_config -ne $cni_template){
-    Set-Content -Path "c:\k\cni.conf" -Value $cni_template -NoNewline
-}
+Compare-And-Replace-Config -ConfigPath c:\k\cni.conf -NewConfigContent $cni_template
 
 # Create HNS endpoint if it doesn't exist
 $endpoint = Invoke-HNSRequest GET endpoints | where { $_.Name -eq 'VIPEndpoint'}
@@ -89,9 +108,87 @@ if( $endpoint -eq $null) {
     $endpoint = New-HnsEndpoint -NetworkId $hns_network.ID -Name "VIPEndpoint"
     Attach-HNSHostEndpoint -EndpointID $endpoint.ID -CompartmentID 1
 }
+# Get HNS endpoint IP
+$sourceVip = (Get-NetIPConfiguration -AllCompartments -All -Detailed | where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()
 
-# Return HNS endpoint IP
-(Get-NetIPConfiguration -AllCompartments -All -Detailed | where { $_.NetAdapter.LinkLayerAddress -eq $endpoint.MacAddress }).IPV4Address.IPAddress.Trim()
+#Kube Proxy configuration
+
+$kube_proxy_config=@"
+kind: KubeProxyConfiguration
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+featureGates:
+  WinDSR: true
+  WinOverlay: true
+clientConnection:
+  kubeconfig: $kubeConfigPath
+  acceptContentTypes: ''
+  contentType: ''
+  qps: 0
+  burst: 0
+logging:
+  flushFrequency: 0
+  verbosity: $verbosity
+  options:
+    text:
+      infoBufferSize: '0'
+    json:
+      infoBufferSize: '0'
+hostnameOverride: $hostnameOverride
+bindAddress: ''
+healthzBindAddress: ''
+metricsBindAddress: ''
+bindAddressHardFail: false
+enableProfiling: false
+showHiddenMetricsForVersion: ''
+mode: kernelspace
+iptables:
+  masqueradeBit: null
+  masqueradeAll: false
+  localhostNodePorts: null
+  syncPeriod: 0s
+  minSyncPeriod: 0s
+ipvs:
+  syncPeriod: 0s
+  minSyncPeriod: 0s
+  scheduler: ''
+  excludeCIDRs: null
+  strictARP: false
+  tcpTimeout: 0s
+  tcpFinTimeout: 0s
+  udpTimeout: 0s
+nftables:
+  masqueradeBit: null
+  masqueradeAll: false
+  syncPeriod: 0s
+  minSyncPeriod: 0s
+winkernel:
+  networkName: OVNKubernetesHybridOverlayNetwork
+  sourceVip: $sourceVip
+  enableDSR: true
+  rootHnsEndpointName: ''
+  forwardHealthCheckVip: false
+detectLocalMode: ''
+detectLocal:
+  bridgeInterface: ''
+  interfaceNamePrefix: ''
+clusterCIDR: $clusterCIDR
+nodePortAddresses: null
+oomScoreAdj: null
+conntrack:
+  maxPerCore: null
+  min: null
+  tcpEstablishedTimeout: null
+  tcpCloseWaitTimeout: null
+  tcpBeLiberal: false
+  udpTimeout: 0s
+  udpStreamTimeout: 0s
+configSyncPeriod: 0s
+portRange: ''
+windowsRunAsService: true
+"@
+
+# Generate kube-proxy config 
+Compare-And-Replace-Config -ConfigPath $kubeProxyConfigPath -NewConfigContent $kube_proxy_config
 `
 	actual, err := generateNetworkConfigScript("10.0.0.1/32",
 		"OVNKubernetesHNSNetwork", "c:\\k\\hns.psm1", "c:\\k\\cni.conf")

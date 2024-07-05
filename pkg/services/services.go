@@ -136,33 +136,45 @@ func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service
 
 // kubeProxyConfiguration returns the Service definition for kube-proxy
 func kubeProxyConfiguration(debug bool) servicescm.Service {
+	cmd := fmt.Sprintf("%s -log-file=%s %s --config %s", windows.KubeLogRunnerPath, windows.KubeProxyLog,
+		windows.KubeProxyPath, windows.KubeProxyConfigPath)
+
+	verbosity := "0"
+	if debug {
+		verbosity = "4"
+	}
 	sanitizedSubnetAnnotation := strings.ReplaceAll(nodeconfig.HybridOverlaySubnet, ".", "\\.")
-	cmd := fmt.Sprintf("%s -log-file=%s %s --windows-service --proxy-mode=kernelspace --feature-gates=WinOverlay=true,WinDSR=true "+
-		"--hostname-override=NODE_NAME --kubeconfig=%s --cluster-cidr=NODE_SUBNET "+
-		"--network-name=%s --source-vip=ENDPOINT_IP --enable-dsr=true", windows.KubeLogRunnerPath, windows.KubeProxyLog,
-		windows.KubeProxyPath, windows.KubeconfigPath, windows.OVNKubeOverlayNetwork)
-	// Set log level
-	cmd = fmt.Sprintf("%s %s", cmd, klogVerbosityArg(debug))
 	return servicescm.Service{
-		Name:    windows.KubeProxyServiceName,
-		Command: cmd,
-		NodeVariablesInCommand: []servicescm.NodeCmdArg{
-			{
-				Name:               "NODE_NAME",
-				NodeObjectJsonPath: "{.metadata.name}",
-			},
-			{
-				Name:               "NODE_SUBNET",
-				NodeObjectJsonPath: fmt.Sprintf("{.metadata.annotations.%s}", sanitizedSubnetAnnotation),
-			},
-		},
-		PowershellPreScripts: []servicescm.PowershellPreScript{{
-			VariableName: "ENDPOINT_IP",
-			Path:         windows.NetworkConfScriptPath,
-		}},
+		Name:         windows.KubeProxyServiceName,
+		Command:      cmd,
 		Dependencies: []string{windows.HybridOverlayServiceName},
-		Bootstrap:    false,
-		Priority:     3,
+		PowershellPreScripts: []servicescm.PowershellPreScript{{
+			Path: windows.NetworkConfScriptPath + " -hostnameOverride NODE_NAME -clusterCIDR NODE_SUBNET -kubeConfigPath KUBE_CONFIG_PATH -kubeProxyConfigPath KUBE_PROXY_CONFIG_PATH -verbosity VERBOSITY",
+			NodeArgs: []servicescm.NodeCmdArg{
+				{
+					Name:               "NODE_NAME",
+					NodeObjectJsonPath: "{.metadata.name}",
+				},
+				{
+					Name:               "NODE_SUBNET",
+					NodeObjectJsonPath: fmt.Sprintf("{.metadata.annotations.%s}", sanitizedSubnetAnnotation),
+				},
+				{
+					Name:               "KUBE_CONFIG_PATH",
+					NodeObjectJsonPath: windows.KubeconfigPath,
+				},
+				{
+					Name:               "KUBE_PROXY_CONFIG_PATH",
+					NodeObjectJsonPath: windows.KubeProxyConfigPath,
+				},
+				{
+					Name:               "VERBOSITY",
+					NodeObjectJsonPath: verbosity,
+				},
+			},
+		}},
+		Bootstrap: false,
+		Priority:  3,
 	}
 }
 
