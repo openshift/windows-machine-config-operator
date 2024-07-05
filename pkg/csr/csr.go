@@ -193,9 +193,8 @@ func (a *Approver) validateNodeName(nodeName string) (bool, error) {
 	// check if the node name matches the lookup of any of the instance addresses
 	hasEntry, err := matchesDNS(nodeName, windowsInstances)
 	if err != nil {
-		return false, fmt.Errorf("unable to map node name to the addresses of Windows instances: %w", err)
-	}
-	if hasEntry {
+		a.log.Info("error occurred with reverse DNS lookup, falling back to hostname validation", "error", err)
+	} else if hasEntry {
 		return true, nil
 	}
 	return a.validateWithHostName(nodeName, windowsInstances)
