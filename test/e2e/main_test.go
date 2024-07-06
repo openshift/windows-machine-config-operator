@@ -35,6 +35,8 @@ var (
 	windowsServerVersion windows.ServerVersion
 	// gc is the global context across the test suites.
 	gc = globalContext{}
+	// mirrorRegistry is the container mirror registry URL
+	mirrorRegistry string
 )
 
 // globalContext holds the information that we want to use across the test suites.
@@ -85,6 +87,8 @@ type testContext struct {
 	// windowsServerVersion is the Windows Server version used in the e2e test suite.
 	// If unset or empty, Windows Server 2022 is assumed for Machine and container images.
 	windowsServerVersion windows.ServerVersion
+	// mirrorRegistry is the container mirror registry URL
+	mirrorRegistry string
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -113,7 +117,7 @@ func NewTestContext() (*testContext, error) {
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
 		CloudProvider: cloudProvider, workloadNamespace: "wmco-test", workloadNamespaceLabels: workloadNamespaceLabels,
-		windowsServerVersion: windowsServerVersion, toolsImage: toolsImage}, nil
+		windowsServerVersion: windowsServerVersion, toolsImage: toolsImage, mirrorRegistry: mirrorRegistry}, nil
 }
 
 // vmUsername returns the name of the user which can be used to log into each Windows instance
@@ -165,6 +169,7 @@ func TestMain(m *testing.M) {
 			}
 			return nil
 		})
+	flag.StringVar(&mirrorRegistry, "mirror-registry", "", "mirror registry URL")
 	flag.Parse()
 
 	os.Exit(m.Run())
