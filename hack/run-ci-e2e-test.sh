@@ -58,8 +58,8 @@ while getopts ":m:c:b:st:w:" opt; do
       ;;
     t ) # test to run. Defaults to all. Other options are basic and upgrade.
       TEST=$OPTARG
-      if [[ "$TEST" != "all" && "$TEST" != "basic" && "$TEST" != "upgrade" && "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
-        echo "Invalid -t option $TEST. Valid options are all, basic, upgrade, upgrade-setup, and upgrade-test"
+      if [[ "$TEST" != "all" && "$TEST" != "basic" && "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
+        echo "Invalid -t option $TEST. Valid options are all, basic, upgrade-setup, and upgrade-test"
         exit 1
       fi
       ;;
@@ -79,9 +79,7 @@ if [ -z "$KUBE_SSH_KEY_PATH" ]; then
     return 1
 fi
 
-if ! [[ "$OPENSHIFT_CI" == "true" &&  "$TEST" = "upgrade" ]]; then
-  OSDK=$(get_operator_sdk)
-fi
+OSDK=$(get_operator_sdk)
 
 SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-"false"}
 
@@ -168,16 +166,8 @@ if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
   go test ./test/e2e/... -run=TestWMCO/service_reconciliation -v -timeout=20m -args $GO_TEST_ARGS
   printf "\n####### Testing cluster-wide proxy #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/cluster-wide_proxy -v -timeout=20m -args $GO_TEST_ARGS
-fi
-
-if [[ "$TEST" = "all" || "$TEST" = "upgrade" ]]; then
-  # Run the upgrade tests and skip deletion of the Windows VMs
-  printf "\n####### Testing upgrade #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/upgrade -v -timeout=90m -args $GO_TEST_ARGS
-
-  # Run the reconfiguration test
   printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=90m -args $GO_TEST_ARGS
+  go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=40m -args $GO_TEST_ARGS
 fi
 
 if [[ "$TEST" = "upgrade-setup" ]]; then
@@ -200,11 +190,7 @@ fi
 if ! $SKIP_NODE_DELETION; then
   go test ./test/e2e/... -run=TestWMCO/destroy -v -timeout=60m -args $GO_TEST_ARGS
   # Get logs on success before cleanup
-  PRINT_UPGRADE=""
-  if [[ "$TEST" = "upgrade" ]]; then
-    PRINT_UPGRADE="upgrade and"
-  fi
-  printf "\n####### WMCO logs for %s deletion tests #######\n" "$PRINT_UPGRADE" >> "$ARTIFACT_DIR"/wmco.log
+  printf "\n####### WMCO logs for deletion tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
   get_WMCO_logs
   # Cleanup the operator resources
   if [ "$wmco_deployed_by_script" = "true" ]; then
