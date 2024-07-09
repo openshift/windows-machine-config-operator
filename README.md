@@ -196,13 +196,18 @@ Usage:
 ## Windows nodes Kubernetes component upgrade
 
 When a new version of WMCO is released that is compatible with the current cluster version, an operator upgrade will 
-take place which will result in the Kubernetes components in the Windows Machine to be upgraded. For a non-disruptive 
-upgrade, WMCO terminates the Windows Machines configured by previous version of WMCO and recreates them using the
-current version. This is done by deleting the Machine object that results in the drain and deletion of the Windows node.
+take place which will result in the Kubernetes components in the Windows Machine to be upgraded. For a non-disruptive
+upgrade, WMCO processes the Windows Machine that was configured by the previous version of the operator with the
+following steps:
+- drain and cordon the associated Node object
+- re-configure it using the new version
+- uncordon the Node
+
 To facilitate an upgrade, WMCO adds a version annotation to all the configured nodes. During an upgrade, a mismatch in
-version annotation will result in deletion and recreation of Windows Machine. In order to have minimal service 
-disruption during an upgrade, WMCO makes sure that the cluster will have atleast 1 Windows Machine per MachineSet in the
-running state.
+version annotation will result in a re-configuration or upgrade of the Windows instance. 
+
+For minimal service disruption during an upgrade, WMCO limits the number of Windows nodes that are re-configured or
+upgraded concurrently to one (1). The latter, accounts for both BYOH and MachineSet Windows instances.
 
 WMCO is not responsible for Windows operating system updates. The cluster administrator provides the Window image while
 creating the VMs and hence, the cluster administrator is responsible for providing an updated image. The cluster 
