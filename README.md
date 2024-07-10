@@ -2,7 +2,7 @@
 
 ## Introduction
 The Windows Machine Config Operator configures Windows instances into nodes, enabling Windows container workloads to
-be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/4.5/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
+be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.openshift.com/container-platform/latest/machine_management/creating_machinesets/creating-machineset-aws.html#machine-api-overview_creating-machineset-aws),
 or by specifying existing instances through a ConfigMap. The operator will do all the necessary steps to configure the instance so that it
 can join the cluster as a worker node.
 
@@ -25,7 +25,7 @@ the private key that will be used to access the Windows instances:
 oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
 ```
 We strongly recommend not using the same
-[private key](https://docs.openshift.com/container-platform/4.6/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default)
+[private key](https://docs.openshift.com/container-platform/latest/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default)
 used when installing the cluster
 
 #### Changing the private key secret
