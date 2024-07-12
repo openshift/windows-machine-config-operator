@@ -42,7 +42,7 @@ variable "vsphere-datacenter" {
 
 variable "vsphere-network" {
   type    = string
-  default = "/DEVQEdatacenter/network/devqe-segment-xxx"
+  default = "/DEVQEdatacenter/network/devqe-segment-222"
 }
 
 variable "vsphere-datastore" {
