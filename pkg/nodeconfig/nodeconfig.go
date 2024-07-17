@@ -271,7 +271,13 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 	if err := drain.RunNodeDrain(drainer, nc.node.Name); err != nil {
 		return fmt.Errorf("unable to drain node %s: %w", nc.node.Name, err)
 	}
-
+	// Windows Server 2022 VMs on AWS have a non-persistent route to the metadata endpoint. Explicitly restore them
+	// to allow the same VM to be configured as a node again.
+	if nc.platformType == configv1.AWSPlatformType {
+		if err := nc.Windows.RestoreAWSRoutes(); err != nil {
+			return err
+		}
+	}
 	if err := nc.Windows.RebootAndReinitialize(); err != nil {
 		return err
 	}

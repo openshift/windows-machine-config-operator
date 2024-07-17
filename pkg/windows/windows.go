@@ -611,6 +611,9 @@ func (vm *windows) RestoreAWSRoutes() error {
 	if err != nil {
 		return err
 	}
+	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
+		return fmt.Errorf("unable to ensure HNS networks are removed: %w", err)
+	}
 	if err = vm.ensureServiceIsRunning(ec2Launch); err != nil {
 		return err
 	}
