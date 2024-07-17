@@ -66,6 +66,7 @@ func NewControllerConfigReconciler(mgr manager.Manager, clusterConfig cluster.Co
 			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
 			watchNamespace:     watchNamespace,
 			recorder:           mgr.GetEventRecorderFor(ControllerConfigController),
+			platform:           clusterConfig.Platform(),
 		},
 	}, nil
 }

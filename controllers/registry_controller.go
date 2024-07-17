@@ -70,6 +70,7 @@ func NewRegistryReconciler(mgr manager.Manager, clusterConfig cluster.Config,
 			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
 			watchNamespace:     watchNamespace,
 			recorder:           mgr.GetEventRecorderFor(RegistryController),
+			platform:           clusterConfig.Platform(),
 		},
 	}, nil
 }

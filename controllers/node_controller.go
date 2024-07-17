@@ -64,6 +64,7 @@ func NewNodeReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchN
 			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
 			watchNamespace:     watchNamespace,
 			recorder:           mgr.GetEventRecorderFor(NodeController),
+			platform:           clusterConfig.Platform(),
 		},
 	}, nil
 }
