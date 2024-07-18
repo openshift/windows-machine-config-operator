@@ -16,6 +16,7 @@ import (
 	"github.com/vincent-petithory/dataurl"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -286,33 +287,26 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 	return nil
 }
 
-// getWICDServiceAccountSecret returns the secret which holds the credentials for the WICD ServiceAccount
+// getWICDServiceAccountSecret returns the secret which holds the credentials for the WICD ServiceAccount, creating one
+// if necessary
 func (nc *nodeConfig) getWICDServiceAccountSecret() (*core.Secret, error) {
-	var secrets core.SecretList
-	err := nc.client.List(context.TODO(), &secrets, client.InNamespace(nc.wmcoNamespace))
+	var tokenSecret core.Secret
+	err := nc.client.Get(context.TODO(),
+		types.NamespacedName{Namespace: nc.wmcoNamespace, Name: windows.WicdServiceName}, &tokenSecret)
 	if err != nil {
+		if k8sapierrors.IsNotFound(err) {
+			return nc.createWICDServiceAccountTokenSecret()
+		}
 		return nil, err
 	}
-	// Go through all the secrets in the WMCO namespace, and find the token secret which contains the auth credentials
-	// for the WICD ServiceAccount
-	var filteredSecrets []core.Secret
-	for _, secret := range secrets.Items {
-		if secret.Type != core.SecretTypeServiceAccountToken {
-			// skip non-serviceAccount token secrets
-			continue
-		}
-		if secret.Annotations[core.ServiceAccountNameKey] == windows.WicdServiceName {
-			filteredSecrets = append(filteredSecrets, secret)
-		}
+	if validWICDServiceAccountTokenSecret(tokenSecret) {
+		return &tokenSecret, nil
 	}
-	if len(filteredSecrets) == 1 {
-		return &filteredSecrets[0], nil
+
+	// If the secret is invalid, a new one should be created
+	if err = nc.client.Delete(context.TODO(), &tokenSecret); err != nil {
+		return nil, fmt.Errorf("error deleting invalid WICD service account token secret: %w", err)
 	}
-	if len(filteredSecrets) > 1 {
-		return nil, fmt.Errorf("expected 1 secret for SA '%s', found %d", windows.WicdServiceName,
-			len(filteredSecrets))
-	}
-	// no secret token found for WICD service account, create one
 	return nc.createWICDServiceAccountTokenSecret()
 }
 
@@ -762,4 +756,15 @@ func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
 // existing CA bundle string
 func appendToCABundle(bundle mcfg.ImageRegistryBundle) string {
 	return fmt.Sprintf("# %s\n%s\n\n", strings.ReplaceAll(bundle.File, "..", ":"), bundle.Data)
+}
+
+// validWICDServiceAccountTokenSecret returns true if the given secret provides a token for the WICD SA
+func validWICDServiceAccountTokenSecret(secret core.Secret) bool {
+	if secret.Type != core.SecretTypeServiceAccountToken {
+		return false
+	}
+	if secret.Annotations[core.ServiceAccountNameKey] != windows.WicdServiceName {
+		return false
+	}
+	return true
 }
