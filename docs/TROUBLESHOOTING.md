@@ -48,6 +48,19 @@ Once the SSH bastion has been setup, you can use either method to access the Win
   ```
 * You can now RDP into the Windows node at *localhost:2020* using an RDP client
 
+## Rebooting a Windows node
+
+In general, the operator minimize disruptions and avoid node reboots whenever possible. Certain operations and 
+updates at the system level still require a traditional reboot process to ensure changes are applied correctly
+and securely.
+
+To restart a Windows node configured with WMCO, add the special reboot annotation and wait for the operator to
+evict any existing pods, cordon the node and safely reboot the instance. 
+ ```shell script
+ oc annotate nodes <node_name> windowsmachineconfig.openshift.io/reboot-required=true
+ ```
+where `<node_name>` is the name of the Windows node to be rebooted.
+
 ## How to collect Kubernetes node logs
 Kubernetes node log files are in *C:\var\logs*. To view all the directories under *C:\var\logs*, execute:
 ```shell script
