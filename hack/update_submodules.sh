@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# the release tag to build kube-proxy from
+KUBE_PROXY_TAG=v1.30.0
+
 function help() {
   echo "Usage: update_submodules.sh [OPTIONS] branch_name"
   echo "Update submodules HEAD to remote branches"
@@ -48,10 +51,9 @@ function update_libraries() {
   fi
 }
 
-function generate_version_commit() {
-  local base_branch=$1
-  local submodule=$2
-  cd "$submodule"
+# Populates tags locally from upstream
+function get_upstream_tags() {
+  local submodule=$1
   if ! git remote show upstream; then
     if [ "$submodule" = "containerd" ]; then
       git remote add upstream https://github.com/containerd/containerd
@@ -60,6 +62,13 @@ function generate_version_commit() {
     fi
   fi
   git fetch upstream 'refs/tags/v1*:refs/tags/v1*'
+}
+
+function generate_version_commit() {
+  local base_branch=$1
+  local submodule=$2
+  cd "$submodule"
+  get_upstream_tags "$submodule"
   if [ "$submodule" = "containerd" ]; then
     # Ref: Containerd Version https://github.com/containerd/containerd/blob/main/Makefile#L33
     version=$(git describe --match 'v[0-9]*' --dirty='.m' --always)
@@ -120,12 +129,20 @@ function update_submodules_for_branch() {
       git config -f .gitmodules submodule.$submodule.branch $remote_branch
       git add .gitmodules
     fi
-    # Update the submodule to the latest remote commit
-    git submodule update --remote $submodule
+    
+    # Update the submodule to the latest remote commit, except for kube-proxy which is tied to a tag
+    if [ "$submodule" = "kube-proxy" ]; then
+      cd $submodule
+      get_upstream_tags "$submodule"
+      git checkout tags/$KUBE_PROXY_TAG
+      cd ..
+    else
+      git submodule update --remote $submodule
+    fi
+
     generate_submodule_commit $submodule
     if [ "$submodule" = "kubelet" ] || [ "$submodule" = "kube-proxy" ] || [ "$submodule" = "containerd" ]; then
       generate_version_commit "$base_branch" "$submodule"
-
     fi
   done
 }
