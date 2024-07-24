@@ -9,7 +9,7 @@ template to virtual machine, the `machine-api` can use this newly created virtua
 subsequent VM cloning. 
 
 The above golden image name is the one we use in the Machine Set's `providerSpec.template`. The following steps need 
-to be executed with a sshuttle opened to the vSphere bastion host.
+to be executed with the `twingate` VPN active.
 
 ## Installing Packer
 
@@ -92,6 +92,7 @@ adjust the following variables:
    must match with the password entered in the [autounattend.xml](answer-files/autounattend.xml) script
 - `<vsphere-cluster>` Name of the vSphere cluster
 - `<vsphere-datacenter>` Name of the vSphere datacenter
+- `<vsphere-network>` Name of the vSphere network
 - `<vsphere-datastore>` Name of the vSphere datastore
 - `<vsphere-server>` The vCenter server hostname, with no scheme (`https://`) nor path separators (`/`).
   For example: `vcenter.example.com`.
