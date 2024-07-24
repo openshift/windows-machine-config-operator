@@ -235,11 +235,11 @@ wicd-unit:
 
 .PHONY: run-ci-e2e-test
 run-ci-e2e-test:
-	hack/run-ci-e2e-test.sh -t basic
+	hack/run-ci-e2e-test.sh
 
 .PHONY: run-ci-e2e-byoh-test
 run-ci-e2e-byoh-test:
-	hack/run-ci-e2e-test.sh -t basic -m 0
+	hack/run-ci-e2e-test.sh -m 0
 
 .PHONY: upgrade-test-setup
 upgrade-test-setup:
