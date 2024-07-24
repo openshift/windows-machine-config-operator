@@ -132,7 +132,7 @@ func ensureCSIController(c client.Interface) error {
 						{
 							Args:  []string{"--csi-address=/csi/csi.sock", "--probe-timeout=3s", "--health-port=29642", "--v=2"},
 							Name:  "liveness-probe",
-							Image: "registry.k8s.io/sig-storage/livenessprobe:v2.8.0",
+							Image: "registry.k8s.io/sig-storage/livenessprobe:v2.9.0",
 							SecurityContext: &core.SecurityContext{
 								Privileged: &isTrue,
 								SeccompProfile: &core.SeccompProfile{
