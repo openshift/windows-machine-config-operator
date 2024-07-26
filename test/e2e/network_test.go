@@ -134,7 +134,9 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 			}
 			require.NoError(t, err, "could not create Windows Server deployment")
 			defer tc.deleteDeployment(winServerDeployment.Name)
-			tc.collectDeploymentLogs(winServerDeployment)
+			if err := tc.collectDeploymentLogs(winServerDeployment); err != nil {
+				log.Printf("error collecting deployment logs: %v", err)
+			}
 
 			// Get the pod so we can use its IP
 			winServerIP, err := tc.getPodIP(*winServerDeployment.Spec.Selector)
@@ -226,19 +228,19 @@ func (tc *testContext) testPodDNSResolution(t *testing.T) {
 }
 
 // collectDeploymentLogs collects logs of a deployment to the Artifacts directory
-func (tc *testContext) collectDeploymentLogs(deployment *appsv1.Deployment) {
+func (tc *testContext) collectDeploymentLogs(deployment *appsv1.Deployment) error {
 	// map of labels expected to be on each pod in the deployment
 	matchLabels := deployment.Spec.Selector.MatchLabels
 	if len(matchLabels) == 0 {
-		log.Printf("deployment pod label map is empty")
-		return
+		return fmt.Errorf("deployment pod label map is empty")
 	}
 	var keyValPairs []string
 	for key, value := range matchLabels {
 		keyValPairs = append(keyValPairs, key+"="+value)
 	}
 	labelSelector := strings.Join(keyValPairs, ",")
-	tc.writePodLogs(labelSelector)
+	_, err := tc.gatherPodLogs(labelSelector)
+	return err
 }
 
 // getLogs uses a label selector and returns the logs associated with each pod
@@ -297,7 +299,9 @@ func (tc *testContext) testNorthSouthNetworking(t *testing.T) {
 	}
 	require.NoError(t, err, "could not create Windows Server deployment")
 	defer tc.deleteDeployment(winServerDeployment.GetName())
-	tc.collectDeploymentLogs(winServerDeployment)
+	if err := tc.collectDeploymentLogs(winServerDeployment); err != nil {
+		log.Printf("error collecting deployment logs: %v", err)
+	}
 	// Assert that we can successfully GET the webserver
 	err = tc.getThroughLoadBalancer(winServerDeployment)
 	assert.NoError(t, err, "unable to GET the webserver through a load balancer")
@@ -840,11 +844,10 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 			return "", err
 		}
 		labelSelector = "job-name=" + job.Name
-		tc.writePodLogs(labelSelector)
 		if job.Status.Succeeded > 0 {
-			logs, err := tc.getLogs(labelSelector)
+			logs, err := tc.gatherPodLogs(labelSelector)
 			if err != nil {
-				log.Printf("Unable to get logs associated with pod: %s", labelSelector)
+				log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
 			}
 			return logs, nil
 		}
@@ -854,30 +857,35 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 		}
 		time.Sleep(retryInterval)
 	}
-	tc.writePodLogs(labelSelector)
+	_, err = tc.gatherPodLogs(labelSelector)
+	if err != nil {
+		log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
+	}
 	events, _ := tc.getPodEvents(name)
 	return "", fmt.Errorf("job %v timed out: %v", job, events)
 }
 
-// writePodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts dir
-func (tc *testContext) writePodLogs(labelSelector string) {
-	logs, err := tc.getLogs(labelSelector)
-	if err != nil {
-		log.Printf("Unable to get logs associated with pod: %s", labelSelector)
-		return
-	}
-	podLogFile := fmt.Sprintf("%s.log", labelSelector)
+// gatherPodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts
+// dir. Returns the written logs.
+func (tc *testContext) gatherPodLogs(labelSelector string) (string, error) {
 	podArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "pods")
 	podDir := filepath.Join(podArtifacts, labelSelector)
-	err = os.MkdirAll(podDir, os.ModePerm)
+	err := os.MkdirAll(podDir, os.ModePerm)
 	if err != nil {
-		log.Printf("Error creating pod log collection directory in directory: %s", podDir)
+		return "", fmt.Errorf("error creating pod log collection directory %s: %w", podDir, err)
 	}
+
+	logs, err := tc.getLogs(labelSelector)
+	if err != nil {
+		return "", fmt.Errorf("unable to get logs for pod %s: %w", labelSelector, err)
+	}
+	podLogFile := fmt.Sprintf("%s.log", labelSelector)
 	outputFile := filepath.Join(podDir, filepath.Base(podLogFile))
 	logsErr := ioutil.WriteFile(outputFile, []byte(logs), os.ModePerm)
 	if logsErr != nil {
-		log.Printf("Unable to write pod logs with label %s to file %s", labelSelector, outputFile)
+		return "", fmt.Errorf("unable to write %s pod logs to %s: %w", labelSelector, outputFile, logsErr)
 	}
+	return logs, nil
 }
 
 // getRuntimeClassName returns the name of a runtime class for the given server version. If one does not exist on the
