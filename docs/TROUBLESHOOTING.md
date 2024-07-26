@@ -48,6 +48,18 @@ Once the SSH bastion has been setup, you can use either method to access the Win
   ```
 * You can now RDP into the Windows node at *localhost:2020* using an RDP client
 
+## Rebooting a Windows node
+
+In general, the operator minimize disruptions and avoid node reboots whenever possible. Certain operations and
+updates at the system level still require a traditional reboot process to ensure changes are applied correctly
+and securely.
+
+To reboot a Windows node, please follow the Openshift documentation on [Rebooting a node gracefully](https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-rebooting.html#nodes-nodes-rebooting-gracefully_nodes-nodes-rebooting)
+to cordon, drain and reboot with the following command in PowerShell:
+```powershell
+  Restart-Computer -Force
+```
+
 ## How to collect Kubernetes node logs
 Kubernetes node log files are in *C:\var\logs*. To view all the directories under *C:\var\logs*, execute:
 ```shell script
