@@ -60,6 +60,22 @@ to cordon, drain and reboot with the following command in PowerShell:
   Restart-Computer -Force
 ```
 
+### Node reboot limitation in AWS
+
+In AWS, Windows nodes are not able to become ready after [performing a graceful reboot](#rebooting-a-windows-node)
+due to an inconsistency with the EC2 instance metadata routes and the HNS networks.
+
+The cluster administrator must SSH into the instance and add the route after rebooting with the following command:
+```cmd
+  route add 169.254.169.254 mask 255.255.255.255 <gateway_ip>
+```
+where `169.254.169.254` and `255.255.255.255` are the address and network mask of the EC2 instance metadata endpoint,
+respectively. The `<gateway_ip>` must be replaced by the corresponding IP address of the gateway in Windows instance
+and can be found by running the following command:
+```cmd
+  ipconfig | findstr /C:"Default Gateway"
+``` 
+
 ## How to collect Kubernetes node logs
 Kubernetes node log files are in *C:\var\logs*. To view all the directories under *C:\var\logs*, execute:
 ```shell script
