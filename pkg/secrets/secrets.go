@@ -43,7 +43,7 @@ func GenerateUserData(platformType oconfig.PlatformType, publicKey ssh.PublicKey
 	if pubKeyBytes == nil {
 		return nil, fmt.Errorf("failed to retrieve public key using signer")
 	}
-	userData := processTags(platformType, generateUserDataWithPubKey(string(pubKeyBytes[:])))
+	userData := processTags(platformType, generateUserDataWithPubKey(platformType, string(pubKeyBytes[:])))
 	// sshd service is started to create the default sshd_config file. This file is modified
 	// for enabling publicKey auth and the service is restarted for the changes to take effect.
 	userDataSecret := &core.Secret{
@@ -60,9 +60,9 @@ func GenerateUserData(platformType oconfig.PlatformType, publicKey ssh.PublicKey
 }
 
 // generateUserDataWithPubKey returns the Windows user data for the given pubKey
-func generateUserDataWithPubKey(pubKey string) string {
+func generateUserDataWithPubKey(platformType oconfig.PlatformType, pubKey string) string {
 	windowsExporterPort := "9182"
-	return `function Get-RandomPassword {
+	userData := `function Get-RandomPassword {
 				Add-Type -AssemblyName 'System.Web'
 				return [System.Web.Security.Membership]::GeneratePassword(16, 2)
 			}
@@ -99,7 +99,65 @@ func generateUserDataWithPubKey(pubKey string) string {
 			$acl.SetAccessRule($administratorsRule)
 			$acl.SetAccessRule($systemRule)
 			$acl | Set-Acl
-			Restart-Service sshd`
+			Restart-Service sshd
+			`
+
+	if platformType == oconfig.AWSPlatformType {
+		userData = appendAwsUserDataConfig(userData)
+	}
+	return userData
+}
+
+// appendAwsUserDataConfig appends the AWS EC2Launch installation script to
+// the given userData to persist the instance metadata routes
+func appendAwsUserDataConfig(userData string) string {
+	// EC2Launch v2 minimum version where the task to persist routes was introduced
+	// see https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launchv2-versions.html#ec2launchv2-version-history
+	EC2LaunchMinimumVersion := "2.0.1643"
+
+	// S3 URL for the latest EC2Launch version
+	// see https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launch-v2-install.html#lv2-download-s3
+	EC2LaunchS3LatestURL := "https://s3.amazonaws.com/amazon-ec2launch-v2/windows/amd64/latest/AmazonEC2Launch.msi"
+
+	// append the EC2Launch installation script
+	userData += `function Install-LatestEC2LaunchV2 {
+				# set download dir
+				$DownloadDir = "$env:USERPROFILE\Desktop\EC2Launchv2"
+				New-Item -Path "$DownloadDir" -ItemType Directory -Force
+				# URL for your download location
+				$Url = "` + EC2LaunchS3LatestURL + `"
+				# set download location
+				$DownloadFile = "$DownloadDir" + "\" + $(Split-Path -Path $Url -Leaf)
+				# download the agent
+				Invoke-WebRequest -Uri $Url -OutFile $DownloadFile
+				# run the install
+				msiexec /i "$DownloadFile"
+			}
+			$EC2LaunchMinimumVersion = "` + EC2LaunchMinimumVersion + `"
+			$EC2LaunchExeLocation = "$env:ProgramFiles\Amazon\EC2Launch\EC2Launch.exe"
+			
+			if ( -not (Test-Path -Path $EC2LaunchExeLocation -PathType Leaf) ) {
+				Write-Output "EC2Launch binary not found in $EC2LaunchExeLocation, installing..."
+			
+				Install-LatestEC2LaunchV2
+			}
+			
+			$currentVersion = $(& $EC2LaunchExeLocation version)
+			
+			# check supported minimum version
+			if ($currentVersion -lt $EC2LaunchMinimumVersion) {   
+				Write-Output "EC2Launch upgrading from version $currentVersion"
+			
+				Install-LatestEC2LaunchV2
+			
+				$currentVersion = $(& $EC2LaunchExeLocation version)
+			}
+			
+			Write-Output "EC2Launch version $currentVersion"
+			
+			& $EC2LaunchExeLocation run-task add-routes --persistent
+			`
+	return userData
 }
 
 // applyTag surrounds the given data using the tag name with the following
