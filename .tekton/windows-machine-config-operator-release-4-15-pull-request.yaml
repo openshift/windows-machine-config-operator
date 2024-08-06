@@ -27,7 +27,7 @@ spec:
   - name: image-expires-after
     value: 5d
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator-release-4-15/windows-machine-config-operator-release-4-15:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4-15:on-pr-{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
@@ -248,8 +248,6 @@ spec:
       params:
       - name: BINARY_IMAGE
         value: $(params.output-image)
-      - name: BASE_IMAGES
-        value: $(tasks.build-container.results.BASE_IMAGES_DIGESTS)
       runAfter:
       - build-container
       taskRef:
@@ -275,8 +273,6 @@ spec:
         workspace: workspace
     - name: deprecated-base-image-check
       params:
-      - name: BASE_IMAGES_DIGESTS
-        value: $(tasks.build-container.results.BASE_IMAGES_DIGESTS)
       - name: IMAGE_URL
         value: $(tasks.build-container.results.IMAGE_URL)
       - name: IMAGE_DIGEST
