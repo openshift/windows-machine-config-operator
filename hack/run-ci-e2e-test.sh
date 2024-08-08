@@ -41,7 +41,7 @@ get_WMCO_logs() {
   done
 }
 
-TEST="all"
+TEST="basic"
 # WINDOWS_SERVER_VERSION will be set in the CI config. If it is not set, default to 2022.
 WIN_VER=${WINDOWS_SERVER_VERSION:-"2022"}
 
@@ -56,10 +56,10 @@ while getopts ":m:c:b:st:w:" opt; do
     s ) # process option for skipping deleting Windows VMs created by test suite
       SKIP_NODE_DELETION="true"
       ;;
-    t ) # test to run. Defaults to all. Other options are basic and upgrade.
+    t ) # test to run. Defaults to basic. Other options are basic, upgrade-setup, and upgrade-test.
       TEST=$OPTARG
-      if [[ "$TEST" != "all" && "$TEST" != "basic" && "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
-        echo "Invalid -t option $TEST. Valid options are all, basic, upgrade-setup, and upgrade-test"
+      if [[ "$TEST" != "basic" && "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
+        echo "Invalid -t option $TEST. Valid options are basic, upgrade-setup, and upgrade-test"
         exit 1
       fi
       ;;
@@ -155,7 +155,7 @@ if [[ "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
   get_WMCO_logs
 fi
 
-if [[ "$TEST" = "all" || "$TEST" = "basic" ]]; then
+if [[ "$TEST" = "basic" ]]; then
   printf "\n####### Testing image mirroring #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/image_mirroring -v -timeout=10m -args $GO_TEST_ARGS
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log

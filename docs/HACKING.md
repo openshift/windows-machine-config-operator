@@ -273,10 +273,10 @@ Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
 - `-b` gives an alternative path to the WMCO binary. This option overridden in OpenShift CI.
        When building the operator locally, the WMCO binary is created as part of the operator image build process and
        can be found at `build/_output/bin/windows-machine-config-operator`, this is the default value of this option.
-- `-t` specify the test to run. All tests are run if the option is not used. The allowed options are:
-  - `all` all the tests are run
-  - `basic` creation, network and deletion tests are run
-  - `upgrade` creation, upgrade, reconfiguration and deletion tests are run
+- `-t` specify the test to run. Defaults to `basic` if the option is not used. The allowed options are:
+  - `basic` all the tests are run aside from the `upgrade-*` tests
+  - `upgrade-setup` sets up an upgrade scenario by running a subset of the creation tests and the storage tests
+  - `upgrade-test` upgrade and deletion tests are run
 - `-w` specify the Windows Server version to test against. Defaults to 2022. Other option is 2019.
 
 Example command to run the full test suite with 2 instances configured by the Windows Machine controller, and 1
