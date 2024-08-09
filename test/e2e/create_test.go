@@ -172,6 +172,7 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 	assert.NoError(t, err, "Windows node creation failed")
 	tc.machineLogCollection(machines.Items)
+	tc.machineAwsEC2LogCollection(machines.Items)
 }
 
 // testMachineConfigurationWhilePrivateKeyChange tests that machines which have not yet been configured by WMCO are
@@ -220,6 +221,51 @@ func (tc *testContext) waitForMachinesDeleted(machines []mapi.Machine) (err erro
 		}
 	}
 	return err
+}
+
+// machineAwsEC2LogCollection collects specific system logs from the AWS EC2 instances
+func (tc *testContext) machineAwsEC2LogCollection(machines []mapi.Machine) {
+	if tc.CloudProvider.GetType() != config.AWSPlatformType {
+		log.Printf("Skipping AWS EC2 log collection for %s", tc.CloudProvider.GetType())
+		return
+	}
+	for _, machine := range machines {
+		address, err := controllers.GetAddress(machine.Status.Addresses)
+		if err != nil {
+			log.Printf("Machine %s does not have a valid address, unable to get logs", machine.GetName())
+			continue
+		}
+		tc.collectAwsEC2UserDataLogs(address)
+	}
+}
+
+// collectAwsEC2UserDataLogs collects the EC2 UserData logs from the given address. The output will be available
+// in the debug pod logs, and is filtered to exclude any SSH keys that may be present in the logs.
+func (tc *testContext) collectAwsEC2UserDataLogs(address string) {
+	command := "$EC2UserDataLogPrefix = \\\"EC2Launch\\\"; " +
+		"$EC2UserDataLogBaseDir = \\\"C:\\Windows\\System32\\config\\systemprofile\\AppData\\Local\\Temp\\\"; " +
+		"Write-Output \\\"Listing $EC2UserDataLogPrefix directories in: $EC2UserDataLogBaseDir\\\"; " +
+		"$directories = Get-ChildItem -Path \\\"$EC2UserDataLogBaseDir\\\" -Directory | Where-Object Name -like \\\"$EC2UserDataLogPrefix*\\\"; " +
+		"$directories; " +
+		"Write-Output \\\"\\\"; " +
+		"foreach ($dir in $directories) { " +
+		"  Write-Output \\\"Listing files in: $($dir.FullName)\\\"; " +
+		"  $files = Get-ChildItem -Path $dir.FullName;" +
+		"  $files;" +
+		"  Write-Output \\\"\\\";" +
+		"  foreach ($file in $files) {" +
+		"    Write-Output \\\"Getting content of: $($file.FullName)\\\";" +
+		"    Get-Content -Path $file.FullName | Where-Object { $_ -notmatch \\\"ssh-rsa\\\" }" +
+		"  } " +
+		"};"
+
+	// clean and use machine address as suffix in the job name
+	jobNameSuffix := strings.ReplaceAll(address, ".", "-")
+	jobName := "print-logs-aws-ec2-userdata-" + jobNameSuffix
+	_, err := tc.runPowerShellSSHJob(jobName, command, address)
+	if err != nil {
+		log.Printf("failed to collect AWS EC2 UserData logs from %s: %v", address, err)
+	}
 }
 
 // machineLogCollection makes a best effort attempt to collect logs from each Machine instance
