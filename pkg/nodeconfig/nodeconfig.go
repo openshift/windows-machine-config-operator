@@ -157,6 +157,9 @@ func (nc *nodeConfig) Configure() error {
 	if err := nc.createBootstrapFiles(); err != nil {
 		return err
 	}
+	if err := nc.createTLSCerts(); err != nil {
+		return err
+	}
 	if err := nc.createRegistryConfigFiles(); err != nil {
 		return err
 	}
@@ -169,11 +172,11 @@ func (nc *nodeConfig) Configure() error {
 	}
 
 	wmcoVersion := version.Get()
+
 	// Start all required services to bootstrap a node object using WICD
 	if err := nc.Windows.Bootstrap(wmcoVersion, nc.wmcoNamespace, wicdKC); err != nil {
 		return fmt.Errorf("bootstrapping the Windows instance failed: %w", err)
 	}
-
 	// Perform rest of the configuration with the kubelet running
 	err = func() error {
 		if nc.node == nil {
@@ -606,6 +609,22 @@ func (nc *nodeConfig) SyncTrustedCABundle() error {
 func (nc *nodeConfig) UpdateTrustedCABundleFile(data string) error {
 	dir, fileName := windows.SplitPath(windows.TrustedCABundlePath)
 	return nc.Windows.EnsureFileContent([]byte(data), fileName, dir)
+}
+
+func (nc *nodeConfig) createTLSCerts() error {
+	tlsSecret := &core.Secret{}
+	if err := nc.client.Get(context.TODO(), types.NamespacedName{Name: secrets.TLSSecret,
+		Namespace: nc.wmcoNamespace}, tlsSecret); err != nil {
+		return fmt.Errorf("unable to get secret %s: %w", nc.wmcoNamespace, err)
+	}
+	tlsData := tlsSecret.Data
+	// certFiles is a map from file path on the Windows node to the file content
+	certFiles := make(map[string][]byte)
+
+	certFiles["tls.crt"] = tlsData["tls.crt"]
+	certFiles["tls.key"] = tlsData["tls.key"]
+
+	return nc.Windows.ReplaceDir(certFiles, windows.TLSCertsPath)
 }
 
 // generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret

@@ -160,9 +160,9 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 
 	// Fetch the ConfigMap. The predicate will have filtered out any ConfigMaps that we should not reconcile
 	// so it is safe to assume that all ConfigMaps being reconciled are one of:
-	// 1. windows-instances, describing hosts that need to be present in the cluster.
 	// 2. windows-services, describing expected configuration of WMCO-managed services on all Windows instances
 	// 3. kube-apiserver-to-kubelet-client-ca, contains the CA for the kubelet to recognize the kube-apiserver client cert
+	// 1. windows-instances, describing hosts that need to be present in the cluster.
 	// 4. trusted-ca, where CNO will publish user-provided certs when there is an active cluster-wide proxy
 	configMap := &core.ConfigMap{}
 	if err := r.client.Get(ctx, req.NamespacedName, configMap); err != nil {
