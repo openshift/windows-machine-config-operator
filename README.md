@@ -239,6 +239,9 @@ Nodes can be added through both MachineSets and the windows-instances ConfigMap.
 The image specified in MachineSets has an extra requirement of having [the OpenSSH.Server~~~~0.0.1.0 Windows capability installed](https://learn.microsoft.com/en-us/windows-server/administration/openssh/openssh_install_firstuse?tabs=powershell#install-openssh-for-windows).
 This is normally installed by WMCO using the Machine's user-data, and is needed to configure a Windows instance.
 
+For AWS platform, the Windows AMI must have installed the EC2LaunchV2 agent with version 2.0.1643 or later.
+See install options in the [EC2LaunchV2 documentation](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launch-v2-install.html#lv2-configure-install).
+
 In order to run Windows workloads on Nodes, the image `mcr.microsoft.com/oss/kubernetes/pause:3.9` must be mirrored.
 See [Image configuration resources](https://docs.openshift.com/container-platform/latest/openshift_images/image-configuration.html) for general information on image mirroring.
 
