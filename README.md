@@ -268,6 +268,7 @@ by the chosen storage driver's provider. A list of drivers can be found [here](h
 [Horizontal](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html) and
 [Vertical](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-vertical-autoscaler.html) Pod
 autoscaling support are not available for Windows workloads.
+
 ### Other limitations
 WMCO / Windows nodes does not work with the following products:
 * [odo](https://docs.openshift.com/container-platform/latest/cli_reference/developer_cli_odo/understanding-odo.html)
