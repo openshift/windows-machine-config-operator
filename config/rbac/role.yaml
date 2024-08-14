@@ -241,3 +241,11 @@ rules:
   - securitycontextconstraints
   verbs:
   - use
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - get
+  - delete

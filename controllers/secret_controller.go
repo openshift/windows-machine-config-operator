@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-logr/logr"
-	oconfig "github.com/openshift/api/config/v1"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -14,7 +12,6 @@ import (
 	kubeTypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,6 +28,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
@@ -43,16 +41,26 @@ const (
 )
 
 // NewSecretReconciler returns a pointer to a SecretReconciler
-func NewSecretReconciler(mgr manager.Manager, platform oconfig.PlatformType, watchNamespace string) *SecretReconciler {
-	reconciler := &SecretReconciler{
-		client:         mgr.GetClient(),
-		scheme:         mgr.GetScheme(),
-		log:            ctrl.Log.WithName("controller").WithName(SecretController),
-		watchNamespace: watchNamespace,
-		recorder:       mgr.GetEventRecorderFor(SecretController),
-		platform:       platform,
+func NewSecretReconciler(mgr manager.Manager, clusterConfig cluster.Config,
+	watchNamespace string) (*SecretReconciler, error) {
+	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return nil, fmt.Errorf("error creating kubernetes clientset: %w", err)
 	}
-	return reconciler
+
+	reconciler := &SecretReconciler{
+		scheme: mgr.GetScheme(),
+		instanceReconciler: instanceReconciler{
+			client:             mgr.GetClient(),
+			k8sclientset:       clientset,
+			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
+			log:                ctrl.Log.WithName("controllers").WithName(SecretController),
+			watchNamespace:     watchNamespace,
+			recorder:           mgr.GetEventRecorderFor(SecretController),
+			platform:           clusterConfig.Platform(),
+		},
+	}
+	return reconciler, nil
 }
 
 // SetupWithManager sets up a new Secret controller
@@ -64,18 +72,23 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.log.Error(err, "Unable to retrieve private key, please ensure it is created")
 	}
 
-	privateKeyPredicate := builder.WithPredicates(predicate.Funcs{
+	secretPredicate := builder.WithPredicates(predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			return isPrivateKeySecret(e.Object, r.watchNamespace)
+			return isPrivateKeySecret(e.Object, r.watchNamespace) || isTlsSecret(e.Object, r.watchNamespace)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return isPrivateKeySecret(e.Object, r.watchNamespace)
+			return isPrivateKeySecret(e.Object, r.watchNamespace) || isTlsSecret(e.Object, r.watchNamespace)
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			// get update event only when secret data is changed
 			if isPrivateKeySecret(e.ObjectNew, r.watchNamespace) {
 				if string(e.ObjectOld.(*core.Secret).Data[secrets.PrivateKeySecretKey]) !=
 					string(e.ObjectNew.(*core.Secret).Data[secrets.PrivateKeySecretKey]) {
+					return true
+				}
+			} else if isTlsSecret(e.ObjectNew, r.watchNamespace) {
+				if string(e.ObjectOld.(*core.Secret).Data[secrets.TLSSecret]) !=
+					string(e.ObjectNew.(*core.Secret).Data[secrets.TLSSecret]) {
 					return true
 				}
 			}
@@ -101,7 +114,7 @@ func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	})
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&core.Secret{}, privateKeyPredicate).
+		For(&core.Secret{}, secretPredicate).
 		Watches(&core.Secret{}, handler.EnqueueRequestsFromMapFunc(r.mapToPrivateKeySecret),
 			mappingPredicate).
 		Complete(r)
@@ -117,19 +130,15 @@ func isPrivateKeySecret(obj client.Object, keyNamespace string) bool {
 	return obj.GetName() == secrets.PrivateKeySecret && obj.GetNamespace() == keyNamespace
 }
 
+// isTlsSecret returns true if the provided object is the operator TLS secret
+func isTlsSecret(obj client.Object, keyNamespace string) bool {
+	return obj.GetName() == secrets.TLSSecret && obj.GetNamespace() == keyNamespace
+}
+
 // SecretReconciler is used to create a controller which manages Secret objects
 type SecretReconciler struct {
-	// This client, initialized using mgr.Client() above, is a split client
-	// that reads objects from the cache and writes to the apiserver
-	client client.Client
 	scheme *runtime.Scheme
-	log    logr.Logger
-	// watchNamespace is the namespace the operator is watching as defined by the operator CSV
-	watchNamespace string
-	// recorder to generate events
-	recorder record.EventRecorder
-	// platform indicates the platform on which the cluster is running
-	platform oconfig.PlatformType
+	instanceReconciler
 }
 
 // Reconcile reads that state of the cluster for a Secret object and makes changes based on the state read
@@ -138,8 +147,9 @@ type SecretReconciler struct {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *SecretReconciler) Reconcile(ctx context.Context,
 	request ctrl.Request) (result reconcile.Result, reconcileErr error) {
-	log := r.log.WithValues(SecretController, request.NamespacedName)
+	r.log = r.log.WithValues(SecretController, request.NamespacedName)
 
+	var err error
 	// Prevent WMCO upgrades while secret-based resources are being processed
 	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, SecretController); err != nil {
 		return ctrl.Result{}, err
@@ -149,6 +159,19 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 			result.Requeue, reconcileErr)
 	}()
 
+	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
+	}
+
+	if request.NamespacedName.Name == secrets.TLSSecret {
+		return ctrl.Result{}, r.reconcileTLSSecret(ctx)
+	}
+	return ctrl.Result{}, r.reconcileUserDataSecret(ctx)
+}
+
+func (r *SecretReconciler) reconcileUserDataSecret(ctx context.Context) error {
 	keySigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
@@ -156,39 +179,79 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 			// Private key secret was not found, could have been deleted after reconcile request.
 			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
 			// Return and don't requeue
-			return reconcile.Result{}, nil
+			return nil
 		}
-		return reconcile.Result{}, fmt.Errorf("unable to get secret %s: %w", request.NamespacedName, err)
+		return fmt.Errorf("unable to get secret %s: %w", secrets.PrivateKeySecret, err)
 	}
 	// Generate expected userData based on the existing private key
 	validUserData, err := secrets.GenerateUserData(r.platform, keySigner.PublicKey())
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("error generating %s secret: %w", secrets.UserDataSecret, err)
+		return fmt.Errorf("error generating %s secret: %w", secrets.UserDataSecret, err)
 	}
-
 	userData := &core.Secret{}
 	// Fetch UserData instance
 	err = r.client.Get(ctx,
 		kubeTypes.NamespacedName{Name: secrets.UserDataSecret, Namespace: cluster.MachineAPINamespace}, userData)
 	if err != nil && k8sapierrors.IsNotFound(err) {
 		// Secret is deleted
-		log.Info("secret not found, creating the secret", "name", secrets.UserDataSecret)
+		r.log.Info("secret not found, creating the secret", "name", secrets.UserDataSecret)
 		err = r.client.Create(ctx, validUserData)
 		if err != nil {
-			return reconcile.Result{}, err
+			return err
 		}
 		// Secret created successfully - don't requeue
-		return reconcile.Result{}, nil
+		return nil
 	} else if err != nil {
-		log.Error(err, "error retrieving the secret", "name", secrets.UserDataSecret)
-		return reconcile.Result{}, err
+		r.log.Error(err, "error retrieving the secret", "name", secrets.UserDataSecret)
+		return err
 	} else if string(userData.Data["userData"][:]) == string(validUserData.Data["userData"][:]) {
 		// valid userData secret already exists
-		return reconcile.Result{}, nil
+		return nil
 	} else {
 		// userdata secret data does not match what is expected
-		return reconcile.Result{}, r.updateUserData(ctx, keySigner, validUserData)
+		return r.updateUserData(ctx, keySigner, validUserData)
 	}
+}
+
+func (r *SecretReconciler) reconcileTLSSecret(ctx context.Context) error {
+	tlsSecret := &core.Secret{}
+	err := r.client.Get(ctx, kubeTypes.NamespacedName{Name: secrets.TLSSecret,
+		Namespace: r.watchNamespace}, tlsSecret)
+	if err != nil {
+		if k8sapierrors.IsNotFound(err) {
+			// Request object not found, could have been deleted after reconcile request.
+			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
+			// Return and don't requeue
+			return nil
+		}
+		return fmt.Errorf("unable to get secret %s: %w", secrets.TLSSecret, err)
+	}
+	// certFiles is a map from file path on the Windows node to the file content
+	certFiles := make(map[string][]byte)
+
+	certFiles["tls.crt"] = tlsSecret.Data["tls.crt"]
+	certFiles["tls.key"] = tlsSecret.Data["tls.key"]
+
+	nodes := &core.NodeList{}
+	err = r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"})
+	if err != nil {
+		return fmt.Errorf("error getting node list: %w", err)
+	}
+	for _, node := range nodes.Items {
+		winInstance, err := r.instanceFromNode(&node)
+		if err != nil {
+			return fmt.Errorf("unable to create instance object from node: %w", err)
+		}
+		nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+			winInstance, r.signer, nil, nil, r.platform)
+		if err != nil {
+			return fmt.Errorf("failed to create new nodeconfig: %w", err)
+		}
+		if err = nc.Windows.ReplaceDir(certFiles, windows.TLSCertsPath); err != nil {
+			return fmt.Errorf("unable to transfer TLS certs: %w", err)
+		}
+	}
+	return nil
 }
 
 // updateUserData updates the userdata secret to the expected state
