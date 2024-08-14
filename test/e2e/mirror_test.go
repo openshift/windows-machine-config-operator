@@ -77,7 +77,7 @@ func (tc *testContext) testMirrorSettingsApplied(t *testing.T) {
 			require.NoError(t, err, "unable to get node address")
 
 			// retry to give time for registry controller to transfer generated config to all nodes
-			err = wait.PollUntilContextTimeout(context.TODO(), retry.Interval, 5*time.Minute, true,
+			err = wait.PollUntilContextTimeout(context.TODO(), nodeRetryInterval, 5*time.Minute, true,
 				func(ctx context.Context) (done bool, err error) {
 					count, err := tc.countItemsInDir(windows.ContainerdConfigDir, addr)
 					require.NoErrorf(t, err, "error counting items in dir %s on node %s", windows.ContainerdConfigDir, addr)
@@ -98,7 +98,7 @@ func (tc *testContext) testMirrorSettingsCleared(t *testing.T) {
 			require.NoError(t, err, "unable to get node address")
 
 			// retry to give time for registry controller to clear settings from all nodes
-			err = wait.PollUntilContextTimeout(context.TODO(), retry.Interval, 5*time.Minute, true,
+			err = wait.PollUntilContextTimeout(context.TODO(), nodeRetryInterval, 5*time.Minute, true,
 				func(ctx context.Context) (done bool, err error) {
 					count, err := tc.countItemsInDir(windows.ContainerdConfigDir, addr)
 					require.NoErrorf(t, err, "error counting items in dir %s on node %s", windows.ContainerdConfigDir, addr)
