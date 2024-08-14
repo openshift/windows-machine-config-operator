@@ -22,7 +22,7 @@ spec:
       serviceAccountName: vmware-vsphere-csi-driver-node-sa
       containers:
         - name: node-driver-registrar
-          image: k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.7.0
+          image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.7.0
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
@@ -102,7 +102,7 @@ spec:
             periodSeconds: 5
             failureThreshold: 3
         - name: liveness-probe
-          image: k8s.gcr.io/sig-storage/livenessprobe:v2.9.0
+          image: registry.k8s.io/sig-storage/livenessprobe:v2.9.0
           args:
             - "--v=4"
             - "--csi-address=/csi/csi.sock"
