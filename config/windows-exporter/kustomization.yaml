@@ -1,6 +1,5 @@
 resources:
 - windows-exporter-service.yaml
-- windows-exporter-service-monitor.yaml
 - windows-exporter-role.yaml
 - windows-exporter-role-binding.yaml
 - prometheusRule.yaml
