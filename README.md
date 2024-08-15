@@ -275,7 +275,7 @@ WMCO / Windows nodes does not work with the following products:
 * [OpenShift Builds](https://docs.openshift.com/container-platform/latest/cicd/builds/understanding-image-builds.html#understanding-image-builds)
 * [OpenShift Pipelines](https://docs.openshift.com/container-platform/latest/cicd/pipelines/understanding-openshift-pipelines.html#understanding-openshift-pipelines)
 * [OpenShift Service Mesh](https://docs.openshift.com/container-platform/latest/service_mesh/v2x/ossm-about.html)
-* [Red Hat Cost Management](https://access.redhat.com/documentation/en-us/cost_management_service/2022/html/getting_started_with_cost_management/assembly-introduction-cost-management?extIdCarryOver=true&sc_cid=701f2000001OH74AAG#about-cost-management_getting-started)
+* [Red Hat Insights cost management](https://docs.redhat.com/en/documentation/cost_management_service/1-latest)
 * [Red Hat OpenShift Local](https://developers.redhat.com/products/openshift-local/overview)
 * [OpenShift monitoring of user defined project](https://docs.openshift.com/container-platform/latest/monitoring/enabling-monitoring-for-user-defined-projects.html#enabling-monitoring-for-user-defined-projects)
 * [HugePages](https://kubernetes.io/docs/tasks/manage-hugepages/scheduling-hugepages/)
