@@ -132,7 +132,7 @@ func ensureCSIController(c client.Interface) error {
 						{
 							Args:  []string{"--csi-address=/csi/csi.sock", "--probe-timeout=3s", "--health-port=29642", "--v=2"},
 							Name:  "liveness-probe",
-							Image: "registry.k8s.io/sig-storage/livenessprobe:v2.8.0",
+							Image: "registry.k8s.io/sig-storage/livenessprobe:v2.9.0",
 							SecurityContext: &core.SecurityContext{
 								Privileged: &isTrue,
 								SeccompProfile: &core.SeccompProfile{
@@ -419,7 +419,7 @@ func ensureWindowsCSIDaemonset(c client.Interface) error {
 					Containers: []core.Container{
 						{
 							Name:  "node-driver-registrar",
-							Image: "k8s.gcr.io/sig-storage/csi-node-driver-registrar:v2.7.0",
+							Image: "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.7.0",
 							Args:  []string{"--v=5", "--csi-address=$(ADDRESS)", "-kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"},
 							Env: []core.EnvVar{
 								{
