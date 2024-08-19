@@ -28,7 +28,7 @@ import (
 //+kubebuilder:rbac:groups="",resources=endpoints,verbs=create;get;delete;update;patch
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=list
-//+kubebuilder:rbac:groups="monitoring.coreos.com",resources=servicemonitors,verbs=create,get,delete
+//+kubebuilder:rbac:groups="monitoring.coreos.com",resources=servicemonitors,verbs=create;get;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=*
 
 var (
