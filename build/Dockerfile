@@ -142,6 +142,7 @@ COPY --from=build /build/windows-machine-config-operator/windows_exporter/window
 COPY pkg/internal/windows-exporter-webconfig.yaml .
 
 # Copy azure-cloud-node-manager.exe
+WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe .
 
 # Copy ecr-credential-provider
