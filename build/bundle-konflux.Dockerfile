@@ -27,7 +27,7 @@ LABEL com.redhat.openshift.versions="=v4.17"
 # registry endpoints.
 LABEL com.redhat.delivery.backport=false
 
-LABEL version="v10.17.0"
+LABEL version="v10.18.0"
 
 # This label maps to the brew build target
 LABEL com.redhat.component="windows-machine-config-operator-bundle-container"
