@@ -426,6 +426,7 @@ spec:
               containers:
               - args:
                 - --debugLogging
+                - --metrics-bind-address=0.0.0.0:9182
                 command:
                 - windows-machine-config-operator
                 env:
@@ -442,6 +443,10 @@ spec:
                 image: REPLACE_IMAGE
                 imagePullPolicy: IfNotPresent
                 name: manager
+                ports:
+                - containerPort: 9182
+                  name: https
+                  protocol: TCP
                 resources:
                   limits:
                     cpu: 200m
