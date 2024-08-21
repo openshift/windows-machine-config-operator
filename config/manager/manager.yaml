@@ -35,9 +35,14 @@ spec:
         - windows-machine-config-operator
         args:
         - "--debugLogging"
+        - "--metrics-bind-address=0.0.0.0:9182"
         image: controller:latest
         name: manager
         imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9182
+          protocol: TCP
+          name: https
         resources:
          limits:
             cpu: 200m
