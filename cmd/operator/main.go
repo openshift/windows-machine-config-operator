@@ -22,6 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
@@ -61,8 +62,11 @@ func init() {
 
 func main() {
 	var debugLogging bool
+	var metricsAddr string
 
 	flag.BoolVar(&debugLogging, "debugLogging", false, "Log debug messages")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "0.0.0.0:9182",
+		"The address and port the metric endpoint binds to 0.0.0.0:9182")
 
 	// Add flags registered by imported packages (e.g. glog and
 	// controller-runtime)
@@ -156,7 +160,9 @@ func main() {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: fmt.Sprintf("%s:%d", metrics.Host, metrics.Port),
+			BindAddress:    metricsAddr,
+			SecureServing:  true,
+			FilterProvider: filters.WithAuthenticationAndAuthorization,
 		},
 	})
 	if err != nil {
