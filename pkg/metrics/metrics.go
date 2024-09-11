@@ -315,7 +315,7 @@ func (c *Config) ensureServiceMonitor() error {
 	}
 
 	serverName := fmt.Sprintf("%s.%s.svc", WindowsMetricsResource, c.namespace)
-
+	replacement := "$1"
 	expectedSM := &monv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      WindowsMetricsResource,
@@ -336,14 +336,14 @@ func (c *Config) ensureServiceMonitor() error {
 					TLSConfig: &monv1.TLSConfig{
 						CAFile: "/etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt",
 						SafeTLSConfig: monv1.SafeTLSConfig{
-							ServerName: serverName,
+							ServerName: &serverName,
 						},
 					},
-					RelabelConfigs: []*monv1.RelabelConfig{
+					RelabelConfigs: []monv1.RelabelConfig{
 						{
 							Action:      "replace",
 							Regex:       "(.*)",
-							Replacement: "$1",
+							Replacement: &replacement,
 							TargetLabel: "instance",
 							SourceLabels: []monv1.LabelName{
 								"__meta_kubernetes_endpoint_address_target_name",
