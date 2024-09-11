@@ -1267,7 +1267,7 @@ var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureS
 
 	genericfeatures.APIServerTracing: {Default: true, PreRelease: featuregate.Beta},
 
-	genericfeatures.APIServingWithRoutine: {Default: true, PreRelease: featuregate.Beta},
+	genericfeatures.APIServingWithRoutine: {Default: false, PreRelease: featuregate.Alpha},
 
 	genericfeatures.ConsistentListFromCache: {Default: false, PreRelease: featuregate.Alpha},
 
@@ -1296,6 +1296,10 @@ var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureS
 	genericfeatures.StorageVersionAPI: {Default: false, PreRelease: featuregate.Alpha},
 
 	genericfeatures.StorageVersionHash: {Default: true, PreRelease: featuregate.Beta},
+
+	genericfeatures.StrictCostEnforcementForVAP: {Default: false, PreRelease: featuregate.Beta},
+
+	genericfeatures.StrictCostEnforcementForWebhooks: {Default: false, PreRelease: featuregate.Beta},
 
 	genericfeatures.StructuredAuthenticationConfiguration: {Default: true, PreRelease: featuregate.Beta},
 
