@@ -5,8 +5,6 @@ package manager
 import (
 	"errors"
 	"fmt"
-	"reflect"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
@@ -121,7 +119,7 @@ func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) er
 		if !ok {
 			return fmt.Errorf("service is not correct type")
 		}
-		dependentServices, err := m.listDependentServices(winSvc.Handle)
+		dependentServices, err := winSvc.ListDependentServices(svc.AnyActivity)
 		if err != nil {
 			return fmt.Errorf("error finding dependent services: %w", err)
 		}
@@ -177,56 +175,6 @@ func (m *manager) stopServiceAndProcess(winSvc *mgr.Service) error {
 	return nil
 }
 
-// listDependentServices returns a list of names of all services dependent on the given service
-func (m *manager) listDependentServices(serviceHandle windows.Handle) ([]string, error) {
-	// Borrowing the main steps done here from the golang windows/mgr library's ListServices() function, as the
-	// EnumServicesStatusEx syscall has a very similar way of being called.
-	// https://cs.opensource.google/go/x/sys/+/refs/tags/v0.1.0:windows/svc/mgr/mgr.go;l=176
-	var serviceBuffer []byte
-	var bytesNeeded, returnedServiceCount uint32
-
-	// The documentation for this syscall says it should be ran at least twice. First to determine the size of the
-	// buffer it will return, and then to actually capture the data with an allocated buffer. As the count of dependent
-	// services can change in between calls, it may need to be ran more than twice.
-	for {
-		var p *byte
-		if len(serviceBuffer) > 0 {
-			p = &serviceBuffer[0]
-		}
-		// Returned error from `Call` will always be non-nil
-		success, _, err := enumDependentServicesSyscall(serviceHandle, windows.SERVICE_STATE_ALL, p,
-			uint32(len(serviceBuffer)), &bytesNeeded, &returnedServiceCount)
-		if success != 0 {
-			// a non-zero return value indicates the syscall completed successfully, and serviceBuffer has been filled
-			// with the requested data.
-			break
-		}
-		if err != windows.ERROR_MORE_DATA {
-			return nil, fmt.Errorf("received unexpected error from enumDependentServicesSyscall: %w", err)
-		}
-		if bytesNeeded <= uint32(len(serviceBuffer)) {
-			return nil, err
-		}
-		serviceBuffer = make([]byte, bytesNeeded)
-	}
-	// If no services are dependent on this service, return successfully
-	if returnedServiceCount == 0 {
-		return nil, nil
-	}
-	// create a slice based on the buffer that was returned to us, so that we can iterate through it
-	var services []enumServiceStatus
-	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&services))
-	hdr.Data = uintptr(unsafe.Pointer(&serviceBuffer[0]))
-	hdr.Len = int(returnedServiceCount)
-	hdr.Cap = int(returnedServiceCount)
-
-	var dependencies []string
-	for _, s := range services {
-		dependencies = append(dependencies, windows.UTF16PtrToString(s.ServiceName))
-	}
-	return dependencies, nil
-}
-
 func (m *manager) Disconnect() error {
 	underlyingMgr := (*mgr.Mgr)(m)
 	return underlyingMgr.Disconnect()
@@ -239,15 +187,6 @@ func New() (Manager, error) {
 	}
 
 	return (*manager)(newMgr), nil
-}
-
-// enumDependentServicesSyscall is a wrapper around enumDependentServicesW.Call with the correct argument casting
-// Refer to the API documentation for an explanation of the arguments:
-// https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-enumdependentservicesw
-func enumDependentServicesSyscall(hService windows.Handle, dwServiceState uint32, lpServices *byte, cbBufSize uint32,
-	pcbBytesNeeded *uint32, lpServicesReturned *uint32) (uintptr, uintptr, error) {
-	return enumDependentServicesW.Call(uintptr(hService), uintptr(dwServiceState), uintptr(unsafe.Pointer(lpServices)),
-		uintptr(cbBufSize), uintptr(unsafe.Pointer(pcbBytesNeeded)), uintptr(unsafe.Pointer(lpServicesReturned)))
 }
 
 // waitForProcessToStop waits until the process has exited

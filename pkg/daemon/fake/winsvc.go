@@ -97,6 +97,29 @@ func (f *FakeService) UpdateConfig(config mgr.Config) error {
 	return nil
 }
 
+func (f *FakeService) ListDependentServices(_ svc.ActivityStatus) ([]string, error) {
+	var dependencies []string
+	for _, listedService := range f.serviceList.listServiceNames() {
+		if listedService == f.name {
+			continue
+		}
+		svc, found := f.serviceList.read(listedService)
+		if !found {
+			return nil, fmt.Errorf("unable to open service %s", listedService)
+		}
+		config, err := svc.Config()
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range config.Dependencies {
+			if s == f.name {
+				dependencies = append(dependencies, listedService)
+			}
+		}
+	}
+	return dependencies, nil
+}
+
 func NewFakeService(name string, config mgr.Config, status svc.Status) *FakeService {
 	return &FakeService{
 		name:   name,
