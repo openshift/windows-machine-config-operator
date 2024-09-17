@@ -256,7 +256,6 @@ conntrack:
   udpStreamTimeout: 0s
 configSyncPeriod: 0s
 portRange: ''
-windowsRunAsService: true
 "@
 
 # Generate kube-proxy config 
