@@ -213,6 +213,36 @@ WMCO is not responsible for Windows operating system updates. The cluster admini
 creating the VMs and hence, the cluster administrator is responsible for providing an updated image. The cluster 
 administrator can provide an updated image by changing the image in the MachineSet spec.
 
+## Windows nodes Openshift EUS-to-EUS upgrade
+
+WMCO does support upgrading from one [EUS version to another EUS version of OCP](https://access.redhat.com/support/policy/updates/openshift-eus),
+the Windows nodes will be upgraded from the staring EUS to the new EUS version while keeping the Windows workloads 
+in a healthy state with no disruptions.
+
+**Prerequisites**
+- The cluster must be running on a supported EUS version of OCP
+- All Windows nodes must be in a healthy state
+- All Windows nodes must be running on the same version of WMCO
+- All the of the [prerequisites of the EUS-to-EUS OCP upgrade](https://docs.openshift.com/container-platform/latest/updating/updating_a_cluster/eus-eus-update.html)
+
+### Windows nodes EUS-to-EUS update using the web console
+
+**Procedure**
+1. Uninstall WMCO from the [cluster using the web console](https://docs.openshift.com/container-platform/latest/operators/admin/olm-deleting-operators-from-cluster.html#olm-deleting-operators-from-a-cluster-using-web-console_olm-deleting-operators-from-a-cluster) 
+2. Follow steps for [EUS-to-EUS update using the web console](https://docs.openshift.com/container-platform/latest/updating/updating_a_cluster/eus-eus-update.html#updating-eus-to-eus-upgrade-console_eus-to-eus-update)
+3. Wait for the upgrade to complete towards the target EUS version
+4. Install the latest available WMCO version [from OperatorHub](https://docs.openshift.com/container-platform/latest/operators/admin/olm-adding-operators-to-cluster.html#olm-installing-from-operatorhub-using-web-console_olm-adding-operators-to-a-cluster) 
+5. Wait for the Windows nodes to be upgraded towards the corresponding EUS version
+
+### Windows nodes EUS-to-EUS update using the CLI
+
+**Procedure**
+1. Uninstall WMCO from the [cluster using the CLI](https://docs.openshift.com/container-platform/latest/operators/admin/olm-deleting-operators-from-cluster.html#olm-deleting-operator-from-a-cluster-using-cli_olm-deleting-operators-from-a-cluster)
+2. Follow the steps for [EUS-to-EUS update using the CLI](https://docs.openshift.com/container-platform/latest/updating/updating_a_cluster/eus-eus-update.html#updating-eus-to-eus-upgrade-cli_eus-to-eus-update)
+3. Wait for the upgrade to complete towards the target EUS version
+4. Install the latest available WMCO version [using the CLI](https://docs.openshift.com/container-platform/latest/operators/admin/olm-adding-operators-to-cluster.html#olm-installing-operator-from-operatorhub-using-cli_olm-adding-operators-to-a-cluster)
+5. Wait for the Windows nodes to be upgraded towards the corresponding EUS version
+
 ## Enabled features
 
 ### Autoscaling Windows nodes
