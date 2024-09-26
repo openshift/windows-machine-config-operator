@@ -276,6 +276,14 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 		return fmt.Errorf("unable to drain node %s: %w", nc.node.Name, err)
 	}
 
+	// HNS networks conflicts with the persistent route to the metadata endpoint in AWS. Explicitly remove them
+	// to allow the same VM to be configured as a node again.
+	if nc.platformType == configv1.AWSPlatformType {
+		if err := nc.Windows.EnsureHNSNetworksAreRemoved(); err != nil {
+			return err
+		}
+	}
+
 	if err := nc.Windows.RebootAndReinitialize(); err != nil {
 		return err
 	}
