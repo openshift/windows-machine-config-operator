@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/manager"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 var wmcoNamespace = "openshift-windows-machine-config-operator"
@@ -121,7 +122,7 @@ func TestResolveNodeVariables(t *testing.T) {
 				cmdRunner: &fakePSCmdRunner{},
 			})
 			require.NoError(t, err)
-			actual, err := c.resolveNodeVariables(test.service)
+			actual, err := c.resolveNodeVariables(test.service.NodeVariablesInCommand)
 			if test.expectErr {
 				require.Error(t, err)
 				return
@@ -134,19 +135,64 @@ func TestResolveNodeVariables(t *testing.T) {
 
 func TestResolvePowershellVariables(t *testing.T) {
 	testIO := []struct {
-		name      string
-		service   servicescm.Service
-		expected  map[string]string
-		expectErr bool
+		name            string
+		nodeName        string
+		nodeAnnotations map[string]string
+		nodeLabels      map[string]string
+		service         servicescm.Service
+		expected        map[string]string
+		expectErr       bool
 	}{
 		{
-			name:      "No Powershell variables to replace",
-			service:   servicescm.Service{},
-			expected:  map[string]string{},
+			name:            "No Powershell variables to replace",
+			nodeName:        "node",
+			nodeAnnotations: map[string]string{"desiredkey": "desiredvalue"},
+			nodeLabels:      map[string]string{"label": "labelvalue"},
+			service:         servicescm.Service{},
+			expected:        map[string]string{},
+			expectErr:       false,
+		},
+		{
+			name:            "Resolve powershell path variables",
+			nodeName:        "node",
+			nodeAnnotations: map[string]string{"desiredkey": "desiredvalue"},
+			nodeLabels:      map[string]string{"label": "labelvalue"},
+			service: servicescm.Service{
+				PowershellPreScripts: []servicescm.PowershellPreScript{{
+					VariableName: "CMD_REPLACE",
+					Path:         "c:\\k\\script.ps1" + " -hostnameOverride NODE_NAME -clusterCIDR NODE_SUBNET -kubeConfigPath KUBE_CONFIG_PATH -kubeProxyConfigPath KUBE_PROXY_CONFIG_PATH -verbosity VERBOSITY",
+					NodeArgs: []servicescm.NodeCmdArg{
+						{
+							Name:               "NODE_NAME",
+							NodeObjectJsonPath: "{.metadata.name}",
+						},
+						{
+							Name:               "KUBE_CONFIG_PATH",
+							NodeObjectJsonPath: windows.KubeconfigPath,
+						},
+						{
+							Name:               "KUBE_PROXY_CONFIG_PATH",
+							NodeObjectJsonPath: windows.KubeProxyConfigPath,
+						},
+						{
+							Name:               "VERBOSITY",
+							NodeObjectJsonPath: "0",
+						},
+						{
+							Name:               "NODE_SUBNET",
+							NodeObjectJsonPath: "nodesubnet",
+						},
+					},
+				},
+				}},
+			expected:  map[string]string{"CMD_REPLACE": "127.0.0.1"},
 			expectErr: false,
 		},
 		{
-			name: "Resolve variable with unknown path",
+			name:            "Resolve variable with unknown path",
+			nodeName:        "node",
+			nodeAnnotations: map[string]string{"desiredkey": "desiredvalue"},
+			nodeLabels:      map[string]string{"label": "labelvalue"},
 			service: servicescm.Service{
 				PowershellPreScripts: []servicescm.PowershellPreScript{{
 					VariableName: "CMD_REPLACE",
@@ -156,7 +202,10 @@ func TestResolvePowershellVariables(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "Resolve variable with known path",
+			name:            "Resolve variable with known path",
+			nodeName:        "node",
+			nodeAnnotations: map[string]string{"desiredkey": "desiredvalue"},
+			nodeLabels:      map[string]string{"label": "labelvalue"},
 			service: servicescm.Service{
 				PowershellPreScripts: []servicescm.PowershellPreScript{{
 					VariableName: "CMD_REPLACE",
@@ -167,7 +216,10 @@ func TestResolvePowershellVariables(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "Empty variable name",
+			name:            "Empty variable name",
+			nodeName:        "node",
+			nodeAnnotations: map[string]string{"desiredkey": "desiredvalue"},
+			nodeLabels:      map[string]string{"label": "labelvalue"},
 			service: servicescm.Service{
 				PowershellPreScripts: []servicescm.PowershellPreScript{{
 					VariableName: "",
@@ -178,7 +230,10 @@ func TestResolvePowershellVariables(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "Multiple variable to resolve",
+			name:            "Multiple variable to resolve",
+			nodeName:        "node",
+			nodeAnnotations: map[string]string{"desiredkey": "desiredvalue"},
+			nodeLabels:      map[string]string{"label": "labelvalue"},
 			service: servicescm.Service{
 				PowershellPreScripts: []servicescm.PowershellPreScript{
 					{
@@ -197,13 +252,21 @@ func TestResolvePowershellVariables(t *testing.T) {
 	}
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
-			c, err := NewServiceController(context.TODO(), "", wmcoNamespace, Options{
-				Client: clientfake.NewClientBuilder().Build(),
-				Mgr:    fake.NewTestMgr(nil),
+			c, err := NewServiceController(context.TODO(), test.nodeName, wmcoNamespace, Options{
+				Client: clientfake.NewClientBuilder().WithObjects(
+					&core.Node{
+						ObjectMeta: meta.ObjectMeta{
+							Name:        "node",
+							Annotations: test.nodeAnnotations,
+							Labels:      test.nodeLabels,
+						},
+					}).Build(),
+				Mgr: fake.NewTestMgr(nil),
 				cmdRunner: &fakePSCmdRunner{
 					map[string]string{
 						"c:\\k\\script.ps1": "127.0.0.1",
 						"c:\\k\\test.ps1":   "test-output",
+						"c:\\k\\script.ps1 -hostnameOverride node -clusterCIDR nodesubnet -kubeConfigPath C:\\k\\kubeconfig -kubeProxyConfigPath C:\\k\\kube-proxy.conf -verbosity 0": "127.0.0.1",
 					},
 				},
 			})

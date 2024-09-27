@@ -58,6 +58,8 @@ type PowershellPreScript struct {
 	VariableName string `json:"variableName,omitempty"`
 	// Path is the location of a PowerShell script to be ran
 	Path string `json:"path"`
+	// NodeArgs contains the arguments to be given to the pre script
+	NodeArgs []NodeCmdArg
 }
 
 // Service represents the configuration spec of a Windows service

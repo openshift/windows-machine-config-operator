@@ -429,7 +429,7 @@ func (sc *ServiceController) expectedServiceCommand(expected servicescm.Service)
 	var nodeVars, psVars map[string]string
 	var err error
 	if len(expected.NodeVariablesInCommand) > 0 {
-		nodeVars, err = sc.resolveNodeVariables(expected)
+		nodeVars, err = sc.resolveNodeVariables(expected.NodeVariablesInCommand)
 		if err != nil {
 			return "", err
 		}
@@ -453,14 +453,14 @@ func (sc *ServiceController) expectedServiceCommand(expected servicescm.Service)
 
 // resolveNodeVariables returns a map, with the keys being each variable, and the value being the string to replace the
 // variable with
-func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[string]string, error) {
+func (sc *ServiceController) resolveNodeVariables(nodevars []servicescm.NodeCmdArg) (map[string]string, error) {
 	vars := make(map[string]string)
 	var node core.Node
 	err := sc.client.Get(sc.ctx, client.ObjectKey{Name: sc.nodeName}, &node)
 	if err != nil {
 		return nil, err
 	}
-	for _, nodeVar := range svc.NodeVariablesInCommand {
+	for _, nodeVar := range nodevars {
 		nodeParser := jsonpath.New("nodeParser")
 		if err := nodeParser.Parse(nodeVar.NodeObjectJsonPath); err != nil {
 			return nil, err
@@ -488,15 +488,36 @@ func (sc *ServiceController) resolveNodeVariables(svc servicescm.Service) (map[s
 func (sc *ServiceController) resolvePowershellVariables(svc servicescm.Service) (map[string]string, error) {
 	vars := make(map[string]string)
 	for _, script := range svc.PowershellPreScripts {
+		// replaces the values in the PowershellPreScripts path with the node args
+		script, err := sc.resolveVariablesInPath(script)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to resolve variables in path")
+		}
 		out, err := sc.psCmdRunner.Run(script.Path)
 		if err != nil {
-			return nil, fmt.Errorf("could not resolve PowerShell variable %s: %w", script.VariableName, err)
+			return nil, fmt.Errorf("could not run PowerShell script %s: %w", script.Path, err)
 		}
 		if script.VariableName != "" {
 			vars[script.VariableName] = strings.TrimSpace(out)
 		}
 	}
 	return vars, nil
+}
+
+// resolveVariablesInPath converts placeholder command line arguments passed through in the NodeArgs into their actual values
+func (sc *ServiceController) resolveVariablesInPath(script servicescm.PowershellPreScript) (servicescm.PowershellPreScript, error) {
+	if len(script.NodeArgs) != 0 {
+		psNodeVars, err := sc.resolveNodeVariables(script.NodeArgs)
+		if err != nil {
+			return script, err
+		}
+		pwshCommand := script.Path
+		for key, value := range psNodeVars {
+			pwshCommand = strings.ReplaceAll(pwshCommand, key, value)
+		}
+		script.Path = pwshCommand
+	}
+	return script, nil
 }
 
 // waitUntilNodeReady waits until the Node being configured is ready. Returns an error on timeout.
