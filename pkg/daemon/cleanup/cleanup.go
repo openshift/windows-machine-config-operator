@@ -21,6 +21,7 @@ package cleanup
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	core "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
@@ -34,6 +35,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/daemon/powershell"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 // Deconfigure removes all managed services from the instance and the version annotation, if it has an associated node.
@@ -59,11 +61,11 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 		klog.Exitf("could not create service manager: %s", err.Error())
 	}
 	defer svcMgr.Disconnect()
-	mergedCMData, err := getMergedCMData(ctx, directClient, configMapNamespace, node)
+	mergedCMData, removeAllTaggedServices, err := getMergedCMData(ctx, directClient, configMapNamespace, node)
 	if err != nil {
 		return err
 	}
-	if err = removeServices(svcMgr, mergedCMData.Services); err != nil {
+	if err = removeServices(svcMgr, mergedCMData.Services, removeAllTaggedServices); err != nil {
 		return err
 	}
 	envVarsRemoved, err := ensureEnvVarsAreRemoved(mergedCMData.WatchedEnvironmentVars)
@@ -93,17 +95,18 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 
 // getMergedCMData attempts to get the latest and the version CM data specified by the node's version annotation
 // It returns the merged CM Data containing services and the watched environment variables
+// as well as a boolean indicating whether the latest services CM spec differs from that of the version annotation CM.
 func getMergedCMData(ctx context.Context, cli client.Client,
-	configMapNamespace string, node *core.Node) (*servicescm.Data, error) {
+	configMapNamespace string, node *core.Node) (*servicescm.Data, bool, error) {
 	// get data from the latest services ConfigMap
 	latestCM, err := servicescm.GetLatest(cli, ctx, configMapNamespace)
 	if err != nil {
-		return nil, fmt.Errorf("cannot get latest services ConfigMap from namespace %s: %w",
+		return nil, false, fmt.Errorf("cannot get latest services ConfigMap from namespace %s: %w",
 			configMapNamespace, err)
 	}
 	latestCMData, err := servicescm.Parse(latestCM.Data)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// attempt to get the ConfigMap specified by the version annotation
@@ -131,18 +134,18 @@ func getMergedCMData(ctx context.Context, cli client.Client,
 	if err != nil {
 		klog.Infof("error getting services ConfigMap associated with version annotation, "+
 			"falling back to use latest services ConfigMap: %s", err)
-		return latestCMData, nil
+		return latestCMData, true, nil
 	}
 	// If the instance was configured using latestCM, return that
 	if versionCM.GetName() == latestCM.GetName() {
-		return latestCMData, nil
+		return latestCMData, false, nil
 	}
 	mergedServices := mergeServices(latestCMData.Services, versionCMData.Services)
 	mergedEnvVars := merge(latestCMData.WatchedEnvironmentVars, versionCMData.WatchedEnvironmentVars)
 	return &servicescm.Data{
 		Services:               mergedServices,
 		WatchedEnvironmentVars: mergedEnvVars,
-	}, nil
+	}, true, nil
 }
 
 // mergeServices combines the list of services, prioritizing the data given by s1
@@ -181,7 +184,8 @@ func merge(e1, e2 []string) []string {
 }
 
 // removeServices uses the given manager to remove all the given Windows services from this instance.
-func removeServices(svcMgr manager.Manager, services []servicescm.Service) error {
+// The removeAllTaggedServices flag is used to also remove OpenShift-managed services that may not be in the given slice
+func removeServices(svcMgr manager.Manager, services []servicescm.Service, removeAllTaggedServices bool) error {
 	// Build up log message and failures
 	servicesRemoved := []string{}
 	failedRemovals := []error{}
@@ -194,6 +198,40 @@ func removeServices(svcMgr manager.Manager, services []servicescm.Service) error
 			servicesRemoved = append(servicesRemoved, service.Name)
 		}
 	}
+
+	if removeAllTaggedServices {
+		// Remove all services that were created through WICD, even if they are no longer in the services ConfigMap spec
+		// preventing any long-running lingering/injected services
+		existingSvcs, err := svcMgr.GetServices()
+		if err != nil {
+			return fmt.Errorf("could not determine existing Windows services: %w", err)
+		}
+		for name := range existingSvcs {
+			winSvcObj, err := svcMgr.OpenService(name)
+			// WICD is not able to access some system services. If we hit errors open and config query, it is expected.
+			if err != nil {
+				continue
+			}
+			config, err := winSvcObj.Config()
+			if err != nil {
+				winSvcObj.Close()
+				continue
+			}
+			if err := winSvcObj.Close(); err != nil {
+				klog.Infof("failed to close service %s: %v", name, err)
+			}
+
+			if strings.Contains(config.Description, windows.ManagedTag) {
+				if err := svcMgr.DeleteService(name); err != nil {
+					klog.Infof("failed to delete service %s: %v", name, err)
+					failedRemovals = append(failedRemovals, err)
+				} else {
+					servicesRemoved = append(servicesRemoved, name)
+				}
+			}
+		}
+	}
+
 	klog.Infof("removed services: %q", servicesRemoved)
 	if len(failedRemovals) > 0 {
 		return fmt.Errorf("%#v", failedRemovals)

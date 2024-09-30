@@ -17,22 +17,25 @@ import (
 
 func TestRemoveServices(t *testing.T) {
 	testIO := []struct {
-		name              string
-		existingServices  map[string]*fake.FakeService
-		configMapServices []servicescm.Service
-		expectedServices  map[string]struct{}
+		name                    string
+		existingServices        map[string]*fake.FakeService
+		configMapServices       []servicescm.Service
+		expectedServices        map[string]struct{}
+		removeAllTaggedServices bool
 	}{
 		{
-			name:              "No services",
-			existingServices:  map[string]*fake.FakeService{},
-			configMapServices: []servicescm.Service{},
-			expectedServices:  map[string]struct{}{},
+			name:                    "No services",
+			existingServices:        map[string]*fake.FakeService{},
+			configMapServices:       []servicescm.Service{},
+			expectedServices:        map[string]struct{}{},
+			removeAllTaggedServices: false,
 		},
 		{
-			name:              "Upgrade scenario with no services",
-			existingServices:  map[string]*fake.FakeService{},
-			configMapServices: []servicescm.Service{},
-			expectedServices:  map[string]struct{}{},
+			name:                    "Upgrade scenario with no services",
+			existingServices:        map[string]*fake.FakeService{},
+			configMapServices:       []servicescm.Service{},
+			expectedServices:        map[string]struct{}{},
+			removeAllTaggedServices: false,
 		},
 		{
 			name:             "ConfigMap managed service doesn't exist on node",
@@ -40,39 +43,42 @@ func TestRemoveServices(t *testing.T) {
 			configMapServices: []servicescm.Service{
 				{Name: "test1", Dependencies: nil, Priority: 0},
 			},
-			expectedServices: map[string]struct{}{},
+			expectedServices:        map[string]struct{}{},
+			removeAllTaggedServices: false,
 		},
 		{
 			name: "Single service",
 			existingServices: map[string]*fake.FakeService{
-				"test1": newTestService("test1", []string{}),
+				"test1": newTestService("test1", []string{}, true),
 			},
 			configMapServices: []servicescm.Service{
 				{Name: "test1", Dependencies: nil, Priority: 0},
 			},
-			expectedServices: map[string]struct{}{},
+			expectedServices:        map[string]struct{}{},
+			removeAllTaggedServices: false,
 		},
 		{
 			name: "Multiple services",
 			existingServices: map[string]*fake.FakeService{
-				"test1": newTestService("test1", []string{}),
-				"test2": newTestService("test2", []string{}),
-				"test3": newTestService("test3", []string{}),
+				"test1": newTestService("test1", []string{}, true),
+				"test2": newTestService("test2", []string{}, true),
+				"test3": newTestService("test3", []string{}, false),
 			},
 			configMapServices: []servicescm.Service{
 				{Name: "test1", Dependencies: nil, Priority: 0},
 				{Name: "test2", Dependencies: nil, Priority: 1},
 			},
-			expectedServices: map[string]struct{}{"test3": {}},
+			expectedServices:        map[string]struct{}{"test3": {}},
+			removeAllTaggedServices: false,
 		},
 		{
 			name: "Multiple services with dependencies",
 			existingServices: map[string]*fake.FakeService{
-				"test1": newTestService("test1", []string{}),
-				"test2": newTestService("test2", []string{}),
-				"test3": newTestService("test3", []string{}),
-				"test4": newTestService("test4", []string{"test3"}),
-				"test5": newTestService("test5", []string{"test1", "test3"}),
+				"test1": newTestService("test1", []string{}, true),
+				"test2": newTestService("test2", []string{}, false),
+				"test3": newTestService("test3", []string{}, true),
+				"test4": newTestService("test4", []string{"test3"}, true),
+				"test5": newTestService("test5", []string{"test1", "test3"}, true),
 			},
 			configMapServices: []servicescm.Service{
 				{Name: "test1", Dependencies: nil, Priority: 0},
@@ -80,14 +86,34 @@ func TestRemoveServices(t *testing.T) {
 				{Name: "test4", Dependencies: []string{"test3"}, Priority: 1},
 				{Name: "test5", Dependencies: []string{"test1", "test3"}, Priority: 2},
 			},
-			expectedServices: map[string]struct{}{"test2": {}},
+			expectedServices:        map[string]struct{}{"test2": {}},
+			removeAllTaggedServices: false,
+		},
+		{
+			name: "best effort cleanup stops leftover service",
+			existingServices: map[string]*fake.FakeService{
+				"test1":    newTestService("test1", []string{}, true),
+				"test2":    newTestService("test2", []string{}, false),
+				"test3":    newTestService("test3", []string{}, true),
+				"test4":    newTestService("test4", []string{"test3"}, true),
+				"test5":    newTestService("test5", []string{"test1", "test3"}, true),
+				"leftover": newTestService("leftover", []string{}, true),
+			},
+			configMapServices: []servicescm.Service{
+				{Name: "test1", Dependencies: nil, Priority: 0},
+				{Name: "test3", Dependencies: nil, Priority: 0},
+				{Name: "test4", Dependencies: []string{"test3"}, Priority: 1},
+				{Name: "test5", Dependencies: []string{"test1", "test3"}, Priority: 2},
+			},
+			expectedServices:        map[string]struct{}{"test2": {}},
+			removeAllTaggedServices: true,
 		},
 	}
 
 	for _, test := range testIO {
 		t.Run(test.name, func(t *testing.T) {
 			winSvcMgr := fake.NewTestMgr(test.existingServices)
-			err := removeServices(winSvcMgr, test.configMapServices)
+			err := removeServices(winSvcMgr, test.configMapServices, test.removeAllTaggedServices)
 			require.NoError(t, err)
 			allServices, err := winSvcMgr.GetServices()
 			require.NoError(t, err)
@@ -177,11 +203,15 @@ func TestMerge(t *testing.T) {
 	}
 }
 
-func newTestService(name string, dependencies []string) *fake.FakeService {
+func newTestService(name string, dependencies []string, managed bool) *fake.FakeService {
+	description := ""
+	if managed {
+		description = windows.ManagedTag + name
+	}
 	return fake.NewFakeService(
 		name,
 		mgr.Config{
-			Description:  windows.ManagedTag + name,
+			Description:  description,
 			Dependencies: dependencies,
 		},
 		svc.Status{State: svc.Running},
