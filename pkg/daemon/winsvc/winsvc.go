@@ -19,6 +19,7 @@ type Service interface {
 	Control(svc.Cmd) (svc.Status, error)
 	Query() (svc.Status, error)
 	UpdateConfig(mgr.Config) error
+	ListDependentServices(status svc.ActivityStatus) ([]string, error)
 }
 
 // WaitForState retries until the services reaches the expected state, or reaches timeout

@@ -142,7 +142,7 @@ func (t *testMgr) EnsureServiceState(service winsvc.Service, state svc.State) er
 		if !ok {
 			return fmt.Errorf("service is not correct type")
 		}
-		dependentServices, err := t.listDependentServices(fakeService.name)
+		dependentServices, err := fakeService.ListDependentServices(svc.AnyActivity)
 		if err != nil {
 			return err
 		}
@@ -163,26 +163,6 @@ func (t *testMgr) EnsureServiceState(service winsvc.Service, state svc.State) er
 		return fmt.Errorf("unexpected state request: %d", state)
 	}
 }
-
-func (t *testMgr) listDependentServices(serviceName string) ([]string, error) {
-	var dependencies []string
-	for name, svc := range t.svcList.svcs {
-		if name == serviceName {
-			continue
-		}
-		config, err := svc.Config()
-		if err != nil {
-			return nil, err
-		}
-		for _, s := range config.Dependencies {
-			if s == serviceName {
-				dependencies = append(dependencies, name)
-			}
-		}
-	}
-	return dependencies, nil
-}
-
 func NewTestMgr(existingServices map[string]*FakeService) *testMgr {
 	testMgr := &testMgr{newFakeServiceList()}
 	if existingServices != nil {
