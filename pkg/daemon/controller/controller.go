@@ -231,7 +231,7 @@ func (sc *ServiceController) SetupWithManager(ctx context.Context, mgr ctrl.Mana
 		Watches(&core.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode),
 			builder.WithPredicates(cmPredicate)).
 		WatchesRawSource(source.Channel(eventChan, handler.EnqueueRequestsFromMapFunc(sc.mapToCurrentNode),
-			source.WithPredicates[client.Object](rebootPredicate))).
+			source.WithPredicates[client.Object, reconcile.Request](rebootPredicate))).
 		Complete(sc)
 }
 
