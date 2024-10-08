@@ -305,7 +305,7 @@ func (p *Provider) ensureWindowsCSIDaemonSet(client client.Interface) error {
 						},
 						{
 							Name:  "vsphere-csi-node",
-							Image: "gcr.io/cloud-provider-vsphere/csi/release/driver:v3.0.0",
+							Image: "registry.k8s.io/csi-vsphere/driver:v3.3.0",
 							Args:  []string{"--fss-name=" + windowsFSSName, "--fss-namespace=$(CSI_NAMESPACE)"},
 							Env: []core.EnvVar{
 								{
