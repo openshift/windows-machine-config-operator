@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -385,6 +386,12 @@ func (r *ConfigMapReconciler) mapToInstancesConfigMap(_ context.Context, _ clien
 	}}
 }
 
+func (r *ConfigMapReconciler) updateNodeArgs(_ context.Context, _ client.Object) []reconcile.Request {
+	return []reconcile.Request{{
+		// update the windows-services configmap
+	}}
+}
+
 // mapToServicesConfigMap fulfills the MapFn type, while always returning a request to the windows-services ConfigMap
 func (r *ConfigMapReconciler) mapToServicesConfigMap(_ context.Context, _ client.Object) []reconcile.Request {
 	return []reconcile.Request{{
@@ -414,6 +421,12 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(outdatedWindowsNodePredicate(true))).
 		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
 			builder.WithPredicates(windowsNodeVersionChangePredicate())).
+		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.updateNodeArgs),
+			builder.WithPredicates(nodeLabelChangedPredicate())).
+		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.updateNodeArgs),
+			builder.WithPredicates(nodeconfigChangedPredicate())).
+		Watches(&mcfgv1.MachineConfig{}, handler.EnqueueRequestsFromMapFunc(r.updateNodeArgs),
+			builder.WithPredicates(machineConfigChangedPredicate())).
 		Complete(r)
 }
 

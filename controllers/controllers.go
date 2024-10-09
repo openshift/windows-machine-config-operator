@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 	"sync"
 
 	"github.com/go-logr/logr"
 	config "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"golang.org/x/crypto/ssh"
 	core "k8s.io/api/core/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
@@ -197,6 +199,103 @@ func windowsNodeVersionChangePredicate() predicate.Funcs {
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			// catch if a node stuck at an older WMCO version is deleted
 			return isWindowsNode(e.Object) && e.Object.GetAnnotations()[metadata.VersionAnnotation] != version.Get()
+		},
+	}
+}
+
+func nodeLabelChangedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			// check if node object metadata.labels = e.objectold vs e.objectnew
+			return !reflect.DeepEqual(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels())
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+	}
+}
+
+func machineConfigChangedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldMachineConfig, _ := e.ObjectOld.(*mcfgv1.MachineConfig)
+			newMachineConfig, _ := e.ObjectNew.(*mcfgv1.MachineConfig)
+
+			// unmarshal the machine cong's json struct :(
+			// then check to see if anything has changed
+			// right now we can just check to see if the config changed at all
+			if !reflect.DeepEqual(oldMachineConfig.Spec.Config, newMachineConfig.Spec.Config) {
+				return true
+			}
+
+			return false
+
+			// check if any of the machineconfig attributes have changed
+			//
+			//Config
+			//Bootstrap-kubeconfig
+			//Kubeconfig
+			//Container-runtime
+			//Container-runtime-endpoint
+			//Runtime-cgroups
+			//Node-ip
+			//Volume-plugin-dir
+			//Cloud-provider
+			//Cloud-config
+			//Hostname-override
+			//Provider-id
+			//Pod-infra-container-image
+			//System-reserved
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+	}
+}
+
+func nodeconfigChangedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldNode, _ := e.ObjectOld.(*core.Node)
+			newNode, _ := e.ObjectNew.(*core.Node)
+
+			// Check if "Node-ip" label has changed
+			if oldNode.Labels["Node-ip"] != newNode.Labels["Node-ip"] {
+				return true
+			}
+
+			// Check if "Hostname-override" label has changed
+			if oldNode.Labels["Hostname-override"] != newNode.Labels["Hostname-override"] {
+				return true
+			}
+			// check if nodeconfig has any attributes that have changed
+			//
+			// Node-ip
+			// Hostname-override
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
 		},
 	}
 }
