@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"reflect"
 	"strings"
@@ -387,16 +386,16 @@ func (r *ConfigMapReconciler) mapToInstancesConfigMap(_ context.Context, _ clien
 	}}
 }
 
-func (r *ConfigMapReconciler) updateNodeArgs (_ context.Context, obj client.Object) []reconcile.Request {
-    switch obj.(type) {
-      case *core.Node: 
-        r.log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! node changed")
-      case *mcfgv1.MachineConfig: 
-        r.log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! machineconfig changed")
-    }
-  return []reconcile.Request{{
-      // update the windows-services configmap
-  }}
+func (r *ConfigMapReconciler) updateNodeArgs(_ context.Context, obj client.Object) []reconcile.Request {
+	switch obj.(type) {
+	case *core.Node:
+		r.log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! node changed")
+	case *mcfgv1.MachineConfig:
+		r.log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! machineconfig changed")
+	}
+	return []reconcile.Request{{
+		// update the windows-services configmap
+	}}
 }
 
 // mapToServicesConfigMap fulfills the MapFn type, while always returning a request to the windows-services ConfigMap
