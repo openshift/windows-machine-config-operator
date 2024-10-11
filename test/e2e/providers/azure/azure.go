@@ -52,6 +52,11 @@ func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureSta
 
 // newAzureMachineProviderSpec returns an AzureMachineProviderSpec generated from the inputs, or an error
 func (p *Provider) newAzureMachineProviderSpec(location string, zone string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
+	imageVersion := defaultImageVersion
+	if windowsServerVersion == windows.Server2019 {
+		// TODO: remove when VM SSH issue is patched in Azure cloud
+		imageVersion = "17763.6293.240905"
+	}
 	return &mapi.AzureMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
 			APIVersion: "azureproviderconfig.openshift.io/v1beta1",
@@ -72,7 +77,7 @@ func (p *Provider) newAzureMachineProviderSpec(location string, zone string, win
 			Publisher: defaultImagePublisher,
 			Offer:     defaultImageOffer,
 			SKU:       getImageSKU(windowsServerVersion),
-			Version:   defaultImageVersion,
+			Version:   imageVersion,
 		},
 		OSDisk: mapi.OSDisk{
 			OSType:     "Windows",

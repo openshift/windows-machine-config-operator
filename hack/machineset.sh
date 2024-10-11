@@ -152,10 +152,12 @@ get_azure_ms() {
   local byoh=$6
 
   local sku="2022-datacenter-smalldisk"
+  local release="latest"
   if [ "$winver" == "2019" ]; then
 		# 2019 images without the containers feature pre-installed cannot be used due to
 		# https://issues.redhat.com/browse/OCPBUGS-13244
     sku="2019-datacenter-with-containers-smalldisk"
+    release="17763.6293.240905"   
   fi
 
   cat <<EOF
@@ -171,7 +173,7 @@ $(get_spec $infraID $az $provider $byoh)
             publisher: MicrosoftWindowsServer
             resourceID: ""
             sku: $sku
-            version: latest
+            version: $release
           kind: AzureMachineProviderSpec
           location: ${region}
           managedIdentity: ${infraID}-identity
