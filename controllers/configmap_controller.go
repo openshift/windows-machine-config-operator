@@ -390,9 +390,9 @@ func (r *ConfigMapReconciler) mapToInstancesConfigMap(_ context.Context, _ clien
 func (r *ConfigMapReconciler) updateNodeArgs (_ context.Context, obj client.Object) []reconcile.Request {
     switch obj.(type) {
       case *core.Node: 
-        log.Printf("node changed")
+        r.log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! node changed")
       case *mcfgv1.MachineConfig: 
-        log.Printf("machineconfig changed")
+        r.log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! machineconfig changed")
     }
   return []reconcile.Request{{
       // update the windows-services configmap
