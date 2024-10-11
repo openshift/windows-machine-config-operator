@@ -231,9 +231,6 @@ func machineConfigChangedPredicate() predicate.Funcs {
 			oldMachineConfig, _ := e.ObjectOld.(*mcfgv1.MachineConfig)
 			newMachineConfig, _ := e.ObjectNew.(*mcfgv1.MachineConfig)
 
-			// unmarshal the machine cong's json struct :(
-			// then check to see if anything has changed
-			// right now we can just check to see if the config changed at all
 			if !reflect.DeepEqual(oldMachineConfig.Spec.Config, newMachineConfig.Spec.Config) {
 				return true
 			}
