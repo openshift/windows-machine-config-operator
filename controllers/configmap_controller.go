@@ -187,7 +187,21 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 	// At this point configMap will be set properly
 	switch req.NamespacedName.Name {
 	case servicescm.Name:
-		return ctrl.Result{}, r.reconcileServices(ctx, configMap)
+    // get the machineConfig
+    machineConfig := &mcfgv1.MachineConfig{}
+    if err := r.client.Get(ctx, kubeTypes.NamespacedName{
+        Namespace: req.Namespace}, machineConfig); err != nil {
+        return ctrl.Result{}, err
+    }
+    node := &core.Node{}
+    if err := r.client.Get(ctx, kubeTypes.NamespacedName{
+      Namespace: "", 
+      Name: req.Name},
+      node); err != nil {
+      return ctrl.Result{}, err
+    }
+
+		return ctrl.Result{}, r.reconcileServices(ctx, configMap, machineConfig, node)
 	case wiparser.InstanceConfigMap:
 		return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
 	case certificates.ProxyCertsConfigMap:
@@ -201,7 +215,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 
 // reconcileServices uses the data within the services ConfigMap to ensure WMCO-managed Windows services on
 // Windows Nodes have the expected configuration and are in the expected state
-func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServices *core.ConfigMap) error {
+func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServices *core.ConfigMap, machineConfig *mcfgv1.MachineConfig, node *core.Node) error {
 	if err := r.removeOutdatedServicesConfigMaps(ctx); err != nil {
 		return err
 	}
@@ -217,6 +231,13 @@ func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServ
 			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: windowsServices.Name}, "Error", err.Error())
 		return nil
 	}
+  // machineconfig.Spec.Config 
+  // unmarshal the json, and set the data to the machineconfig's value 
+
+  // for each in node.Annotations 
+  // for each in node labels 
+
+
 	// TODO: actually react to changes to the services ConfigMap
 	return nil
 }
@@ -252,7 +273,7 @@ func (r *ConfigMapReconciler) removeOutdatedServicesConfigMaps(ctx context.Conte
 func isTiedToRelevantVersion(v string, versions map[string]struct{}) bool {
 	if v == version.Get() {
 		// The current WMCO version is always considered relevant
-		return true
+	return true
 	}
 	for version := range versions {
 		if v == version {
@@ -386,18 +407,6 @@ func (r *ConfigMapReconciler) mapToInstancesConfigMap(_ context.Context, _ clien
 	}}
 }
 
-func (r *ConfigMapReconciler) updateNodeArgs(_ context.Context, obj client.Object) []reconcile.Request {
-	switch obj.(type) {
-	case *core.Node:
-		r.log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! node changed")
-	case *mcfgv1.MachineConfig:
-		r.log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! machineconfig changed")
-	}
-	return []reconcile.Request{{
-		// update the windows-services configmap
-	}}
-}
-
 // mapToServicesConfigMap fulfills the MapFn type, while always returning a request to the windows-services ConfigMap
 func (r *ConfigMapReconciler) mapToServicesConfigMap(_ context.Context, _ client.Object) []reconcile.Request {
 	return []reconcile.Request{{
@@ -427,11 +436,11 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(outdatedWindowsNodePredicate(true))).
 		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
 			builder.WithPredicates(windowsNodeVersionChangePredicate())).
-		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.updateNodeArgs),
+		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
 			builder.WithPredicates(nodeLabelChangedPredicate())).
-		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.updateNodeArgs),
+		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
 			builder.WithPredicates(nodeconfigChangedPredicate())).
-		Watches(&mcfgv1.MachineConfig{}, handler.EnqueueRequestsFromMapFunc(r.updateNodeArgs),
+		Watches(&mcfgv1.MachineConfig{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
 			builder.WithPredicates(machineConfigChangedPredicate())).
 		Complete(r)
 }
