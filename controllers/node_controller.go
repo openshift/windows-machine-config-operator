@@ -19,12 +19,12 @@ package controllers
 import (
 	"context"
 	"fmt"
-
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -37,6 +37,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
+	monclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 )
 
 const (
@@ -44,19 +45,30 @@ const (
 	NodeController = "node"
 )
 
+var (
+	// metricsEnabled specifies if metrics are enabled in the current cluster
+	metricsEnabled = true
+)
+
 // nodeReconciler holds the info required to reconcile a Node object, inclduing that of the underlying Windows instance
 type nodeReconciler struct {
+	*monclient.MonitoringV1Client
 	instanceReconciler
 }
 
 // NewNodeReconciler returns a pointer to a new nodeReconciler
-func NewNodeReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string) (*nodeReconciler, error) {
+func NewNodeReconciler(mgr manager.Manager, clusterConfig cluster.Config, cfg *rest.Config, watchNamespace string) (*nodeReconciler, error) {
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return nil, fmt.Errorf("error creating kubernetes clientset: %w", err)
 	}
+	mclient, err := monclient.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("error creating monitoring client: %w", err)
+	}
 
 	return &nodeReconciler{
+		MonitoringV1Client: mclient,
 		instanceReconciler: instanceReconciler{
 			client:             mgr.GetClient(),
 			log:                ctrl.Log.WithName("controllers").WithName(NodeController),

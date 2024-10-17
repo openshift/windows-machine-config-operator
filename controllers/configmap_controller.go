@@ -287,11 +287,6 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	if err = r.deconfigureInstances(instances, nodes); err != nil {
 		return fmt.Errorf("error removing undesired nodes from cluster: %w", err)
 	}
-
-	// Once all the proper Nodes are in the cluster, configure the prometheus endpoints.
-	if err := r.prometheusNodeConfig.Configure(); err != nil {
-		return fmt.Errorf("unable to configure Prometheus: %w", err)
-	}
 	return nil
 }
 
