@@ -190,13 +190,12 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
     // get the machineConfig
     machineConfig := &mcfgv1.MachineConfig{}
     if err := r.client.Get(ctx, kubeTypes.NamespacedName{
-        Namespace: req.Namespace}, machineConfig); err != nil {
+        Namespace: req.NamespacedName.Namespace}, machineConfig); err != nil {
         return ctrl.Result{}, err
     }
     node := &core.Node{}
     if err := r.client.Get(ctx, kubeTypes.NamespacedName{
-      Namespace: "", 
-      Name: req.Name},
+      Name: req.NamespacedName.Name},
       node); err != nil {
       return ctrl.Result{}, err
     }
@@ -233,9 +232,13 @@ func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServ
 	}
   // machineconfig.Spec.Config 
   // unmarshal the json, and set the data to the machineconfig's value 
+  
+  for key, value := range data.Services {
+    r.log.Info("configmap data: Key", key, " Value: ", value)
+  }
 
   // for each in node.Annotations 
-  // for each in node labels 
+  // for each in node.Labels 
 
 
 	// TODO: actually react to changes to the services ConfigMap
