@@ -2,6 +2,14 @@
 Below are the Cluster and OS prerequisites for WMCO. Please also see the vSphere-specific section that 
 may be relevant.
 
+## Supported Installation method
+* Installer-Provisioned Infrastructure (IPI) installation method is the recommended and supported installation method. 
+  The latter is consistent across all supported platforms. 
+
+* User-Provisioned Infrastructure (UPI) is **not supported** in any platform, the exception is Bare metal or 
+  Provider-agnostic platform (`platform: none`) where the [BYOH (Bring Your Own Host)](byoh-instance-pre-requisites.md#byoh-instance-pre-requisites) 
+  use case is supported.
+
 ## Supported Cloud Providers based on OKD/OCP Version and WMCO version
 | Cloud Provider            | Supported OKD/OCP Version | Supported WMCO version |
 |---------------------------|---------------------------|------------------------|
@@ -57,12 +65,6 @@ Note:
 |----------------------|-----------------------------------------------------------------------------------------------------------------------------------|
 | Default VXLAN port   | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)|
 | Custom VXLAN port    | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                            |
-
-## Supported Installation method
-* Installer-Provisioned Infrastructure installation method is the only supported installation method. This is 
-consistent across all supported cloud providers.
-  
-* User-Provisioned Infrastructure is NOT supported.
 
 ## vSphere Specific Requirements
 Please refer to [VMware vSphere pre-requisites](vsphere-prerequisites.md).
