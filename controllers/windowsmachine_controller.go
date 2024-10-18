@@ -309,11 +309,6 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 		}
 	} else if *machine.Status.Phase != provisionedPhase {
 		log.V(1).Info("machine not provisioned", "phase", *machine.Status.Phase)
-		// configure Prometheus when a machine is not in `Running` or `Provisioned` phase. This configuration is
-		// required to update Endpoints object when Windows machines are being deleted.
-		if err := r.prometheusNodeConfig.Configure(); err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to configure Prometheus: %w", err)
-		}
 		// Machine is not in provisioned or running state, nothing we should do as of now
 		return ctrl.Result{}, nil
 	}
@@ -360,10 +355,6 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	}
 	r.recorder.Eventf(machine, core.EventTypeNormal, "MachineSetup",
 		"Machine %s configured successfully", machine.Name)
-	// configure Prometheus after a Windows machine is configured as a Node.
-	if err := r.prometheusNodeConfig.Configure(); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to configure Prometheus: %w", err)
-	}
 	return ctrl.Result{}, nil
 }
 
