@@ -10,8 +10,8 @@ may be relevant.
   Provider-agnostic platform (`platform: none`) where the [BYOH (Bring Your Own Host)](byoh-instance-pre-requisites.md#byoh-instance-pre-requisites) 
   use case is supported.
 
-## Supported Cloud Providers based on OKD/OCP Version and WMCO version
-| Cloud Provider            | Supported OKD/OCP Version | Supported WMCO version |
+## Supported Platforms based on OKD/OCP Version and WMCO version
+| Platforms                 | Supported OKD/OCP Version | Supported WMCO version |
 |---------------------------|---------------------------|------------------------|
 | VMware vSphere            | 4.7+                      | WMCO 2.0+              |
 | Platform none (BYOH)      | 4.8+                      | WMCO 3.1.0+            |
