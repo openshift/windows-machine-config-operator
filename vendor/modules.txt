@@ -306,7 +306,7 @@ github.com/munnerz/goautoneg
 github.com/mxk/go-flowrate/flowrate
 # github.com/onsi/ginkgo v1.16.5
 ## explicit; go 1.16
-# github.com/openshift/api v0.0.0-20241015143726-5afd6c371db4
+# github.com/openshift/api v0.0.0-20241018083007-4f6053f954b0
 ## explicit; go 1.22.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -355,7 +355,7 @@ github.com/openshift/client-go/route/applyconfigurations/internal
 github.com/openshift/client-go/route/applyconfigurations/route/v1
 github.com/openshift/client-go/route/clientset/versioned/scheme
 github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
-# github.com/openshift/library-go v0.0.0-20241015180910-c0f6295482a7
+# github.com/openshift/library-go v0.0.0-20241022191648-9edc0bbc7832
 ## explicit; go 1.22.0
 github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
