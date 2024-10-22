@@ -187,20 +187,18 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 	// At this point configMap will be set properly
 	switch req.NamespacedName.Name {
 	case servicescm.Name:
-    // get the machineConfig
-    machineConfig := &mcfgv1.MachineConfig{}
-    if err := r.client.Get(ctx, kubeTypes.NamespacedName{
-        Namespace: req.NamespacedName.Namespace}, machineConfig); err != nil {
-        return ctrl.Result{}, err
-    }
-    node := &core.Node{}
-    if err := r.client.Get(ctx, kubeTypes.NamespacedName{
-      Name: req.NamespacedName.Name},
-      node); err != nil {
-      return ctrl.Result{}, err
-    }
+		// get the machineConfig
 
-		return ctrl.Result{}, r.reconcileServices(ctx, configMap, machineConfig, node)
+		if nodename, ok := ctx.Value("nodename").(string); ok {
+			node := &core.Node{}
+			if err := r.client.Get(ctx, kubeTypes.NamespacedName{
+				Name: nodename},
+				node); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, r.reconcileServices(ctx, configMap, node)
+		}
+
 	case wiparser.InstanceConfigMap:
 		return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
 	case certificates.ProxyCertsConfigMap:
@@ -214,7 +212,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 
 // reconcileServices uses the data within the services ConfigMap to ensure WMCO-managed Windows services on
 // Windows Nodes have the expected configuration and are in the expected state
-func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServices *core.ConfigMap, machineConfig *mcfgv1.MachineConfig, node *core.Node) error {
+func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServices *core.ConfigMap, node *core.Node) error {
 	if err := r.removeOutdatedServicesConfigMaps(ctx); err != nil {
 		return err
 	}
@@ -230,16 +228,15 @@ func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServ
 			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: windowsServices.Name}, "Error", err.Error())
 		return nil
 	}
-  // machineconfig.Spec.Config 
-  // unmarshal the json, and set the data to the machineconfig's value 
-  
-  for key, value := range data.Services {
-    r.log.Info("configmap data: Key", key, " Value: ", value)
-  }
+	// machineconfig.Spec.Config
+	// unmarshal the json, and set the data to the machineconfig's value
 
-  // for each in node.Annotations 
-  // for each in node.Labels 
+	for key, value := range data.Services {
+		r.log.Info("configmap data: Key", key, " Value: ", value)
+	}
 
+	// for each in node.Annotations
+	// for each in node.Labels
 
 	// TODO: actually react to changes to the services ConfigMap
 	return nil
@@ -276,7 +273,7 @@ func (r *ConfigMapReconciler) removeOutdatedServicesConfigMaps(ctx context.Conte
 func isTiedToRelevantVersion(v string, versions map[string]struct{}) bool {
 	if v == version.Get() {
 		// The current WMCO version is always considered relevant
-	return true
+		return true
 	}
 	for version := range versions {
 		if v == version {
@@ -411,7 +408,21 @@ func (r *ConfigMapReconciler) mapToInstancesConfigMap(_ context.Context, _ clien
 }
 
 // mapToServicesConfigMap fulfills the MapFn type, while always returning a request to the windows-services ConfigMap
-func (r *ConfigMapReconciler) mapToServicesConfigMap(_ context.Context, _ client.Object) []reconcile.Request {
+func (r *ConfigMapReconciler) mapToServicesConfigMap(ctx context.Context, obj client.Object) []reconcile.Request {
+	switch resource := obj.(type) {
+	case *core.Node:
+		nodeName := resource.GetName()
+		ctx = context.WithValue(ctx, "nodename", nodeName)
+		r.log.Info("change triggered by node", "node", nodeName)
+	case *mcfgv1.MachineConfig:
+		machineconfigname := resource.GetName()
+		ctx = context.WithValue(ctx, "machineconfigname", machineconfigname)
+		r.log.Info("change triggered my machineconfig", "machineconfig", machineconfigname)
+	default:
+		r.log.Info("unknown object type")
+		return nil
+	}
+
 	return []reconcile.Request{{
 		NamespacedName: kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name},
 	}}
