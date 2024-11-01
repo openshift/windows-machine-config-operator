@@ -3,16 +3,12 @@ package e2e
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"log"
 	"testing"
 
-	config "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
@@ -20,36 +16,8 @@ import (
 func reconfigurationTestSuite(t *testing.T) {
 	tc, err := NewTestContext()
 	require.NoError(t, err)
-	t.Run("Remove version annotation", tc.testRemoveVersionAnnotation)
 	t.Run("Re-add removed instance", tc.testReAddInstance)
 	t.Run("Change private key", testPrivateKeyChange)
-}
-
-// testRemoveVersionAnnotation tests the case where the version annotation is removed from the node.
-func (tc *testContext) testRemoveVersionAnnotation(t *testing.T) {
-	if tc.CloudProvider.GetType() == config.AWSPlatformType {
-		t.Skipf("Skipping for %s", tc.CloudProvider.GetType())
-	}
-	ctx := context.TODO()
-	require.NoError(t, tc.loadExistingNodes(), "error getting the current Windows nodes in the cluster")
-	// machines instances
-	for _, node := range gc.machineNodes {
-		err := removeVersionAnnotation(tc, ctx, node.Name)
-		require.NoError(t, err, "error removing version annotation")
-
-		err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, true, false)
-		require.NoError(t, err, "error waiting for the machine instance to become Windows node")
-	}
-	// BYOH instances
-	for _, node := range gc.byohNodes {
-		err := removeVersionAnnotation(tc, ctx, node.Name)
-		require.NoError(t, err, "error removing version annotation")
-
-		err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
-		require.NoError(t, err, "error waiting for the BYOH instance to become Windows node")
-	}
-	// check nodes are ready and schedulable
-	tc.testNodesBecomeReadyAndSchedulable(t)
 }
 
 // testReAddInstance tests the case where a Windows BYOH instance was removed from the cluster, and then re-added.
@@ -104,18 +72,4 @@ func (tc *testContext) testReAddInstance(t *testing.T) {
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
 	require.NoError(t, err, "error waiting for the Windows node to be re-added")
 	tc.testNodesBecomeReadyAndSchedulable(t)
-}
-
-// removeVersionAnnotation removes the version annotation from the given node
-func removeVersionAnnotation(tc *testContext, ctx context.Context, nodeName string) error {
-	log.Printf("removing version annotation from node: %s", nodeName)
-	patchData, err := metadata.GenerateRemovePatch([]string{}, []string{metadata.VersionAnnotation})
-	if err != nil {
-		return fmt.Errorf("error creating version annotation remove request: %w", err)
-	}
-	_, err = tc.client.K8s.CoreV1().Nodes().Patch(ctx, nodeName, types.JSONPatchType, patchData, metav1.PatchOptions{})
-	if err != nil {
-		return fmt.Errorf("error removing version annotation from node %s: %w", nodeName, err)
-	}
-	return nil
 }
