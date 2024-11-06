@@ -21,7 +21,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
-	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/version"
@@ -51,8 +50,6 @@ type instanceReconciler struct {
 	watchNamespace string
 	// signer is a signer created from the user's private key
 	signer ssh.Signer
-	// prometheusNodeConfig stores information required to configure Prometheus
-	prometheusNodeConfig *metrics.PrometheusNodeConfig
 	// recorder to generate events
 	recorder record.EventRecorder
 	// platform indicates the cloud on which the cluster is running
