@@ -250,9 +250,6 @@ type Windows interface {
 	// The content will be copied to the Windows VM if the file is not present or has incorrect contents. The remote
 	// directory is created if it does not exist.
 	EnsureFileContent([]byte, string, string) error
-	// EnsureHNSNetworksAreRemoved ensures the HNS networks created by the hybrid-overlay configuration process are removed
-	// by repeatedly checking and retrying the removal of each network.
-	EnsureHNSNetworksAreRemoved() error
 	// FileExists returns true if a specific file exists at the given path and checksum on the Windows VM. Set an
 	// empty checksum (checksum == "") to disable checksum check.
 	FileExists(string, string) (bool, error)
@@ -522,7 +519,7 @@ func (vm *windows) RunWICDCleanup(watchNamespace, wicdKubeconfig string) error {
 }
 
 func (vm *windows) RemoveFilesAndNetworks() error {
-	if err := vm.EnsureHNSNetworksAreRemoved(); err != nil {
+	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
 		return fmt.Errorf("unable to ensure HNS networks are removed: %w", err)
 	}
 	if err := vm.removeDirectories(); err != nil {
@@ -958,7 +955,9 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 	return &payload.FileInfo{Path: path, SHA256: sha}, nil
 }
 
-func (vm *windows) EnsureHNSNetworksAreRemoved() error {
+// ensureHNSNetworksAreRemoved ensures the HNS networks created by the hybrid-overlay configuration process are removed
+// by repeatedly checking and retrying the removal of each network.
+func (vm *windows) ensureHNSNetworksAreRemoved() error {
 	vm.log.Info("removing HNS networks")
 	var err error
 	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
