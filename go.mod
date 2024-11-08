@@ -4,8 +4,12 @@ go 1.22.0
 
 toolchain go1.22.3
 
-// fix the latest working version for go1.22, remove the replacement with the go1.23 bump
-replace sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
+replace (
+	// fix the latest working version for go1.22, remove the replacement with the go1.23 bump
+	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
+	// fix to solve the issue of unknown field IgnoredFields in struct literal of type merge.Updater
+	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
+)
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
