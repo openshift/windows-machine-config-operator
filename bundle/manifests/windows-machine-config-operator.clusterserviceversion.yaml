@@ -192,16 +192,6 @@ spec:
         - apiGroups:
           - ""
           resources:
-          - endpoints
-          verbs:
-          - create
-          - delete
-          - get
-          - patch
-          - update
-        - apiGroups:
-          - ""
-          resources:
           - events
           verbs:
           - '*'
@@ -211,6 +201,8 @@ spec:
           - namespaces
           verbs:
           - get
+          - list
+          - watch
         - apiGroups:
           - ""
           resources:
@@ -366,6 +358,16 @@ spec:
           - list
           - watch
         - apiGroups:
+          - monitoring.coreos.com
+          resources:
+          - servicemonitors
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - watch
+        - apiGroups:
           - operators.coreos.com
           resources:
           - operatorconditions
@@ -399,14 +401,6 @@ spec:
           - securitycontextconstraints
           verbs:
           - use
-        - apiGroups:
-          - monitoring.coreos.com
-          resources:
-          - servicemonitors
-          verbs:
-          - create
-          - get
-          - delete
         serviceAccountName: windows-machine-config-operator
       deployments:
       - name: windows-machine-config-operator

@@ -79,46 +79,6 @@ func (tc *testContext) testPrometheus(t *testing.T) {
 		metrics.WindowsMetricsResource, metav1.GetOptions{})
 	require.NoError(t, err, "error getting service monitor")
 
-	// check that endpoints exists
-	windowsEndpoints, err := tc.client.K8s.CoreV1().Endpoints(wmcoNamespace).Get(context.TODO(),
-		metrics.WindowsMetricsResource, metav1.GetOptions{})
-	require.NoError(t, err)
-
-	if len(gc.allNodes()) == 0 {
-		// check if all entries in subset are deleted when there are no Windows Nodes
-		require.Equal(t, 0, len(windowsEndpoints.Subsets))
-	} else {
-		// Total length of list for subsets is always equal to the list of Windows Nodes.
-		require.Equal(t, len(gc.allNodes()), len(windowsEndpoints.Subsets[0].Addresses))
-
-		// check Nodes in the targetRef of Endpoints are same as the Windows Nodes bootstrapped using WMCO
-		err = checkTargetNodes(windowsEndpoints)
-		require.NoError(t, err)
-
-		// check Port name matches
-		require.Equal(t, windowsEndpoints.Subsets[0].Ports[0].Name, metrics.PortName)
-		// check Port matches the defined port
-		require.Equal(t, windowsEndpoints.Subsets[0].Ports[0].Port, metrics.Port)
-	}
-
-}
-
-// checkTargetNodes checks if nodes in the targetRef of Endpoints are same as the Windows Nodes bootstrapped using WMCO
-func checkTargetNodes(windowsEndpoints *core.Endpoints) error {
-	for _, node := range gc.allNodes() {
-		foundNode := false
-		for _, endpointAddress := range windowsEndpoints.Subsets[0].Addresses {
-			if node.Name == endpointAddress.TargetRef.Name {
-				foundNode = true
-				break
-			}
-		}
-		if !foundNode {
-			return fmt.Errorf("target node not found in Endpoints object")
-		}
-	}
-
-	return nil
 }
 
 // PrometheusQuery defines the result of the /query request

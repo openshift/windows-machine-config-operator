@@ -46,7 +46,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
-	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -93,12 +92,6 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 		return nil, fmt.Errorf("error creating kubernetes clientset: %w", err)
 	}
 
-	// Initialize prometheus configuration
-	pc, err := metrics.NewPrometheusNodeConfig(clientset, watchNamespace)
-	if err != nil {
-		return nil, fmt.Errorf("unable to initialize Prometheus configuration: %w", err)
-	}
-
 	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
 	if err != nil {
 		return nil, err
@@ -119,14 +112,13 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 
 	return &ConfigMapReconciler{
 		instanceReconciler: instanceReconciler{
-			client:               mgr.GetClient(),
-			k8sclientset:         clientset,
-			clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
-			log:                  ctrl.Log.WithName("controllers").WithName(ConfigMapController),
-			watchNamespace:       watchNamespace,
-			recorder:             mgr.GetEventRecorderFor(ConfigMapController),
-			prometheusNodeConfig: pc,
-			platform:             clusterConfig.Platform(),
+			client:             mgr.GetClient(),
+			k8sclientset:       clientset,
+			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
+			log:                ctrl.Log.WithName("controllers").WithName(ConfigMapController),
+			watchNamespace:     watchNamespace,
+			recorder:           mgr.GetEventRecorderFor(ConfigMapController),
+			platform:           clusterConfig.Platform(),
 		},
 		servicesManifest: svcData,
 		proxyEnabled:     proxyEnabled,
@@ -288,10 +280,6 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 		return fmt.Errorf("error removing undesired nodes from cluster: %w", err)
 	}
 
-	// Once all the proper Nodes are in the cluster, configure the prometheus endpoints.
-	if err := r.prometheusNodeConfig.Configure(); err != nil {
-		return fmt.Errorf("unable to configure Prometheus: %w", err)
-	}
 	return nil
 }
 

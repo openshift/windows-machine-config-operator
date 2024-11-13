@@ -30,7 +30,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
-	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
@@ -82,22 +81,15 @@ func NewWindowsMachineReconciler(mgr manager.Manager, clusterConfig cluster.Conf
 		return nil, fmt.Errorf("error creating machine client: %w", err)
 	}
 
-	// Initialize prometheus configuration
-	pc, err := metrics.NewPrometheusNodeConfig(clientset, watchNamespace)
-	if err != nil {
-		return nil, fmt.Errorf("unable to initialize Prometheus configuration: %w", err)
-	}
-
 	return &WindowsMachineReconciler{
 		instanceReconciler: instanceReconciler{
-			client:               mgr.GetClient(),
-			log:                  ctrl.Log.WithName("controller").WithName(WindowsMachineController),
-			k8sclientset:         clientset,
-			clusterServiceCIDR:   clusterConfig.Network().GetServiceCIDR(),
-			recorder:             mgr.GetEventRecorderFor(WindowsMachineController),
-			watchNamespace:       watchNamespace,
-			prometheusNodeConfig: pc,
-			platform:             clusterConfig.Platform(),
+			client:             mgr.GetClient(),
+			log:                ctrl.Log.WithName("controller").WithName(WindowsMachineController),
+			k8sclientset:       clientset,
+			clusterServiceCIDR: clusterConfig.Network().GetServiceCIDR(),
+			recorder:           mgr.GetEventRecorderFor(WindowsMachineController),
+			watchNamespace:     watchNamespace,
+			platform:           clusterConfig.Platform(),
 		},
 		machineClient: machineClient,
 	}, nil
@@ -243,7 +235,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			// In the case the machine was deleted, ensure that the metrics subsets are configured properly, so that
 			// the current Windows nodes are properly reflected there.
 			log.V(1).Info("not found")
-			return ctrl.Result{}, r.prometheusNodeConfig.Configure()
+			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
@@ -299,21 +291,11 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			}
 			if node.Annotations[metadata.VersionAnnotation] == version.Get() {
 				// version annotation exists with a valid value, node is fully configured.
-				// configure Prometheus when we have already configured Windows Nodes. This is required to update
-				// Endpoints object if it gets reverted when the operator pod restarts.
-				if err := r.prometheusNodeConfig.Configure(); err != nil {
-					return ctrl.Result{}, fmt.Errorf("unable to configure Prometheus: %w", err)
-				}
 				return ctrl.Result{}, nil
 			}
 		}
 	} else if *machine.Status.Phase != provisionedPhase {
 		log.V(1).Info("machine not provisioned", "phase", *machine.Status.Phase)
-		// configure Prometheus when a machine is not in `Running` or `Provisioned` phase. This configuration is
-		// required to update Endpoints object when Windows machines are being deleted.
-		if err := r.prometheusNodeConfig.Configure(); err != nil {
-			return ctrl.Result{}, fmt.Errorf("unable to configure Prometheus: %w", err)
-		}
 		// Machine is not in provisioned or running state, nothing we should do as of now
 		return ctrl.Result{}, nil
 	}
@@ -360,10 +342,6 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	}
 	r.recorder.Eventf(machine, core.EventTypeNormal, "MachineSetup",
 		"Machine %s configured successfully", machine.Name)
-	// configure Prometheus after a Windows machine is configured as a Node.
-	if err := r.prometheusNodeConfig.Configure(); err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to configure Prometheus: %w", err)
-	}
 	return ctrl.Result{}, nil
 }
 
