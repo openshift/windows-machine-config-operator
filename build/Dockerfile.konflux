@@ -68,8 +68,7 @@ RUN env -u VERSION GOOS=windows make ecr-credential-provider
 # Build CNI plugins
 WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
 COPY containernetworking-plugins/ .
-ENV CGO_ENABLED=0
-RUN ./build_windows.sh
+RUN CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc ./build_windows.sh
 
 # Build csi-proxy
 WORKDIR /build/windows-machine-config-operator/csi-proxy
