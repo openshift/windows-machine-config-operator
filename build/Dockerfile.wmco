@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.22-openshift-4.18 as build
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.18 as build
 LABEL stage=build
 
 # Silence go compliance shim output
@@ -8,6 +8,8 @@ ENV GO_COMPLIANCE_DEBUG=0
 # Set go toolchain to local, this prevents it from
 # downloading the latest version
 ENV GOTOOLCHAIN=local
+
+ENV GOEXPERIMENT=strictfipsruntime
 
 WORKDIR /build/windows-machine-config-operator/
 
