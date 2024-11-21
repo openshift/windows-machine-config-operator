@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.21-openshift-4.16 as build
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.21-openshift-4.16 as build
 
 LABEL stage=build
 
@@ -9,6 +9,8 @@ ENV GO_COMPLIANCE_DEBUG=0
 # Set go toolchain to local, this prevents it from
 # downloading the latest version
 ENV GOTOOLCHAIN=local
+
+ENV GOEXPERIMENT=strictfipsruntime
 
 # dos2unix is needed to build CNI plugins
 RUN yum install -y dos2unix
