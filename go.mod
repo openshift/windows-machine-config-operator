@@ -4,8 +4,10 @@ go 1.21
 
 // fix the latest working version for go1.21, remove the replacement with the next go bump
 replace (
-	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20231006140011-7918f672742d
+	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
+	// fix the issue of unknown field IgnoredFields in struct literal of type merge.Updater
+	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
 )
 
 require (
