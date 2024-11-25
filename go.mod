@@ -2,8 +2,12 @@ module github.com/openshift/windows-machine-config-operator
 
 go 1.20
 
-// fix the latest working version for go1.21, remove the replacement with the next go bump
-replace sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
+replace (
+	// https://github.com/golang/mod/compare/v0.20.0...v0.21.0
+	golang.org/x/mod => golang.org/x/mod v0.20.0
+	// fix the latest working version for go1.20, remove the replacement with the next go bump
+	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
+)
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
