@@ -17,9 +17,9 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20241120064718-caf97963ed30
+	github.com/openshift/api v0.0.0-20241124010541-a09992e80c68
 	github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
-	github.com/openshift/library-go v0.0.0-20241120135057-fc703a7407c9
+	github.com/openshift/library-go v0.0.0-20241122180931-2b6ec56142c4
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -34,15 +34,15 @@ require (
 	golang.org/x/crypto v0.29.0
 	golang.org/x/mod v0.22.0
 	golang.org/x/sys v0.27.0
-	k8s.io/api v0.31.2
-	k8s.io/apimachinery v0.31.2
-	k8s.io/client-go v0.31.2
-	k8s.io/cloud-provider v0.30.6
+	k8s.io/api v0.31.3
+	k8s.io/apimachinery v0.31.3
+	k8s.io/client-go v0.31.3
+	k8s.io/cloud-provider v0.30.7
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/kubectl v0.31.2
-	k8s.io/kubelet v0.31.2
+	k8s.io/kubectl v0.31.3
+	k8s.io/kubelet v0.31.3
 	k8s.io/kubernetes v1.31.1
-	sigs.k8s.io/controller-runtime v0.19.1
+	sigs.k8s.io/controller-runtime v0.19.2
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -144,11 +144,11 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.31.2 // indirect
-	k8s.io/apiserver v0.31.2 // indirect
-	k8s.io/cli-runtime v0.31.2 // indirect
-	k8s.io/component-base v0.31.2 // indirect
-	k8s.io/component-helpers v0.31.2 // indirect
+	k8s.io/apiextensions-apiserver v0.31.3 // indirect
+	k8s.io/apiserver v0.31.3 // indirect
+	k8s.io/cli-runtime v0.31.3 // indirect
+	k8s.io/component-base v0.31.3 // indirect
+	k8s.io/component-helpers v0.31.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.30.3 // indirect
