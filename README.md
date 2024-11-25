@@ -318,6 +318,40 @@ Be sure to set the [OS field in the Pod spec](https://kubernetes.io/docs/concept
 when deploying Windows workloads. This field is used to authoritatively identify the pod OS for validation. 
 In OpenShift, it is used when enforcing OS-specific pod security standards.
 
+## Uninstalling the Windows Machine Config Operator
+
+Windows workloads and Windows nodes must be removed before uninstalling the WMCO.
+
+To uninstall WMCO from the Openshift cluster, you need to delete the subscription, the CSV, the RBAC resources, and 
+the namespace created by the installation process.
+
+Assuming the WMCO was installed in the `openshift-windows-machine-config-operator` namespace, you can 
+run the following commands:
+
+1. Get current CSV from subscription
+    ```bash
+    WMCO_CSV=$(oc get subscription -n openshift-windows-machine-config-operator windows-machine-config-operator -o jsonpath='{.status.currentCSV}')
+    ```
+2. Delete the subscription
+    ```bash
+    oc delete subscription -n openshift-windows-machine-config-operator windows-machine-config-operator
+    ```
+3. Delete the CSV
+    ```bash
+    oc delete csv -n openshift-windows-machine-config-operator ${WMCO_CSV}
+    ```
+4. Delete RBAC resources
+    ```bash
+    oc delete clusterrolebinding windows-instance-config-daemon
+    ```
+    ```bash
+    oc delete clusterroles windows-instance-config-daemon
+    ```
+5. Delete the namespace
+    ```bash
+    oc delete namespace openshift-windows-machine-config-operator
+    ```
+
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
