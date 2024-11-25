@@ -3,9 +3,10 @@ module github.com/openshift/windows-machine-config-operator
 go 1.20
 
 replace (
+	// fix the latest working version for go1.20, remove the replacement with the next go bump
+	golang.org/x/exp => golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
 	// https://github.com/golang/mod/compare/v0.20.0...v0.21.0
 	golang.org/x/mod => golang.org/x/mod v0.20.0
-	// fix the latest working version for go1.20, remove the replacement with the next go bump
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 )
 
