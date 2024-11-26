@@ -1,0 +1,272 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":gitSignOff",
+    ":disableDependencyDashboard"
+  ],
+  "ignorePresets": [
+    ":dependencyDashboard"
+  ],
+  "onboarding": false,
+  "requireConfig": "optional",
+  "inheritConfig": true,
+  "platformCommit": "enabled",
+  "autodiscover": false,
+  "vulnerabilityAlerts": {
+    "enabled": false
+  },
+  "enabledManagers": [
+    "tekton",
+    "dockerfile",
+    "rpm",
+    "custom.regex",
+    "argocd",
+    "crossplane",
+    "fleet",
+    "flux",
+    "helm-requirements",
+    "helm-values",
+    "helmfile",
+    "helmsman",
+    "helmv3",
+    "jsonnet-bundler",
+    "kubernetes",
+    "kustomize",
+    "asdf",
+    "fvm",
+    "git-submodules",
+    "hermit",
+    "homebrew",
+    "nix",
+    "osgi",
+    "pre-commit",
+    "vendir",
+    "terraform",
+    "terraform-version",
+    "terragrunt",
+    "terragrunt-version",
+    "tflint-plugin",
+    "pep621",
+    "pip-compile",
+    "pip_requirements",
+    "pip_setup",
+    "pipenv",
+    "poetry",
+    "pyenv",
+    "runtime-version",
+    "setup-cfg"
+  ],
+  "tekton": {
+    "fileMatch": [
+      "\\.yaml$",
+      "\\.yml$"
+    ],
+    "includePaths": [
+      ".tekton/**"
+    ],
+    "packageRules": [
+      {
+        "matchPackageNames": [
+          "/^quay.io/redhat-appstudio-tekton-catalog//",
+          "/^quay.io/konflux-ci/tekton-catalog//"
+        ],
+        "enabled": true,
+        "groupName": "Konflux references",
+        "branchPrefix": "konflux/references/",
+        "group": {
+          "branchTopic": "{{{baseBranch}}}",
+          "commitMessageTopic": "{{{groupName}}}"
+        },
+        "commitMessageTopic": "Konflux references",
+        "semanticCommits": "enabled",
+        "prFooter": "To execute skipped test pipelines write comment `/ok-to-test`",
+        "prBodyColumns": [
+          "Package",
+          "Change",
+          "Notes"
+        ],
+        "prBodyDefinitions": {
+          "Notes": "{{#if (or (containsString updateType 'minor') (containsString updateType 'major'))}}:warning:[migration](https://github.com/redhat-appstudio/build-definitions/blob/main/task/{{{replace '^quay.io/(redhat-appstudio-tekton-catalog|konflux-ci/tekton-catalog)/task-' '' packageName}}}/{{{newVersion}}}/MIGRATION.md):warning:{{/if}}"
+        },
+        "prBodyTemplate": "{{{header}}}{{{table}}}{{{notes}}}{{{changelogs}}}{{{configDescription}}}{{{controls}}}{{{footer}}}",
+        "recreateWhen": "always",
+        "rebaseWhen": "behind-base-branch"
+      }
+    ]
+  },
+  "dockerfile": {
+    "enabled": true,
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "rpm": {
+    "enabled": true,
+    "packageRules": [
+      {
+        "groupName": "RPM updates",
+        "commitMessageAction": "",
+        "commitMessageTopic": "RPM updates",
+        "matchManagers": ["rpm"]
+      }
+    ],
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "recreateWhen": "always",
+    "rebaseWhen": "behind-base-branch",
+    "branchTopic": "lock-file-maintenance",
+    "schedule": [
+      "at any time"
+    ]
+  },
+  "ignoreDeps": ["kubelet/", "kube-proxy/","containerd/"],
+  "git-submodules": {
+    "enabled": true,
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "argocd": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "crossplane": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "fleet": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "flux": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "helm-requirements": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "helm-values": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "helmfile": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "helmsman": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "helmv3": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "jsonnet-bundler": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "kubernetes": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "kustomize": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "asdf": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "fvm": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "hermit": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "homebrew": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "nix": {
+    "enabled": true,
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "osgi": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "pre-commit": {
+    "enabled": true,
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "vendir": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "terraform": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "terraform-version": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "terragrunt": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "terragrunt-version": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "tflint-plugin": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "pep621": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "pip-compile": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "pip_requirements": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "pip_setup": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "pipenv": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "poetry": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "pyenv": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "runtime-version": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "setup-cfg": {
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/"
+  },
+  "forkProcessing": "enabled",
+  "allowedPostUpgradeCommands": ["^rpm-lockfile-prototype rpms.in.yaml$"],
+  "dependencyDashboard": false
+}
