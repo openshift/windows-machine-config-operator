@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"strings"
 
@@ -651,6 +652,9 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 		}
 		r.log.Info("Deleted malformed resource", "ClusterRoleBinding", existingCRB.Name,
 			"RoleRef", existingCRB.RoleRef.Name, "Subjects", existingCRB.Subjects)
+
+		r.log.Info("Process will restart to reconcile resources")
+		defer os.Exit(1)
 	}
 	// create proper resource if it does not exist
 	_, err = r.k8sclientset.RbacV1().ClusterRoleBindings().Create(ctx, expectedCRB, meta.CreateOptions{})
