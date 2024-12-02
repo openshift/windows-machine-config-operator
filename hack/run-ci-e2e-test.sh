@@ -110,6 +110,16 @@ if  ! oc get deploy/windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE > 
       retries+=1
   done
   wmco_deployed_by_script=true
+
+  # OCPBUGS-23121: For AWS, test the operator installed in a different namespace after a successful deployment in the
+  # provided namespace
+  platform="$(oc get infrastructure cluster -ojsonpath={.spec.platformSpec.type})"
+  if [[ "$platform" = "AWS" ]]; then
+    cleanup_WMCO $OSDK
+    export WMCO_DEPLOY_NAMESPACE="${WMCO_DEPLOY_NAMESPACE}-customized"
+    run_WMCO $OSDK
+    get_WMCO_logs
+  fi
 fi
 
 # WINDOWS_INSTANCES_DATA holds the windows-instances ConfigMap data section
@@ -141,6 +151,10 @@ MIRROR_REGISTRY_HOST=${MIRROR_REGISTRY_HOST:-}
 
 GO_TEST_ARGS="$BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH --wmco-namespace=$WMCO_DEPLOY_NAMESPACE --windows-server-version=$WIN_VER --mirror-registry=$MIRROR_REGISTRY_HOST"
 echo "Running tests with arguments: $GO_TEST_ARGS"
+
+# Test that the operator is running when the private key secret is not present
+printf "\n####### Testing Windows Instance Config Daemon RBAC #######\n" >> "$ARTIFACT_DIR"/wmco.log
+go test ./test/e2e/... -run=TestWMCO/windows_instance_config_daemon_rbac -v -args $GO_TEST_ARGS
 
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log

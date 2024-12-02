@@ -927,3 +927,74 @@ func finalLine(s string) string {
 	lineSplit := strings.Split(strings.TrimSpace(s), "\n")
 	return strings.TrimSpace(lineSplit[len(lineSplit)-1])
 }
+
+// testWindowsInstanceConfigDaemonRBAC tests the RBAC resources created by the operator for
+// the Windows Instance Config Daemon
+func testWindowsInstanceConfigDaemonRBAC(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
+
+	t.Run("WICD RoleBinding", tc.testWICDRoleBinding)
+	t.Run("WICD ClusterRoleBinding", tc.testWICDClusterRoleBinding)
+}
+
+// testWICDRoleBinding tests the WICD RoleBinding created by the operator
+func (tc *testContext) testWICDRoleBinding(t *testing.T) {
+	existingRB, err := tc.client.K8s.RbacV1().RoleBindings(wmcoNamespace).Get(context.TODO(),
+		controllers.WicdRBACResourceName, meta.GetOptions{})
+	require.NoError(t, err)
+
+	expectedRB := &rbac.RoleBinding{
+		ObjectMeta: meta.ObjectMeta{
+			Name: controllers.WicdRBACResourceName,
+		},
+		RoleRef: rbac.RoleRef{
+			APIGroup: rbac.GroupName,
+			Kind:     "Role",
+			Name:     controllers.WicdRBACResourceName,
+		},
+		Subjects: []rbac.Subject{{
+			Kind:      rbac.ServiceAccountKind,
+			Name:      controllers.WicdRBACResourceName,
+			Namespace: wmcoNamespace,
+		}},
+	}
+
+	assert.Equal(t, existingRB.ObjectMeta.Name, expectedRB.ObjectMeta.Name, "WICD RoleBinding name mismatch")
+	assert.Equal(t, existingRB.RoleRef.Name, expectedRB.RoleRef.Name, "WICD RoleBinding RoleRef name mismatch")
+	assert.Equal(t, len(existingRB.Subjects), 1, "WICD RoleBinding Subjects length mismatch")
+	assert.Equal(t, existingRB.Subjects[0].Name, expectedRB.Subjects[0].Name, "WICD RoleBinding Subjects name mismatch")
+	assert.Equal(t, existingRB.Subjects[0].Namespace, expectedRB.Subjects[0].Namespace,
+		"WICD RoleBinding Subjects namespace mismatch")
+}
+
+// testWICDClusterRoleBinding tests the WICD ClusterRoleBinding created by the operator
+func (tc *testContext) testWICDClusterRoleBinding(t *testing.T) {
+	existingCRB, err := tc.client.K8s.RbacV1().ClusterRoleBindings().Get(context.TODO(),
+		controllers.WicdRBACResourceName, meta.GetOptions{})
+	require.NoError(t, err)
+
+	expectedCRB := &rbac.ClusterRoleBinding{
+		ObjectMeta: meta.ObjectMeta{
+			Name: controllers.WicdRBACResourceName,
+		},
+		RoleRef: rbac.RoleRef{
+			APIGroup: rbac.GroupName,
+			Kind:     "ClusterRole",
+			Name:     controllers.WicdRBACResourceName,
+		},
+		Subjects: []rbac.Subject{{
+			Kind:      rbac.ServiceAccountKind,
+			Name:      controllers.WicdRBACResourceName,
+			Namespace: wmcoNamespace,
+		}},
+	}
+
+	assert.Equal(t, existingCRB.ObjectMeta.Name, expectedCRB.ObjectMeta.Name, "WICD ClusterRoleBinding name mismatch")
+	assert.Equal(t, existingCRB.RoleRef.Name, expectedCRB.RoleRef.Name, "WICD ClusterRoleBinding RoleRef name mismatch")
+	assert.Equal(t, len(existingCRB.Subjects), 1, "WICD ClusterRoleBinding Subjects length mismatch")
+	assert.Equal(t, existingCRB.Subjects[0].Name, expectedCRB.Subjects[0].Name,
+		"WICD ClusterRoleBinding Subjects name mismatch")
+	assert.Equal(t, existingCRB.Subjects[0].Namespace, expectedCRB.Subjects[0].Namespace,
+		"WICD ClusterRoleBinding Subjects namespace mismatch")
+}

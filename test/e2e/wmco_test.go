@@ -30,6 +30,9 @@ func TestWMCO(t *testing.T) {
 
 	tc, err := NewTestContext()
 	require.NoError(t, err)
+
+	t.Run("windows instance config daemon rbac", testWindowsInstanceConfigDaemonRBAC)
+
 	log.Printf("Testing against Windows Server %s\n", tc.windowsServerVersion)
 	// Create the namespace test resources can be deployed in, as well as required resources within said namespace.
 	require.NoError(t, tc.ensureNamespace(tc.workloadNamespace, tc.workloadNamespaceLabels), "error creating test namespace")
