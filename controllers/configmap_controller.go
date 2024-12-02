@@ -71,8 +71,8 @@ const (
 	UsernameAnnotation = "windowsmachineconfig.openshift.io/username"
 	// ConfigMapController is the name of this controller in logs and other outputs.
 	ConfigMapController = "configmap"
-	// wicdRBACResourceName is the name of the resources associated with WICD's RBAC permissions
-	wicdRBACResourceName = "windows-instance-config-daemon"
+	// WicdRBACResourceName is the name of the resources associated with WICD's RBAC permissions
+	WicdRBACResourceName = "windows-instance-config-daemon"
 	// InjectionRequestLabel is used to allow CNO to inject the trusted CA bundle when the global Proxy resource changes
 	InjectionRequestLabel = "config.openshift.io/inject-trusted-cabundle"
 )
@@ -567,24 +567,24 @@ func (r *ConfigMapReconciler) EnsureWICDRBAC(ctx context.Context) error {
 // ensureWICDRoleBinding ensures the WICD RoleBinding resource exists as expected.
 // Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
 func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
-	existingRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Get(ctx, wicdRBACResourceName,
+	existingRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Get(ctx, WicdRBACResourceName,
 		meta.GetOptions{})
 	if err != nil && !k8sapierrors.IsNotFound(err) {
-		return fmt.Errorf("unable to get RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
+		return fmt.Errorf("unable to get RoleBinding %s/%s: %w", r.watchNamespace, WicdRBACResourceName, err)
 	}
 
 	expectedRB := &rbac.RoleBinding{
 		ObjectMeta: meta.ObjectMeta{
-			Name: wicdRBACResourceName,
+			Name: WicdRBACResourceName,
 		},
 		RoleRef: rbac.RoleRef{
 			APIGroup: rbac.GroupName,
 			Kind:     "Role",
-			Name:     wicdRBACResourceName,
+			Name:     WicdRBACResourceName,
 		},
 		Subjects: []rbac.Subject{{
 			Kind:      rbac.ServiceAccountKind,
-			Name:      wicdRBACResourceName,
+			Name:      WicdRBACResourceName,
 			Namespace: r.watchNamespace,
 		}},
 	}
@@ -594,10 +594,10 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
 			reflect.DeepEqual(existingRB.Subjects, expectedRB.Subjects) {
 			return nil
 		}
-		err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Delete(ctx, wicdRBACResourceName,
+		err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Delete(ctx, WicdRBACResourceName,
 			meta.DeleteOptions{})
 		if err != nil {
-			return fmt.Errorf("unable to delete RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
+			return fmt.Errorf("unable to delete RoleBinding %s/%s: %w", r.watchNamespace, WicdRBACResourceName, err)
 		}
 		r.log.Info("Deleted malformed resource", "RoleBinding",
 			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: existingRB.Name},
@@ -607,7 +607,7 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
 	_, err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Create(ctx, expectedRB,
 		meta.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("unable to create RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
+		return fmt.Errorf("unable to create RoleBinding %s/%s: %w", r.watchNamespace, WicdRBACResourceName, err)
 	}
 	r.log.Info("Created resource", "RoleBinding",
 		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: expectedRB.Name})
@@ -617,7 +617,7 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
 // ensureWICDClusterRoleBinding ensures the WICD ClusterRoleBinding resource exists as expected.
 // Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
 func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) error {
-	existingCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Get(ctx, wicdRBACResourceName,
+	existingCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Get(ctx, WicdRBACResourceName,
 		meta.GetOptions{})
 	if err != nil && !k8sapierrors.IsNotFound(err) {
 		return err
@@ -625,16 +625,16 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 
 	expectedCRB := &rbac.ClusterRoleBinding{
 		ObjectMeta: meta.ObjectMeta{
-			Name: wicdRBACResourceName,
+			Name: WicdRBACResourceName,
 		},
 		RoleRef: rbac.RoleRef{
 			APIGroup: rbac.GroupName,
 			Kind:     "ClusterRole",
-			Name:     wicdRBACResourceName,
+			Name:     WicdRBACResourceName,
 		},
 		Subjects: []rbac.Subject{{
 			Kind:      rbac.ServiceAccountKind,
-			Name:      wicdRBACResourceName,
+			Name:      WicdRBACResourceName,
 			Namespace: r.watchNamespace,
 		}},
 	}
@@ -644,7 +644,7 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 			reflect.DeepEqual(existingCRB.Subjects, expectedCRB.Subjects) {
 			return nil
 		}
-		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(ctx, wicdRBACResourceName,
+		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(ctx, WicdRBACResourceName,
 			meta.DeleteOptions{})
 		if err != nil {
 			return err
