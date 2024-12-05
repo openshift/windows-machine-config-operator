@@ -756,7 +756,7 @@ func (tc *testContext) validateUpgradeableCondition(expected meta.ConditionStatu
 	if err != nil {
 		return err
 	}
-	err = wait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
+	err = wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 		oc, err := tc.client.Olm.OperatorsV2().OperatorConditions(wmcoNamespace).Get(context.TODO(), ocName, meta.GetOptions{})
 		if err != nil {
 			log.Printf("unable to get OperatorCondition %s from namespace %s", ocName, wmcoNamespace)
