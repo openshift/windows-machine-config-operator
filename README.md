@@ -282,6 +282,11 @@ For example, when mirroring the image `mcr.microsoft.com/oss/kubernetes/pause:3.
 leading namespaces. Some valid values could be: `$mirrorRegistry/oss/kubernetes/pause:3.9`,
 `$mirrorRegistry/custom/oss/kubernetes/pause:3.9`, `$mirrorRegistry/x/y/z/oss/kubernetes/pause:3.9`.
 
+### Horizontal Pod Autoscaling
+Horizontal Pod autoscaling is available for Windows workloads.
+Please follow the [Horizontal Pod autoscaling docs](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html) 
+to create a horizontal pod autoscaler object for CPU and memory utilization of Windows workloads.
+
 ## Limitations
 
 ### DeploymentConfigs
@@ -295,9 +300,8 @@ must deploy the appropriate Windows CSI driver Daemonset. This should be done by
 by the chosen storage driver's provider. A list of drivers can be found [here](https://kubernetes-csi.github.io/docs/drivers.html#production-drivers).
 
 ### Pod Autoscaling
-[Horizontal](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html) and
 [Vertical](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-vertical-autoscaler.html) Pod
-autoscaling support are not available for Windows workloads.
+autoscaling support is not available for Windows workloads.
 
 ### Other limitations
 WMCO / Windows nodes does not work with the following products:
