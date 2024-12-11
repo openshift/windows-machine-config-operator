@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "release-4.17"
-      && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE)$'))
+      && "build/bundle-konflux.Dockerfile".pathChanged()
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-release-4-17
@@ -19,6 +19,8 @@ metadata:
   namespace: windows-machine-conf-tenant
 spec:
   params:
+  - name: hermetic
+    value: "false"
   - name: dockerfile
     value: build/bundle-konflux.Dockerfile
   - name: git-url
@@ -223,9 +225,9 @@ spec:
       taskRef:
         params:
         - name: name
-          value: buildah-10gb
+          value: buildah
         - name: bundle
-          value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-10gb:0.2
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah@sha256:ae8dcd146ac80f5b3f9fece916b5125417fc7db1b37ec176068f9cd0801cebfb
         - name: kind
           value: task
         resolver: bundles
