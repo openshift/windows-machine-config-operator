@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "release-4.17"
-      && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE)$'))
+      && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|bundle-konflux.Dockerfile)$'))
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-release-4-17
