@@ -1,6 +1,6 @@
 FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.22 as image-replacer
 COPY bundle/manifests /manifests
-RUN sed -i "s|REPLACE_IMAGE|quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4-17@sha256:c7325b1be0d2ec2849d337983f093748c31c058f80f55b5e8a5244fd81d16c0e|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
+RUN sed -i "s|REPLACE_IMAGE|registry.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator:10.17.1|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
 
 FROM scratch
 
@@ -29,7 +29,7 @@ LABEL com.redhat.openshift.versions="=v4.17"
 # registry endpoints.
 LABEL com.redhat.delivery.backport=false
 
-LABEL version="v10.17.0"
+LABEL version="v10.17.1"
 
 # This label maps to the brew build target
 LABEL com.redhat.component="windows-machine-config-operator-bundle-container"
@@ -48,7 +48,7 @@ LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
 LABEL distribution-scope=public
 LABEL release="10.17.1"
 LABEL url="https://docs.openshift.com/container-platform/4.17/windows_containers/index.html"
-LABEL vendor="Red Hat"
+LABEL vendor="Red Hat, Inc."
 
 # Copy files to locations specified by labels.
 COPY --from=image-replacer /manifests /manifests/
