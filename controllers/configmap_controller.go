@@ -26,6 +26,8 @@ import (
 	"strings"
 
 	config "github.com/openshift/api/config/v1"
+	oconfig "github.com/openshift/api/config/v1"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	core "k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -83,6 +85,7 @@ type ConfigMapReconciler struct {
 	instanceReconciler
 	servicesManifest *servicescm.Data
 	proxyEnabled     bool
+	VXLANPort        string
 }
 
 // NewConfigMapReconciler returns a pointer to a ConfigMapReconciler
@@ -97,18 +100,9 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, err
 	}
-	ign, err := ignition.New(directClient)
-	if err != nil {
-		return nil, fmt.Errorf("error creating ignition object: %w", err)
-	}
-	argsFromIgnition, err := ign.GetKubeletArgs()
+	svcData, err := generateServicesManifest(directClient, clusterConfig.Network().VXLANPort(), clusterConfig.Platform())
 	if err != nil {
 		return nil, err
-	}
-	svcData, err := services.GenerateManifest(argsFromIgnition, clusterConfig.Network().VXLANPort(),
-		clusterConfig.Platform(), ctrl.Log.V(1).Enabled())
-	if err != nil {
-		return nil, fmt.Errorf("error generating expected Windows service state: %w", err)
 	}
 
 	return &ConfigMapReconciler{
@@ -123,6 +117,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 		},
 		servicesManifest: svcData,
 		proxyEnabled:     proxyEnabled,
+		VXLANPort:        clusterConfig.Network().VXLANPort(),
 	}, nil
 }
 
@@ -150,6 +145,12 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
+
+	servicesManifest, err := generateServicesManifest(r.client, r.VXLANPort, r.platform)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	r.servicesManifest = servicesManifest
 
 	// Fetch the ConfigMap. The predicate will have filtered out any ConfigMaps that we should not reconcile
 	// so it is safe to assume that all ConfigMaps being reconciled are one of:
@@ -403,7 +404,26 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(outdatedWindowsNodePredicate(true))).
 		Watches(&core.Node{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
 			builder.WithPredicates(windowsNodeVersionChangePredicate())).
+		Watches(&mcfgv1.MachineConfig{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
+			builder.WithPredicates(machineConfigCreatedPredicate())).
 		Complete(r)
+}
+
+func machineConfigCreatedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return strings.HasPrefix(e.Object.GetName(), ignition.RenderedWorkerPrefix)
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+	}
 }
 
 // isValidConfigMap returns true if the ConfigMap object is the InstanceConfigMap or a WMCO-managed ConfigMap
@@ -662,4 +682,23 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 		r.log.Info("Created resource", "ClusterRoleBinding", expectedCRB.Name)
 	}
 	return err
+}
+
+// generateServicesManifest generates and regenerates the services manifest.
+// this gets called when the configmap reconciler is first created, to create the services manifest,
+// and also when the rendered-worker configmap is changed, to regenerate it.
+func generateServicesManifest(client client.Client, port string, platform oconfig.PlatformType) (*servicescm.Data, error) {
+	ign, err := ignition.New(client)
+	if err != nil {
+		return nil, fmt.Errorf("error creating ignition object: %w", err)
+	}
+	argsFromIgnition, err := ign.GetKubeletArgs()
+	if err != nil {
+		return nil, fmt.Errorf("Error getting kubelet args from ignition: %w", err)
+	}
+	svcData, err := services.GenerateManifest(argsFromIgnition, port, platform, ctrl.Log.V(1).Enabled())
+	if err != nil {
+		return nil, fmt.Errorf("error generating expected Windows service state: %w", err)
+	}
+	return svcData, nil
 }
