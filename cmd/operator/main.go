@@ -118,6 +118,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	setupLog.Info("platform", "type", clusterConfig.Platform())
+
 	// Checking if required files exist before starting the operator
 	requiredFiles := []string{
 		payload.HostLocalCNIPlugin,

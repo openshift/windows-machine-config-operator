@@ -621,17 +621,19 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
 			return fmt.Errorf("unable to delete RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
 		}
 		r.log.Info("Deleted malformed resource", "RoleBinding",
-			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: existingRB.Name},
+			kubeTypes.NamespacedName{Namespace: existingRB.Namespace, Name: existingRB.Name},
 			"RoleRef", existingRB.RoleRef.Name, "Subjects", existingRB.Subjects)
 	}
 	// create proper resource if it does not exist
-	_, err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Create(ctx, expectedRB,
+	createdRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Create(ctx, expectedRB,
 		meta.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("unable to create RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
 	}
 	r.log.Info("Created resource", "RoleBinding",
-		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: expectedRB.Name})
+		kubeTypes.NamespacedName{Namespace: createdRB.Namespace, Name: createdRB.Name},
+		"RoleRef", createdRB.RoleRef.Name, "Subjects", createdRB.Subjects)
+
 	return nil
 }
 
@@ -677,9 +679,10 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 		defer os.Exit(1)
 	}
 	// create proper resource if it does not exist
-	_, err = r.k8sclientset.RbacV1().ClusterRoleBindings().Create(ctx, expectedCRB, meta.CreateOptions{})
+	createdCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Create(ctx, expectedCRB, meta.CreateOptions{})
 	if err == nil {
-		r.log.Info("Created resource", "ClusterRoleBinding", expectedCRB.Name)
+		r.log.Info("Created resource", "ClusterRoleBinding", createdCRB.Name,
+			"RoleRef", createdCRB.RoleRef.Name, "Subjects", createdCRB.Subjects)
 	}
 	return err
 }
