@@ -144,8 +144,8 @@ github.com/fxamacker/cbor/v2
 # github.com/go-errors/errors v1.4.2
 ## explicit; go 1.14
 github.com/go-errors/errors
-# github.com/go-imports-organizer/goio v1.3.3
-## explicit; go 1.19
+# github.com/go-imports-organizer/goio v1.5.0
+## explicit; go 1.22.0
 github.com/go-imports-organizer/goio
 github.com/go-imports-organizer/goio/pkg/api/v1alpha1
 github.com/go-imports-organizer/goio/pkg/config
