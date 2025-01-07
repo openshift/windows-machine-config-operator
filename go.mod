@@ -5,10 +5,18 @@ go 1.22.4
 toolchain go1.22.7
 
 replace (
+	// ensures direct or transitive usage of x/crypto resolves to v0.31.0
+	golang.org/x/crypto => golang.org/x/crypto v0.31.0
 	// fix the latest working version for go1.22, remove the replacement with the go1.23 bump
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 	// fix to solve the issue of unknown field IgnoredFields in struct literal of type merge.Updater
 	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
+)
+
+exclude (
+	golang.org/x/crypto v0.21.0
+	golang.org/x/crypto v0.24.0
+	golang.org/x/crypto v0.27.0
 )
 
 require (
