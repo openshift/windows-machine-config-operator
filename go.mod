@@ -42,7 +42,7 @@ require (
 	k8s.io/kubectl v0.31.4
 	k8s.io/kubelet v0.31.4
 	k8s.io/kubernetes v1.31.1
-	sigs.k8s.io/controller-runtime v0.19.3
+	sigs.k8s.io/controller-runtime v0.19.4
 	sigs.k8s.io/yaml v1.4.0
 )
 
