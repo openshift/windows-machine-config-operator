@@ -13,9 +13,9 @@ replace (
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
-	github.com/aws/aws-sdk-go v1.45.20
-	github.com/coreos/ignition/v2 v2.16.2
-	github.com/go-imports-organizer/goio v1.3.3
+	github.com/aws/aws-sdk-go v1.55.5
+	github.com/coreos/ignition/v2 v2.20.0
+	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.2
 	github.com/openshift/api v0.0.0-20241222205659-188620a9ab5e
 	github.com/openshift/client-go v0.0.0-20241217083110-35abaf51555b
@@ -23,26 +23,26 @@ require (
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
-	github.com/pkg/sftp v1.13.6
+	github.com/pkg/sftp v1.13.7
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.74.0
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.58.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	github.com/vincent-petithory/dataurl v1.0.0
-	go.uber.org/zap v1.26.0
+	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.31.0
 	golang.org/x/mod v0.22.0
 	golang.org/x/sys v0.28.0
 	k8s.io/api v0.31.4
 	k8s.io/apimachinery v0.31.4
 	k8s.io/client-go v0.31.4
-	k8s.io/cloud-provider v0.30.8
+	k8s.io/cloud-provider v0.31.4
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/kubectl v0.31.4
 	k8s.io/kubelet v0.31.4
 	k8s.io/kubernetes v1.31.1
-	sigs.k8s.io/controller-runtime v0.19.3
+	sigs.k8s.io/controller-runtime v0.19.4
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -137,7 +137,7 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240528184218-531527333157 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240701130421-f6361c86f094 // indirect
 	google.golang.org/grpc v1.65.0 // indirect
 	google.golang.org/protobuf v1.35.2 // indirect
