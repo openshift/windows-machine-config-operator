@@ -29,6 +29,7 @@ LABEL com.redhat.openshift.versions="=v4.19"
 # registry endpoints.
 LABEL com.redhat.delivery.backport=false
 
+# Used to tag the released image. Should be a semver.
 LABEL version="v10.19.0"
 
 # This label maps to the brew build target
