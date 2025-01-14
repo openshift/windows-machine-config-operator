@@ -4,6 +4,6 @@ metadata:
   name: wmco-idms
 spec:
   imageDigestMirrors:
-  - source: registry.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator
+  - source: registry.stage.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator
     mirrors:
-      - quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4-18
+      - quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-master
