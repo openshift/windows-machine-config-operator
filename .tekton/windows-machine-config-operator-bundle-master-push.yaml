@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "master"
-      && "build/bundle-konflux.Dockerfile".pathChanged()
+      && "Containerfile.bundle".pathChanged()
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-master
     appstudio.openshift.io/component: windows-machine-config-operator-bundle-master
@@ -25,7 +25,7 @@ spec:
   - name: prefetch-input
     value: '{"type": "gomod", "path": "."}'
   - name: dockerfile
-    value: build/bundle-konflux.Dockerfile
+    value: Containerfile.bundle
   - name: git-url
     value: '{{source_url}}'
   - name: output-image
