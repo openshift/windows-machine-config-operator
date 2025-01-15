@@ -30,7 +30,7 @@ require (
 	github.com/spf13/pflag v1.0.6-0.20250109003754-5ca813443bd2
 	github.com/stretchr/testify v1.10.0
 	github.com/vincent-petithory/dataurl v1.0.0
-	go.uber.org/zap v1.26.0
+	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.32.0
 	golang.org/x/mod v0.22.0
 	golang.org/x/sys v0.29.0
