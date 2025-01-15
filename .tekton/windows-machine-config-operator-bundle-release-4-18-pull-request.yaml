@@ -10,7 +10,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "release-4.18"
-      && "build/bundle-konflux.Dockerfile".pathChanged()
+      && "Containerfile.bundle".pathChanged()
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-release-4-18
     appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-4-18
@@ -26,7 +26,7 @@ spec:
   - name: prefetch-input
     value: '{"type": "gomod", "path": "."}'
   - name: dockerfile
-    value: build/bundle-konflux.Dockerfile
+    value: Containerfile.bundle
   - name: git-url
     value: '{{source_url}}'
   - name: image-expires-after

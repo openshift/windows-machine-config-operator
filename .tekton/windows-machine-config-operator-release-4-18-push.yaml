@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "release-4.18"
-      && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|bundle-konflux.Dockerfile)$'))
+      && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|Containerfile.bundle)$'))
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-release-4-18
     appstudio.openshift.io/component: windows-machine-config-operator-release-4-18
@@ -25,7 +25,7 @@ spec:
   - name: prefetch-input
     value: '{"type": "gomod", "path": "."}'
   - name: dockerfile
-    value: build/Dockerfile.konflux
+    value: Containerfile
   - name: git-url
     value: '{{source_url}}'
   - name: output-image
