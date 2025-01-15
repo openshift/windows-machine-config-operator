@@ -26,7 +26,7 @@ spec:
   - name: prefetch-input
     value: '{"type": "gomod", "path": "."}'
   - name: dockerfile
-    value: build/Dockerfile.konflux
+    value: Containerfile
   - name: git-url
     value: '{{source_url}}'
   - name: image-expires-after
