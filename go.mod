@@ -15,7 +15,7 @@ require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/coreos/ignition/v2 v2.20.0
-	github.com/go-imports-organizer/goio v1.3.3
+	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.2
 	github.com/openshift/api v0.0.0-20241124010541-a09992e80c68
 	github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
