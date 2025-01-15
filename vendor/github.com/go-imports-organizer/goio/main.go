@@ -35,11 +35,9 @@ import (
 )
 
 var (
-	wg          sync.WaitGroup
-	files       = make(chan string)
-	resultsChan = make(chan string)
-	hasResults  = false
-	pathList    v1alpha1.PathListFlags
+	wg       sync.WaitGroup
+	files    = make(chan string)
+	pathList v1alpha1.PathListFlags
 )
 
 func main() {
@@ -102,21 +100,9 @@ func main() {
 	// Build the Regular Expressions and DisplayOrder for the group definitions
 	groupRegExpMatchers, displayOrder := groups.Build(conf.Groups, goModuleName)
 
-	// Read results from the resultsChan and write them to stdout
-	go func() {
-		for {
-			r := <-resultsChan
-			if len(r) != 0 {
-				fmt.Fprintf(os.Stdout, "%s\n", r)
-			}
-		}
-	}()
-
-	// Add one (1) to the WaitGroup so that we can know when the Formatting in completed
 	wg.Add(1)
-
 	// Start up the Format worker so that it is ready when we start queuing up files
-	go imports.Format(&files, &resultsChan, &hasResults, &wg, groupRegExpMatchers, displayOrder, listOnly)
+	go imports.Format(&files, &wg, groupRegExpMatchers, displayOrder, listOnly)
 
 	// Set the basePath for use later
 	basePath := goModulePath + "/"
@@ -193,9 +179,6 @@ func main() {
 	// Wait for all files to be processed
 	wg.Wait()
 
-	// Close the resultsChan as all formatting should be completed
-	close(resultsChan)
-
 	// set MEMPROFILE=<filename> to create a <filename>.pprof memory profile file
 	if len(os.Getenv("MEMPROFILE")) != 0 {
 		fmt.Fprintf(os.Stdout, "Logging MEMORY profiling information to %s\n", os.Getenv(("MEMPROFILE")))
@@ -210,9 +193,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "could not write memory profile: %s", err.Error())
 			os.Exit(1)
 		}
-	}
-	if *listOnly && hasResults {
-		os.Exit(1)
 	}
 }
 

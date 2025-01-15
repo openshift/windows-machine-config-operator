@@ -137,7 +137,7 @@ func InsertGroups(f *ast.File, importGroups map[string][]ast.ImportSpec, display
 }
 
 // Format processes files as they are added to the queue and organizes the imports
-func Format(files *chan string, resultsChan *chan string, hasResults *bool, wg *sync.WaitGroup, groupRegExpMatchers []v1alpha1.RegExpMatcher, displayOrder []string, listOnly *bool) {
+func Format(files *chan string, wg *sync.WaitGroup, groupRegExpMatchers []v1alpha1.RegExpMatcher, displayOrder []string, listOnly *bool) {
 	defer wg.Done()
 	for path := range *files {
 		if len(path) == 0 {
@@ -195,17 +195,17 @@ func Format(files *chan string, resultsChan *chan string, hasResults *bool, wg *
 			fmt.Fprintf(os.Stderr, "unable to format source %q, %s", path, err.Error())
 		}
 
-		oldFile, err := os.ReadFile(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "unable to read file %q: %s", path, err.Error())
-			continue
-		}
-		if !bytes.Equal(oldFile, out) {
-			*hasResults = true
-			*resultsChan <- path
-		}
+		if *listOnly {
+			oldFile, err := os.ReadFile(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "unable to read file %q: %s", path, err.Error())
+				continue
+			}
+			if !bytes.Equal(oldFile, out) {
+				fmt.Fprintf(os.Stdout, "%s is not organized \n", path)
+			}
 
-		if !*listOnly {
+		} else {
 			info, err = os.Stat(path)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "unable to stat %q: %s", path, err.Error())
@@ -217,7 +217,6 @@ func Format(files *chan string, resultsChan *chan string, hasResults *bool, wg *
 			}
 			if err = os.WriteFile(path, out, info.Mode()); err != nil {
 				fmt.Fprintf(os.Stderr, "unable to write to path %q, %s", path, err.Error())
-				continue
 			}
 		}
 
