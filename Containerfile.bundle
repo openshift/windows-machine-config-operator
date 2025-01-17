@@ -1,6 +1,6 @@
 FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.22 as image-replacer
 COPY bundle/manifests /manifests
-RUN sed -i "s|REPLACE_IMAGE|registry.stage.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator@sha256:ead54083e6820683668a010e48bc66d83379b14fd4da94a05c224926b5fad22c|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
+RUN sed -i "s|REPLACE_IMAGE|registry.stage.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator@sha256:178b8b1d4ae3b7a9572820b3acd6085cee57a765463f46783720e3491e2010de|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
 
 FROM scratch
 
