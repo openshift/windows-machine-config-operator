@@ -815,6 +815,39 @@ func (tc *testContext) testNodeAnnotations(t *testing.T) {
 	}
 }
 
+// testNodeCloudManagerFields tests that all expected labels and fields are on each Windows node configured by
+// the cloud node manager
+func (tc *testContext) testNodeCloudManagerFields(t *testing.T) {
+	if tc.CloudProvider.GetType() == config.NonePlatformType {
+		t.Skip("skipping test as cloud provider is not set")
+	}
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			// check labels
+			for _, label := range tc.getExpectedCloudProviderLabels() {
+				assert.Contains(t, node.Labels, label, "node missing expected label from cloud provider: %s", label)
+			}
+			// check providerID field
+			assert.Greater(t, len(node.Spec.ProviderID), 0, "node missing expected providerID field")
+		})
+	}
+}
+
+// getExpectedCloudProviderLabels returns a slice of strings containing common and platform-specific cloud provider labels
+func (tc *testContext) getExpectedCloudProviderLabels() []string {
+	// common labels
+	cloudProviderLabels := []string{core.LabelInstanceTypeStable}
+	// platform-specific labels
+	switch tc.CloudProvider.GetType() {
+	case config.VSpherePlatformType:
+		// vSphere is a special case where the topology labels are not set
+	default:
+		// all other supported platforms must have the topology labels
+		cloudProviderLabels = append(cloudProviderLabels, core.LabelTopologyRegion, core.LabelTopologyZone)
+	}
+	return cloudProviderLabels
+}
+
 // checkUsernameAnnotation checks that the username annotation value is decipherable and correct
 func (tc *testContext) checkUsernameAnnotation(node *core.Node) (bool, error) {
 	privKey, _, err := tc.getExpectedKeyPair()
