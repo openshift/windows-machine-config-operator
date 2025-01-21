@@ -50,9 +50,9 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 		kubeProxyConfiguration(debug),
 		csiProxyConfiguration(debug),
 	}
-	if platform == config.AzurePlatformType {
-		*services = append(*services, azureCloudNodeManagerConfiguration())
-	}
+	// if platform == config.AzurePlatformType {
+	// 	*services = append(*services, azureCloudNodeManagerConfiguration())
+	// }
 	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
 	files := &[]servicescm.FileInfo{}
 	var watchedEnvVars []string
