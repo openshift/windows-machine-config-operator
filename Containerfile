@@ -125,6 +125,8 @@ RUN make build-daemon
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=operator
 
+COPY LICENSE /licenses/LICENSE
+
 # This block contains standard Red Hat container labels
 LABEL name="openshift4-wincw/windows-machine-config-operator" \
     License="ASL 2.0" \
