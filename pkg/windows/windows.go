@@ -137,8 +137,8 @@ const (
 	ManagedTag = "OpenShift managed"
 	// containersFeatureName is the name of the Windows feature that is required to be enabled on the Windows instance.
 	containersFeatureName = "Containers"
-	// wicdKubeconfigPath is the path of the kubeconfig used by WICD
-	wicdKubeconfigPath = K8sDir + "\\wicd-kubeconfig"
+	// WICDKubeconfigPath is the path of the kubeconfig used by WICD
+	WICDKubeconfigPath = K8sDir + "\\wicd-kubeconfig"
 	// TrustedCABundlePath is the location of the trusted CA bundle file
 	TrustedCABundlePath = K8sDir + "\\ca-bundle.crt"
 	// GetHostnameFQDNCommand is the PowerShell command to get the FQDN hostname of the Windows instance
@@ -509,7 +509,7 @@ func (vm *windows) RunWICDCleanup(watchNamespace, wicdKubeconfig string) error {
 	if err := vm.ensureWICDFilesExist(wicdKubeconfig); err != nil {
 		return err
 	}
-	wicdCleanupCmd := fmt.Sprintf("%s cleanup --kubeconfig %s --namespace %s", wicdPath, wicdKubeconfigPath,
+	wicdCleanupCmd := fmt.Sprintf("%s cleanup --kubeconfig %s --namespace %s", wicdPath, WICDKubeconfigPath,
 		watchNamespace)
 	if out, err := vm.Run(wicdCleanupCmd, true); err != nil {
 		vm.log.Info("failed to cleanup node", "command", wicdCleanupCmd, "output", out)
@@ -547,7 +547,7 @@ func (vm *windows) Bootstrap(desiredVer, watchNamespace, wicdKubeconfigContents 
 	}
 
 	wicdBootstrapCmd := fmt.Sprintf("%s bootstrap --desired-version %s --kubeconfig %s --namespace %s",
-		wicdPath, desiredVer, wicdKubeconfigPath, watchNamespace)
+		wicdPath, desiredVer, WICDKubeconfigPath, watchNamespace)
 	if out, err := vm.Run(wicdBootstrapCmd, true); err != nil {
 		vm.log.Info("failed to bootstrap node", "command", wicdBootstrapCmd, "output", out)
 		return err
@@ -561,7 +561,7 @@ func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string) 
 		return err
 	}
 	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --kubeconfig %s --namespace %s",
-		wicdLogDir, wicdKubeconfigPath, watchNamespace)
+		wicdLogDir, WICDKubeconfigPath, watchNamespace)
 	wicdServiceArgs = fmt.Sprintf("%s --ca-bundle %s", wicdServiceArgs, TrustedCABundlePath)
 	// if WICD crashes, attempt to restart WICD after 10, 30, and 60 seconds, and then every 2 minutes after that.
 	// reset this counter 5 min after a period with no crashes
@@ -1037,7 +1037,7 @@ func (vm *windows) reinitialize() error {
 
 // ensureWICDSecretContent ensures the WICD kubeconfig on the instance has the expected contents
 func (vm *windows) ensureWICDKubeconfig(contents string) error {
-	kcDir, kc := SplitPath(wicdKubeconfigPath)
+	kcDir, kc := SplitPath(WICDKubeconfigPath)
 	return vm.EnsureFileContent([]byte(contents), kc, kcDir)
 }
 
@@ -1072,7 +1072,7 @@ func rmDirCmd(dirName string) string {
 // rmK8sFilesCmd() returns the PowerShell command to remove the k8sDir files excluding WICD files
 func rmK8sFilesCmd() string {
 	return fmt.Sprintf("if(Test-Path %s) {Get-ChildItem %s -Recurse -Exclude %s,%s | Remove-Item -Force -Recurse}",
-		K8sDir, K8sDir, wicdPath, wicdKubeconfigPath)
+		K8sDir, K8sDir, wicdPath, WICDKubeconfigPath)
 }
 
 // getHNSNetworkCmd returns the Windows command to get HNS network by name

@@ -87,7 +87,7 @@ func containerdConfiguration(debug bool) servicescm.Service {
 // azureCloudNodeManagerConfiguration returns the service specification for azure-cloud-node-manager.exe
 func azureCloudNodeManagerConfiguration() servicescm.Service {
 	cmd := fmt.Sprintf("%s --windows-service --node-name=NODE_NAME --wait-routes=false --kubeconfig=%s",
-		windows.AzureCloudNodeManagerPath, windows.KubeconfigPath)
+		windows.AzureCloudNodeManagerPath, windows.WICDKubeconfigPath)
 
 	return servicescm.Service{
 		Name:    windows.AzureCloudNodeManagerServiceName,

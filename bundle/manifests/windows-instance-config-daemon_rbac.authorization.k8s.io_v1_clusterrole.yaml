@@ -13,3 +13,11 @@ rules:
   - watch
   - get
   - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - patch
+  - update
