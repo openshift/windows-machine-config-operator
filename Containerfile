@@ -5,6 +5,8 @@ LABEL stage=build
 ENV GO_COMPLIANCE_INFO=0
 ENV GO_COMPLIANCE_DEBUG=0
 
+ENV GOEXPERIMENT=strictfipsruntime
+
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
