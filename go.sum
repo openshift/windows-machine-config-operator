@@ -496,8 +496,8 @@ github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1y
 github.com/onsi/gomega v1.10.2/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
 github.com/onsi/gomega v1.34.2 h1:pNCwDkzrsv7MS9kpaQvVb1aVLahQXyJ/Tv5oAZMI3i8=
 github.com/onsi/gomega v1.34.2/go.mod h1:v1xfxRgk0KIsG+QOdm7p8UosrOzPYRo60fd3B/1Dukc=
-github.com/openshift/api v0.0.0-20250120092857-366ffb8c60da h1:GEgziBdRGHGIsUF6IY3hW4DBwVQtUR+7ZoXiREuim20=
-github.com/openshift/api v0.0.0-20250120092857-366ffb8c60da/go.mod h1:Shkl4HanLwDiiBzakv+con/aMGnVE2MAGvoKp5oyYUo=
+github.com/openshift/api v0.0.0-20250121121031-ef08cf6072f8 h1:uoX58CDyn7rV1G9mcSF94Ii0qH9Xwf7N9cIg9pgACNw=
+github.com/openshift/api v0.0.0-20250121121031-ef08cf6072f8/go.mod h1:Shkl4HanLwDiiBzakv+con/aMGnVE2MAGvoKp5oyYUo=
 github.com/openshift/client-go v0.0.0-20250106104058-89709a455e2a h1:8lwO4lGTwHuVXsIeFoW3t7AEBROW5quMj5YjH9jF+98=
 github.com/openshift/client-go v0.0.0-20250106104058-89709a455e2a/go.mod h1:34qRf2MsrJKXKAL8qxIkxZ3O5G+YhOB7foCR04H26JE=
 github.com/openshift/library-go v0.0.0-20250116180413-7359be999c02 h1:GXdi8iO9818O0+G5ioCrIqo2DI8W/wjS/Nn2a3YX+a4=
@@ -592,8 +592,8 @@ github.com/spf13/pflag v0.0.0-20170130214245-9ff6c6923cff/go.mod h1:DYY7MBk1bdzu
 github.com/spf13/pflag v1.0.1/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=
 github.com/spf13/pflag v1.0.3/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=
 github.com/spf13/pflag v1.0.5/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
-github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace h1:9PNP1jnUjRhfmGMlkXHjYPishpcw4jpSt/V/xYY3FMA=
-github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
+github.com/spf13/pflag v1.0.6-0.20250109003754-5ca813443bd2 h1:VXx/BSJSJC/DjbDkZMZw8MhF9at8Rxo5I0PrDA5Bui4=
+github.com/spf13/pflag v1.0.6-0.20250109003754-5ca813443bd2/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/spf13/viper v1.3.2/go.mod h1:ZiWeW+zYFKm7srdB9IoDzzZXaJaI5eL9QjNiN/DMA2s=
 github.com/spf13/viper v1.4.0/go.mod h1:PTJ7Z/lr49W6bUbkmS1V3by4uWynFiR9p7+dSq/yZzE=
 github.com/spf13/viper v1.7.0/go.mod h1:8WkrPz2fc9jxqZNCJI/76HCieCp4Q8HaLFoCha5qpdg=

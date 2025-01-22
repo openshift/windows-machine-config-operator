@@ -17,7 +17,7 @@ require (
 	github.com/coreos/ignition/v2 v2.20.0
 	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20250120092857-366ffb8c60da
+	github.com/openshift/api v0.0.0-20250121121031-ef08cf6072f8
 	github.com/openshift/client-go v0.0.0-20250106104058-89709a455e2a
 	github.com/openshift/library-go v0.0.0-20250116180413-7359be999c02
 	github.com/operator-framework/api v0.16.0
@@ -27,7 +27,7 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.74.0
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.58.0
 	github.com/spf13/cobra v1.8.1
-	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
+	github.com/spf13/pflag v1.0.6-0.20250109003754-5ca813443bd2
 	github.com/stretchr/testify v1.10.0
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.27.0
