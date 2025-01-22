@@ -3,10 +3,15 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +100,11 @@ func (tc *testContext) testWindowsNodeCreation(t *testing.T) {
 	// failing the pub key annotation validation as it compares the current private key secret with the annotation.
 	// TODO: Remove this dependency by rotating keys as part of https://issues.redhat.com/browse/WINC-655
 	t.Run("ConfigMap controller", tc.testBYOHConfiguration)
+
+	err := retrieveWindowsNodeObjects()
+	if err != nil {
+		log.Printf("error retrieving windows node objects: %s", err)
+	}
 }
 
 // nodelessLogCollection runs a job which will print to stdout all logs in /var/log on the given instance
@@ -682,4 +692,26 @@ func (tc *testContext) createPullSecret() error {
 	}
 
 	return nil
+}
+
+// retrieveWindowsNodeObjects retrieves the Windows node objects from the cluster and writes them to the given directory
+func retrieveWindowsNodeObjects() error {
+	outputFormat := "json"
+	cmd := exec.Command("oc", "get", "nodes", "-l kubernetes.io/os=windows", "-o"+outputFormat)
+	out, err := cmd.Output()
+	if err != nil {
+		var exitError *exec.ExitError
+		stderr := ""
+		if errors.As(err, &exitError) {
+			stderr = string(exitError.Stderr)
+		}
+		return fmt.Errorf("oc get nodes failed with exit code %s and output: %s: %s", err, string(out), stderr)
+	}
+	destDir := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes")
+	err = os.MkdirAll(destDir, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	outputFile := filepath.Join(destDir, "nodes"+"."+outputFormat)
+	return ioutil.WriteFile(outputFile, out, os.ModePerm)
 }
