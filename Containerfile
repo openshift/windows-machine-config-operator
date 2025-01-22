@@ -1,6 +1,12 @@
 FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.20 as build
 LABEL stage=build
 
+# Silence go compliance shim output
+ENV GO_COMPLIANCE_INFO=0
+ENV GO_COMPLIANCE_DEBUG=0
+
+ENV GOEXPERIMENT=strictfipsruntime
+
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
@@ -187,5 +193,8 @@ COPY build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
+
+# Used to tag the released image. Should be a semver.
+LABEL version="v9.0.4"
 
 USER ${USER_UID}
