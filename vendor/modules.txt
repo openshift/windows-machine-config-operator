@@ -1225,7 +1225,6 @@ k8s.io/client-go/util/workqueue
 # k8s.io/cloud-provider v0.31.5
 ## explicit; go 1.22.0
 k8s.io/cloud-provider/api
-k8s.io/cloud-provider/node/helpers
 # k8s.io/component-base v0.31.5
 ## explicit; go 1.22.0
 k8s.io/component-base/cli/flag
@@ -1240,9 +1239,6 @@ k8s.io/component-base/metrics/prometheusextension
 k8s.io/component-base/tracing
 k8s.io/component-base/tracing/api/v1
 k8s.io/component-base/version
-# k8s.io/component-helpers v0.31.5
-## explicit; go 1.22.0
-k8s.io/component-helpers/node/util
 # k8s.io/klog/v2 v2.130.1
 ## explicit; go 1.18
 k8s.io/klog/v2
