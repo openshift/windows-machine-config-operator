@@ -1,6 +1,10 @@
 FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.20 as build
 LABEL stage=build
 
+# Silence go compliance shim output
+ENV GO_COMPLIANCE_INFO=0
+ENV GO_COMPLIANCE_DEBUG=0
+
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
