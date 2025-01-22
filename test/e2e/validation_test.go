@@ -191,25 +191,6 @@ func (tc *testContext) getKubeletServiceBinPath(node *core.Node) (string, error)
 	return out, nil
 }
 
-// getInstanceID gets the instanceID of VM for a given cloud provider ID
-// Ex: aws:///us-east-1e/i-078285fdadccb2eaa. We always want the last entry which is the instanceID
-func getInstanceID(providerID string) string {
-	providerTokens := strings.Split(providerID, "/")
-	return providerTokens[len(providerTokens)-1]
-}
-
-// getInstanceIDsOfNodes returns the instanceIDs of all the Windows nodes created
-func (tc *testContext) getInstanceIDsOfNodes() ([]string, error) {
-	instanceIDs := make([]string, 0, len(gc.allNodes()))
-	for _, node := range gc.allNodes() {
-		if len(node.Spec.ProviderID) > 0 {
-			instanceID := getInstanceID(node.Spec.ProviderID)
-			instanceIDs = append(instanceIDs, instanceID)
-		}
-	}
-	return instanceIDs, nil
-}
-
 // getWMCOVersion returns the version that the operator reports
 func getWMCOVersion() (string, error) {
 	cmd := exec.Command("oc", "exec", "deploy/windows-machine-config-operator", "-n", wmcoNamespace, "--",
