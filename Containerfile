@@ -10,6 +10,8 @@ ENV GO_COMPLIANCE_DEBUG=0
 # downloading the latest version
 ENV GOTOOLCHAIN=local
 
+ENV GOEXPERIMENT=strictfipsruntime
+
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
