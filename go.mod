@@ -149,7 +149,6 @@ require (
 	k8s.io/apiserver v0.31.5 // indirect
 	k8s.io/cli-runtime v0.31.5 // indirect
 	k8s.io/component-base v0.31.5 // indirect
-	k8s.io/component-helpers v0.31.5 // indirect
 	k8s.io/kube-openapi v0.0.0-20241212222426-2c72e554b1e7 // indirect
 	k8s.io/utils v0.0.0-20241210054802-24370beab758 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.30.3 // indirect

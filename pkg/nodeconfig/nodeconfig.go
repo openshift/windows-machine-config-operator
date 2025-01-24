@@ -22,8 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
-	cloudproviderapi "k8s.io/cloud-provider/api"
-	cloudnodeutil "k8s.io/cloud-provider/node/helpers"
 	"k8s.io/kubectl/pkg/drain"
 	kubeletconfigv1 "k8s.io/kubelet/config/v1"
 	kubeletconfig "k8s.io/kubelet/config/v1beta1"
@@ -220,21 +218,6 @@ func (nc *nodeConfig) Configure() error {
 		// Now that the node has been fully configured, update the node object in nodeConfig once more
 		if err := nc.setNode(false); err != nil {
 			return fmt.Errorf("error getting node object: %w", err)
-		}
-
-		// If we deploy on Azure, we have to explicitly remove the cloud taint, because the cloud node manager running
-		// on the node can't do it itself, due to lack of RBAC permissions given by the node kubeconfig it uses.
-		if nc.platformType == configv1.AzurePlatformType {
-			// TODO: The proper long term solution is to run this as a pod and give it the correct permissions
-			// via service account. This isn't currently possible as we are unable to build Windows container images
-			// due to shortcomings in our build system.
-			cloudTaint := &core.Taint{
-				Key:    cloudproviderapi.TaintExternalCloudProvider,
-				Effect: core.TaintEffectNoSchedule,
-			}
-			if err := cloudnodeutil.RemoveTaintOffNode(nc.k8sclientset, nc.node.GetName(), nc.node, cloudTaint); err != nil {
-				return fmt.Errorf("error excluding cloud taint on node %s: %w", nc.node.GetName(), err)
-			}
 		}
 
 		// Uncordon the node now that it is fully configured

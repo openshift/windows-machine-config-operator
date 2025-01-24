@@ -54,7 +54,15 @@ rules:
   - get
   - list
   - patch
+  - update
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - patch
+  - update
 - apiGroups:
   - ""
   resources:
