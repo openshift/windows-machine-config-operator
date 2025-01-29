@@ -15,7 +15,7 @@
 [submodule "kubelet"]
 	path = kubelet
 	url = https://github.com/openshift/kubernetes
-	branch = release-4.18
+	branch = release-4.19
 [submodule "kube-proxy"]
 	path = kube-proxy
 	url = https://github.com/openshift/kubernetes
