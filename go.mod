@@ -31,18 +31,18 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.26.0
-	golang.org/x/crypto v0.31.0
+	golang.org/x/crypto v0.32.0
 	golang.org/x/mod v0.22.0
-	golang.org/x/sys v0.28.0
-	k8s.io/api v0.30.7
-	k8s.io/apimachinery v0.30.7
-	k8s.io/client-go v0.30.7
-	k8s.io/cloud-provider v0.30.7
+	golang.org/x/sys v0.29.0
+	k8s.io/api v0.30.9
+	k8s.io/apimachinery v0.30.9
+	k8s.io/client-go v0.30.9
+	k8s.io/cloud-provider v0.30.9
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/kubectl v0.30.7
-	k8s.io/kubelet v0.30.7
+	k8s.io/kubectl v0.30.9
+	k8s.io/kubelet v0.30.9
 	k8s.io/kubernetes v1.30.4
-	sigs.k8s.io/controller-runtime v0.18.5
+	sigs.k8s.io/controller-runtime v0.18.7
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -69,10 +69,10 @@ require (
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
-	github.com/google/gnostic-models v0.6.8 // indirect
+	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
@@ -109,26 +109,26 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f // indirect
-	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
+	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/oauth2 v0.15.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
+	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
+	google.golang.org/protobuf v1.35.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.30.7 // indirect
-	k8s.io/apiserver v0.30.7 // indirect
-	k8s.io/cli-runtime v0.30.7 // indirect
-	k8s.io/component-base v0.30.7 // indirect
-	k8s.io/component-helpers v0.30.7 // indirect
-	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
-	k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078 // indirect
+	k8s.io/apiextensions-apiserver v0.30.9 // indirect
+	k8s.io/apiserver v0.30.9 // indirect
+	k8s.io/cli-runtime v0.30.9 // indirect
+	k8s.io/component-base v0.30.9 // indirect
+	k8s.io/component-helpers v0.30.9 // indirect
+	k8s.io/kube-openapi v0.0.0-20241212222426-2c72e554b1e7 // indirect
+	k8s.io/utils v0.0.0-20241210054802-24370beab758 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/kustomize/api v0.13.5-0.20230601165947-6ce0bf390ce3 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.14.3-0.20230601165947-6ce0bf390ce3 // indirect
