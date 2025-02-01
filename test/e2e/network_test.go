@@ -2,11 +2,13 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,7 +25,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
+	kexec "k8s.io/utils/exec"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
@@ -36,9 +41,17 @@ func testNetwork(t *testing.T) {
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, false, true)
 	assert.NoError(t, err, "timed out waiting for BYOH Windows nodes")
 
+	for _, node := range gc.allNodes() {
+		require.NoError(t, tc.startPacketTrace(&node))
+	}
+
 	t.Run("East West Networking", tc.testEastWestNetworking)
 	t.Run("North south networking", tc.testNorthSouthNetworking)
 	t.Run("Pod DNS Resolution", tc.testPodDNSResolution)
+
+	for _, node := range gc.allNodes() {
+		require.NoError(t, tc.stopPacketTrace(&node))
+	}
 }
 
 var (
@@ -58,6 +71,184 @@ const (
 	windowsOS     operatingSystem = "windows"
 	powerShellExe                 = "pwsh.exe"
 )
+
+// startPacketTrace starts a packetmon packet trace on the given Windows node
+func (tc *testContext) startPacketTrace(node *v1.Node) error {
+	addr, err := controllers.GetAddress(node.Status.Addresses)
+	if err != nil {
+		return err
+	}
+	// Arguments are adapted from https://github.com/microsoft/SDN/blob/master/Kubernetes/windows/debug/startpacketcapture.cmd
+	cmd := "mkdir C:\\debug; pktmon start --file-name C:\\debug\\pktmon.etl --capture --trace " +
+		"-p 0c885e0d-6eb6-476c-a048-2457eed3a5c1 -p Microsoft-Windows-TCPIP -l 5 " +
+		"-p 80CE50DE-D264-4581-950D-ABADEEE0D340 -p D0E4BC17-34C7-43fc-9A72-D89A59D6979A " +
+		"-p 93f693dc-9163-4dee-af64-d855218af242 -p 564368D6-577B-4af5-AD84-1C54464848E6 " +
+		"-p Microsoft-Windows-Hyper-V-VfpExt -p microsoft-windows-winnat -p AE3F6C6D-BF2A-4291-9D07-59E661274EE3 -k 0xffffffff -l 6 " +
+		"-p 9B322459-4AD9-4F81-8EEA-DC77CDD18CA6 -k 0xffffffff -l 6 -p 0c885e0d-6eb6-476c-a048-2457eed3a5c1 -l 6 -p Microsoft-Windows-Hyper-V-VmSwitch -l 5"
+	_, err = tc.runPowerShellSSHJob("packet-cap-start", cmd, addr)
+	return err
+}
+
+// stopPacketTrace stops a packetmon packet trace on the given Windows node, and saves the trace to the test artifacts
+func (tc *testContext) stopPacketTrace(node *v1.Node) error {
+	// The approach to collecting the logs from the Windows Node is heavily borrowed from oc must-gather
+	// We are creating a pod with two containers, when the first container which is collecting the trace completes, we
+	// know we are set to copy the trace from the second container. Both containers have the host volume mounted.
+	trueBool := true
+	aff, err := getAffinityForNode(node)
+	if err != nil {
+		return err
+	}
+	hostPathType := v1.HostPathDirectory
+	administratorUser := "NT AUTHORITY\\SYSTEM"
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "must-gather-",
+			Labels: map[string]string{
+				"app": "must-gather",
+			},
+		},
+		Spec: v1.PodSpec{
+			PriorityClassName:  "system-cluster-critical",
+			RestartPolicy:      v1.RestartPolicyNever,
+			ServiceAccountName: tc.workloadNamespace,
+			SecurityContext: &v1.PodSecurityContext{
+				WindowsOptions: &v1.WindowsSecurityContextOptions{
+					HostProcess:   &trueBool,
+					RunAsUserName: &administratorUser,
+				},
+			},
+			Volumes: []v1.Volume{
+				{
+					Name: "host",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Path: "C:\\debug",
+							Type: &hostPathType,
+						},
+					},
+				},
+			},
+			Containers: []v1.Container{
+				{
+					Name:            "gather",
+					Image:           tc.getWindowsServerContainerImage(),
+					ImagePullPolicy: v1.PullIfNotPresent,
+					// Complete the trace, and export an additional copy in the pcapng format
+					Command: []string{"powershell.exe", "-command", "pktmon stop; pktmon etl2pcap C:\\debug\\pktmon.etl --out C:\\debug\\trace.pcapng"},
+					Env: []v1.EnvVar{
+						{
+							Name: "NODE_NAME",
+							ValueFrom: &v1.EnvVarSource{
+								FieldRef: &v1.ObjectFieldSelector{
+									FieldPath: "spec.nodeName",
+								},
+							},
+						},
+						{
+							Name: "POD_NAME",
+							ValueFrom: &v1.EnvVarSource{
+								FieldRef: &v1.ObjectFieldSelector{
+									FieldPath: "metadata.name",
+								},
+							},
+						},
+					},
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:      "host",
+							MountPath: "C:\\debug",
+							ReadOnly:  false,
+						},
+					},
+				},
+				{
+					Name:            "copy",
+					Image:           tc.getWindowsServerContainerImage(),
+					ImagePullPolicy: v1.PullIfNotPresent,
+					Command:         []string{"powershell.exe", "-command", "while ($true) {Start-Sleep -Seconds 1}"},
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:      "host",
+							MountPath: "C:\\debug",
+							ReadOnly:  false,
+						},
+					},
+				},
+			},
+			HostNetwork: true,
+			Affinity:    aff,
+			Tolerations: []v1.Toleration{
+				{
+					Operator: "Exists",
+				},
+			},
+		},
+	}
+	createdPod, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	if err != nil {
+		return err
+	}
+	defer tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).Delete(context.TODO(), createdPod.GetName(), metav1.DeleteOptions{})
+	err = wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 1*time.Minute, true,
+		func(ctx context.Context) (done bool, err error) {
+			return tc.isGatherDone(createdPod)
+		})
+
+	// Copy the packet trace from the pod to $ARTIFACT_DIR/nodes/$nodename/trace
+	nodeDir := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes", node.Name)
+	err = os.MkdirAll(filepath.Join(nodeDir), os.ModePerm)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("oc", "cp", "-n", tc.workloadNamespace, "-c", "copy",
+		createdPod.GetName()+":/debug/", filepath.Join(nodeDir, "trace"))
+	out, err := cmd.Output()
+	if err != nil {
+		var exitError *exec.ExitError
+		stderr := ""
+		if errors.As(err, &exitError) {
+			stderr = string(exitError.Stderr)
+		}
+		return fmt.Errorf("oc cp failed with exit code %s and output: %s: %s", err, string(out), stderr)
+	}
+	return err
+}
+
+// isGatherDone returns true when the container named "gather" in the given pod has terminated successfully
+// taken from oc must-gather code
+func (tc *testContext) isGatherDone(pod *v1.Pod) (bool, error) {
+	var err error
+	if pod, err = tc.client.K8s.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{}); err != nil {
+		if apierrors.IsNotFound(err) {
+			return true, err
+		}
+		return false, nil
+	}
+	var state *v1.ContainerState
+	for _, cstate := range pod.Status.ContainerStatuses {
+		if cstate.Name == "gather" {
+			state = &cstate.State
+			break
+		}
+	}
+
+	// missing status for gather container => timeout in the worst case
+	if state == nil {
+		return false, nil
+	}
+
+	if state.Terminated != nil {
+		if state.Terminated.ExitCode == 0 {
+			return true, nil
+		}
+		return true, &kexec.CodeExitError{
+			Err:  fmt.Errorf("%s/%s unexpectedly terminated: exit code: %v, reason: %s, message: %s", pod.Namespace, pod.Name, state.Terminated.ExitCode, state.Terminated.Reason, state.Terminated.Message),
+			Code: int(state.Terminated.ExitCode),
+		}
+	}
+	return false, nil
+}
 
 // testEastWestNetworking deploys Windows and Linux pods, and tests that the pods can communicate
 func (tc *testContext) testEastWestNetworking(t *testing.T) {
