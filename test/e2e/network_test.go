@@ -1029,7 +1029,8 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 	var job *batchv1.Job
 	var err error
 	var labelSelector string
-	for i := 0; i < retryCount; i++ {
+	// Timeout after 5 min
+	for i := 0; i < 60; i++ {
 		job, err = tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return "", err
