@@ -890,23 +890,23 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 	var deployment *appsv1.Deployment
 	var err error
-	// Retry if we fail to get the deployment
-	for i := 0; i < 5; i++ {
-		deployment, err = tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).Get(context.TODO(),
-			name,
-			metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("could not get deployment for %s: %w", name, err)
-		}
-		if *deployment.Spec.Replicas == deployment.Status.AvailableReplicas {
-			return nil
-		}
-		// The timeout limit for the image pull is 10m. So retry for a total of 10m
-		// to give time for the deployment to come up.
-		time.Sleep(2 * time.Minute)
+	err = wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, 5*time.Minute, true,
+		func(ctx context.Context) (bool, error) {
+			deployment, err = tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).Get(context.TODO(), name,
+				metav1.GetOptions{})
+			if err != nil {
+				return false, fmt.Errorf("could not get deployment for %s: %w", name, err)
+			}
+			if *deployment.Spec.Replicas == deployment.Status.AvailableReplicas {
+				return true, nil
+			}
+			return false, nil
+		})
+	if err != nil {
+		events, _ := tc.getPodEvents(name)
+		return fmt.Errorf("error waiting for deployment %v to scale: %v: %w", deployment, events, err)
 	}
-	events, _ := tc.getPodEvents(name)
-	return fmt.Errorf("timed out waiting for deployment %v to scale: %v", deployment, events)
+	return nil
 }
 
 // getPodEvents gets all events for any pod with the input in its name. Used for debugging purposes
