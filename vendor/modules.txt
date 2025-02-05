@@ -316,7 +316,7 @@ github.com/mxk/go-flowrate/flowrate
 ## explicit; go 1.20
 # github.com/onsi/gomega v1.34.2
 ## explicit; go 1.22
-# github.com/openshift/api v0.0.0-20250129180039-d15841be6bde
+# github.com/openshift/api v0.0.0-20250204210827-3175f3026f90
 ## explicit; go 1.22.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -365,7 +365,7 @@ github.com/openshift/client-go/route/applyconfigurations/internal
 github.com/openshift/client-go/route/applyconfigurations/route/v1
 github.com/openshift/client-go/route/clientset/versioned/scheme
 github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
-# github.com/openshift/library-go v0.0.0-20250128093732-a69305d8f397
+# github.com/openshift/library-go v0.0.0-20250203153547-76273507b614
 ## explicit; go 1.22.0
 github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
