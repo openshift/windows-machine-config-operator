@@ -35,7 +35,7 @@
 [submodule "csi-proxy"]
 	path = csi-proxy
 	url = https://github.com/openshift/csi-proxy
-	branch = release-4.18
+	branch = release-4.19
 [submodule "cloud-provider-aws"]
 	path = cloud-provider-aws
 	url = https://github.com/openshift/cloud-provider-aws
