@@ -5,6 +5,8 @@ bin/
 
 # Temporary test and deploy files
 MachineSet.yaml
+/test/e2e/pods/
+/test/e2e/nodes/
 
 # Created by https://www.gitignore.io/api/go,vim,emacs,visualstudiocode
 ### Emacs ###
