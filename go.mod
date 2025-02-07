@@ -10,9 +10,9 @@ require (
 	github.com/coreos/ignition/v2 v2.20.0
 	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20250130025500-d9e1a2e1fe6b
-	github.com/openshift/client-go v0.0.0-20250125113824-8e1f0b8fa9a7
-	github.com/openshift/library-go v0.0.0-20250129210218-fe56c2cf5d70
+	github.com/openshift/api v0.0.0-20250207102212-9e59a77ed2e0
+	github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a
+	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -119,7 +119,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.28.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
+	golang.org/x/exp v0.0.0-20250207012021-f9890c6ad9f3 // indirect
 	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
