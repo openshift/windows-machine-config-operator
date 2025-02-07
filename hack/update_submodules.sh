@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # the release tag to build kube-proxy from
-KUBE_PROXY_TAG=v1.31.1
+KUBE_PROXY_TAG=v1.32.1
 
 function help() {
   echo "Usage: update_submodules.sh [OPTIONS] branch_name"
