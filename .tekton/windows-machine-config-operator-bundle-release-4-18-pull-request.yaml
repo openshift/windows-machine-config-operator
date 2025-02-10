@@ -10,7 +10,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "release-4.18"
-      && "Containerfile.bundle".pathChanged()
+      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() )
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-release-4-18
     appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-4-18
@@ -264,6 +264,30 @@ spec:
           value: deprecated-image-check
         - name: bundle
           value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.4@sha256:241f87f75a6e4303fbd64b32ba1715d76fe3805c48a6c21829e6a564bcc3a576
+        - name: kind
+          value: task
+        resolver: bundles
+      when:
+      - input: $(params.skip-checks)
+        operator: in
+        values:
+        - "false"
+    - name: fips-operator-bundle-check-oci-ta
+      params:
+      - name: image-digest
+        value: $(tasks.build-container.results.IMAGE_DIGEST)
+      - name: image-url
+        value: $(tasks.build-container.results.IMAGE_URL)
+      - name: SOURCE_ARTIFACT
+        value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
+      runAfter:
+      - build-container
+      taskRef:
+        params:
+        - name: name
+          value: fips-operator-bundle-check-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-fips-operator-bundle-check-oci-ta@sha256:e088dbdfdd4918cdb3e0f3a9d5a1569e170cb59d30ec488ea0a429f9fb310236
         - name: kind
           value: task
         resolver: bundles
