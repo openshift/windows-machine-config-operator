@@ -112,6 +112,10 @@ if  ! oc get deploy/windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE > 
   wmco_deployed_by_script=true
 fi
 
+# Enable debug logging
+WMCO_SUB=$(oc get sub -n $WMCO_DEPLOY_NAMESPACE --no-headers |awk '{print $1}')
+oc patch subscription $WMCO_SUB -n $WMCO_DEPLOY_NAMESPACE --type=merge -p '{"spec":{"config":{"env":[{"name":"ARGS","value":"--debugLogging"}]}}}'
+
 # WINDOWS_INSTANCES_DATA holds the windows-instances ConfigMap data section
 WINDOWS_INSTANCES_DATA=${WINDOWS_INSTANCES_DATA:-}
 # Check WINDOWS_INSTANCES_DATA and create the windows-instances ConfigMap, if
