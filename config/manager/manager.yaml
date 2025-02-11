@@ -34,7 +34,7 @@ spec:
       - command:
         - windows-machine-config-operator
         args:
-        - "--debugLogging"
+        - $(ARGS)
         image: controller:latest
         name: manager
         imagePullPolicy: IfNotPresent
