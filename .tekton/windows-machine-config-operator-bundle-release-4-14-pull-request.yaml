@@ -10,8 +10,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "pull_request"
       && target_branch == "release-4.14"
-      && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE)$'))
-  creationTimestamp: null
+      && "Containerfile.bundle".pathChanged()
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-release-4-14
     appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-4-14
@@ -21,7 +20,7 @@ metadata:
 spec:
   params:
   - name: dockerfile
-    value: build/bundle-konflux.Dockerfile
+    value: Containerfile.bundle
   - name: git-url
     value: '{{source_url}}'
   - name: image-expires-after
