@@ -668,6 +668,15 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		EnforceNodeAllocatable: []string{
 			"none",
 		},
+		// hard-eviction is not yet fully supported on Windows, but the values passed are subtracted from Capacity
+		// to calculate the node allocatable. The recommendation is to explicitly set the supported signals available
+		// for Windows.
+		// See https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+		EvictionHard: map[string]string{
+			"nodefs.available":  "10%",
+			"imagefs.available": "15%",
+			// containerfs.available works for Windows, but does not support overrides for thresholds
+		},
 		SystemReserved: map[string]string{
 			string(core.ResourceCPU):              "500m",
 			string(core.ResourceEphemeralStorage): "1Gi",
