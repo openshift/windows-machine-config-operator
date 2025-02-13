@@ -443,14 +443,6 @@ func createKubeletConf(clusterServiceCIDR string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Replace last character ('}') with comma
-	kubeletConfigData[len(kubeletConfigData)-1] = ','
-	// Appending this option is needed here instead of in the kubelet configuration object. Otherwise, when marshalling,
-	// the empty value will be omitted, so it would end up being incorrectly populated at service start time.
-	// Can be moved to kubelet configuration object with https://issues.redhat.com/browse/WINC-926
-	enforceNodeAllocatable := []byte("\"enforceNodeAllocatable\":[]}")
-	kubeletConfigData = append(kubeletConfigData, enforceNodeAllocatable...)
-
 	return string(kubeletConfigData), nil
 }
 
@@ -673,6 +665,9 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 			"RotateKubeletServerCertificate": true,
 		},
 		ContainerLogMaxSize: "50Mi",
+		EnforceNodeAllocatable: []string{
+			"none",
+		},
 		SystemReserved: map[string]string{
 			string(core.ResourceCPU):              "500m",
 			string(core.ResourceEphemeralStorage): "1Gi",
