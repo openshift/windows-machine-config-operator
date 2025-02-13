@@ -674,9 +674,9 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		},
 		ContainerLogMaxSize: "50Mi",
 		SystemReserved: map[string]string{
-			"cpu":               "500m",
-			"ephemeral-storage": "1Gi",
-			"memory":            "1Gi",
+			string(core.ResourceCPU):              "500m",
+			string(core.ResourceEphemeralStorage): "1Gi",
+			string(core.ResourceMemory):           "1Gi",
 		},
 		ContainerRuntimeEndpoint: "npipe://./pipe/containerd-containerd",
 		// Registers the Kubelet with Windows specific taints so that linux pods won't get scheduled onto
