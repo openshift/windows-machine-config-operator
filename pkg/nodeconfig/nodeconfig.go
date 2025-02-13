@@ -676,7 +676,9 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		SystemReserved: map[string]string{
 			string(core.ResourceCPU):              "500m",
 			string(core.ResourceEphemeralStorage): "1Gi",
-			string(core.ResourceMemory):           "1Gi",
+			// Reserve at least 2GiB of memory
+			// See https://kubernetes.io/docs/concepts/configuration/windows-resource-management/#resource-reservation
+			string(core.ResourceMemory): "2Gi",
 		},
 		ContainerRuntimeEndpoint: "npipe://./pipe/containerd-containerd",
 		// Registers the Kubelet with Windows specific taints so that linux pods won't get scheduled onto
