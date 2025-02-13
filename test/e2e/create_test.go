@@ -554,7 +554,7 @@ func (tc *testContext) waitForConfiguredWindowsNodes(nodeCount int32, checkVersi
 
 	// We are waiting 20 minutes for each windows VM to be shown up in the cluster. The value comes from
 	// nodeCreationTime variable.
-	err := wait.Poll(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*nodeCreationTime, func() (done bool, err error) {
+	err := wait.PollImmediate(nodeRetryInterval, time.Duration(math.Max(float64(nodeCount), 1))*nodeCreationTime, func() (done bool, err error) {
 		nodes, err := tc.listFullyConfiguredWindowsNodes(isBYOH)
 		if err != nil {
 			log.Printf("failed to get list of configured Windows nodes: %s", err)
