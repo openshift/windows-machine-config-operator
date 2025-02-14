@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "release-4.17"
-      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() )
+      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() || ".tekton/windows-machine-config-operator-bundle-*".pathChanged() )
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-release-4-17
     appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-4-17
