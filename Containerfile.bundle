@@ -1,6 +1,7 @@
 FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.20 as image-replacer
 COPY bundle/manifests /manifests
-RUN sed -i "s|REPLACE_IMAGE|quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-master@sha256:fdf35c29cc71fecea9d00fe4cd42e9796df5b70ed68708e6dd902f5ae4f5f76f|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
+RUN sed -i "s|REPLACE_IMAGE|registry.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator@sha256:72ba880dd0c06178b2ccda8bc7cf26fa4fef9f9e9ea717c3978d34d2d3d50444|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
+RUN sed -i "s|REPLACE_DATE|$(date "+%Y-%m-%dT%H:%M:%SZ")|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
 
 FROM scratch
 
@@ -31,9 +32,10 @@ LABEL operators.operatorframework.io.metrics.builder=operator-sdk-v2.0.0+git
 LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
 
 LABEL distribution-scope=public
+LABEL release="9.0.4"
 LABEL url="https://docs.openshift.com/container-platform/4.14/windows_containers/index.html"
 LABEL vendor="Red Hat, Inc."
 
 # Copy files to locations specified by labels.
-COPY bundle/manifests /manifests/
+COPY --from=image-replacer /manifests /manifests/
 COPY bundle/metadata /metadata/
