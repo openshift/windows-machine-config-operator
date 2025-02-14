@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "release-4.14"
-      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() )
+      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() || ".tekton/windows-machine-config-operator-bundle-*".pathChanged() )
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-release-4-14
     appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-4-14
@@ -306,7 +306,27 @@ spec:
         - name: name
           value: clair-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:f636f2cbe91d9d4d9685a38c8bc680a36e17f568ec0e60a93da82d1284b488c5
+          value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:09318b570bd592f39e2d4c2d60986e5b9089e3fe0dc498bd7bbe2f3c82651d50
+        - name: kind
+          value: task
+        resolver: bundles
+      when:
+      - input: $(params.skip-checks)
+        operator: in
+        values:
+        - "false"
+    - name: ecosystem-cert-preflight-checks
+      params:
+      - name: image-url
+        value: $(tasks.build-container.results.IMAGE_URL)
+      runAfter:
+      - build-container
+      taskRef:
+        params:
+        - name: name
+          value: ecosystem-cert-preflight-checks
+        - name: bundle
+          value: quay.io/redhat-appstudio-tekton-catalog/task-ecosystem-cert-preflight-checks:0.1@sha256:507d62198458e766a25611c7fa504bd1449ceb7f50357a2343e05e25c7f98779
         - name: kind
           value: task
         resolver: bundles
