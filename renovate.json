@@ -122,9 +122,8 @@
       "at any time"
     ]
   },
-  "ignoreDeps": ["kubelet/", "kube-proxy/","containerd/"],
   "git-submodules": {
-    "enabled": true,
+    "enabled": false,
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/"
   },
