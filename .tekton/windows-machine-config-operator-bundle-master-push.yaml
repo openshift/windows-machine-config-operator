@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "master"
-      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() )
+      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() || ".tekton/windows-machine-config-operator-bundle-*".pathChanged() )
   labels:
     appstudio.openshift.io/application: windows-machine-config-operator-master
     appstudio.openshift.io/component: windows-machine-config-operator-bundle-master
@@ -284,7 +284,7 @@ spec:
         - name: name
           value: fips-operator-bundle-check-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-fips-operator-bundle-check-oci-ta@sha256:e088dbdfdd4918cdb3e0f3a9d5a1569e170cb59d30ec488ea0a429f9fb310236
+          value: quay.io/konflux-ci/tekton-catalog/task-fips-operator-bundle-check-oci-ta:0.1@sha256:97ecc3c24ea831b72793d8906bfcff1fbbb22c653e02145f991b876ef46c2b09
         - name: kind
           value: task
         resolver: bundles
