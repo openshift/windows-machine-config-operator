@@ -1,6 +1,8 @@
 module github.com/openshift/windows-machine-config-operator
 
-go 1.20
+go 1.21
+
+toolchain go1.23.0
 
 replace (
 	// fix the latest working version for go1.20, remove the replacement with the next go bump
@@ -105,7 +107,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
+	golang.org/x/exp v0.0.0-20250215185904-eff6e970281f // indirect
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/oauth2 v0.13.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
