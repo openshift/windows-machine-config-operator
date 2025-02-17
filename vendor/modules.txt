@@ -427,7 +427,7 @@ golang.org/x/crypto/openpgp/packet
 golang.org/x/crypto/openpgp/s2k
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c => golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
+# golang.org/x/exp v0.0.0-20250215185904-eff6e970281f => golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
 ## explicit; go 1.20
 golang.org/x/exp/maps
 # golang.org/x/mod v0.20.0 => golang.org/x/mod v0.20.0
