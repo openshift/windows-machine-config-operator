@@ -51,12 +51,9 @@ COPY kubelet/ .
 ENV KUBE_BUILD_PLATFORMS windows/amd64
 RUN make WHAT=vendor/k8s.io/component-base/logs/kube-log-runner
 
-# Build kubelet
+# Build kubelet and kube-proxy
 WORKDIR /build/windows-machine-config-operator/
 RUN make kubelet
-
-# Build kube-proxy
-COPY kube-proxy/ kube-proxy/
 RUN make kube-proxy
 
 # Build azure-cloud-node-manager
@@ -108,7 +105,7 @@ COPY pkg/internal/containerd_conf.toml .
 WORKDIR /payload/kube-node/
 COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kubelet.exe .
 COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kube-log-runner.exe .
-COPY --from=build /build/windows-machine-config-operator/kube-proxy/_output/local/bin/windows/amd64/kube-proxy.exe .
+COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kube-proxy.exe .
 
 # Copy CNI plugin binaries
 WORKDIR /payload/cni/
