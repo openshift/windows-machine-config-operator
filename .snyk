@@ -6,7 +6,6 @@ exclude:
     - "containernetworking-plugins/**"
     - "csi-proxy/**"
     - "hcsshim/**"
-    - "kube-proxy/**"
     - "kubelet/**"
     - "ovn-kubernetes/**"
     - "promu/**"
