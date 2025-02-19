@@ -542,6 +542,7 @@ func (tc *testContext) testServicesConfigMap(t *testing.T) {
 		require.NoErrorf(t, err, "error ensuring ConfigMap %s exists", servicesConfigMapName)
 		cmData, err = servicescm.Parse(cm.Data)
 		require.NoError(t, err, "unable to parse ConfigMap data")
+		log.Printf("services CM: %v", cmData.Services)
 
 		// Check that only the expected services are defined within the CM data. WICD itself should not be defined in it
 		expectedSvcs, err := tc.expectedWindowsServices(windows.RequiredServices)
@@ -646,6 +647,7 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
 		}
 		if err = data.ValidateExpectedContent(expected); err != nil {
 			log.Printf("error validating %s data: %v", cmName, err)
+			log.Printf("expected: %v, actual: %v", expected.Services, data.Services)
 			return false, nil
 		}
 		return true, nil

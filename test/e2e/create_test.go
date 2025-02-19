@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"io/ioutil"
 	"log"
 	"math"
@@ -52,6 +53,16 @@ func creationTestSuite(t *testing.T) {
 		require.NoError(t, tc.configureClusterNoProxy(noProxyList))
 		require.NoError(t, tc.configureUserCABundle())
 	}
+	operatorVersion, err := getWMCOVersion()
+	require.NoError(t, err)
+	servicesConfigMapName := servicescm.NamePrefix + operatorVersion
+	// Get CM and parse data
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), servicesConfigMapName,
+		metav1.GetOptions{})
+	require.NoErrorf(t, err, "error ensuring ConfigMap %s exists", servicesConfigMapName)
+	cmData, err := servicescm.Parse(cm.Data)
+	require.NoError(t, err, "unable to parse ConfigMap data")
+	log.Printf("pre-config services CM: %v", cmData.Services)
 
 	if !t.Run("Creation", tc.testWindowsNodeCreation) {
 		// No point in running the other tests if creation failed
