@@ -115,6 +115,16 @@ fi
 # Enable debug logging
 WMCO_SUB=$(oc get sub -n $WMCO_DEPLOY_NAMESPACE --no-headers |awk '{print $1}')
 oc patch subscription $WMCO_SUB -n $WMCO_DEPLOY_NAMESPACE --type=merge -p '{"spec":{"config":{"env":[{"name":"ARGS","value":"--debugLogging"}]}}}'
+retries=0
+while [[ $(oc get -n $WMCO_DEPLOY_NAMESPACE pod -l name=windows-machine-config-operator -oname | wc -l) != "1"  || $(oc get -n $WMCO_DEPLOY_NAMESPACE pod -l name=windows-machine-config-operator -oyaml) != *"--debugLogging"* ]]; do
+  if [[ $retries -eq 10 ]]; then
+	echo max retries hit while waiting for debug logging to be enabled
+	exit 1
+  fi
+  echo "waiting for debug logging to be enabled"
+  sleep 15
+  retries=$((retries+1))
+done
 
 # WINDOWS_INSTANCES_DATA holds the windows-instances ConfigMap data section
 WINDOWS_INSTANCES_DATA=${WINDOWS_INSTANCES_DATA:-}
