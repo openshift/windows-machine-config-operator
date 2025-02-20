@@ -28,7 +28,6 @@ find_files() {
         -o -wholename './containerd' \
         -o -wholename './hcsshim' \
         -o -wholename './kubelet' \
-        -o -wholename './kube-proxy' \
         -o -wholename './ovn-kubernetes' \
         -o -wholename './promu' \
         -o -wholename './windows_exporter' \
