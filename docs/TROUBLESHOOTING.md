@@ -1,16 +1,5 @@
 # Troubleshooting guide
 
-## Enabling debug level logging
-In the Subscription created to deploy the operator add the following to .spec.config.env
-```
-kind: Subscription
-spec:
-  config:
-    env:
-    - name: ARGS
-      value: "--debugLogging"
-```
-
 ## WMCO does not go to running
 Please check if you are using an OKD/OCP cluster adhering to the [operator pre-requisites](wmco-prerequisites.md).
 
