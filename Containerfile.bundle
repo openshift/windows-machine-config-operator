@@ -4,13 +4,15 @@ RUN sed -i "s|REPLACE_IMAGE|registry.redhat.io/openshift4-wincw/windows-machine-
 
 FROM scratch
 
-# This block are standard Red Hat container labels
+# This block contains standard Red Hat container labels
 LABEL name="openshift4-wincw/windows-machine-config-operator-bundle" \
     License="ASL 2.0" \
     io.k8s.display-name="Windows Machine Config Operator bundle" \
     io.k8s.description="Windows Machine Config Operator's OLM bundle image" \
+    description="Windows Machine Config Operator's OLM bundle image" \
     summary="Windows Machine Config Operator's OLM bundle image" \
-    maintainer="Team Windows Containers <team-winc@redhat.com>"
+    maintainer="Team Windows Containers <team-winc@redhat.com>" \
+    io.openshift.tags=""
 
 LABEL version="v10.16.2"
 
@@ -27,6 +29,11 @@ LABEL operators.operatorframework.io.bundle.channel.default.v1=stable
 LABEL operators.operatorframework.io.metrics.builder=operator-sdk-v1.32.0
 LABEL operators.operatorframework.io.metrics.mediatype.v1=metrics+v1
 LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
+
+LABEL distribution-scope=public
+LABEL release="10.16.2"
+LABEL url="https://docs.openshift.com/container-platform/4.17/windows_containers/index.html"
+LABEL vendor="Red Hat, Inc."
 
 # Copy files to locations specified by labels.
 COPY --from=image-replacer /manifests /manifests/
