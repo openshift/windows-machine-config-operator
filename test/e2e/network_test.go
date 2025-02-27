@@ -726,7 +726,36 @@ func (tc *testContext) deployLinuxWebServer() (*appsv1.Deployment, error) {
 							Name:    "index-creator",
 							Image:   tc.toolsImage,
 							Command: []string{"bash"},
-							Args:    []string{"-c", "echo '<!DOCTYPE html><html><head><title>Hello world</title></head><body><p>Hello world</p></body></html>' > /var/www/html/index.html"},
+							Args: []string{"-c",
+								"echo '<!DOCTYPE html>" +
+									"<html>" +
+									"	<head>" +
+									"		<title>Linux Webserver</title>" +
+									"	</head>" +
+									"	<body>" +
+									"		<p>Linux pod IP: '$(POD_IP)'</p>" +
+									"		<p>Linux host IP: '$(HOST_IP)'</p>" +
+									"	</body>" +
+									"</html>'" +
+									" > /var/www/html/index.html"},
+							Env: []v1.EnvVar{
+								{
+									Name: "POD_IP",
+									ValueFrom: &v1.EnvVarSource{
+										FieldRef: &v1.ObjectFieldSelector{
+											FieldPath: "status.podIP",
+										},
+									},
+								},
+								{
+									Name: "HOST_IP",
+									ValueFrom: &v1.EnvVarSource{
+										FieldRef: &v1.ObjectFieldSelector{
+											FieldPath: "status.hostIP",
+										},
+									},
+								},
+							},
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "html",
