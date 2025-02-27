@@ -22,6 +22,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	nodev1 "k8s.io/api/node/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -731,6 +732,16 @@ func (tc *testContext) deployLinuxWebServer() (*appsv1.Deployment, error) {
 									MountPath: "/var/www/html/",
 								},
 							},
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("500m"),
+									v1.ResourceMemory: resource.MustParse("256Mi"),
+								},
+								Requests: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("500m"),
+									v1.ResourceMemory: resource.MustParse("256Mi"),
+								},
+							},
 						},
 					},
 					InitContainers: []v1.Container{
@@ -738,7 +749,36 @@ func (tc *testContext) deployLinuxWebServer() (*appsv1.Deployment, error) {
 							Name:    "index-creator",
 							Image:   tc.toolsImage,
 							Command: []string{"bash"},
-							Args:    []string{"-c", "echo '<!DOCTYPE html><html><head><title>Hello world</title></head><body><p>Hello world</p></body></html>' > /var/www/html/index.html"},
+							Args: []string{"-c",
+								"echo '<!DOCTYPE html>" +
+									"<html>" +
+									"	<head>" +
+									"		<title>Linux Webserver</title>" +
+									"	</head>" +
+									"	<body>" +
+									"		<p>Linux pod IP: '$(POD_IP)'</p>" +
+									"		<p>Linux host IP: '$(HOST_IP)'</p>" +
+									"	</body>" +
+									"</html>'" +
+									" > /var/www/html/index.html"},
+							Env: []v1.EnvVar{
+								{
+									Name: "POD_IP",
+									ValueFrom: &v1.EnvVarSource{
+										FieldRef: &v1.ObjectFieldSelector{
+											FieldPath: "status.podIP",
+										},
+									},
+								},
+								{
+									Name: "HOST_IP",
+									ValueFrom: &v1.EnvVarSource{
+										FieldRef: &v1.ObjectFieldSelector{
+											FieldPath: "status.hostIP",
+										},
+									},
+								},
+							},
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "html",
