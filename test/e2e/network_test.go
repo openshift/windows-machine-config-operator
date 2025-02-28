@@ -989,8 +989,11 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affin
 }
 
 // getWinCurlerCommand generates a PowerShell command to curl the given server URI
+// The command will attempt to curl the server URI up to 60 times, waiting 5 seconds between each attempt
+// resulting in a total timeout of 5 minutes. We have to try multiple times as a Windows container
+// may take more time to pull image and finish initial network setup.
 func (tc *testContext) getWinCurlerCommand(serverURI string) string {
-	return "for ($i = 0; $i -lt 60; $i++) { " +
+	return "for ($i = 1; $i -le 60; $i++) { " +
 		" echo \"\";" +
 		" echo \"Attempt #$i\";" +
 		" echo \"Curling server URI: " + serverURI + "\";" +
@@ -1000,8 +1003,8 @@ func (tc *testContext) getWinCurlerCommand(serverURI string) string {
 		" If ($code -eq 200) {" +
 		"  exit 0" +
 		" };" +
-		" echo \"Waiting 10 seconds...\";" +
-		" Start-Sleep -s 10;" +
+		" echo \"Waiting 5 seconds...\";" +
+		" Start-Sleep -s 5;" +
 		"};" +
 		"echo \"Time exceeded, cannot reach " + serverURI + "\";" +
 		"exit 1"
