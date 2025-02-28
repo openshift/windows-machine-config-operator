@@ -44,14 +44,15 @@ func testNetwork(t *testing.T) {
 	for _, node := range gc.allNodes() {
 		require.NoError(t, tc.startPacketTrace(&node))
 	}
+	defer func() {
+		for _, node := range gc.allNodes() {
+			require.NoError(t, tc.stopPacketTrace(&node))
+		}
+	}()
 
 	t.Run("East West Networking", tc.testEastWestNetworking)
 	t.Run("North south networking", tc.testNorthSouthNetworking)
 	t.Run("Pod DNS Resolution", tc.testPodDNSResolution)
-
-	for _, node := range gc.allNodes() {
-		require.NoError(t, tc.stopPacketTrace(&node))
-	}
 }
 
 var (
