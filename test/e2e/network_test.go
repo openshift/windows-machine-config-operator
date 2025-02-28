@@ -661,13 +661,27 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 		volumes, volumeMounts = append([]v1.Volume{}, v), append([]v1.VolumeMount{}, vm)
 	}
 	// This will run a Server on the container, which can be reached with a GET request
-	winServerCommand := []string{powerShellExe, "-command",
-		"$listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start(); " +
-			"Write-Host('Listening at http://*:80/'); while ($listener.IsListening) { " +
-			"$context = $listener.GetContext(); $response = $context.Response; " +
-			"$content='<html><body><H1>Windows Container Web Server</H1></body></html>'; " +
-			"$buffer = [System.Text.Encoding]::UTF8.GetBytes($content); $response.ContentLength64 = $buffer.Length; " +
-			"$response.OutputStream.Write($buffer, 0, $buffer.Length); $response.Close(); };"}
+	winServerCommand := []string{
+		powerShellExe,
+		"-command",
+		"$ipconfigOutput = ipconfig;" +
+			"$listener = New-Object System.Net.HttpListener;" +
+			"$listener.Prefixes.Add('http://*:80/');" +
+			"$listener.Start();" +
+			"Write-Host('Listening at http://*:80/');" +
+			"while ($listener.IsListening) { " +
+			"  $context = $listener.GetContext();" +
+			"  $clientIPAddress = $context.Request.RemoteEndpoint.Address.ToString();" +
+			"  $timestamp = Get-Date;" +
+			"  Write-Host $clientIPAddress [$timestamp] $context.Request.HttpMethod $context.Request.Url.AbsolutePath" +
+			"  'HTTP/'$context.Request.ProtocolVersion $context.Request.UserAgent;" +
+			"  $response = $context.Response;" +
+			"  $content='<html><body><H1>Windows Container Web Server</H1>'+$ipconfigOutput+'</body></html>'; " +
+			"  $buffer = [System.Text.Encoding]::UTF8.GetBytes($content);" +
+			"  $response.ContentLength64 = $buffer.Length;" +
+			"  $response.OutputStream.Write($buffer, 0, $buffer.Length);" +
+			"  $response.Close();" +
+			"};"}
 	winServerDeployment, err := tc.createWindowsServerDeployment(name, winServerCommand, affinity, volumes, volumeMounts)
 	if err != nil {
 		return nil, fmt.Errorf("could not create Windows deployment: %w", err)
