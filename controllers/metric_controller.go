@@ -80,7 +80,7 @@ func (r *metricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 	if !enabled {
 		return ctrl.Result{}, nil
 	}
-	if err := r.ensureServiceMonitor(); err != nil {
+	if err := r.ensureServiceMonitor(ctx); err != nil {
 		return ctrl.Result{}, fmt.Errorf("error ensuring serviceMonitor exists: %w", err)
 	}
 	return ctrl.Result{}, nil
@@ -111,9 +111,9 @@ func (r *metricReconciler) validate(ctx context.Context) (bool, error) {
 }
 
 // ensureServiceMonitor creates a serviceMonitor object in the operator namespace if it does not exist.
-func (r *metricReconciler) ensureServiceMonitor() error {
+func (r *metricReconciler) ensureServiceMonitor(ctx context.Context) error {
 	// get existing serviceMonitor object if it exists
-	existingSM, err := r.ServiceMonitors(r.watchNamespace).Get(context.TODO(), metrics.WindowsMetricsResource, metav1.GetOptions{})
+	existingSM, err := r.ServiceMonitors(r.watchNamespace).Get(ctx, metrics.WindowsMetricsResource, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf(
 			"error retrieving %s serviceMonitor: %w", metrics.WindowsMetricsResource, err)
@@ -201,7 +201,7 @@ func (r *metricReconciler) ensureServiceMonitor() error {
 			reflect.DeepEqual(existingSM.Spec, expectedSM.Spec) {
 			return nil
 		}
-		err = r.ServiceMonitors(r.watchNamespace).Delete(context.TODO(), metrics.WindowsMetricsResource,
+		err = r.ServiceMonitors(r.watchNamespace).Delete(ctx, metrics.WindowsMetricsResource,
 			metav1.DeleteOptions{})
 		if err != nil {
 			return fmt.Errorf("unable to delete service monitor %s/%s: %w", r.watchNamespace, metrics.WindowsMetricsResource,
@@ -211,7 +211,7 @@ func (r *metricReconciler) ensureServiceMonitor() error {
 			"namespace", r.watchNamespace)
 	}
 
-	_, err = r.ServiceMonitors(r.watchNamespace).Create(context.TODO(), expectedSM, metav1.CreateOptions{})
+	_, err = r.ServiceMonitors(r.watchNamespace).Create(ctx, expectedSM, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("error creating service monitor: %w", err)
 	}

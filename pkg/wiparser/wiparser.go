@@ -19,9 +19,9 @@ import (
 const InstanceConfigMap = "windows-instances"
 
 // GetInstances returns a list of Windows instances by parsing the Windows instance configMap.
-func GetInstances(c client.Client, namespace string) ([]*instance.Info, error) {
+func GetInstances(ctx context.Context, c client.Client, namespace string) ([]*instance.Info, error) {
 	configMap := &core.ConfigMap{}
-	err := c.Get(context.TODO(), kubeTypes.NamespacedName{Namespace: namespace,
+	err := c.Get(ctx, kubeTypes.NamespacedName{Namespace: namespace,
 		Name: InstanceConfigMap}, configMap)
 	if err != nil && !k8sapierrors.IsNotFound(err) {
 		return nil, fmt.Errorf("could not retrieve Windows instance ConfigMap %s: %w",
@@ -29,7 +29,7 @@ func GetInstances(c client.Client, namespace string) ([]*instance.Info, error) {
 	}
 
 	nodes := &core.NodeList{}
-	if err := c.List(context.TODO(), nodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
+	if err := c.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
 		return nil, fmt.Errorf("error listing nodes: %w", err)
 	}
 

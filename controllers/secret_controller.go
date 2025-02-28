@@ -64,9 +64,9 @@ func NewSecretReconciler(mgr manager.Manager, clusterConfig cluster.Config,
 }
 
 // SetupWithManager sets up a new Secret controller
-func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *SecretReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	// Check that the private key exists, if it doesn't, log a warning
-	_, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	_, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, mgr.GetClient())
 	if err != nil {
 		r.log.Error(err, "Unable to retrieve private key, please ensure it is created")
@@ -151,15 +151,15 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 
 	var err error
 	// Prevent WMCO upgrades while secret-based resources are being processed
-	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, SecretController); err != nil {
+	if err := condition.MarkAsBusy(ctx, r.client, r.watchNamespace, r.recorder, SecretController); err != nil {
 		return ctrl.Result{}, err
 	}
 	defer func() {
-		reconcileErr = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, SecretController,
+		reconcileErr = markAsFreeOnSuccess(ctx, r.client, r.watchNamespace, r.recorder, SecretController,
 			result.Requeue, reconcileErr)
 	}()
 
-	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	r.signer, err = signer.Create(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
@@ -172,7 +172,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 }
 
 func (r *SecretReconciler) reconcileUserDataSecret(ctx context.Context) error {
-	keySigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	keySigner, err := signer.Create(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		if k8sapierrors.IsNotFound(err) {
@@ -238,7 +238,7 @@ func (r *SecretReconciler) reconcileTLSSecret(ctx context.Context) error {
 		return fmt.Errorf("error getting node list: %w", err)
 	}
 	for _, node := range nodes.Items {
-		winInstance, err := r.instanceFromNode(&node)
+		winInstance, err := r.instanceFromNode(ctx, &node)
 		if err != nil {
 			return fmt.Errorf("unable to create instance object from node: %w", err)
 		}
@@ -264,7 +264,7 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 
 	// Modify annotations on nodes configured with the previous private key, if it has changed
 	expectedPubKeyAnno := nodeconfig.CreatePubKeyHashAnnotation(keySigner.PublicKey())
-	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	privateKeyBytes, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		return err
@@ -329,14 +329,14 @@ func (r *SecretReconciler) getEncryptedUsername(ctx context.Context, node core.N
 }
 
 // RemoveInvalidAnnotationsFromLinuxNodes makes a best effort to remove annotations applied by previous versions of WMCO.
-func (r *SecretReconciler) RemoveInvalidAnnotationsFromLinuxNodes(config *rest.Config) error {
+func (r *SecretReconciler) RemoveInvalidAnnotationsFromLinuxNodes(ctx context.Context, config *rest.Config) error {
 	// create a new clientset as this function will be called before the manager's client is started
 	kc, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return fmt.Errorf("error creating kubernetes clientset: %w", err)
 	}
 
-	nodes, err := kc.CoreV1().Nodes().List(context.TODO(), meta.ListOptions{LabelSelector: core.LabelOSStable + "=linux"})
+	nodes, err := kc.CoreV1().Nodes().List(ctx, meta.ListOptions{LabelSelector: core.LabelOSStable + "=linux"})
 	if err != nil {
 		return fmt.Errorf("error getting Linux node list: %w", err)
 	}
@@ -348,7 +348,7 @@ func (r *SecretReconciler) RemoveInvalidAnnotationsFromLinuxNodes(config *rest.C
 	}
 	for _, node := range nodes.Items {
 		if _, present := node.Annotations[nodeconfig.PubKeyHashAnnotation]; present == true {
-			_, err = kc.CoreV1().Nodes().Patch(context.TODO(), node.GetName(), kubeTypes.JSONPatchType,
+			_, err = kc.CoreV1().Nodes().Patch(ctx, node.GetName(), kubeTypes.JSONPatchType,
 				patchData, meta.PatchOptions{})
 			if err != nil {
 				return fmt.Errorf("error removing public key annotation from node %s: %w", node.GetName(), err)

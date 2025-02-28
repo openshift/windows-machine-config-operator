@@ -28,7 +28,7 @@ func init() {
 	var kubeAPIServerEndpoint string
 	log := ctrl.Log.WithName("nodeconfig").WithName("init")
 
-	kubeAPIServerEndpoint, err := discoverKubeAPIServerEndpoint()
+	kubeAPIServerEndpoint, err := discoverKubeAPIServerEndpoint(context.Background())
 	if err != nil {
 		log.Error(err, "unable to find kube api server endpoint")
 		return
@@ -37,7 +37,7 @@ func init() {
 }
 
 // discoverKubeAPIServerEndpoint discovers the kubernetes api server endpoint
-func discoverKubeAPIServerEndpoint() (string, error) {
+func discoverKubeAPIServerEndpoint(ctx context.Context) (string, error) {
 	cfg, err := crclientcfg.GetConfig()
 	if err != nil {
 		return "", fmt.Errorf("unable to get config to talk to kubernetes api server: %w", err)
@@ -48,7 +48,7 @@ func discoverKubeAPIServerEndpoint() (string, error) {
 		return "", fmt.Errorf("unable to get client from the given config: %w", err)
 	}
 
-	host, err := client.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
+	host, err := client.ConfigV1().Infrastructures().Get(ctx, "cluster", meta.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("unable to get cluster infrastructure resource: %w", err)
 	}

@@ -142,8 +142,8 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 }
 
 // Configure configures the Windows VM to make it a Windows worker node
-func (nc *nodeConfig) Configure() error {
-	drainHelper := nc.newDrainHelper()
+func (nc *nodeConfig) Configure(ctx context.Context) error {
+	drainHelper := nc.newDrainHelper(ctx)
 	// If a Node object exists already, it implies that we are reconfiguring and we should cordon the node
 	if nc.node != nil {
 		// Make a best effort to cordon the node until it is fully configured
@@ -152,26 +152,26 @@ func (nc *nodeConfig) Configure() error {
 		}
 	}
 
-	if err := nc.createBootstrapFiles(); err != nil {
+	if err := nc.createBootstrapFiles(ctx); err != nil {
 		return err
 	}
-	if err := nc.createTLSCerts(); err != nil {
+	if err := nc.createTLSCerts(ctx); err != nil {
 		return err
 	}
-	if err := nc.createRegistryConfigFiles(); err != nil {
+	if err := nc.createRegistryConfigFiles(ctx); err != nil {
 		return err
 	}
-	if err := nc.SyncTrustedCABundle(); err != nil {
+	if err := nc.SyncTrustedCABundle(ctx); err != nil {
 		return err
 	}
-	wicdKC, err := nc.generateWICDKubeconfig()
+	wicdKC, err := nc.generateWICDKubeconfig(ctx)
 	if err != nil {
 		return err
 	}
 
 	wmcoVersion := version.Get()
 	// Start all required services to bootstrap a node object using WICD
-	if err := nc.Windows.Bootstrap(wmcoVersion, nc.wmcoNamespace, wicdKC); err != nil {
+	if err := nc.Windows.Bootstrap(ctx, wmcoVersion, nc.wmcoNamespace, wicdKC); err != nil {
 		return fmt.Errorf("bootstrapping the Windows instance failed: %w", err)
 	}
 
@@ -179,7 +179,7 @@ func (nc *nodeConfig) Configure() error {
 	err = func() error {
 		if nc.node == nil {
 			// populate node object in nodeConfig in the case of a new Windows instance
-			if err := nc.setNode(false); err != nil {
+			if err := nc.setNode(ctx, false); err != nil {
 				return fmt.Errorf("error setting node object: %w", err)
 			}
 		}
@@ -195,7 +195,7 @@ func (nc *nodeConfig) Configure() error {
 		for key, value := range nc.additionalAnnotations {
 			annotationsToApply[key] = value
 		}
-		if err := metadata.ApplyLabelsAndAnnotations(context.TODO(), nc.client, *nc.node, nc.additionalLabels,
+		if err := metadata.ApplyLabelsAndAnnotations(ctx, nc.client, *nc.node, nc.additionalLabels,
 			annotationsToApply); err != nil {
 			return fmt.Errorf("error updating public key hash and additional annotations on node %s: %w",
 				nc.node.GetName(), err)
@@ -205,18 +205,18 @@ func (nc *nodeConfig) Configure() error {
 			return fmt.Errorf("configuring WICD failed: %w", err)
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
-		if err := metadata.ApplyDesiredVersionAnnotation(context.TODO(), nc.client, *nc.node, wmcoVersion); err != nil {
+		if err := metadata.ApplyDesiredVersionAnnotation(ctx, nc.client, *nc.node, wmcoVersion); err != nil {
 			return fmt.Errorf("error updating desired version annotation on node %s: %w", nc.node.GetName(), err)
 		}
 
 		// Wait for version annotation. This prevents uncordoning the node until all node services and networks are up
-		if err := metadata.WaitForVersionAnnotation(context.TODO(), nc.client, nc.node.Name); err != nil {
+		if err := metadata.WaitForVersionAnnotation(ctx, nc.client, nc.node.Name); err != nil {
 			return fmt.Errorf("error waiting for proper %s annotation for node %s: %w", metadata.VersionAnnotation,
 				nc.node.GetName(), err)
 		}
 
 		// Now that the node has been fully configured, update the node object in nodeConfig once more
-		if err := nc.setNode(false); err != nil {
+		if err := nc.setNode(ctx, false); err != nil {
 			return fmt.Errorf("error getting node object: %w", err)
 		}
 
@@ -225,7 +225,7 @@ func (nc *nodeConfig) Configure() error {
 			return fmt.Errorf("error uncordoning the node %s: %w", nc.node.GetName(), err)
 		}
 
-		if err := metadata.RemoveUpgradingLabel(context.TODO(), nc.client, nc.node); err != nil {
+		if err := metadata.RemoveUpgradingLabel(ctx, nc.client, nc.node); err != nil {
 			return fmt.Errorf("error removing upgrading label from node %s: %w", nc.node.GetName(), err)
 		}
 
@@ -251,7 +251,7 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 		return fmt.Errorf("safe reboot of the instance requires an associated node")
 	}
 
-	drainer := nc.newDrainHelper()
+	drainer := nc.newDrainHelper(ctx)
 	if err := drain.RunCordonOrUncordon(drainer, nc.node, true); err != nil {
 		return fmt.Errorf("unable to cordon node %s: %w", nc.node.Name, err)
 	}
@@ -259,7 +259,7 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 		return fmt.Errorf("unable to drain node %s: %w", nc.node.Name, err)
 	}
 
-	if err := nc.Windows.RebootAndReinitialize(); err != nil {
+	if err := nc.Windows.RebootAndReinitialize(ctx); err != nil {
 		return err
 	}
 	// Remove the reboot annotation after we can re-init an SSH connection so we know the reboot occurred successfully
@@ -275,13 +275,13 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 
 // getWICDServiceAccountSecret returns the secret which holds the credentials for the WICD ServiceAccount, creating one
 // if necessary
-func (nc *nodeConfig) getWICDServiceAccountSecret() (*core.Secret, error) {
+func (nc *nodeConfig) getWICDServiceAccountSecret(ctx context.Context) (*core.Secret, error) {
 	var tokenSecret core.Secret
-	err := nc.client.Get(context.TODO(),
+	err := nc.client.Get(ctx,
 		types.NamespacedName{Namespace: nc.wmcoNamespace, Name: windows.WicdServiceName}, &tokenSecret)
 	if err != nil {
 		if k8sapierrors.IsNotFound(err) {
-			return nc.createWICDServiceAccountTokenSecret()
+			return nc.createWICDServiceAccountTokenSecret(ctx)
 		}
 		return nil, err
 	}
@@ -290,16 +290,15 @@ func (nc *nodeConfig) getWICDServiceAccountSecret() (*core.Secret, error) {
 	}
 
 	// If the secret is invalid, a new one should be created
-	if err = nc.client.Delete(context.TODO(), &tokenSecret); err != nil {
+	if err = nc.client.Delete(ctx, &tokenSecret); err != nil {
 		return nil, fmt.Errorf("error deleting invalid WICD service account token secret: %w", err)
 	}
-	return nc.createWICDServiceAccountTokenSecret()
+	return nc.createWICDServiceAccountTokenSecret(ctx)
 }
 
 // createWICDServiceAccountTokenSecret creates a secret with a long-lived API token for the WICD ServiceAccount and
 // waits for the secret data to be populated
-func (nc *nodeConfig) createWICDServiceAccountTokenSecret() (*core.Secret, error) {
-	ctx := context.TODO()
+func (nc *nodeConfig) createWICDServiceAccountTokenSecret(ctx context.Context) (*core.Secret, error) {
 	err := nc.client.Create(ctx, secrets.GenerateServiceAccountTokenSecret(nc.wmcoNamespace, windows.WicdServiceName))
 	if err != nil {
 		return nil, fmt.Errorf("error creating secret for WICD ServiceAccount: %w", err)
@@ -327,13 +326,13 @@ func (nc *nodeConfig) createWICDServiceAccountTokenSecret() (*core.Secret, error
 }
 
 // createBootstrapFiles creates all prerequisite files on the node required to start kubelet using latest ignition spec
-func (nc *nodeConfig) createBootstrapFiles() error {
+func (nc *nodeConfig) createBootstrapFiles(ctx context.Context) error {
 	filePathsToContents := make(map[string]string)
-	filePathsToContents, err := nc.createFilesFromIgnition()
+	filePathsToContents, err := nc.createFilesFromIgnition(ctx)
 	if err != nil {
 		return err
 	}
-	filePathsToContents[windows.BootstrapKubeconfigPath], err = nc.generateBootstrapKubeconfig()
+	filePathsToContents[windows.BootstrapKubeconfigPath], err = nc.generateBootstrapKubeconfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -356,8 +355,8 @@ func (nc *nodeConfig) write(pathToData map[string]string) error {
 }
 
 // createRegistryConfigFiles creates all files on the node required for containerd to mirror images
-func (nc *nodeConfig) createRegistryConfigFiles() error {
-	configFiles, err := registries.GenerateConfigFiles(context.TODO(), nc.client)
+func (nc *nodeConfig) createRegistryConfigFiles(ctx context.Context) error {
+	configFiles, err := registries.GenerateConfigFiles(ctx, nc.client)
 	if err != nil {
 		return err
 	}
@@ -366,8 +365,8 @@ func (nc *nodeConfig) createRegistryConfigFiles() error {
 
 // createFilesFromIgnition returns the contents and write locations on the instance for any file it can create from
 // ignition spec: kubelet CA cert, cloud-config file
-func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
-	ign, err := ignition.New(nc.client)
+func (nc *nodeConfig) createFilesFromIgnition(ctx context.Context) (map[string]string, error) {
+	ign, err := ignition.New(ctx, nc.client)
 	if err != nil {
 		return nil, err
 	}
@@ -393,8 +392,8 @@ func (nc *nodeConfig) createFilesFromIgnition() (map[string]string, error) {
 }
 
 // generateBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server
-func (nc *nodeConfig) generateBootstrapKubeconfig() (string, error) {
-	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(context.TODO(), mcoBootstrapSecret,
+func (nc *nodeConfig) generateBootstrapKubeconfig(ctx context.Context) (string, error) {
+	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(ctx, mcoBootstrapSecret,
 		meta.GetOptions{})
 	if err != nil {
 		return "", err
@@ -403,8 +402,8 @@ func (nc *nodeConfig) generateBootstrapKubeconfig() (string, error) {
 }
 
 // generateWICDKubeconfig returns the contents of a kubeconfig created from the WICD ServiceAccount
-func (nc *nodeConfig) generateWICDKubeconfig() (string, error) {
-	wicdSASecret, err := nc.getWICDServiceAccountSecret()
+func (nc *nodeConfig) generateWICDKubeconfig(ctx context.Context) (string, error) {
+	wicdSASecret, err := nc.getWICDServiceAccountSecret(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -458,7 +457,7 @@ func createKubeletConf(clusterServiceCIDR string) (string, error) {
 // setNode finds the Node associated with the VM that has been configured, and sets the node field of the
 // nodeConfig object. If quickCheck is set, the function does a quicker check for the node which is useful in the node
 // reconfiguration case.
-func (nc *nodeConfig) setNode(quickCheck bool) error {
+func (nc *nodeConfig) setNode(ctx context.Context, quickCheck bool) error {
 	retryInterval := retry.Interval
 	retryTimeout := retry.Timeout
 	if quickCheck {
@@ -468,7 +467,7 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 
 	instanceAddress := nc.GetIPv4Address()
 	err := wait.PollImmediate(retryInterval, retryTimeout, func() (bool, error) {
-		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(context.TODO(),
+		nodes, err := nc.k8sclientset.CoreV1().Nodes().List(ctx,
 			meta.ListOptions{LabelSelector: WindowsOSLabel})
 		if err != nil {
 			nc.log.V(1).Error(err, "node listing failed")
@@ -491,9 +490,9 @@ func (nc *nodeConfig) setNode(quickCheck bool) error {
 }
 
 // newDrainHelper returns new drain.Helper instance
-func (nc *nodeConfig) newDrainHelper() *drain.Helper {
+func (nc *nodeConfig) newDrainHelper(ctx context.Context) *drain.Helper {
 	return &drain.Helper{
-		Ctx:    context.TODO(),
+		Ctx:    ctx,
 		Client: nc.k8sclientset,
 		ErrOut: &ErrWriter{nc.log},
 		// Evict all pods regardless of their controller and orphan status
@@ -507,13 +506,13 @@ func (nc *nodeConfig) newDrainHelper() *drain.Helper {
 }
 
 // Deconfigure removes the node from the cluster, reverting changes made by the Configure function
-func (nc *nodeConfig) Deconfigure() error {
+func (nc *nodeConfig) Deconfigure(ctx context.Context) error {
 	if nc.node == nil {
 		return fmt.Errorf("instance does not a have an associated node to deconfigure")
 	}
 	nc.log.Info("deconfiguring")
 	// Cordon and drain the Node before we interact with the instance
-	drainHelper := nc.newDrainHelper()
+	drainHelper := nc.newDrainHelper(ctx)
 	if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
 		return fmt.Errorf("unable to cordon node %s: %w", nc.node.GetName(), err)
 	}
@@ -522,7 +521,7 @@ func (nc *nodeConfig) Deconfigure() error {
 	}
 
 	// Revert all changes we've made to the instance by removing installed services, files, and the version annotation
-	if err := nc.cleanupWithWICD(); err != nil {
+	if err := nc.cleanupWithWICD(ctx); err != nil {
 		return err
 	}
 	if err := nc.Windows.RemoveFilesAndNetworks(); err != nil {
@@ -534,8 +533,8 @@ func (nc *nodeConfig) Deconfigure() error {
 }
 
 // cleanupWithWICD runs WICD cleanup and waits until the cleanup effects are fully complete
-func (nc *nodeConfig) cleanupWithWICD() error {
-	wicdKC, err := nc.generateWICDKubeconfig()
+func (nc *nodeConfig) cleanupWithWICD(ctx context.Context) error {
+	wicdKC, err := nc.generateWICDKubeconfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -543,7 +542,7 @@ func (nc *nodeConfig) cleanupWithWICD() error {
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
 	}
 	// Wait for reboot annotation removal. This prevents deleting the node until the node no longer needs reboot.
-	return metadata.WaitForRebootAnnotationRemoval(context.TODO(), nc.client, nc.node.Name)
+	return metadata.WaitForRebootAnnotationRemoval(ctx, nc.client, nc.node.Name)
 }
 
 // UpdateKubeletClientCA updates the kubelet client CA certificate file in the Windows node. No service restart or
@@ -564,10 +563,10 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 
 // SyncTrustedCABundle builds the trusted CA ConfigMap from image registry certificates and the proxy trust bundle
 // and ensures the cert bundle on the instance has up-to-date data
-func (nc *nodeConfig) SyncTrustedCABundle() error {
+func (nc *nodeConfig) SyncTrustedCABundle(ctx context.Context) error {
 	caBundle := ""
 	var cc mcfg.ControllerConfig
-	if err := nc.client.Get(context.TODO(), types.NamespacedName{Namespace: nc.wmcoNamespace,
+	if err := nc.client.Get(ctx, types.NamespacedName{Namespace: nc.wmcoNamespace,
 		Name: MccName}, &cc); err != nil {
 		return err
 	}
@@ -579,7 +578,7 @@ func (nc *nodeConfig) SyncTrustedCABundle() error {
 	}
 	if cluster.IsProxyEnabled() {
 		proxyCA := &core.ConfigMap{}
-		if err := nc.client.Get(context.TODO(), types.NamespacedName{Namespace: nc.wmcoNamespace,
+		if err := nc.client.Get(ctx, types.NamespacedName{Namespace: nc.wmcoNamespace,
 			Name: certificates.ProxyCertsConfigMap}, proxyCA); err != nil {
 			return fmt.Errorf("unable to get ConfigMap %s: %w", certificates.ProxyCertsConfigMap, err)
 		}
@@ -595,9 +594,9 @@ func (nc *nodeConfig) UpdateTrustedCABundleFile(data string) error {
 }
 
 // createTLSCerts creates cert files containing the TLS cert and the key on the Windows node
-func (nc *nodeConfig) createTLSCerts() error {
+func (nc *nodeConfig) createTLSCerts(ctx context.Context) error {
 	tlsSecret := &core.Secret{}
-	if err := nc.client.Get(context.TODO(), types.NamespacedName{Name: secrets.TLSSecret,
+	if err := nc.client.Get(ctx, types.NamespacedName{Name: secrets.TLSSecret,
 		Namespace: nc.wmcoNamespace}, tlsSecret); err != nil {
 		return fmt.Errorf("unable to get secret %s: %w", secrets.TLSSecret, err)
 	}

@@ -80,7 +80,7 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 		return ctrl.Result{}, err
 	}
-	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	r.signer, err = signer.Create(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
@@ -93,7 +93,7 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 	// loop Windows nodes and trigger kubelet CA update
 	for _, winNode := range winNodes.Items {
-		if err := r.updateKubeletCA(winNode, cc.Spec.KubeAPIServerServingCAData); err != nil {
+		if err := r.updateKubeletCA(ctx, winNode, cc.Spec.KubeAPIServerServingCAData); err != nil {
 			return ctrl.Result{}, fmt.Errorf("error updating kubelet CA certificate in node %s: %w", winNode.Name, err)
 		}
 	}
