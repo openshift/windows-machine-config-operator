@@ -1000,6 +1000,8 @@ func (tc *testContext) getWinCurlerCommand(serverURI string) string {
 		" $response = Invoke-WebRequest -UseBasicParsing -Uri " + serverURI + ";" +
 		" $code = $response.StatusCode;" +
 		" echo \"GET returned code $code\";" +
+		" echo \"GET returned content:\";" +
+		" echo $response.RawContent;" +
 		" If ($code -eq 200) {" +
 		"  exit 0" +
 		" };" +
