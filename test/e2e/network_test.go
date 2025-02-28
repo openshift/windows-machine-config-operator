@@ -993,9 +993,15 @@ func (tc *testContext) getWinCurlerCommand(winServerIP string) string {
 	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
 	// takes some time to finish initial network setup.
 	return "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
-		"$response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP +
-		"; $code = $response.StatusCode; echo \"GET returned code $code\";" +
-		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"
+		" $response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP + ";" +
+		" $code = $response.StatusCode;" +
+		" echo \"GET returned code $code\";" +
+		" If ($code -eq 200) {" +
+		"  exit 0" +
+		" };" +
+		" Start-Sleep -s 10;" +
+		"};" +
+		"exit 1"
 }
 
 // createWindowsServerJob creates a job which will run the provided PowerShell command with a Windows Server image
