@@ -988,19 +988,22 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affin
 	return winCurlerJob, err
 }
 
-// getWinCurlerCommand generates a command to curl a Windows server from the given IP address
-func (tc *testContext) getWinCurlerCommand(winServerIP string) string {
-	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
-	// takes some time to finish initial network setup.
-	return "for (($i =0); $i -lt 60; $i++) { " +
-		" $response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP + ";" +
+// getWinCurlerCommand generates a PowerShell command to curl the given server URI
+func (tc *testContext) getWinCurlerCommand(serverURI string) string {
+	return "for ($i = 0; $i -lt 60; $i++) { " +
+		" echo \"\";" +
+		" echo \"Attempt #$i\";" +
+		" echo \"Curling server URI: " + serverURI + "\";" +
+		" $response = Invoke-WebRequest -UseBasicParsing -Uri " + serverURI + ";" +
 		" $code = $response.StatusCode;" +
 		" echo \"GET returned code $code\";" +
 		" If ($code -eq 200) {" +
 		"  exit 0" +
 		" };" +
+		" echo \"Waiting 10 seconds...\";" +
 		" Start-Sleep -s 10;" +
 		"};" +
+		"echo \"Time exceeded, cannot reach " + serverURI + "\";" +
 		"exit 1"
 }
 
