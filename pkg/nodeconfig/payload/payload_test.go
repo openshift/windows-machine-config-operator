@@ -103,7 +103,34 @@ $cni_template=$cni_template.Replace("provider_address",$provider_address)
 Compare-And-Replace-Config -ConfigPath c:\k\cni.conf -NewConfigContent $cni_template
 
 # Create HNS endpoint if it doesn't exist
-$endpoint = Invoke-HNSRequest GET endpoints | where { $_.Name -eq 'VIPEndpoint'}
+
+$retryCount = 20
+$retryDelay = 10
+$attempt = 0
+
+while ($attempt -lt $retryCount) {
+  try {
+    $hns_network=Get-HnsNetwork  | where { $_.Name -eq 'OVNKubernetesHNSNetwork'}
+    $endpoint = Invoke-HNSRequest GET endpoints | where { $_.Name -eq 'VIPEndpoint'}
+
+    # Check if endpoint is null
+    if ($null -eq $endpoint) {
+      Write-Host "Attempt $($attempt + 1) returned null. Retrying..."
+    } else {
+      Write-Host "Found VIPEndpoint on attempt $($attempt + 1)"
+      break  # Exit the loop if endpoint is found
+    }
+  } catch {
+    Write-Host "Attempt $($attempt + 1) failed: $_"
+    if ($attempt -eq ($retryCount - 1)) {
+      Write-Host "Max retry attempts reached. continuing."
+      exit 1
+    }
+  }
+  Start-Sleep -Seconds $retryDelay
+  $attempt++
+}
+
 if( $endpoint -eq $null) {
     $endpoint = New-HnsEndpoint -NetworkId $hns_network.ID -Name "VIPEndpoint"
     Attach-HNSHostEndpoint -EndpointID $endpoint.ID -CompartmentID 1
