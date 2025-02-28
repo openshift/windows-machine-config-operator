@@ -186,7 +186,7 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 					defer tc.deleteJob(curlerJob.Name)
 
 					_, err = tc.waitUntilJobSucceeds(curlerJob.Name)
-					assert.NoError(t, err, "could not curl the Windows server")
+					assert.NoErrorf(t, err, "error curling endpoint %s from %s pod", endpointIP, tt.curlerOS)
 				})
 			}
 			t.Run("service DNS resolution", func(t *testing.T) {
