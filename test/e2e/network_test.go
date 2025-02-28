@@ -993,7 +993,8 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affin
 // resulting in a total timeout of 5 minutes. We have to try multiple times as a Windows container
 // may take more time to pull image and finish initial network setup.
 func (tc *testContext) getWinCurlerCommand(serverURI string) string {
-	return "for ($i = 1; $i -le 60; $i++) { " +
+	return "ipconfig;" +
+		"for ($i = 1; $i -le 60; $i++) { " +
 		" echo \"\";" +
 		" echo \"Attempt #$i\";" +
 		" echo \"Curling server URI: " + serverURI + "\";" +
