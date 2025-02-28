@@ -80,11 +80,11 @@ func (r *certificateSigningRequestsReconciler) Reconcile(ctx context.Context,
 	_ = r.log.WithValues(CSRController, req.NamespacedName)
 
 	// Prevent WMCO upgrades while CSRs are being processed
-	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, CSRController); err != nil {
+	if err := condition.MarkAsBusy(ctx, r.client, r.watchNamespace, r.recorder, CSRController); err != nil {
 		return ctrl.Result{}, err
 	}
 	defer func() {
-		reconcileErr = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, CSRController,
+		reconcileErr = markAsFreeOnSuccess(ctx, r.client, r.watchNamespace, r.recorder, CSRController,
 			result.Requeue, reconcileErr)
 	}()
 
@@ -121,7 +121,7 @@ func (r *certificateSigningRequestsReconciler) reconcileCSR(ctx context.Context,
 			return fmt.Errorf("could not create WMCO CSR Approver: %w", err)
 		}
 
-		return csrApprover.Approve()
+		return csrApprover.Approve(ctx)
 	})
 	if err != nil {
 		// Max retries were hit, or unrelated issue like permissions or a network error

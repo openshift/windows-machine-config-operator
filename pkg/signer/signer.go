@@ -1,6 +1,7 @@
 package signer
 
 import (
+	"context"
 	"fmt"
 
 	"golang.org/x/crypto/ssh"
@@ -11,8 +12,8 @@ import (
 )
 
 // Create creates a signer using the private key data
-func Create(secret kubeTypes.NamespacedName, c client.Client) (ssh.Signer, error) {
-	privateKey, err := secrets.GetPrivateKey(secret, c)
+func Create(ctx context.Context, secret kubeTypes.NamespacedName, c client.Client) (ssh.Signer, error) {
+	privateKey, err := secrets.GetPrivateKey(ctx, secret, c)
 	if err != nil {
 		return nil, err
 	}

@@ -150,7 +150,7 @@ func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle str
 	if err != nil {
 		return err
 	}
-	node, err := GetAssociatedNode(directClient, addrs)
+	node, err := GetAssociatedNode(ctx, directClient, addrs)
 	if err != nil {
 		return fmt.Errorf("could not find node object associated with this instance: %w", err)
 	}
@@ -571,9 +571,9 @@ func NewDirectClient(cfg *rest.Config) (client.Client, error) {
 }
 
 // GetAssociatedNode uses the given client to find the name of the node associated with the VM this is running on
-func GetAssociatedNode(c client.Client, addrs []net.Addr) (*core.Node, error) {
+func GetAssociatedNode(ctx context.Context, c client.Client, addrs []net.Addr) (*core.Node, error) {
 	var nodes core.NodeList
-	if err := c.List(context.TODO(), &nodes); err != nil {
+	if err := c.List(ctx, &nodes); err != nil {
 		return nil, err
 	}
 	node, err := findNodeByAddress(&nodes, addrs)
