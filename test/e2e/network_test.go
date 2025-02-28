@@ -959,14 +959,29 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affin
 	return winCurlerJob, err
 }
 
-// getWinCurlerCommand generates a command to curl a Windows server from the given IP address
-func (tc *testContext) getWinCurlerCommand(winServerIP string) string {
-	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
-	// takes some time to finish initial network setup.
-	return "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
-		"$response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP +
-		"; $code = $response.StatusCode; echo \"GET returned code $code\";" +
-		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"
+// getWinCurlerCommand generates a PowerShell command to curl the given server URI
+// The command will attempt to curl the server URI up to 25 times, waiting 5 seconds between each attempt
+// resulting in a total timeout of 2 minutes. We have to try multiple times as a Windows container
+// may take more time to pull image and finish initial network setup.
+func (tc *testContext) getWinCurlerCommand(serverURI string) string {
+	return "ipconfig;" +
+		"for ($i = 1; $i -le 25; $i++) { " +
+		" echo \"\";" +
+		" echo \"Attempt #$i\";" +
+		" echo \"Curling server URI: " + serverURI + "\";" +
+		" $response = Invoke-WebRequest -UseBasicParsing -Uri " + serverURI + ";" +
+		" $code = $response.StatusCode;" +
+		" echo \"GET returned code $code\";" +
+		" echo \"GET returned content:\";" +
+		" echo $response.RawContent;" +
+		" If ($code -eq 200) {" +
+		"  exit 0" +
+		" };" +
+		" echo \"Waiting 5 seconds...\";" +
+		" Start-Sleep -s 5;" +
+		"};" +
+		"echo \"Time exceeded, cannot reach " + serverURI + "\";" +
+		"exit 1"
 }
 
 // createWindowsServerJob creates a job which will run the provided PowerShell command with a Windows Server image
