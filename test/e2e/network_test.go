@@ -748,10 +748,10 @@ func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
 func (tc *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, continuous bool) (*batchv1.Job, error) {
 	// Retries a failed curl attempt once to avoid flakes
 	curlCommand := fmt.Sprintf(
-		"curl %s;"+
+		"curl -v %s;"+
 			" if [ $? != 0 ]; then"+
 			" sleep 60;"+
-			" curl %s || exit 1;"+
+			" curl -v %s || exit 1;"+
 			" fi",
 		endpoint, endpoint)
 	if continuous {
