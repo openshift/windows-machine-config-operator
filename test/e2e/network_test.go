@@ -260,38 +260,38 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 	}{
 		{
 			name:            "linux curling windows",
-			webserverOS:     windowsOS,
 			curlerOS:        linux,
+			webserverOS:     windowsOS,
 			useClusterIPSVC: false,
 		},
 		{
 			name:            "windows curling windows",
-			webserverOS:     windowsOS,
 			curlerOS:        windowsOS,
+			webserverOS:     windowsOS,
 			useClusterIPSVC: false,
 		},
 		{
 			name:            "linux curling windows through a clusterIP svc",
-			webserverOS:     windowsOS,
 			curlerOS:        linux,
+			webserverOS:     windowsOS,
 			useClusterIPSVC: true,
 		},
 		{
 			name:            "windows curling windows through a clusterIP svc",
-			webserverOS:     windowsOS,
 			curlerOS:        windowsOS,
+			webserverOS:     windowsOS,
 			useClusterIPSVC: true,
 		},
 		{
 			name:            "windows curling linux",
-			webserverOS:     linux,
 			curlerOS:        windowsOS,
+			webserverOS:     linux,
 			useClusterIPSVC: false,
 		},
 		{
 			name:            "windows curling linux through a clusterIP svc",
-			webserverOS:     linux,
 			curlerOS:        windowsOS,
+			webserverOS:     linux,
 			useClusterIPSVC: true,
 		},
 	}
