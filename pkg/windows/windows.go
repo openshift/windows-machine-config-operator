@@ -262,9 +262,9 @@ type Windows interface {
 	// have observed that Run() returns before the command completes and as a result killing the process.
 	Run(string, bool) (string, error)
 	// RebootAndReinitialize reboots the instance and re-initializes the Windows SSH client
-	RebootAndReinitialize() error
+	RebootAndReinitialize(context.Context) error
 	// Bootstrap prepares the Windows instance and runs the WICD bootstrap command
-	Bootstrap(string, string, string) error
+	Bootstrap(context.Context, string, string, string) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, string) error
 	// RemoveFilesAndNetworks removes all files and networks created by WMCO
@@ -482,13 +482,13 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 }
 
 // RebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
-func (vm *windows) RebootAndReinitialize() error {
+func (vm *windows) RebootAndReinitialize(ctx context.Context) error {
 	vm.log.Info("rebooting instance")
 	if _, err := vm.Run("Restart-Computer -Force", true); err != nil {
 		return fmt.Errorf("error rebooting the Windows VM: %w", err)
 	}
 	// Wait for instance to be unreachable via SSH, implies reboot is underway
-	if err := vm.waitUntilUnreachable(); err != nil {
+	if err := vm.waitUntilUnreachable(ctx); err != nil {
 		return fmt.Errorf("instance reboot failed to start: %w", err)
 	}
 	// Wait for instance to come back online and reinitialize the SSH connection after the reboot
@@ -528,7 +528,7 @@ func (vm *windows) RemoveFilesAndNetworks() error {
 	return nil
 }
 
-func (vm *windows) Bootstrap(desiredVer, watchNamespace, wicdKubeconfigContents string) error {
+func (vm *windows) Bootstrap(ctx context.Context, desiredVer, watchNamespace, wicdKubeconfigContents string) error {
 	vm.log.Info("configuring")
 
 	// Stop any services that may be running. This prevents the node being shown as Ready after a failed configuration.
@@ -536,7 +536,7 @@ func (vm *windows) Bootstrap(desiredVer, watchNamespace, wicdKubeconfigContents 
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
 	}
 
-	if err := vm.ensureHostNameAndContainersFeature(); err != nil {
+	if err := vm.ensureHostNameAndContainersFeature(ctx); err != nil {
 		return err
 	}
 	if err := vm.createDirectories(); err != nil {
@@ -616,7 +616,7 @@ func (vm *windows) ensureWICDFilesExist(wicdKubeconfig string) error {
 
 // ensureHostNameAndContainersFeature ensures hostname of the Windows VM matches the expected name
 // and the required Windows feature is enabled.
-func (vm *windows) ensureHostNameAndContainersFeature() error {
+func (vm *windows) ensureHostNameAndContainersFeature(ctx context.Context) error {
 	rebootNeeded := false
 	// Set the hostName of the Windows VM if needed
 	if vm.instance.NewHostname != "" {
@@ -644,7 +644,7 @@ func (vm *windows) ensureHostNameAndContainersFeature() error {
 	// Changing the host name or enabling the Containers feature requires a VM restart for
 	// the change to take effect.
 	if rebootNeeded {
-		if err := vm.RebootAndReinitialize(); err != nil {
+		if err := vm.RebootAndReinitialize(ctx); err != nil {
 			return fmt.Errorf("error restarting the Windows instance and reinitializing SSH connection: %w", err)
 		}
 	}
@@ -1020,8 +1020,8 @@ func (vm *windows) isContainersFeatureEnabled() (bool, error) {
 }
 
 // waitUntilUnreachable tries to run a dummy command until it fails to see if the instance is reachable via SSH
-func (vm *windows) waitUntilUnreachable() error {
-	return wait.PollUntilContextTimeout(context.TODO(), retry.WindowsAPIInterval, retry.ResourceChangeTimeout, true,
+func (vm *windows) waitUntilUnreachable(ctx context.Context) error {
+	return wait.PollUntilContextTimeout(ctx, retry.WindowsAPIInterval, retry.ResourceChangeTimeout, true,
 		func(ctx context.Context) (bool, error) {
 			_, err := vm.Run("Get-Help", true)
 			return (err != nil), nil

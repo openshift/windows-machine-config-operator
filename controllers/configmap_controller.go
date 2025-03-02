@@ -90,7 +90,7 @@ type ConfigMapReconciler struct {
 }
 
 // NewConfigMapReconciler returns a pointer to a ConfigMapReconciler
-func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string,
+func NewConfigMapReconciler(ctx context.Context, mgr manager.Manager, clusterConfig cluster.Config, watchNamespace string,
 	proxyEnabled bool) (*ConfigMapReconciler, error) {
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
@@ -101,7 +101,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, err
 	}
-	svcData, err := generateServicesManifest(directClient, clusterConfig.Network().VXLANPort(), clusterConfig.Platform())
+	svcData, err := generateServicesManifest(ctx, directClient, clusterConfig.Network().VXLANPort(), clusterConfig.Platform())
 	if err != nil {
 		return nil, err
 	}
@@ -132,22 +132,22 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 
 	var err error
 	// Prevent WMCO upgrades while BYOH nodes are being processed.
-	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, ConfigMapController); err != nil {
+	if err := condition.MarkAsBusy(ctx, r.client, r.watchNamespace, r.recorder, ConfigMapController); err != nil {
 		return ctrl.Result{}, err
 	}
 	defer func() {
-		reconcileErr = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, ConfigMapController,
+		reconcileErr = markAsFreeOnSuccess(ctx, r.client, r.watchNamespace, r.recorder, ConfigMapController,
 			result.Requeue, reconcileErr)
 	}()
 
 	// Create a new signer using the private key that the instances will be configured with
-	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	r.signer, err = signer.Create(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
 
-	servicesManifest, err := generateServicesManifest(r.client, r.VXLANPort, r.platform)
+	servicesManifest, err := generateServicesManifest(ctx, r.client, r.VXLANPort, r.platform)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -273,13 +273,13 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 
 	r.log.Info("processing", "instances in", wiparser.InstanceConfigMap)
 	// For each instance, ensure that it is configured into a node
-	if err := r.ensureInstancesAreUpToDate(instances); err != nil {
+	if err := r.ensureInstancesAreUpToDate(ctx, instances); err != nil {
 		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", err.Error())
 		return err
 	}
 
 	// Ensure that only instances currently specified by the ConfigMap are joined to the cluster as nodes
-	if err = r.deconfigureInstances(instances, nodes); err != nil {
+	if err = r.deconfigureInstances(ctx, instances, nodes); err != nil {
 		return fmt.Errorf("error removing undesired nodes from cluster: %w", err)
 	}
 
@@ -287,9 +287,9 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 }
 
 // ensureInstancesAreUpToDate configures all instances that require configuration
-func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instance.Info) error {
+func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(ctx context.Context, instances []*instance.Info) error {
 	// Get private key to encrypt instance usernames
-	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	privateKeyBytes, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		return err
@@ -304,7 +304,7 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instance.I
 		if err != nil {
 			return fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err)
 		}
-		err = r.ensureInstanceIsUpToDate(instanceInfo, map[string]string{BYOHLabel: "true", nodeconfig.WorkerLabel: ""},
+		err = r.ensureInstanceIsUpToDate(ctx, instanceInfo, map[string]string{BYOHLabel: "true", nodeconfig.WorkerLabel: ""},
 			map[string]string{UsernameAnnotation: encryptedUsername})
 		if err != nil {
 			// It is better to return early like this, instead of trying to configure as many instances as possible in a
@@ -321,7 +321,7 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(instances []*instance.I
 
 // deconfigureInstances removes all BYOH nodes that are not specified in the given instances slice, and
 // deconfigures the instances associated with them. The nodes parameter should be a list of all Windows BYOH nodes.
-func (r *ConfigMapReconciler) deconfigureInstances(instances []*instance.Info, nodes *core.NodeList) error {
+func (r *ConfigMapReconciler) deconfigureInstances(ctx context.Context, instances []*instance.Info, nodes *core.NodeList) error {
 	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
 		Namespace: r.watchNamespace}}
 	for _, node := range nodes.Items {
@@ -331,7 +331,7 @@ func (r *ConfigMapReconciler) deconfigureInstances(instances []*instance.Info, n
 		}
 
 		// no instance found in the provided list, remove the node from the cluster
-		if err := r.deconfigureInstance(&node); err != nil {
+		if err := r.deconfigureInstance(ctx, &node); err != nil {
 			return fmt.Errorf("unable to deconfigure instance with node %s: %w", node.GetName(), err)
 		}
 		r.recorder.Eventf(windowsInstances, core.EventTypeNormal, "InstanceTeardown",
@@ -451,12 +451,12 @@ func (r *ConfigMapReconciler) createServicesConfigMap(ctx context.Context) (*cor
 // createServicesConfigMapOnBootup creates a valid ServicesConfigMap
 // ConfigMapReconciler.createServicesConfigMap() cannot be used in its stead as the cache has not been
 // populated yet, which is why the typed client is used here as it calls the API server directly.
-func (r *ConfigMapReconciler) createServicesConfigMapOnBootup() error {
+func (r *ConfigMapReconciler) createServicesConfigMapOnBootup(ctx context.Context) error {
 	windowsServices, err := servicescm.Generate(servicescm.Name, r.watchNamespace, r.servicesManifest)
 	if err != nil {
 		return err
 	}
-	cm, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Create(context.TODO(), windowsServices,
+	cm, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Create(ctx, windowsServices,
 		meta.CreateOptions{})
 	if err != nil {
 		return err
@@ -466,13 +466,13 @@ func (r *ConfigMapReconciler) createServicesConfigMapOnBootup() error {
 }
 
 // EnsureServicesConfigMapExists ensures that the ServicesConfigMap is present and valid on operator bootup
-func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
-	windowsServices, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Get(context.TODO(), servicescm.Name,
+func (r *ConfigMapReconciler) EnsureServicesConfigMapExists(ctx context.Context) error {
+	windowsServices, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Get(ctx, servicescm.Name,
 		meta.GetOptions{})
 	if err != nil {
 		if k8sapierrors.IsNotFound(err) {
 			// If ConfigMap is not found, create it and return
-			return r.createServicesConfigMapOnBootup()
+			return r.createServicesConfigMapOnBootup(ctx)
 		}
 		return err
 	}
@@ -484,13 +484,13 @@ func (r *ConfigMapReconciler) EnsureServicesConfigMapExists() error {
 	}
 
 	// Delete and re-create the ConfigMap with the proper values
-	if err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Delete(context.TODO(), windowsServices.Name,
+	if err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Delete(ctx, windowsServices.Name,
 		meta.DeleteOptions{}); err != nil {
 		return err
 	}
 	r.log.Info("Deleted invalid resource", "ConfigMap",
 		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: servicescm.Name})
-	return r.createServicesConfigMapOnBootup()
+	return r.createServicesConfigMapOnBootup(ctx)
 }
 
 // createProxyCertsCM creates the trusted CA ConfigMap with the expected spec
@@ -529,7 +529,7 @@ func (r *ConfigMapReconciler) ensureTrustedCABundleInNodes(ctx context.Context) 
 
 // ensureTrustedCABundleInNodes places the trusted CA bundle data into a file on the given node
 func (r *ConfigMapReconciler) ensureTrustedCABundleInNode(ctx context.Context, node core.Node) error {
-	winInstance, err := r.instanceFromNode(&node)
+	winInstance, err := r.instanceFromNode(ctx, &node)
 	if err != nil {
 		return err
 	}
@@ -538,7 +538,7 @@ func (r *ConfigMapReconciler) ensureTrustedCABundleInNode(ctx context.Context, n
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
 	}
-	return nc.SyncTrustedCABundle()
+	return nc.SyncTrustedCABundle(ctx)
 }
 
 // ensureProxyCertsCMIsValid ensures the trusted CA ConfigMap has the expected injection request. Patches the object if not.
@@ -555,7 +555,7 @@ func (r *ConfigMapReconciler) ensureProxyCertsCMIsValid(ctx context.Context, inj
 		return fmt.Errorf("unable to generate patch request body for label %s: %w", InjectionRequestLabel, err)
 	}
 
-	if _, err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Patch(context.TODO(),
+	if _, err = r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Patch(ctx,
 		certificates.ProxyCertsConfigMap, kubeTypes.JSONPatchType, patchData, meta.PatchOptions{}); err != nil {
 		return fmt.Errorf("unable to apply patch %s to resource %s/%s: %w", patchData, r.watchNamespace,
 			certificates.ProxyCertsConfigMap, err)
@@ -566,16 +566,16 @@ func (r *ConfigMapReconciler) ensureProxyCertsCMIsValid(ctx context.Context, inj
 
 // EnsureTrustedCAConfigMapExists ensures the trusted CA ConfigMap exists as expected.
 // Creates it if it doesn't exist, patches it if it exists with improper spec.
-func (r *ConfigMapReconciler) EnsureTrustedCAConfigMapExists() error {
-	trustedCA, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Get(context.TODO(),
+func (r *ConfigMapReconciler) EnsureTrustedCAConfigMapExists(ctx context.Context) error {
+	trustedCA, err := r.k8sclientset.CoreV1().ConfigMaps(r.watchNamespace).Get(ctx,
 		certificates.ProxyCertsConfigMap, meta.GetOptions{})
 	if err != nil {
 		if !k8sapierrors.IsNotFound(err) {
 			return err
 		}
-		return r.createProxyCertsCM(context.TODO())
+		return r.createProxyCertsCM(ctx)
 	}
-	return r.ensureProxyCertsCMIsValid(context.TODO(), trustedCA.GetLabels()[InjectionRequestLabel])
+	return r.ensureProxyCertsCMIsValid(ctx, trustedCA.GetLabels()[InjectionRequestLabel])
 }
 
 // EnsureWICDRBAC ensures the WICD RBAC resources exist as expected
@@ -691,8 +691,8 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 // generateServicesManifest generates and regenerates the services manifest.
 // this gets called when the configmap reconciler is first created, to create the services manifest,
 // and also when the rendered-worker configmap is changed, to regenerate it.
-func generateServicesManifest(client client.Client, port string, platform oconfig.PlatformType) (*servicescm.Data, error) {
-	ign, err := ignition.New(client)
+func generateServicesManifest(ctx context.Context, client client.Client, port string, platform oconfig.PlatformType) (*servicescm.Data, error) {
+	ign, err := ignition.New(ctx, client)
 	if err != nil {
 		return nil, fmt.Errorf("error creating ignition object: %w", err)
 	}

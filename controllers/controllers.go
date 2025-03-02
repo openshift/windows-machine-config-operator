@@ -59,7 +59,7 @@ type instanceReconciler struct {
 // ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
 // defined by the current version of WMCO. If labelsToApply/annotationsToApply is not nil, the node will have the
 // specified annotations and/or labels applied to it.
-func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Info, labelsToApply, annotationsToApply map[string]string) error {
+func (r *instanceReconciler) ensureInstanceIsUpToDate(ctx context.Context, instanceInfo *instance.Info, labelsToApply, annotationsToApply map[string]string) error {
 	if instanceInfo == nil {
 		return fmt.Errorf("instance cannot be nil")
 	}
@@ -84,20 +84,20 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 		// Instance requiring an upgrade indicates that node object is present with the version annotation
 		r.log.Info("instance requires upgrade", "node", instanceInfo.Node.GetName(), "version",
 			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation], "expected version", version.Get())
-		if err := markNodeAsUpgrading(context.TODO(), r.client, instanceInfo.Node); err != nil {
+		if err := markNodeAsUpgrading(ctx, r.client, instanceInfo.Node); err != nil {
 			return err
 		}
-		if err := nc.Deconfigure(); err != nil {
+		if err := nc.Deconfigure(ctx); err != nil {
 			return err
 		}
 	}
 
-	return nc.Configure()
+	return nc.Configure(ctx)
 }
 
 // instanceFromNode returns an instance object for the given node. Requires a username that can be used to SSH into the
 // instance to be annotated on the node.
-func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, error) {
+func (r *instanceReconciler) instanceFromNode(ctx context.Context, node *core.Node) (*instance.Info, error) {
 	usernameAnnotation := node.Annotations[UsernameAnnotation]
 	if usernameAnnotation == "" {
 		return nil, fmt.Errorf("node is missing valid username annotation")
@@ -108,7 +108,7 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, 
 	}
 
 	// Decrypt username annotation to plain text using private key
-	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	privateKeyBytes, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		return nil, err
@@ -122,8 +122,8 @@ func (r *instanceReconciler) instanceFromNode(node *core.Node) (*instance.Info, 
 }
 
 // updateKubeletCA updates the kubelet CA in the node, by copying the kubelet CA file content to the Windows instance
-func (r *instanceReconciler) updateKubeletCA(node core.Node, contents []byte) error {
-	winInstance, err := r.instanceFromNode(&node)
+func (r *instanceReconciler) updateKubeletCA(ctx context.Context, node core.Node, contents []byte) error {
+	winInstance, err := r.instanceFromNode(ctx, &node)
 	if err != nil {
 		return fmt.Errorf("error creating instance for node %s: %w", node.Name, err)
 	}
@@ -152,8 +152,8 @@ func GetAddress(addresses []core.NodeAddress) (string, error) {
 }
 
 // deconfigureInstance deconfigures the instance associated with the given node, removing the node from the cluster.
-func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
-	instance, err := r.instanceFromNode(node)
+func (r *instanceReconciler) deconfigureInstance(ctx context.Context, node *core.Node) error {
+	instance, err := r.instanceFromNode(ctx, node)
 	if err != nil {
 		return fmt.Errorf("unable to create instance object from node: %w", err)
 	}
@@ -164,10 +164,10 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
 	}
 
-	if err = nc.Deconfigure(); err != nil {
+	if err = nc.Deconfigure(ctx); err != nil {
 		return err
 	}
-	if err = r.client.Delete(context.TODO(), instance.Node); err != nil {
+	if err = r.client.Delete(ctx, instance.Node); err != nil {
 		return fmt.Errorf("error deleting node %s: %w", instance.Node.GetName(), err)
 	}
 	return nil
@@ -256,10 +256,10 @@ func isValidWindowsNode(o client.Object, byoh bool) bool {
 // markAsFreeOnSuccess is called after a controller's Reconcile function returns. If the given controller finished
 // reconciling without error or requesting a requeue event, the controller is marked as free.
 // When all controllers are free, WMCO upgrades are unblocked.
-func markAsFreeOnSuccess(c client.Client, watchNamespace string, recorder record.EventRecorder, controllerName string,
+func markAsFreeOnSuccess(ctx context.Context, c client.Client, watchNamespace string, recorder record.EventRecorder, controllerName string,
 	requeue bool, err error) error {
 	if !requeue && err == nil {
-		return condition.MarkAsFree(c, watchNamespace, recorder, controllerName)
+		return condition.MarkAsFree(ctx, c, watchNamespace, recorder, controllerName)
 	}
 	return err
 }

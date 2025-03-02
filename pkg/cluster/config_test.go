@@ -36,10 +36,10 @@ func TestNetworkConfigurationFactory(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeConfigClient, fakeOperatorClient := createFakeClients(tt.networkType)
 			if tt.networkPatch != nil {
-				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
+				_, err := fakeOperatorClient.Networks().Patch(context.Background(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
 				require.Nil(t, err, "network patch should not throw error")
 			}
-			_, err := networkConfigurationFactory(fakeConfigClient, fakeOperatorClient)
+			_, err := networkConfigurationFactory(context.Background(), fakeConfigClient, fakeOperatorClient)
 			if tt.errorMessage == "" {
 				require.Nil(t, err, "Successful check for valid network type")
 			} else {
@@ -72,13 +72,13 @@ func TestNetworkConfigurationValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeConfigClient, fakeOperatorClient := createFakeClients(tt.networkType)
 			if tt.networkPatch != nil {
-				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
+				_, err := fakeOperatorClient.Networks().Patch(context.Background(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
 				require.Nil(t, err, "network patch should not throw error")
 			}
 
-			network, err := networkConfigurationFactory(fakeConfigClient, fakeOperatorClient)
+			network, err := networkConfigurationFactory(context.Background(), fakeConfigClient, fakeOperatorClient)
 			require.Nil(t, err, "networkConfigurationFactory should not throw error")
-			err = network.Validate()
+			err = network.Validate(context.Background())
 
 			if tt.errorMessage == "" {
 				require.Nil(t, err, "Successful check for valid network type")
@@ -105,11 +105,11 @@ func createFakeClients(networkType string) (configclient.Interface, operatorclie
 	testNetworkOperator := &operatorv1.Network{}
 	testNetworkOperator.Name = "cluster"
 
-	_, err := fakeConfigClient.ConfigV1().Networks().Create(context.TODO(), testNetworkConfig, meta.CreateOptions{})
+	_, err := fakeConfigClient.ConfigV1().Networks().Create(context.Background(), testNetworkConfig, meta.CreateOptions{})
 	if err != nil {
 		return nil, nil
 	}
-	_, err = fakeOperatorClient.Networks().Create(context.TODO(), testNetworkOperator, meta.CreateOptions{})
+	_, err = fakeOperatorClient.Networks().Create(context.Background(), testNetworkOperator, meta.CreateOptions{})
 	if err != nil {
 		return nil, nil
 	}
@@ -176,10 +176,10 @@ func TestGetVXLANPort(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, fakeOperatorClient := createFakeClients("OVNKubernetes")
 			if tt.networkPatch != nil {
-				_, err := fakeOperatorClient.Networks().Patch(context.TODO(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
+				_, err := fakeOperatorClient.Networks().Patch(context.Background(), "cluster", k8stypes.MergePatchType, tt.networkPatch, meta.PatchOptions{})
 				require.Nil(t, err, "network patch should not throw error")
 			}
-			got, err := getVXLANPort(fakeOperatorClient)
+			got, err := getVXLANPort(context.Background(), fakeOperatorClient)
 			require.NoError(t, err)
 			if (err != nil) != tt.wantErr {
 				assert.Errorf(t, err, "getVXLANPort() error = %v, wantErr %v", err, tt.wantErr)

@@ -73,11 +73,11 @@ func NewNodeReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchN
 func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	r.log = r.log.WithValues(NodeController, req.NamespacedName)
 	// Prevent WMCO upgrades while Node objects are being processed
-	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, NodeController); err != nil {
+	if err := condition.MarkAsBusy(ctx, r.client, r.watchNamespace, r.recorder, NodeController); err != nil {
 		return ctrl.Result{}, err
 	}
 	defer func() {
-		err = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, NodeController, result.Requeue, err)
+		err = markAsFreeOnSuccess(ctx, r.client, r.watchNamespace, r.recorder, NodeController, result.Requeue, err)
 	}()
 
 	// Fetch Node reference
@@ -95,12 +95,12 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 
 	if _, ok := node.GetAnnotations()[metadata.RebootAnnotation]; ok {
 		// Create a new signer using the private key that the instances will be reconciled with
-		signer, err := signer.Create(types.NamespacedName{Namespace: r.watchNamespace,
+		signer, err := signer.Create(ctx, types.NamespacedName{Namespace: r.watchNamespace,
 			Name: secrets.PrivateKeySecret}, r.client)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 		}
-		instanceInfo, err := r.instanceFromNode(node)
+		instanceInfo, err := r.instanceFromNode(ctx, node)
 		if err != nil {
 			return ctrl.Result{}, err
 		}

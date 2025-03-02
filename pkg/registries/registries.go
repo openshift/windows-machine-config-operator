@@ -261,7 +261,7 @@ func GenerateConfigFiles(ctx context.Context, c client.Client) (map[string][]byt
 
 	// Check for registry authorization credentials
 	pullSecret := &core.Secret{}
-	err := c.Get(context.TODO(), types.NamespacedName{Namespace: GlobalPullSecretNamespace, Name: GlobalPullSecretName},
+	err := c.Get(ctx, types.NamespacedName{Namespace: GlobalPullSecretNamespace, Name: GlobalPullSecretName},
 		pullSecret)
 	if err != nil {
 		return nil, fmt.Errorf("error getting pull secret: %w", err)
