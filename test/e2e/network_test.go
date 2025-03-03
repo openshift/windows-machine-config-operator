@@ -110,6 +110,7 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 
 	linuxServerDeployment, err := tc.deployLinuxWebServer()
 	require.NoError(t, err)
+	defer tc.collectDeploymentLogs(linuxServerDeployment)
 	defer tc.deleteDeployment(linuxServerDeployment.GetName())
 	linuxServerClusterIP, err := tc.createService(linuxServerDeployment.GetName(), 8080, v1.ServiceTypeClusterIP,
 		*linuxServerDeployment.Spec.Selector)
@@ -133,10 +134,8 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 				}
 			}
 			require.NoError(t, err, "could not create Windows Server deployment")
+			defer tc.collectDeploymentLogs(winServerDeployment)
 			defer tc.deleteDeployment(winServerDeployment.Name)
-			if err := tc.collectDeploymentLogs(winServerDeployment); err != nil {
-				log.Printf("error collecting deployment logs: %v", err)
-			}
 
 			// Get the pod so we can use its IP
 			winServerIP, err := tc.getPodIP(*winServerDeployment.Spec.Selector)
