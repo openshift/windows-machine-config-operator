@@ -671,6 +671,10 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 			"Write-Host('Listening at http://*:80/');" +
 			"while ($listener.IsListening) { " +
 			"  $context = $listener.GetContext();" +
+			"  $clientIPAddress = $context.Request.RemoteEndpoint.Address.ToString();" +
+			"  $timestamp = Get-Date;" +
+			"  Write-Host $clientIPAddress [$timestamp] $context.Request.HttpMethod $context.Request.Url.AbsolutePath" +
+			"  'HTTP/'$context.Request.ProtocolVersion $context.Request.UserAgent;" +
 			"  $response = $context.Response;" +
 			"  $content='<html><body><H1>Windows Container Web Server</H1>'+$ipconfigOutput+'</body></html>'; " +
 			"  $buffer = [System.Text.Encoding]::UTF8.GetBytes($content);" +
