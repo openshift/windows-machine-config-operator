@@ -332,6 +332,12 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 				}
 			}
 			require.NoError(t, err, "could not create Windows Server deployment")
+			defer func(tc *testContext, deployment *appsv1.Deployment) {
+				err := tc.collectDeploymentLogs(deployment)
+				if err != nil {
+					log.Printf("error collecting deployment logs: %v", err)
+				}
+			}(tc, winServerDeployment)
 			defer tc.deleteDeployment(winServerDeployment.Name)
 
 			// Get the pod so we can use its IP
