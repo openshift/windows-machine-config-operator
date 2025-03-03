@@ -36,11 +36,14 @@ import (
 const (
 	// MetricController is the name of this controller in logs and other outputs.
 	MetricController = "metrics"
+	// monitoringLabel is the label added to the watch namespace to indicate cluster monitoring is enabled.
+	monitoringLabel = "openshift.io/cluster-monitoring"
 )
 
 type metricReconciler struct {
 	*monclient.MonitoringV1Client
 	instanceReconciler
+	monitoringEnabled bool
 }
 
 func NewMetricReconciler(mgr manager.Manager, clusterConfig cluster.Config, cfg *rest.Config,
@@ -70,7 +73,6 @@ func NewMetricReconciler(mgr manager.Manager, clusterConfig cluster.Config, cfg 
 // Node object and aims to move the current state of the cluster closer to the desired state.
 func (r *metricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	r.log = r.log.WithValues(MetricController, req.NamespacedName)
-
 	// validate if cluster monitoring is enabled in the operator namespace
 	enabled, err := r.validate(ctx)
 	if err != nil {
@@ -89,25 +91,31 @@ func (r *metricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 // validate will verify if cluster monitoring is enabled in the operator namespace. If the label is set to false or not
 // present, it will log and send warning events to the user. If the label holds a non-boolean value, returns an error.
 func (r *metricReconciler) validate(ctx context.Context) (bool, error) {
+	labelBool := false
 	// validate if metrics label is added to the operator namespace
-	labelValue := false
 	wmcoNamespace, err := r.k8sclientset.CoreV1().Namespaces().Get(ctx, r.watchNamespace, metav1.GetOptions{})
 	if err != nil {
 		return false, fmt.Errorf("error getting operator namespace: %w", err)
 	}
-	// if the label exists, update value from default of false
-	if value, ok := wmcoNamespace.Labels["openshift.io/cluster-monitoring"]; ok {
-		labelValue, err = strconv.ParseBool(value)
+	if value, ok := wmcoNamespace.Labels[monitoringLabel]; ok {
+		labelBool, err = strconv.ParseBool(value)
 		if err != nil {
 			return false, fmt.Errorf("monitoring label must have a boolean value: %w", err)
 		}
 	}
-	if !labelValue {
-		r.recorder.Eventf(wmcoNamespace, v1.EventTypeWarning, "labelValidationFailed",
-			"Cluster monitoring openshift.io/cluster-monitoring=true label is not enabled in %s namespace",
-			r.watchNamespace)
+	if r.monitoringEnabled != labelBool && labelBool {
+		// If the label exists, log the updated value
+		r.recorder.Eventf(wmcoNamespace, v1.EventTypeNormal, "monitoringEnabled",
+			"Cluster monitoring %s label is enabled in %s namespace",
+			monitoringLabel, r.watchNamespace)
+	} else if r.monitoringEnabled != labelBool && !labelBool {
+		// If the label is removed, log the removal
+		r.recorder.Eventf(wmcoNamespace, v1.EventTypeWarning, "monitoringDisabled",
+			"Cluster monitoring %s label is not enabled in %s namespace",
+			monitoringLabel, r.watchNamespace)
 	}
-	return labelValue, nil
+	r.monitoringEnabled = labelBool
+	return r.monitoringEnabled, nil
 }
 
 // ensureServiceMonitor creates a serviceMonitor object in the operator namespace if it does not exist.
@@ -232,13 +240,11 @@ func (r *metricReconciler) mapToWatchNamespace(_ context.Context, obj client.Obj
 func (r *metricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	metricsPredicate := predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			return isMonitoringEnabled(e.Object, r.watchNamespace)
+			return isOperatorNamespace(e.Object, r.watchNamespace)
 		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			return isMonitoringEnabled(e.ObjectNew, r.watchNamespace)
-		},
+		UpdateFunc: func(e event.UpdateEvent) bool { return isOperatorNamespace(e.ObjectNew, r.watchNamespace) },
 		GenericFunc: func(e event.GenericEvent) bool {
-			return isMonitoringEnabled(e.Object, r.watchNamespace)
+			return isOperatorNamespace(e.Object, r.watchNamespace)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -250,21 +256,11 @@ func (r *metricReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-// isMonitoringEnabled returns true if the given object namespace has monitoring label set to true
-func isMonitoringEnabled(obj runtime.Object, watchNamespace string) bool {
+// isOperatorNamespace returns true if the given object is the operator namespace
+func isOperatorNamespace(obj runtime.Object, watchNamespace string) bool {
 	namespace, ok := obj.(*v1.Namespace)
 	if !ok {
 		return false
 	}
-	if namespace.GetName() != watchNamespace {
-		return false
-	}
-	if value, ok := namespace.Labels["openshift.io/cluster-monitoring"]; ok {
-		labelValue, err := strconv.ParseBool(value)
-		if err != nil {
-			return false
-		}
-		return labelValue
-	}
-	return false
+	return namespace.GetName() == watchNamespace
 }
