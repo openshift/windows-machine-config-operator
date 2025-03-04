@@ -921,6 +921,16 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 								},
 							},
 							VolumeMounts: volumeMounts,
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("500m"),
+									v1.ResourceMemory: resource.MustParse("500Mi"),
+								},
+								Requests: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("500m"),
+									v1.ResourceMemory: resource.MustParse("500Mi"),
+								},
+							},
 						},
 					},
 					RuntimeClassName: &rcName,
