@@ -116,7 +116,6 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 		*linuxServerDeployment.Spec.Selector)
 	require.NoError(t, err)
 	defer tc.deleteService(linuxServerClusterIP.GetName())
-	linuxServerIP, err := tc.getPodIP(*linuxServerDeployment.Spec.Selector)
 	require.NoError(t, err)
 	for _, node := range gc.allNodes() {
 		t.Run(node.Name, func(t *testing.T) {
@@ -137,10 +136,6 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 			defer tc.collectDeploymentLogs(winServerDeployment)
 			defer tc.deleteDeployment(winServerDeployment.Name)
 
-			// Get the pod so we can use its IP
-			winServerIP, err := tc.getPodIP(*winServerDeployment.Spec.Selector)
-			require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeployment.Spec.Selector)
-
 			// Create a clusterIP service which can be used to reach the Windows webserver
 			intermediarySVC, err := tc.createService(winServerDeployment.Name, 80, v1.ServiceTypeClusterIP, *winServerDeployment.Spec.Selector)
 			require.NoError(t, err, "could not create service")
@@ -156,13 +151,17 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 						if tt.useClusterIPSVC {
 							endpointIP = intermediarySVC.Spec.ClusterIP
 						} else {
-							endpointIP = winServerIP
-
+							// Get the pod so we can use its IP
+							endpointIP, err = tc.getPodIP(*winServerDeployment.Spec.Selector)
+							require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeployment.Spec.Selector)
 						}
 					} else {
 						if tt.useClusterIPSVC {
 							endpointIP = linuxServerClusterIP.Spec.ClusterIP
 						} else {
+							linuxServerIP, err := tc.getPodIP(*linuxServerDeployment.Spec.Selector)
+							require.NoError(t, err)
+
 							endpointIP = linuxServerIP + ":8080"
 						}
 					}
