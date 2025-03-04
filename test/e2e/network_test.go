@@ -880,6 +880,10 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 			return logs, nil
 		}
 		if job.Status.Failed > 0 {
+			_, err = tc.gatherPodLogs(labelSelector)
+			if err != nil {
+				log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
+			}
 			events, _ := tc.getPodEvents(name)
 			return "", fmt.Errorf("job %v failed: %v", job, events)
 		}
