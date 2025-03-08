@@ -4,9 +4,6 @@
 
 set -euo pipefail
 
-# the release tag to build kube-proxy from
-KUBE_PROXY_TAG=v1.31.1
-
 function help() {
   echo "Usage: update_submodules.sh [OPTIONS] branch_name"
   echo "Update submodules HEAD to remote branches"
@@ -129,18 +126,9 @@ function update_submodules_for_branch() {
       git config -f .gitmodules submodule.$submodule.branch $remote_branch
       git add .gitmodules
     fi
-    
-    # Update the submodule to the latest remote commit, except for kube-proxy which is tied to a tag
-    if [ "$submodule" = "kube-proxy" ]; then
-      cd $submodule
-      get_upstream_tags "$submodule"
-      git checkout tags/$KUBE_PROXY_TAG
-      cd ..
-    else
-      git submodule update --remote $submodule
-    fi
-
+    git submodule update --remote $submodule
     generate_submodule_commit $submodule
+    # kube-proxy will be its own submodule if a CVE fix is required that cannot be merged into the kubelet o/k branch
     if [ "$submodule" = "kubelet" ] || [ "$submodule" = "kube-proxy" ] || [ "$submodule" = "containerd" ]; then
       generate_version_commit "$base_branch" "$submodule"
     fi

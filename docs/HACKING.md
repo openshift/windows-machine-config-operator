@@ -340,7 +340,6 @@ This project contains git submodules for the following components:
 - containernetworking-plugins
 - csi-proxy
 - hcsshim
-- kube-proxy
 - kubernetes
 - ovn-kubernetes
 - promu
