@@ -50,7 +50,7 @@ func init() {
 
 // MarkAsFree removes the given controller from the set of busy controllers, sets the Upgradeable condition to True
 // to allow OLM to perform operator upgrades. No-op if operator is not OLM-managed
-func MarkAsFree(c client.Client, watchNamespace string, recorder record.EventRecorder, controllerName string) error {
+func MarkAsFree(ctx context.Context, c client.Client, watchNamespace string, recorder record.EventRecorder, controllerName string) error {
 	// Check if operator is OLM-managed
 	if opCondName == "" {
 		return nil
@@ -66,7 +66,7 @@ func MarkAsFree(c client.Client, watchNamespace string, recorder record.EventRec
 		return nil
 	}
 
-	opCond, err := get(c, watchNamespace)
+	opCond, err := get(ctx, c, watchNamespace)
 	if err != nil {
 		recorder.Eventf(opCond, core.EventTypeWarning, "OperatorConditionError",
 			"Failed to get OperatorCondition CR: %v", err)
@@ -77,7 +77,7 @@ func MarkAsFree(c client.Client, watchNamespace string, recorder record.EventRec
 		return nil
 	}
 
-	err = set(c, opCond, operators.Upgradeable, meta.ConditionTrue, upgradeableTrueReason, upgradeableTrueMessage)
+	err = set(ctx, c, opCond, operators.Upgradeable, meta.ConditionTrue, upgradeableTrueReason, upgradeableTrueMessage)
 	if err != nil {
 		recorder.Eventf(opCond, core.EventTypeWarning, "OperatorConditionError",
 			"Failed to patch OperatorCondition CR. Manual operator upgrades may be needed: %v", err)
@@ -88,7 +88,7 @@ func MarkAsFree(c client.Client, watchNamespace string, recorder record.EventRec
 
 // MarkAsBusy marks the given conroller as busy and sets the Upgradeable condition to False
 // to prevent operator upgrades by OLM. No-op if operator is not OLM-managed
-func MarkAsBusy(c client.Client, watchNamespace string, recorder record.EventRecorder, controllerName string) error {
+func MarkAsBusy(ctx context.Context, c client.Client, watchNamespace string, recorder record.EventRecorder, controllerName string) error {
 	// Check if operator is OLM-managed
 	if opCondName == "" {
 		return nil
@@ -100,7 +100,7 @@ func MarkAsBusy(c client.Client, watchNamespace string, recorder record.EventRec
 	// Add given controller to busy controllers set. struct{} used as value since it takes up 0 bytes
 	busyControllers[controllerName] = struct{}{}
 
-	opCond, err := get(c, watchNamespace)
+	opCond, err := get(ctx, c, watchNamespace)
 	if err != nil {
 		recorder.Eventf(opCond, core.EventTypeWarning, "OperatorConditionError",
 			"Failed to get OperatorCondition CR: %v", err)
@@ -111,7 +111,7 @@ func MarkAsBusy(c client.Client, watchNamespace string, recorder record.EventRec
 		return nil
 	}
 
-	err = set(c, opCond, operators.Upgradeable, meta.ConditionFalse, upgradeableFalseReason, upgradeableFalseMessage)
+	err = set(ctx, c, opCond, operators.Upgradeable, meta.ConditionFalse, upgradeableFalseReason, upgradeableFalseMessage)
 	if err != nil {
 		recorder.Eventf(opCond, core.EventTypeWarning, "OperatorConditionError",
 			"Failed to patch OperatorCondition CR. Be cautious of automatic operator upgrades: %v", err)
@@ -134,7 +134,7 @@ func Validate(conditions []meta.Condition, conditionType string, expectedStatus 
 
 // set sets the given condition's values within the given OperatorCondition.
 // Only returns after waiting for a made change to take effect.
-func set(c client.Client, opCond *operators.OperatorCondition, conditionType string, status meta.ConditionStatus,
+func set(ctx context.Context, c client.Client, opCond *operators.OperatorCondition, conditionType string, status meta.ConditionStatus,
 	reason, message string) error {
 	newCond := meta.Condition{
 		Type:    conditionType,
@@ -142,17 +142,17 @@ func set(c client.Client, opCond *operators.OperatorCondition, conditionType str
 		Reason:  reason,
 		Message: message,
 	}
-	if err := patch(c, opCond, newCond); err != nil {
+	if err := patch(ctx, c, opCond, newCond); err != nil {
 		return err
 	}
 	// Wait to ensure change is actually picked up
-	return wait(c, opCond.GetNamespace(), newCond.Type, newCond.Status)
+	return wait(ctx, c, opCond.GetNamespace(), newCond.Type, newCond.Status)
 }
 
 // get retrieves the OperatorCondition resource from the given namespace
-func get(c client.Client, watchNamespace string) (*operators.OperatorCondition, error) {
+func get(ctx context.Context, c client.Client, watchNamespace string) (*operators.OperatorCondition, error) {
 	opCond := &operators.OperatorCondition{}
-	err := c.Get(context.TODO(), types.NamespacedName{Namespace: watchNamespace, Name: opCondName}, opCond)
+	err := c.Get(ctx, types.NamespacedName{Namespace: watchNamespace, Name: opCondName}, opCond)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get OperatorCondition CR %s from namespace %s: %w",
 			opCondName, watchNamespace, err)
@@ -162,23 +162,23 @@ func get(c client.Client, watchNamespace string) (*operators.OperatorCondition, 
 
 // patch modifies the given condition within the given OperatorCondition object.
 // Creates the Condition if not present, overrides it otherwise
-func patch(c client.Client, opCond *operators.OperatorCondition, newCond meta.Condition) error {
+func patch(ctx context.Context, c client.Client, opCond *operators.OperatorCondition, newCond meta.Condition) error {
 	newCond.LastTransitionTime = meta.Now()
 	patchData, err := json.Marshal([]*patcher.JSONPatch{
 		patcher.NewJSONPatch("add", "/spec/conditions", []meta.Condition{newCond})})
 	if err != nil {
 		return fmt.Errorf("unable to generate patch request body for Condition %v: %w", newCond, err)
 	}
-	if err = c.Patch(context.TODO(), opCond, client.RawPatch(types.JSONPatchType, patchData)); err != nil {
+	if err = c.Patch(ctx, opCond, client.RawPatch(types.JSONPatchType, patchData)); err != nil {
 		return fmt.Errorf("unable to apply patch %s to OperatorCondition %s: %w", patchData, opCond.GetName(), err)
 	}
 	return nil
 }
 
 // wait repeatedly checks if the OperatorCondition resource's Status has been updated
-func wait(c client.Client, watchNamespace, condType string, expectedStatus meta.ConditionStatus) error {
+func wait(ctx context.Context, c client.Client, watchNamespace, condType string, expectedStatus meta.ConditionStatus) error {
 	err := kubeWait.Poll(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
-		opCond, err := get(c, watchNamespace)
+		opCond, err := get(ctx, c, watchNamespace)
 		if err != nil {
 			return false, err
 		}

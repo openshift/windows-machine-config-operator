@@ -52,7 +52,7 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	if err != nil {
 		return err
 	}
-	node, err := controller.GetAssociatedNode(directClient, addrs)
+	node, err := controller.GetAssociatedNode(ctx, directClient, addrs)
 	if err != nil {
 		klog.Infof("no associated node found")
 	}

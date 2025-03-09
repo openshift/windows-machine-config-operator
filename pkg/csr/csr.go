@@ -102,12 +102,12 @@ func NewApprover(client client.Client, clientSet *kubernetes.Clientset, csr *cer
 
 // Approve determines if a CSR should be approved by WMCO, and if so, approves it by updating its status. This function
 // is a NOOP if the CSR should not be approved.
-func (a *Approver) Approve() error {
+func (a *Approver) Approve(ctx context.Context) error {
 	if a.k8sclientset == nil {
 		return fmt.Errorf("kubernetes clientSet should not be nil")
 	}
 
-	validForApproval, err := a.validateCSRContents()
+	validForApproval, err := a.validateCSRContents(ctx)
 	if err != nil {
 		return fmt.Errorf("error determining if CSR %s should be approved: %w", a.csr.Name, err)
 	}
@@ -135,7 +135,7 @@ func (a *Approver) Approve() error {
 // validateCSRContents returns true if the CSR request contents are valid.
 // If the CSR is not from a BYOH Windows instance, it returns false with no error.
 // If there is an error during validation, it returns false with the error.
-func (a *Approver) validateCSRContents() (bool, error) {
+func (a *Approver) validateCSRContents(ctx context.Context) (bool, error) {
 	parsedCSR, err := ParseCSR(a.csr.Spec.Request)
 	if err != nil {
 		return false, fmt.Errorf("error parsing CSR: %s: %w", a.csr.Name, err)
@@ -148,7 +148,7 @@ func (a *Approver) validateCSRContents() (bool, error) {
 	}
 
 	// lookup the node name against the instance configMap addresses/host names
-	valid, err := a.validateNodeName(nodeName)
+	valid, err := a.validateNodeName(ctx, nodeName)
 	if err != nil {
 		return false, fmt.Errorf("error validating node name %s for CSR: %s: %w", nodeName, a.csr.Name, err)
 	}
@@ -166,7 +166,7 @@ func (a *Approver) validateCSRContents() (bool, error) {
 		// Node client bootstrapper CSR is received before the instance becomes a node
 		// hence we should not proceed if a corresponding node already exists
 		node := &core.Node{}
-		err := a.client.Get(context.TODO(), kubeTypes.NamespacedName{Namespace: a.namespace,
+		err := a.client.Get(ctx, kubeTypes.NamespacedName{Namespace: a.namespace,
 			Name: nodeName}, node)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("unable to get node %s: %w", nodeName, err)
@@ -184,9 +184,9 @@ func (a *Approver) validateCSRContents() (bool, error) {
 // validateNodeName returns true if the node name passed here matches either the
 // actual host name of the VM'S or the reverse lookup of the instance addresses
 // present in the configMap.
-func (a *Approver) validateNodeName(nodeName string) (bool, error) {
+func (a *Approver) validateNodeName(ctx context.Context, nodeName string) (bool, error) {
 	// Get the list of instances that are expected to be Nodes
-	windowsInstances, err := wiparser.GetInstances(a.client, a.namespace)
+	windowsInstances, err := wiparser.GetInstances(ctx, a.client, a.namespace)
 	if err != nil {
 		return false, fmt.Errorf("unable to retrieve Windows instances: %w", err)
 	}
@@ -197,15 +197,15 @@ func (a *Approver) validateNodeName(nodeName string) (bool, error) {
 	} else if hasEntry {
 		return true, nil
 	}
-	return a.validateWithHostName(nodeName, windowsInstances)
+	return a.validateWithHostName(ctx, nodeName, windowsInstances)
 }
 
 // validateWithHostName returns true if the node name given matches the host name for any of the instances
 // provided in the instance list. If a match is found, it also validates if the node name complies with the DNS
 // RFC1123 naming convention for internet hosts.
-func (a *Approver) validateWithHostName(nodeName string, windowsInstances []*instance.Info) (bool, error) {
+func (a *Approver) validateWithHostName(ctx context.Context, nodeName string, windowsInstances []*instance.Info) (bool, error) {
 	// Create a new signer using the private key secret
-	instanceSigner, err := signer.Create(kubeTypes.NamespacedName{Namespace: a.namespace,
+	instanceSigner, err := signer.Create(ctx, kubeTypes.NamespacedName{Namespace: a.namespace,
 		Name: secrets.PrivateKeySecret}, a.client)
 	if err != nil {
 		return false, fmt.Errorf("unable to create signer from private key secret: %w", err)

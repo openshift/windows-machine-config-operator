@@ -31,6 +31,7 @@ find_files() {
         -o -wholename './ovn-kubernetes' \
         -o -wholename './promu' \
         -o -wholename './windows_exporter' \
+        -o -wholename './csi-proxy' \
       \) -prune \
     \) -name '*.go'
 }
@@ -49,4 +50,20 @@ if [[ -n "${bad_files}" ]]; then
         echo "${bad_files}"
         echo "Try running 'make imports'"
         exit 1
+fi
+
+non_e2e_files=$(find_files | sed '/test\/e2e/d')
+bad_files=""
+for file in $non_e2e_files;do
+  # || true required here as grep will cause the script to error out if a match isnt found
+  match=$(grep -H "context.TODO()" $file |awk '{print $1}') || true
+  if [[ -n $match ]]; then
+    bad_files="${bad_files}${match}\n"
+  fi
+done
+if [[ -n "${bad_files}" ]]; then
+  echo "!!! 'context.TODO' was found in the following files: "
+  printf "${bad_files}"
+  echo "Switch to a context that handles system interrupt signals"
+  exit 1
 fi
