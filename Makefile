@@ -8,7 +8,6 @@ WMCO_VERSION ?= 10.18.0
 # *_GIT_VERSION are the k8s versions. Any update to the build line could potentially require an update to the sed
 # command in generate_k8s_version_commit() in hack/update_submodules.sh
 KUBELET_GIT_VERSION=v1.31.5+acb9630
-KUBE-PROXY_GIT_VERSION=v1.31.1
 CONTAINERD_GIT_VERSION=v1.7.25
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "preview,fast,stable")
@@ -268,7 +267,7 @@ kubelet:
 
 .PHONY: kube-proxy
 kube-proxy:
-	KUBE_GIT_VERSION=$(KUBE-PROXY_GIT_VERSION) KUBE_BUILD_PLATFORMS=windows/amd64 make -C kube-proxy WHAT=cmd/kube-proxy
+	KUBE_GIT_VERSION=$(KUBELET_GIT_VERSION) KUBE_BUILD_PLATFORMS=windows/amd64 make -C kubelet WHAT=cmd/kube-proxy
 
 .PHONY : containerd
 containerd:
