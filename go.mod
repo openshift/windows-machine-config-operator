@@ -1,8 +1,6 @@
 module github.com/openshift/windows-machine-config-operator
 
-go 1.22.4
-
-toolchain go1.22.7
+go 1.22.9
 
 replace (
 	// fix the latest working version for go1.22, remove the replacement with the go1.23 bump
