@@ -26,9 +26,9 @@ const (
 )
 
 // GetPrivateKey fetches the specified secret and extracts the private key data
-func GetPrivateKey(secret kubeTypes.NamespacedName, c client.Client) ([]byte, error) {
+func GetPrivateKey(ctx context.Context, secret kubeTypes.NamespacedName, c client.Client) ([]byte, error) {
 	privateKeySecret := &core.Secret{}
-	if err := c.Get(context.TODO(), secret, privateKeySecret); err != nil {
+	if err := c.Get(ctx, secret, privateKeySecret); err != nil {
 		// Error reading the object - requeue the request.
 		return []byte{}, err
 	}

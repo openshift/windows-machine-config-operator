@@ -38,7 +38,7 @@ var (
 
 // Network interface contains methods to interact with cluster network objects
 type Network interface {
-	Validate() error
+	Validate(context.Context) error
 	GetServiceCIDR() string
 	VXLANPort() string
 }
@@ -46,7 +46,7 @@ type Network interface {
 // Config interface contains methods to expose cluster config related information
 type Config interface {
 	// Validate checks if the cluster configurations are as required.
-	Validate() error
+	Validate(context.Context) error
 	// Platform returns cloud provider on which OpenShift is running
 	Platform() oconfig.PlatformType
 	// Network returns network configuration for the OpenShift cluster
@@ -83,7 +83,7 @@ func (c *config) Network() Network {
 }
 
 // NewConfig returns a Config struct pertaining to the cluster configuration
-func NewConfig(restConfig *rest.Config) (Config, error) {
+func NewConfig(ctx context.Context, restConfig *rest.Config) (Config, error) {
 	// get OpenShift API config client.
 	oclient, err := configclient.NewForConfig(restConfig)
 	if err != nil {
@@ -97,13 +97,13 @@ func NewConfig(restConfig *rest.Config) (Config, error) {
 	}
 
 	// get cluster network configurations
-	network, err := networkConfigurationFactory(oclient, operatorClient)
+	network, err := networkConfigurationFactory(ctx, oclient, operatorClient)
 	if err != nil {
 		return nil, fmt.Errorf("error getting cluster network: %w", err)
 	}
 
 	// get the platform type here
-	infra, err := oclient.ConfigV1().Infrastructures().Get(context.TODO(), "cluster", meta.GetOptions{})
+	infra, err := oclient.ConfigV1().Infrastructures().Get(ctx, "cluster", meta.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error getting cluster network: %w", err)
 	}
@@ -149,12 +149,12 @@ func (c *config) validateK8sVersion() error {
 
 // Validate method checks if the cluster configurations are as required. It throws an error if the configuration could not
 // be validated.
-func (c *config) Validate() error {
+func (c *config) Validate(ctx context.Context) error {
 	err := c.validateK8sVersion()
 	if err != nil {
 		return fmt.Errorf("error validating k8s version: %w", err)
 	}
-	if err = c.network.Validate(); err != nil {
+	if err = c.network.Validate(ctx); err != nil {
 		return fmt.Errorf("error validating network configuration: %w", err)
 	}
 	return nil
@@ -175,20 +175,20 @@ type ovnKubernetes struct {
 }
 
 // networkConfigurationFactory is a factory method that returns information specific to network type
-func networkConfigurationFactory(oclient configclient.Interface, operatorClient operatorv1.OperatorV1Interface) (Network, error) {
-	network, err := getNetworkType(oclient)
+func networkConfigurationFactory(ctx context.Context, oclient configclient.Interface, operatorClient operatorv1.OperatorV1Interface) (Network, error) {
+	network, err := getNetworkType(ctx, oclient)
 	if err != nil {
 		return nil, fmt.Errorf("error getting cluster network type: %w", err)
 	}
 
 	// retrieve serviceCIDR using cluster config required for cni configurations
-	serviceCIDR, err := getServiceNetworkCIDR(oclient)
+	serviceCIDR, err := getServiceNetworkCIDR(ctx, oclient)
 	if err != nil || serviceCIDR == "" {
 		return nil, fmt.Errorf("error getting service network CIDR: %w", err)
 	}
 
 	// retrieve the VXLAN port using cluster config
-	vxlanPort, err := getVXLANPort(operatorClient)
+	vxlanPort, err := getVXLANPort(ctx, operatorClient)
 	if err != nil {
 		return nil, fmt.Errorf("error getting the custom vxlan port: %w", err)
 	}
@@ -234,9 +234,9 @@ func (ovn *ovnKubernetes) VXLANPort() string {
 }
 
 // Validate for OVN Kubernetes checks for network type and hybrid overlay.
-func (ovn *ovnKubernetes) Validate() error {
+func (ovn *ovnKubernetes) Validate(ctx context.Context) error {
 	// check if hybrid overlay is enabled for the cluster
-	networkCR, err := ovn.operatorClient.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
+	networkCR, err := ovn.operatorClient.Networks().Get(ctx, "cluster", meta.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("error getting cluster network.operator object: %w", err)
 	}
@@ -253,9 +253,9 @@ func (ovn *ovnKubernetes) Validate() error {
 }
 
 // getNetworkType returns network type of the cluster
-func getNetworkType(oclient configclient.Interface) (string, error) {
+func getNetworkType(ctx context.Context, oclient configclient.Interface) (string, error) {
 	// Get the cluster network object so that we can find the network type
-	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
+	networkCR, err := oclient.ConfigV1().Networks().Get(ctx, "cluster", meta.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error getting cluster network object: %w", err)
 	}
@@ -263,9 +263,9 @@ func getNetworkType(oclient configclient.Interface) (string, error) {
 }
 
 // getServiceNetworkCIDR gets the serviceCIDR using cluster config required for cni configuration
-func getServiceNetworkCIDR(oclient configclient.Interface) (string, error) {
+func getServiceNetworkCIDR(ctx context.Context, oclient configclient.Interface) (string, error) {
 	// Get the cluster network object so that we can find the service network
-	networkCR, err := oclient.ConfigV1().Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
+	networkCR, err := oclient.ConfigV1().Networks().Get(ctx, "cluster", meta.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error getting cluster network object: %w", err)
 	}
@@ -281,9 +281,9 @@ func getServiceNetworkCIDR(oclient configclient.Interface) (string, error) {
 
 // getVXLANPort gets the VXLAN port to establish tunnel as a string. The return type doesn't matter as we want to pass
 // this argument to a powershell command
-func getVXLANPort(operatorClient operatorv1.OperatorV1Interface) (string, error) {
+func getVXLANPort(ctx context.Context, operatorClient operatorv1.OperatorV1Interface) (string, error) {
 	// Get the cluster network object so that we can find the service network
-	networkCR, err := operatorClient.Networks().Get(context.TODO(), "cluster", meta.GetOptions{})
+	networkCR, err := operatorClient.Networks().Get(ctx, "cluster", meta.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error getting cluster network object: %w", err)
 	}

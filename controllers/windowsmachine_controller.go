@@ -125,13 +125,13 @@ func (r *WindowsMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // mapNodeToMachine maps the given Windows node to its associated Machine
-func (r *WindowsMachineReconciler) mapNodeToMachine(_ context.Context, object client.Object) []reconcile.Request {
+func (r *WindowsMachineReconciler) mapNodeToMachine(ctx context.Context, object client.Object) []reconcile.Request {
 	if !isWindowsNode(object) {
 		return nil
 	}
 
 	// Map the Node to the associated Machine through the Node's UID
-	machines, err := r.machineClient.Machines(cluster.MachineAPINamespace).List(context.TODO(),
+	machines, err := r.machineClient.Machines(cluster.MachineAPINamespace).List(ctx,
 		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows," + IgnoreLabel + "!=true"})
 	if err != nil {
 		r.log.Error(err, "could not get a list of machines")
@@ -210,18 +210,18 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	log.V(1).Info("reconciling")
 
 	// Prevent WMCO upgrades while Machine nodes are being processed
-	if err := condition.MarkAsBusy(r.client, r.watchNamespace, r.recorder, WindowsMachineController); err != nil {
+	if err := condition.MarkAsBusy(ctx, r.client, r.watchNamespace, r.recorder, WindowsMachineController); err != nil {
 		return ctrl.Result{}, err
 	}
 	defer func() {
-		reconcileErr = markAsFreeOnSuccess(r.client, r.watchNamespace, r.recorder, WindowsMachineController,
+		reconcileErr = markAsFreeOnSuccess(ctx, r.client, r.watchNamespace, r.recorder, WindowsMachineController,
 			result.Requeue, reconcileErr)
 	}()
 
 	// Create a new signer from the private key the instances will be configured with
 	// Doing this before fetching the machine allows us to warn the user better about the missing private key
 	var err error
-	r.signer, err = signer.Create(kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret},
+	r.signer, err = signer.Create(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret},
 		r.client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to get signer from secret %s: %w", request.NamespacedName, err)
@@ -276,7 +276,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			if node.Annotations[nodeconfig.PubKeyHashAnnotation] !=
 				nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
 				log.Info("deleting machine")
-				deletionAllowed, err := r.isAllowedDeletion(machine)
+				deletionAllowed, err := r.isAllowedDeletion(ctx, machine)
 				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("unable to determine if Machine can be deleted: %w", err)
 				}
@@ -287,7 +287,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 						machine.Name, maxUnhealthyCount)
 					return ctrl.Result{Requeue: true}, nil
 				}
-				return ctrl.Result{}, r.deleteMachine(machine)
+				return ctrl.Result{}, r.deleteMachine(ctx, machine)
 			}
 			if node.Annotations[metadata.VersionAnnotation] == version.Get() {
 				// version annotation exists with a valid value, node is fully configured.
@@ -301,7 +301,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	}
 
 	// validate userData secret
-	if err := r.validateUserData(); err != nil {
+	if err := r.validateUserData(ctx); err != nil {
 		return ctrl.Result{}, fmt.Errorf("error validating userData secret: %w", err)
 	}
 
@@ -326,7 +326,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 
 	log.Info("processing", "address", ipAddress)
 	// Configure the Machine as an up-to-date Windows Worker node
-	if err := r.configureMachine(ipAddress, instanceID, machine.Name, node); err != nil {
+	if err := r.configureMachine(ctx, ipAddress, instanceID, machine.Name, node); err != nil {
 		var authErr *windows.AuthErr
 		if errors.As(err, &authErr) {
 			// SSH authentication errors with the Machine are non recoverable, stemming from a mismatch with the
@@ -334,7 +334,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			// re-provisioned.
 			r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
 				"Machine %s authentication failure", machine.Name)
-			return ctrl.Result{}, r.deleteMachine(machine)
+			return ctrl.Result{}, r.deleteMachine(ctx, machine)
 		}
 		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
 			"Machine %s configuration failure", machine.Name)
@@ -346,13 +346,13 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 }
 
 // deleteMachine deletes the specified Machine
-func (r *WindowsMachineReconciler) deleteMachine(machine *mapi.Machine) error {
+func (r *WindowsMachineReconciler) deleteMachine(ctx context.Context, machine *mapi.Machine) error {
 	if !machine.GetDeletionTimestamp().IsZero() {
 		// Delete already initiated
 		return nil
 	}
 
-	if err := r.client.Delete(context.TODO(), machine); err != nil {
+	if err := r.client.Delete(ctx, machine); err != nil {
 		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionFailed",
 			"Machine %v deletion failed: %v", machine.Name, err)
 		return err
@@ -374,7 +374,7 @@ func (r *WindowsMachineReconciler) getDefaultUsername() string {
 }
 
 // configureMachine configures the given Windows VM, adding it as a node object to the cluster or upgrading it in place.
-func (r *WindowsMachineReconciler) configureMachine(ipAddress, instanceID, machineName string, node *core.Node) error {
+func (r *WindowsMachineReconciler) configureMachine(ctx context.Context, ipAddress, instanceID, machineName string, node *core.Node) error {
 	// The name of the Machine must be the same as the hostname of the associated VM. This is currently not true in the
 	// case of vSphere VMs provisioned by MAPI. In case of Linux, ignition was handling it. As we don't have an
 	// equivalent of ignition in Windows, WMCO must correct this by changing the VM's hostname.
@@ -391,7 +391,7 @@ func (r *WindowsMachineReconciler) configureMachine(ipAddress, instanceID, machi
 		return err
 	}
 	// Get private key to encrypt instance usernames
-	privateKeyBytes, err := secrets.GetPrivateKey(kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+	privateKeyBytes, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		return err
@@ -401,7 +401,7 @@ func (r *WindowsMachineReconciler) configureMachine(ipAddress, instanceID, machi
 		return fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err)
 	}
 
-	if err := r.ensureInstanceIsUpToDate(instanceInfo, nil,
+	if err := r.ensureInstanceIsUpToDate(ctx, instanceInfo, nil,
 		map[string]string{UsernameAnnotation: encryptedUsername}); err != nil {
 		return fmt.Errorf("unable to configure instance %s: %w", instanceID, err)
 	}
@@ -411,13 +411,13 @@ func (r *WindowsMachineReconciler) configureMachine(ipAddress, instanceID, machi
 
 // validateUserData validates the userData secret. It returns error if the secret doesn`t contain the expected public
 // key bytes.
-func (r *WindowsMachineReconciler) validateUserData() error {
+func (r *WindowsMachineReconciler) validateUserData(ctx context.Context) error {
 	if r.signer == nil {
 		return fmt.Errorf("signer must not be nil")
 	}
 
 	userDataSecret := &core.Secret{}
-	err := r.client.Get(context.TODO(), kubeTypes.NamespacedName{Name: secrets.UserDataSecret,
+	err := r.client.Get(ctx, kubeTypes.NamespacedName{Name: secrets.UserDataSecret,
 		Namespace: cluster.MachineAPINamespace}, userDataSecret)
 	if err != nil {
 		return fmt.Errorf("could not find Windows userData secret in required namespace: %w", err)
@@ -436,20 +436,20 @@ func (r *WindowsMachineReconciler) validateUserData() error {
 
 // isAllowedDeletion determines if the number of machines after deletion of the given machine doesn`t fall below the
 // minHealthyCount
-func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) (bool, error) {
+func (r *WindowsMachineReconciler) isAllowedDeletion(ctx context.Context, machine *mapi.Machine) (bool, error) {
 	if len(machine.OwnerReferences) == 0 {
 		return false, fmt.Errorf("machine has no owner reference")
 	}
 	machinesetName := machine.OwnerReferences[0].Name
 
-	machines, err := r.machineClient.Machines(cluster.MachineAPINamespace).List(context.TODO(),
+	machines, err := r.machineClient.Machines(cluster.MachineAPINamespace).List(ctx,
 		meta.ListOptions{LabelSelector: MachineOSLabel + "=Windows"})
 	if err != nil {
 		return false, fmt.Errorf("cannot list Machines: %w", err)
 	}
 
 	// get Windows MachineSet
-	windowsMachineSet, err := r.machineClient.MachineSets(cluster.MachineAPINamespace).Get(context.TODO(),
+	windowsMachineSet, err := r.machineClient.MachineSets(cluster.MachineAPINamespace).Get(ctx,
 		machinesetName, meta.GetOptions{})
 	if err != nil {
 		return false, fmt.Errorf("cannot get MachineSet: %w", err)
@@ -466,7 +466,7 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) (boo
 		// Increment the count if the machine is identified as healthy and is a part of given Windows MachineSet and
 		// on which deletion is not already initiated.
 		if len(machine.OwnerReferences) != 0 && ma.OwnerReferences[0].Name == machinesetName &&
-			r.isWindowsMachineHealthy(&ma) && ma.DeletionTimestamp.IsZero() {
+			r.isWindowsMachineHealthy(ctx, &ma) && ma.DeletionTimestamp.IsZero() {
 			totalHealthy += 1
 		}
 	}
@@ -483,14 +483,14 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(machine *mapi.Machine) (boo
 // 1. Machine is not in a 'Running' phase
 // 2. Machine is not associated with a Node object
 // 3. Associated Node object doesn't have a Version annotation
-func (r *WindowsMachineReconciler) isWindowsMachineHealthy(machine *mapi.Machine) bool {
+func (r *WindowsMachineReconciler) isWindowsMachineHealthy(ctx context.Context, machine *mapi.Machine) bool {
 	if (machine.Status.Phase == nil || *machine.Status.Phase != "Running") &&
 		machine.Status.NodeRef == nil {
 		return false
 	}
 
 	// Get node associated with the machine
-	node, err := r.k8sclientset.CoreV1().Nodes().Get(context.TODO(), machine.Status.NodeRef.Name, meta.GetOptions{})
+	node, err := r.k8sclientset.CoreV1().Nodes().Get(ctx, machine.Status.NodeRef.Name, meta.GetOptions{})
 	if err != nil {
 		return false
 	}

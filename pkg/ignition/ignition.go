@@ -42,10 +42,10 @@ type Ignition struct {
 }
 
 // New returns a new instance of Ignition
-func New(c client.Client) (*Ignition, error) {
+func New(ctx context.Context, c client.Client) (*Ignition, error) {
 	log := ctrl.Log.WithName("ignition")
 	machineConfigs := &mcfg.MachineConfigList{}
-	err := c.List(context.TODO(), machineConfigs)
+	err := c.List(ctx, machineConfigs)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func New(c client.Client) (*Ignition, error) {
 		configuration.Ignition.Version)
 
 	ccList := mcfg.ControllerConfigList{}
-	if err := c.List(context.TODO(), &ccList); err != nil {
+	if err := c.List(ctx, &ccList); err != nil {
 		return nil, err
 	}
 	var kubeletCAData []byte

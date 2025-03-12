@@ -89,13 +89,13 @@ func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	if err := r.client.List(ctx, nodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {
 		return ctrl.Result{}, err
 	}
-	r.signer, err = signer.Create(types.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret},
+	r.signer, err = signer.Create(ctx, types.NamespacedName{Namespace: r.watchNamespace, Name: secrets.PrivateKeySecret},
 		r.client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
 	for _, node := range nodes.Items {
-		winInstance, err := r.instanceFromNode(&node)
+		winInstance, err := r.instanceFromNode(ctx, &node)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to create instance object from node: %w", err)
 		}
