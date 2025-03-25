@@ -88,7 +88,6 @@ func (p *Provider) newAzureMachineProviderSpec(location string, zone string, win
 		},
 		PublicIP:             false,
 		Subnet:               fmt.Sprintf("%s-worker-subnet", p.InfrastructureName),
-		ManagedIdentity:      fmt.Sprintf("%s-identity", p.InfrastructureName),
 		Vnet:                 fmt.Sprintf("%s-vnet", p.InfrastructureName),
 		ResourceGroup:        p.PlatformStatus.Azure.ResourceGroupName,
 		NetworkResourceGroup: p.PlatformStatus.Azure.NetworkResourceGroupName,
