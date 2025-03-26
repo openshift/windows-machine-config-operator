@@ -176,7 +176,6 @@ $(get_spec $infraID $az $provider $byoh)
             version: $release
           kind: AzureMachineProviderSpec
           location: ${region}
-          managedIdentity: ${infraID}-identity
           metadata:
             creationTimestamp: null
           networkResourceGroup: ${infraID}-rg
