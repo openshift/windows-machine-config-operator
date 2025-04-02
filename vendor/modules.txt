@@ -113,6 +113,9 @@ github.com/coreos/ignition/v2/config/v3_3/types
 github.com/coreos/ignition/v2/config/v3_4
 github.com/coreos/ignition/v2/config/v3_4/translate
 github.com/coreos/ignition/v2/config/v3_4/types
+github.com/coreos/ignition/v2/config/v3_5
+github.com/coreos/ignition/v2/config/v3_5/translate
+github.com/coreos/ignition/v2/config/v3_5/types
 github.com/coreos/ignition/v2/config/validate
 # github.com/coreos/vcontext v0.0.0-20230201181013-d72178a18687
 ## explicit; go 1.18

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_4/types"
+	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_5/types"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	mcfg "github.com/openshift/api/machineconfiguration/v1"
