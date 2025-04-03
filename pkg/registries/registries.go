@@ -210,13 +210,13 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 		fallbackServer = ms.mirrors[0].host
 	}
 	result += fmt.Sprintf("server = \"https://%s\"", fallbackServer)
-	result += "\r\n"
+	result += "\n"
 
 	// Each mirror should result in an entry followed by a set of settings for interacting with the mirror host
 	for _, m := range ms.mirrors {
-		result += "\r\n"
+		result += "\n"
 		result += fmt.Sprintf("[host.\"https://%s\"]", m.host)
-		result += "\r\n"
+		result += "\n"
 
 		// Specify the operations the registry host may perform. IDMS mirrors can only be pulled by directly by digest,
 		// whereas ITMS mirrors have the additional resolve capability, which allows converting a tag name into a digest
@@ -227,7 +227,7 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 			hostCapabilities = "  capabilities = [\"pull\"]"
 		}
 		result += hostCapabilities
-		result += "\r\n"
+		result += "\n"
 
 		// Extract the mirror repo's authorization credentials, if one exists
 		if entry, ok := secretsConfig.Auths[extractHostname(m.host)]; ok {
@@ -236,9 +236,9 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 
 			// Add the access token as a request header
 			result += fmt.Sprintf("  [host.\"https://%s\".header]", m.host)
-			result += "\r\n"
+			result += "\n"
 			result += fmt.Sprintf("    authorization = \"Basic %s\"", token)
-			result += "\r\n"
+			result += "\n"
 		}
 	}
 
