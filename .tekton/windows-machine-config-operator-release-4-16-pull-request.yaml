@@ -35,6 +35,15 @@ spec:
     value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4-16:on-pr-{{revision}}
   - name: revision
     value: '{{revision}}'
+  taskRunSpecs:
+    - pipelineTaskName: build-source-image
+      stepSpecs:
+        - name: build
+          computeResources:
+            requests:
+              memory: 10Gi
+            limits:
+              memory: 10Gi
   pipelineSpec:
     finally:
     - name: show-sbom
