@@ -79,7 +79,7 @@ func TestGetMergedMirrorSets(t *testing.T) {
 					Spec: config.ImageDigestMirrorSetSpec{
 						ImageDigestMirrors: []config.ImageDigestMirrors{
 							{
-								Source:             "source1",
+								Source:             "https://source1.local:5000",
 								Mirrors:            []config.ImageMirror{"mirror1"},
 								MirrorSourcePolicy: config.AllowContactingSource,
 							},
@@ -102,7 +102,7 @@ func TestGetMergedMirrorSets(t *testing.T) {
 			},
 			expectedOutput: []mirrorSet{
 				{
-					source:             "source1",
+					source:             "source1.local:5000",
 					mirrors:            []mirror{{host: "mirror1", resolveTags: false}},
 					mirrorSourcePolicy: config.AllowContactingSource,
 				},
@@ -133,7 +133,7 @@ func TestGetMergedMirrorSets(t *testing.T) {
 					Spec: config.ImageTagMirrorSetSpec{
 						ImageTagMirrors: []config.ImageTagMirrors{
 							{
-								Source:             "mcr.microsoft.com/oss/kubernetes/pause",
+								Source:             "docker://mcr.microsoft.com/oss/kubernetes/pause",
 								Mirrors:            []config.ImageMirror{"quay.io/testuser/oss/kubernetes/pause"},
 								MirrorSourcePolicy: config.AllowContactingSource,
 							},
