@@ -101,6 +101,17 @@ func extractRegistryHostname(fullImage string) string {
 	return strings.Split(fullImage, imagePathSeparator)[0]
 }
 
+// extractRegistryOrgPath returns only the org path when given a reference to a registry.
+// The input for this function should not include an image name.
+func extractRegistryOrgPath(registry string) string {
+	hostname := extractRegistryHostname(registry)
+	hostnameSplit := strings.SplitN(registry, hostname, 2)
+	if len(hostnameSplit) != 2 {
+		return ""
+	}
+	return strings.TrimPrefix(hostnameSplit[1], "/")
+}
+
 // getMergedMirrorSets extracts and merges the contents of the given mirror sets.
 // The resulting slice of mirrorSets represents a system-wide image registry configuration.
 func getMergedMirrorSets(idmsItems []config.ImageDigestMirrorSet, idtsItems []config.ImageTagMirrorSet) []mirrorSet {
@@ -218,14 +229,24 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 		// set the fallback server to the first mirror to ensure the source is never contacted, even if all mirrors fail
 		fallbackServer = ms.mirrors[0].host
 	}
-	result += fmt.Sprintf("server = \"https://%s\"", fallbackServer)
-	result += "\n"
+	fallbackRegistry := extractRegistryHostname(fallbackServer)
+	result += fmt.Sprintf("server = \"https://%s/v2", fallbackRegistry)
+	if orgPath := extractRegistryOrgPath(fallbackServer); orgPath != "" {
+		result += "/" + orgPath
+	}
+	result += "\"\n"
+	result += "\noverride_path = true\n"
 
 	// Each mirror should result in an entry followed by a set of settings for interacting with the mirror host
 	for _, m := range ms.mirrors {
+		hostRegistry := extractRegistryHostname(m.host)
+		hostOrgPath := extractRegistryOrgPath(m.host)
 		result += "\n"
-		result += fmt.Sprintf("[host.\"https://%s\"]", m.host)
-		result += "\n"
+		result += fmt.Sprintf("[host.\"https://%s/v2", hostRegistry)
+		if hostOrgPath != "" {
+			result += "/" + hostOrgPath
+		}
+		result += "\"]\n"
 
 		// Specify the operations the registry host may perform. IDMS mirrors can only be pulled by directly by digest,
 		// whereas ITMS mirrors have the additional resolve capability, which allows converting a tag name into a digest
@@ -237,6 +258,7 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 		}
 		result += hostCapabilities
 		result += "\n"
+		result += "  override_path = true\n"
 
 		// Extract the mirror repo's authorization credentials, if one exists
 		if entry, ok := secretsConfig.Auths[extractRegistryHostname(m.host)]; ok {
@@ -244,8 +266,11 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 			token := base64.StdEncoding.EncodeToString([]byte(credentials))
 
 			// Add the access token as a request header
-			result += fmt.Sprintf("  [host.\"https://%s\".header]", m.host)
-			result += "\n"
+			result += fmt.Sprintf("  [host.\"https://%s/v2", hostRegistry)
+			if hostOrgPath != "" {
+				result += "/" + hostOrgPath
+			}
+			result += "\".header]\n"
 			result += fmt.Sprintf("    authorization = \"Basic %s\"", token)
 			result += "\n"
 		}
