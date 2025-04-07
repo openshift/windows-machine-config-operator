@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -41,7 +42,7 @@ func newMirror(sourceImageLocation, mirrorImageLocation string, resolveTags bool
 		mirrorHost = extractMirrorURL(sourceImageLocation, mirrorImageLocation)
 	} else {
 		// special case if source and mirror are the same. Do not drop the host repo name to avoid an empty host entry
-		mirrorHost = extractHostname(mirrorImageLocation)
+		mirrorHost = extractRegistryHostname(mirrorImageLocation)
 	}
 	return mirror{host: mirrorHost, resolveTags: resolveTags}
 }
@@ -82,14 +83,22 @@ func newMirrorSet(srcImage string, mirrorLocations []config.ImageMirror, resolve
 	for _, m := range mirrorLocations {
 		truncatedMirrors = append(truncatedMirrors, newMirror(srcImage, string(m), resolveTags))
 	}
-	return mirrorSet{source: extractHostname(srcImage), mirrors: truncatedMirrors, mirrorSourcePolicy: mirrorSourcePolicy}
+	return mirrorSet{source: extractRegistryHostname(srcImage), mirrors: truncatedMirrors, mirrorSourcePolicy: mirrorSourcePolicy}
 }
 
-// extractHostname extracts just the initial host repo from a full image location
-// e.g. mcr.microsoft.com would be extracted from mcr.microsoft.com/oss/kubernetes/pause:3.9
-func extractHostname(fullImage string) string {
-	parts := strings.Split(fullImage, imagePathSeparator)
-	return parts[0]
+// extractRegistryHostname extracts just the initial host repo from a full image location, as containerd does not allow
+// registries to exist on a subpath, given an input image `mcr.microsoft.com/oss/kubernetes/pause:3.9`,
+// mcr.microsoft.com would be the determined registry hostname.
+func extractRegistryHostname(fullImage string) string {
+	// url.Parse will only work if URL has a scheme (https://)
+	if parsedURL, err := url.Parse(fullImage); err == nil && parsedURL.Hostname() != "" {
+		if parsedURL.Port() != "" {
+			return parsedURL.Hostname() + ":" + parsedURL.Port()
+		}
+		return parsedURL.Hostname()
+	}
+	// For URLs without a scheme, just return everything before the first `/`
+	return strings.Split(fullImage, imagePathSeparator)[0]
 }
 
 // getMergedMirrorSets extracts and merges the contents of the given mirror sets.
@@ -230,7 +239,7 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 		result += "\n"
 
 		// Extract the mirror repo's authorization credentials, if one exists
-		if entry, ok := secretsConfig.Auths[extractHostname(m.host)]; ok {
+		if entry, ok := secretsConfig.Auths[extractRegistryHostname(m.host)]; ok {
 			credentials := entry.Username + ":" + entry.Password
 			token := base64.StdEncoding.EncodeToString([]byte(credentials))
 
