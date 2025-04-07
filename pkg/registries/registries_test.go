@@ -237,7 +237,7 @@ func TestGenerateConfig(t *testing.T) {
 		{
 			name: "empty mirrors",
 			input: mirrorSet{
-				source:             "registry.access.redhat.com/ubi9/ubi-minimal",
+				source:             "registry.access.redhat.com/ubi9",
 				mirrors:            []mirror{},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
@@ -246,114 +246,136 @@ func TestGenerateConfig(t *testing.T) {
 		{
 			name: "basic one digest mirror",
 			input: mirrorSet{
-				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				source: "registry.access.redhat.com",
 				mirrors: []mirror{
-					{host: "example.io/example/ubi-minimal", resolveTags: false},
+					{host: "example.io/example", resolveTags: false},
 				},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
-			expectedOutput: `server = "https://registry.access.redhat.com/ubi9/ubi-minimal"
+			expectedOutput: `server = "https://registry.access.redhat.com/v2"
 
-[host."https://example.io/example/ubi-minimal"]
+override_path = true
+
+[host."https://example.io/v2/example"]
   capabilities = ["pull"]
+  override_path = true
 `,
 		},
 		{
 			name: "basic one tag mirror",
 			input: mirrorSet{
-				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				source: "registry.access.redhat.com",
 				mirrors: []mirror{
-					{host: "example.io/example/ubi-minimal", resolveTags: true},
+					{host: "example.io/example", resolveTags: true},
 				},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
-			expectedOutput: `server = "https://registry.access.redhat.com/ubi9/ubi-minimal"
+			expectedOutput: `server = "https://registry.access.redhat.com/v2"
 
-[host."https://example.io/example/ubi-minimal"]
+override_path = true
+
+[host."https://example.io/v2/example"]
   capabilities = ["pull", "resolve"]
+  override_path = true
 `,
 		},
 		{
 			name: "one digest mirror never contact source",
 			input: mirrorSet{
-				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				source: "registry.access.redhat.com",
 				mirrors: []mirror{
-					{host: "example.io/example/ubi-minimal", resolveTags: false},
+					{host: "example.io/example", resolveTags: false},
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: `server = "https://example.io/example/ubi-minimal"
+			expectedOutput: `server = "https://example.io/v2/example"
 
-[host."https://example.io/example/ubi-minimal"]
+override_path = true
+
+[host."https://example.io/v2/example"]
   capabilities = ["pull"]
+  override_path = true
 `,
 		},
 		{
 			name: "tags mirror never contact source",
 			input: mirrorSet{
-				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				source: "registry.access.redhat.com",
 				mirrors: []mirror{
-					{host: "example.io/example/ubi-minimal", resolveTags: true},
+					{host: "example.io/example", resolveTags: true},
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: `server = "https://example.io/example/ubi-minimal"
+			expectedOutput: `server = "https://example.io/v2/example"
 
-[host."https://example.io/example/ubi-minimal"]
+override_path = true
+
+[host."https://example.io/v2/example"]
   capabilities = ["pull", "resolve"]
+  override_path = true
 `,
 		},
 		{
 			name: "multiple mirrors",
 			input: mirrorSet{
-				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				source: "registry.access.redhat.com",
 				mirrors: []mirror{
-					{host: "example.io/example/ubi-minimal", resolveTags: false},
+					{host: "example.io/example", resolveTags: false},
 					{host: "mirror.example.com/redhat", resolveTags: false},
-					{host: "mirror.example.net/image", resolveTags: true},
+					{host: "mirror.example.net", resolveTags: true},
 				},
 				mirrorSourcePolicy: config.AllowContactingSource,
 			},
-			expectedOutput: `server = "https://registry.access.redhat.com/ubi9/ubi-minimal"
+			expectedOutput: `server = "https://registry.access.redhat.com/v2"
 
-[host."https://example.io/example/ubi-minimal"]
-  capabilities = ["pull"]
+override_path = true
 
-[host."https://mirror.example.com/redhat"]
+[host."https://example.io/v2/example"]
   capabilities = ["pull"]
-  [host."https://mirror.example.com/redhat".header]
+  override_path = true
+
+[host."https://mirror.example.com/v2/redhat"]
+  capabilities = ["pull"]
+  override_path = true
+  [host."https://mirror.example.com/v2/redhat".header]
     authorization = "Basic dXNlcjpwYXNz"
 
-[host."https://mirror.example.net/image"]
+[host."https://mirror.example.net/v2"]
   capabilities = ["pull", "resolve"]
-  [host."https://mirror.example.net/image".header]
+  override_path = true
+  [host."https://mirror.example.net/v2".header]
     authorization = "Basic dXNlcm5hbWU6cGFzc3dvcmQ="
 `,
 		},
 		{
 			name: "multiple mirrors never contact source",
 			input: mirrorSet{
-				source: "registry.access.redhat.com/ubi9/ubi-minimal",
+				source: "registry.access.redhat.com",
 				mirrors: []mirror{
-					{host: "example.io/example/ubi-minimal", resolveTags: false},
+					{host: "example.io/example", resolveTags: false},
 					{host: "mirror.example.com/redhat", resolveTags: false},
 					{host: "mirror.example.net", resolveTags: true},
 				},
 				mirrorSourcePolicy: config.NeverContactSource,
 			},
-			expectedOutput: `server = "https://example.io/example/ubi-minimal"
+			expectedOutput: `server = "https://example.io/v2/example"
 
-[host."https://example.io/example/ubi-minimal"]
-  capabilities = ["pull"]
+override_path = true
 
-[host."https://mirror.example.com/redhat"]
+[host."https://example.io/v2/example"]
   capabilities = ["pull"]
-  [host."https://mirror.example.com/redhat".header]
+  override_path = true
+
+[host."https://mirror.example.com/v2/redhat"]
+  capabilities = ["pull"]
+  override_path = true
+  [host."https://mirror.example.com/v2/redhat".header]
     authorization = "Basic dXNlcjpwYXNz"
 
-[host."https://mirror.example.net"]
+[host."https://mirror.example.net/v2"]
   capabilities = ["pull", "resolve"]
-  [host."https://mirror.example.net".header]
+  override_path = true
+  [host."https://mirror.example.net/v2".header]
     authorization = "Basic dXNlcm5hbWU6cGFzc3dvcmQ="
 `,
 		},
@@ -678,6 +700,32 @@ func TestExtractMirrorURL(t *testing.T) {
 			if result != tt.expected {
 				t.Errorf("Expected %q, got %q", tt.expected, result)
 			}
+		})
+	}
+}
+
+func TestExtractOrgPath(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			input:    "registry.local/org",
+			expected: "org",
+		},
+		{
+			input:    "registry.local/org/sub_org",
+			expected: "org/sub_org",
+		},
+		{
+			input:    "registry.local",
+			expected: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := extractRegistryOrgPath(tt.input)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
