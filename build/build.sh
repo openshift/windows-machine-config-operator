@@ -43,6 +43,4 @@ mkdir -p "${BIN_DIR}"
 
 # Account for environments where GOFLAGS is not set by setting goflags to an empty string if GOFLAGS is not set
 goflags=${GOFLAGS:-}
-
-
-CGO_ENABLED=0 GO111MODULE=on GOOS=linux go build ${GOFLAGS} -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${WMCO_CMD_DIR}
+CGO_ENABLED=1 GO111MODULE=on GOOS=linux go build -tags strictfipsruntime ${GOFLAGS} -ldflags="-X 'github.com/openshift/windows-machine-config-operator/version.Version=${VERSION}'" -o ${BIN_DIR}/${BIN_NAME} ${WMCO_CMD_DIR}
