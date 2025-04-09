@@ -22,7 +22,7 @@ spec:
   - name: hermetic
     value: "true"
   - name: build-source-image
-    value: "true"
+    value: "false"
   - name: prefetch-input
     value: '{"type": "gomod", "path": "."}'
   - name: dockerfile
