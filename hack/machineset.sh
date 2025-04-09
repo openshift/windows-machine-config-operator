@@ -75,22 +75,24 @@ EOF
 # get_aws_ms creates a MachineSet for AWS Cloud Provider
 get_aws_ms() {
 
-  if [ "$#" -lt 6 ]; then
+  if [ "$#" -lt 4 ]; then
     error-exit incorrect parameter count for get_aws_ms $#
   fi
 
   local infraID=$1
-  local region=$2
-  local az=$3
-  local provider=$4
-  local winver=$5
-  local byoh=$6
+  local linuxWorkerSpec=$2
+  local winver=$3
+  local byoh=$4
 
   local filter="Windows_Server-2022-English-Core-Base-????.??.??"
   if [ "$winver" == "2019" ]; then
     filter="Windows_Server-2019-English-Core-Base-????.??.??"
   fi
 
+
+  local az=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.placement.availibilityZone)
+  local region=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.placement.region)
+  #
   # get the AMI id for the Windows VM
   ami_id=$(aws ec2 describe-images --region "${region}" --filters "Name=name,Values=$filter" "Name=is-public, Values=true" --query "reverse(sort_by(Images, &CreationDate))[*].{name: Name, id: ImageId}" --output json | jq -r '.[0].id')
   if [ -z "$ami_id" ]; then
@@ -98,7 +100,7 @@ get_aws_ms() {
   fi
 
   cat <<EOF
-$(get_spec $infraID $az $provider $byoh)
+$(get_spec $infraID $az aws $byoh)
       providerSpec:
         value:
           ami:
@@ -140,16 +142,14 @@ EOF
 # get_azure_ms creates a MachineSet for Azure Cloud Provider
 get_azure_ms() {
 
-  if [ "$#" -lt 6 ]; then
+  if [ "$#" -lt 4 ]; then
     error-exit incorrect parameter count for get_azure_ms $#
   fi
 
   local infraID=$1
-  local region=$2
-  local az=$3
-  local provider=$4
-  local winver=$5
-  local byoh=$6
+  local linuxWorkerSpec=$2
+  local winver=$3
+  local byoh=$4
 
   local sku="2022-datacenter-smalldisk"
   local release="latest"
@@ -159,15 +159,21 @@ get_azure_ms() {
     sku="2019-datacenter-with-containers-smalldisk"
     release="17763.6293.240905"   
   fi
+  local az=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.zone | sed 's/null/""/g')
+  local region=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.location)
+  local loadBalancer=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.publicLoadBalancer)
 
   cat <<EOF
-$(get_spec $infraID $az $provider $byoh)
+$(get_spec $infraID $az azure $byoh)
       providerSpec:
         value:
           apiVersion: azureproviderconfig.openshift.io/v1beta1
           credentialsSecret:
             name: azure-cloud-credentials
             namespace: openshift-machine-api
+          diagnostics:
+            boot:
+              storageAccountType: AzureManaged
           image:
             offer: WindowsServer
             publisher: MicrosoftWindowsServer
@@ -185,6 +191,7 @@ $(get_spec $infraID $az $provider $byoh)
               storageAccountType: Premium_LRS
             osType: Windows
           publicIP: false
+          publicLoadBalancer: $loadBalancer
           resourceGroup: ${infraID}-rg
           subnet: ${infraID}-worker-subnet
           userDataSecret:
@@ -192,35 +199,36 @@ $(get_spec $infraID $az $provider $byoh)
             namespace: openshift-machine-api
           vmSize: Standard_D2s_v3
           vnet: ${infraID}-vnet
-          zone: "${az}"
+          zone: $az
 EOF
 }
 
 # get_gcp_ms creates a MachineSet for Google Cloud Platform
 get_gcp_ms() {
-  if [ "$#" -lt 6 ]; then
+  if [ "$#" -lt 4 ]; then
     error-exit incorrect parameter count for get_gcp_ms $#
   fi
 
   local infraID=$1
-  local region=$2
-  local az=$3
-  local provider=$4
-  local winver=$5
-  local byoh=$6
+  local linuxWorkerSpec=$2
+  local winver=$3
+  local byoh=$4
 
   local image="projects/windows-cloud/global/images/family/windows-2022-core"
   if [ "$winver" == "2019" ]; then
     image="projects/windows-cloud/global/images/family/windows-2019-core"
   fi
 
+  local az=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.zone)
+  local region=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.region)
+  local projectID=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.projectID)
+
   # For GCP the zone field returns the region + zone, like: `us-central1-a`.
   # Installer created MachineSets only append the `-a` portion, so we should do the same.
   local az_suffix=$(echo $az |awk -F "-" '{print $NF}')
-  local projectID=$(oc get infrastructure cluster -ojsonpath={.status.platformStatus.gcp.projectID})
 
   cat <<EOF
-$(get_spec $infraID $az_suffix $provider $byoh)
+$(get_spec $infraID $az_suffix gce $byoh)
       providerSpec:
         value:
           apiVersion: machine.openshift.io/v1beta1
@@ -256,13 +264,12 @@ EOF
 # get_vsphere_ms creates a MachineSet for vSphere Cloud Provider
 get_vsphere_ms() {
 
-  if [ "$#" -lt 3 ]; then
+  if [ "$#" -lt 2 ]; then
     error-exit incorrect parameter count for get_vsphere_ms $#
   fi
 
   local infraID=$1
-  local provider=$2
-  local byoh=$3
+  local byoh=$2
 
   # set golden image template name
   # TODO: read from parameter
@@ -276,10 +283,10 @@ get_vsphere_ms() {
                 -l machine.openshift.io/cluster-api-machine-role=worker \
                 -o jsonpath="{.items[0].spec.providerSpec.value}" \
   ) || {
-    error-exit "error getting providerSpec for ${provider} cluster ${infraID}"
+    error-exit "error getting providerSpec for cluster ${infraID}"
   }
   if [ -z "$providerSpec" ]; then
-    error-exit "cannot find providerSpec for ${provider} cluster ${infraID}"
+    error-exit "cannot find providerSpec for cluster ${infraID}"
   fi
   # get credentialsSecret
   credentialsSecret=$(echo "${providerSpec}" | jq -r '.credentialsSecret.name')
@@ -293,7 +300,7 @@ get_vsphere_ms() {
   server=$(echo "${providerSpec}" | jq -r '.workspace.server')
   # build machineset
   cat <<EOF
-$(get_spec $infraID "" $provider $byoh)
+$(get_spec $infraID "" vsphere $byoh)
       providerSpec:
         value:
           apiVersion: vsphereprovider.openshift.io/v1beta1
@@ -321,13 +328,12 @@ EOF
 # get_nutanix_ms creates a MachineSet for Nutanix
 get_nutanix_ms() {
 
-  if [ "$#" -lt 3 ]; then
+  if [ "$#" -lt 2 ]; then
     error-exit incorrect parameter count for get_nutanix_ms $#
   fi
 
   local infraID=$1
-  local provider=$2
-  local byoh=$3
+  local byoh=$2
 
   # set Windows Server 2022 image name
   imageName="nutanix-windows-server-openshift.qcow2"
@@ -347,7 +353,7 @@ get_nutanix_ms() {
   subnetId=$(echo "${providerSpec}" | jq -r '.subnets[0].uuid')
   # build machineset
   cat <<EOF
-$(get_spec $infraID "" $provider $byoh)
+$(get_spec $infraID "" nutanix $byoh)
       providerSpec:
         value:
           apiVersion: machine.openshift.io/v1
@@ -414,28 +420,24 @@ platform="$(oc get infrastructure cluster -ojsonpath={.spec.platformSpec.type})"
 # Gets the Infrastructure Id for the cluster like `pmahajan-azure-68p9l-gv45m`
 infraID="$(oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster)"
 
-# Determines the region based on existing MachinesSets like `us-east-1` for aws or `centralus` for azure
-region="$(oc get machines -n openshift-machine-api | grep -w "Running" | awk '{print $4}' | head -1)"
-
-# Determines the availability zone based on existing MachinesSets like `us-east-1a` for aws or `2` for azure
-az="$(oc get machines -n openshift-machine-api | grep -w "Running" | awk '{print $5}' | head -1)"
+linuxWorkerSpec=$(oc get machines -n openshift-machine-api -l machine.openshift.io/cluster-api-machine-role=worker -ojsonpath={.items[0].spec})
 
 # Creates/deletes a MachineSet for Cloud Provider
 case "$platform" in
     AWS)
-      ms=$(get_aws_ms $infraID $region $az $platform $winver $byoh)
+      ms=$(get_aws_ms $infraID $linuxWorkerSpec $winver $byoh)
     ;;
     Azure)
-      ms=$(get_azure_ms $infraID $region $az $platform $winver $byoh)
+      ms=$(get_azure_ms $infraID $linuxWorkerSpec $winver $byoh)
     ;;
     GCP)
-      ms=$(get_gcp_ms $infraID $region $az $platform $winver $byoh)
+      ms=$(get_gcp_ms $infraID $linuxWorkerSpec $winver $byoh)
     ;;
     VSphere)
-      ms=$(get_vsphere_ms $infraID $platform $byoh)
+      ms=$(get_vsphere_ms $infraID $byoh)
     ;;
     Nutanix)
-      ms=$(get_nutanix_ms $infraID $platform $byoh)
+      ms=$(get_nutanix_ms $infraID $byoh)
     ;;
     *)
       error-exit "platform '$platform' is not yet supported by this script"
