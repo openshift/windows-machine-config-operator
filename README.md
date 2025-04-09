@@ -236,13 +236,25 @@ This is normally installed by WMCO using the Machine's user-data, and is needed 
 
 In order to run Windows workloads on Nodes, the image `mcr.microsoft.com/oss/kubernetes/pause:3.9` must be mirrored.
 See [Image configuration resources](https://docs.openshift.com/container-platform/latest/openshift_images/image-configuration.html) for general information on image mirroring.
+Using ImageDigestMirrorSets and ImageTagMirrorSets to mirror container images results in different behavior than Linux Nodes.
+Please account for the following differences when reading the above documentation.
 
-Windows images mirrored through ImageDigestMirrorSet and ImageTagMirrorSet have specific naming requirements.
+Mirroring on Linux nodes acts on the image level, while on Windows nodes we are only able to mirror on the registry level.
+For example, if the cluster has an ImageTagMirrorSet (ITMS) specifying that `quay.io/remote-org/image` should use the mirror `quay.io/my-org/image`
+any container that uses `quay.io/remote-org/image:tag` will instead use the image `quay.io/my-org/image:tag`.
+
+This behavior differs for Windows Nodes, which will take the ITMS and use it to configure registry wide mirrors. Following the previous example,
+by specifying a mirror of `quay.io/remote-org/image` to `quay.io/my-org/image`, Windows Nodes now use that mirror for all images from `quay.io/remote-org`.
+In practice this means that `quay.io/remote-org/image:tag` will use the image `quay.io/my-org/image:tag` as expected, but another container using `quay.io/remote-org/different-image:tag`
+will also try to use the mirror `quay.io/remote-org/different-image:tag`. This can cause unintended behavior if it is not accounted for.
+For this reason it is recommended to specify container images using a digest, and to use ImageDigestMirrorSets instead of ImageTagMirrorSets.
+This can prevent the wrong container image from being used, by ensuring the image the container specifies and the image being pulled have the same digest.
+
+Additionally, Windows images mirrored through ImageDigestMirrorSet and ImageTagMirrorSet have specific naming requirements.
 The mirrored image's suffix (final portion of namespaces and the image name) must match that of the source image.
 For example, when mirroring the image `mcr.microsoft.com/oss/kubernetes/pause:3.9`, the mirror must have the format
-`$mirrorRegistry/[$optionalNamespaces/]oss/kubernetes/pause:3.9` where `$optionalNamespaces` can be any number of
-leading namespaces. Some valid values could be: `$mirrorRegistry/oss/kubernetes/pause:3.9`,
-`$mirrorRegistry/custom/oss/kubernetes/pause:3.9`, `$mirrorRegistry/x/y/z/oss/kubernetes/pause:3.9`.
+`$mirrorRegistry/[$org/]oss/kubernetes/pause:3.9` where `$org` can be any org name, or excluded completely.
+Some valid values could be: `$mirrorRegistry/oss/kubernetes/pause:3.9`, `$mirrorRegistry/custom/oss/kubernetes/pause:3.9`, `$mirrorRegistry/x/y/z/oss/kubernetes/pause:3.9`.
 
 ## Limitations
 
