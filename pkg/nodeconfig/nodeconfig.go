@@ -443,14 +443,6 @@ func createKubeletConf(clusterServiceCIDR string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Replace last character ('}') with comma
-	kubeletConfigData[len(kubeletConfigData)-1] = ','
-	// Appending this option is needed here instead of in the kubelet configuration object. Otherwise, when marshalling,
-	// the empty value will be omitted, so it would end up being incorrectly populated at service start time.
-	// Can be moved to kubelet configuration object with https://issues.redhat.com/browse/WINC-926
-	enforceNodeAllocatable := []byte("\"enforceNodeAllocatable\":[]}")
-	kubeletConfigData = append(kubeletConfigData, enforceNodeAllocatable...)
-
 	return string(kubeletConfigData), nil
 }
 
@@ -673,10 +665,24 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 			"RotateKubeletServerCertificate": true,
 		},
 		ContainerLogMaxSize: "50Mi",
+		EnforceNodeAllocatable: []string{
+			"none",
+		},
+		// hard-eviction is not yet fully supported on Windows, but the values passed are subtracted from Capacity
+		// to calculate the node allocatable. The recommendation is to explicitly set the supported signals available
+		// for Windows.
+		// See https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals
+		EvictionHard: map[string]string{
+			"nodefs.available":  "10%",
+			"imagefs.available": "15%",
+			// containerfs.available works for Windows, but does not support overrides for thresholds
+		},
 		SystemReserved: map[string]string{
-			"cpu":               "500m",
-			"ephemeral-storage": "1Gi",
-			"memory":            "1Gi",
+			string(core.ResourceCPU):              "500m",
+			string(core.ResourceEphemeralStorage): "1Gi",
+			// Reserve at least 2GiB of memory
+			// See https://kubernetes.io/docs/concepts/configuration/windows-resource-management/#resource-reservation
+			string(core.ResourceMemory): "2Gi",
 		},
 		ContainerRuntimeEndpoint: "npipe://./pipe/containerd-containerd",
 		// Registers the Kubelet with Windows specific taints so that linux pods won't get scheduled onto
