@@ -113,9 +113,12 @@ func generateUserDataWithPubKey(platformType oconfig.PlatformType, pubKey string
 // appendAwsUserDataConfig appends the AWS EC2Launch installation script to
 // the given userData to persist the instance metadata routes
 func appendAwsUserDataConfig(userData string) string {
-	// EC2Launch v2 minimum version where the task to persist routes was introduced
-	// see https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launchv2-versions.html#ec2launchv2-version-history
-	EC2LaunchMinimumVersion := "2.0.1643"
+	// EC2LaunchMinimumVersion is the EC2Launch v2 minimum supported version.
+	// Requires:
+	// 		- custom task to persist routes (WINC-1149)
+	// 		- bug fix with hybrid-overlay network interface (OCPBUGS-35285)
+	// See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launchv2-versions.html#ec2launchv2-version-history
+	EC2LaunchMinimumVersion := "2.0.2107"
 
 	// S3 URL for the latest EC2Launch version
 	// see https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launch-v2-install.html#lv2-download-s3
