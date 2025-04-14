@@ -28,6 +28,10 @@ spec:
     value: Containerfile.bundle
   - name: git-url
     value: '{{source_url}}'
+  - name: mergeTargetBranch
+    value: "true" 
+  - name: targetBranch
+    value: "{{target_branch}}"
   - name: output-image
     value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-bundle-master:{{revision}}
   - name: revision
@@ -139,6 +143,10 @@ spec:
         resolver: bundles
     - name: clone-repository
       params:
+      - name: mergeTargetBranch
+        value: $(params.mergeTargetBranch)
+      - name: targetBranch
+        value: $(params.targetBranch)
       - name: url
         value: $(params.git-url)
       - name: revision
