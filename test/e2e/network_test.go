@@ -204,14 +204,21 @@ func (tc *testContext) stopPacketTrace(node *v1.Node) error {
 	}
 	cmd := exec.Command("oc", "cp", "-n", tc.workloadNamespace, "-c", "copy",
 		createdPod.GetName()+":/debug/", filepath.Join(nodeDir, "trace"))
-	out, err := cmd.Output()
-	if err != nil {
-		var exitError *exec.ExitError
-		stderr := ""
-		if errors.As(err, &exitError) {
-			stderr = string(exitError.Stderr)
+
+	retries := 10
+	retryDelay := 5 * time.Second
+
+	for i := 0; i < retries; i++ {
+		out, err := cmd.Output()
+		if err != nil {
+			var exitError *exec.ExitError
+			stderr := ""
+			if errors.As(err, &exitError) {
+				stderr = string(exitError.Stderr)
+			}
+			err = fmt.Errorf("oc cp failed with exit code %s and output: %s: %s", err, string(out), stderr)
 		}
-		return fmt.Errorf("oc cp failed with exit code %s and output: %s: %s", err, string(out), stderr)
+		time.Sleep(retryDelay)
 	}
 	return err
 }
