@@ -41,6 +41,42 @@ spec:
               memory: 10Gi
             limits:
               memory: 10Gi
+    - pipelineTaskName: clone-repository
+      computeResources:
+      requests:
+        memory: 10Gi
+      limits:
+        memory: 10Gi
+    - pipelineTaskName: fips-operator-bundle-check-oci-ta
+      computeResources:
+      requests:
+        memory: 10Gi
+      limits:
+        memory: 10Gi
+    - pipelineTaskName: prefetch-dependencies
+      computeResources:
+      requests:
+        memory: 10Gi
+      limits:
+        memory: 10Gi
+    - pipelineTaskName: sast-shell-check
+      computeResources:
+      requests:
+        memory: 10Gi
+      limits:
+        memory: 10Gi
+    - pipelineTaskName: sast-snyk-check
+      computeResources:
+      requests:
+        memory: 10Gi
+      limits:
+        memory: 10Gi
+    - pipelineTaskName: sast-unicode-check
+      computeResources:
+      requests:
+        memory: 10Gi
+      limits:
+        memory: 10Gi
   pipelineSpec:
     finally:
     - name: show-sbom
