@@ -128,7 +128,7 @@ const (
 	// serviceNotFound is part of the error output returned when a service does not exist. 1060 is an error code
 	// representing ERROR_SERVICE_DOES_NOT_EXIST
 	// referenced: https://docs.microsoft.com/en-us/windows/win32/debug/system-error-codes--1000-1299-
-	serviceNotFound = "FAILED 1060"
+	serviceNotFound = "1060"
 	// cmdExitNoStatus is part of the error message returned when a command takes too long to report status back to
 	// PowerShell.
 	cmdExitNoStatus = "command exited without exit status or exit signal"
@@ -162,7 +162,8 @@ var (
 		HybridOverlayServiceName,
 		KubeletServiceName,
 		WicdServiceName,
-		ContainerdServiceName}
+		ContainerdServiceName,
+	}
 	// RequiredDirectories is a list of directories to be created by WMCO
 	RequiredDirectories = []string{
 		remoteDir,
@@ -817,7 +818,6 @@ func (vm *windows) ensureServiceNotRunning(svc *service) error {
 		return fmt.Errorf("unable to stop service: %w", err)
 	}
 	return nil
-
 }
 
 // ensureServiceIsRemoved ensures that the given service installed by WMCO is removed from the instance
