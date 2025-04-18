@@ -44,6 +44,12 @@ spec:
               memory: 10Gi
             limits:
               memory: 10Gi
+    - pipelineTaskName: build-container
+      computeResources:
+      requests:
+        memory: 10Gi
+      limits:
+        memory: 10Gi
     - pipelineTaskName: clone-repository
       computeResources:
       requests:
