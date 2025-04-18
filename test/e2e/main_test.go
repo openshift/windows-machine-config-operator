@@ -108,6 +108,8 @@ func NewTestContext() (*testContext, error) {
 		"security.openshift.io/scc.podSecurityLabelSync": "false",
 		// set pods security profile to privileged. See https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels
 		"pod-security.kubernetes.io/enforce": "privileged",
+		"pod-security.kubernetes.io/audit":   "privileged",
+		"pod-security.kubernetes.io/warn":    "privileged",
 	}
 
 	// number of nodes, retry interval and timeout should come from user-input flags

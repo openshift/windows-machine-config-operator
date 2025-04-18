@@ -707,7 +707,8 @@ func (tc *testContext) createJob(name, image string, command []string, runtimeCl
 // deleteJob deletes the job with the given name
 func (tc *testContext) deleteJob(name string) error {
 	jobsClient := tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace)
-	return jobsClient.Delete(context.TODO(), name, metav1.DeleteOptions{})
+	propPolicy := metav1.DeletePropagationOrphan
+	return jobsClient.Delete(context.TODO(), name, metav1.DeleteOptions{PropagationPolicy: &propPolicy})
 }
 
 // waitUntilJobSucceeds will return an error if the job fails or reaches a timeout
