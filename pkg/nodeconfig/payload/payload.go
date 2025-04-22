@@ -110,6 +110,34 @@ param(
     }
   }
 
+# This retries getting the HNS-network until it succeeds
+function Retry-GetHnsNetwork {
+     $retryCount = 20
+     $retryDelaySeconds = 1
+
+     $attempt = 1
+ 
+     while ($attempt -le $retryCount) {
+         try {
+             $hns_network = Get-HnsNetwork | Where-Object { $_.Name -eq 'HNS_NETWORK' }
+             
+             # Check if hns_network is null
+             if ($null -eq $hns_network) {
+                 Write-Host "Attempt $attempt returned null. Retrying in $retryDelaySeconds seconds..."
+             } else {
+                 Write-Host "Found HNS_NETWORK on attempt $attempt"
+                 return $hns_network 
+             }
+         } catch {
+             Write-Host "Attempt $attempt failed: $_"
+         }
+         Start-Sleep -Seconds $retryDelaySeconds
+         $attempt++
+     }
+     Write-Host "Max retry attempts reached."
+     return $null
+}
+
 $ErrorActionPreference = "Stop"
 Import-Module -DisableNameChecking HNS_MODULE_PATH
 
@@ -165,8 +193,13 @@ $cni_template=@'
 }
 '@
 
+$hns_network = Retry-GetHnsNetwork
+# If the HNS network is never found, quit.
+if ($null -eq $hns_network) {
+  throw "cannot find HNS network with name HNS_NETWORK"
+}
+
 # Generate CNI Config
-$hns_network=Get-HnsNetwork  | where { $_.Name -eq 'HNS_NETWORK'}
 $subnet=$hns_network.Subnets.AddressPrefix
 $cni_template=$cni_template.Replace("ovn_host_subnet",$subnet)
 $provider_address=$hns_network.ManagementIP
