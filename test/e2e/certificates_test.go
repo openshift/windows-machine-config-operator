@@ -46,7 +46,7 @@ func (tc *testContext) testKubeletCARotation(t *testing.T) {
 		// spin-off subtests to ensure the CA bundle file is verified in all Windows nodes
 		t.Run("node/"+winNode.Name, func(t *testing.T) {
 			err := tc.waitForKubeletCACertificateInNode(&winNode)
-			assert.NoErrorf(t, err, "kubelet CA certificate should be present in node %S", winNode.Name)
+			assert.NoErrorf(t, err, "kubelet CA certificate should be present in node %s", winNode.Name)
 		})
 	}
 }
