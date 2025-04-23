@@ -44,42 +44,36 @@ spec:
               memory: 10Gi
             limits:
               memory: 10Gi
+        - name: use-trusted-artifact
+          computeResources: &ta-resources
+            requests:
+              memory: 8Gi
+            limits:
+              memory: 8Gi
     - pipelineTaskName: clone-repository
-      computeResources:
-      requests:
-        memory: 10Gi
-      limits:
-        memory: 10Gi
+      stepSpecs:
+        - name: create-trusted-artifact
+          computeResources: *ta-resources
     - pipelineTaskName: fips-operator-bundle-check-oci-ta
-      computeResources:
-      requests:
-        memory: 10Gi
-      limits:
-        memory: 10Gi
+      stepSpecs:
+        - name: use-trusted-artifact
+          computeResources: *ta-resources
     - pipelineTaskName: prefetch-dependencies
-      computeResources:
-      requests:
-        memory: 10Gi
-      limits:
-        memory: 10Gi
+      stepSpecs:
+        - name: use-trusted-artifact
+          computeResources: *ta-resources
     - pipelineTaskName: sast-shell-check
-      computeResources:
-      requests:
-        memory: 10Gi
-      limits:
-        memory: 10Gi
+      stepSpecs:
+        - name: use-trusted-artifact
+          computeResources: *ta-resources
     - pipelineTaskName: sast-snyk-check
-      computeResources:
-      requests:
-        memory: 10Gi
-      limits:
-        memory: 10Gi
+      stepSpecs:
+        - name: use-trusted-artifact
+          computeResources: *ta-resources
     - pipelineTaskName: sast-unicode-check
-      computeResources:
-      requests:
-        memory: 10Gi
-      limits:
-        memory: 10Gi
+      stepSpecs:
+        - name: use-trusted-artifact
+          computeResources: *ta-resources
   pipelineSpec:
     finally:
     - name: show-sbom
