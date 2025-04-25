@@ -126,6 +126,10 @@ func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, wind
 		return nil, fmt.Errorf("error choosing AMI: %w", err)
 	}
 	providerSpec := &mapi.AWSMachineProviderConfig{
+		TypeMeta: meta.TypeMeta{
+			APIVersion: mapi.GroupVersion.String(),
+			Kind:       "AWSMachineProviderConfig",
+		},
 		AMI:                mapi.AWSResourceReference{ID: &ami},
 		InstanceType:       linuxWorkerSpec.InstanceType,
 		IAMInstanceProfile: linuxWorkerSpec.IAMInstanceProfile,
