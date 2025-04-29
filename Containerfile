@@ -1,5 +1,16 @@
 FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_8_1.19 as build
+
 LABEL stage=build
+
+# Silence go compliance shim output
+ENV GO_COMPLIANCE_INFO=0
+ENV GO_COMPLIANCE_DEBUG=0
+
+# Set go toolchain to local, this prevents it from
+# downloading the latest version
+ENV GOTOOLCHAIN=local
+
+ENV GOEXPERIMENT=strictfipsruntime
 
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
@@ -49,8 +60,7 @@ RUN GOOS=windows go build -buildvcs=false -o azure-cloud-node-manager.exe ./cmd/
 # Build CNI plugins
 WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
 COPY containernetworking-plugins/ .
-ENV CGO_ENABLED=0
-RUN ./build_windows.sh
+RUN CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc ./build_windows.sh
 
 # Build csi-proxy
 WORKDIR /build/windows-machine-config-operator/csi-proxy
@@ -102,6 +112,17 @@ RUN make build-daemon
 
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 LABEL stage=operator
+
+# This block contains standard Red Hat container labels
+LABEL name="openshift4-wincw/windows-machine-config-operator" \
+    License="ASL 2.0" \
+    io.k8s.display-name="Windows Machine Config Operator" \
+    io.k8s.description="Windows Machine Config Operator" \
+    description="Windows Machine Config Operator" \
+    summary="Windows Machine Config Operator" \
+    maintainer="Team Windows Containers <team-winc@redhat.com>" \
+    com.redhat.component="windows-machine-config-operator-container" \
+    io.openshift.tags=""
 
 WORKDIR /payload/
 # Copy WICD
@@ -160,5 +181,8 @@ COPY build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
+
+# Used to tag the released image. Should be a semver.
+LABEL version="v7.2.3"
 
 USER ${USER_UID}
