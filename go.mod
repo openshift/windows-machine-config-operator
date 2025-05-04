@@ -5,6 +5,8 @@ go 1.22.0
 toolchain go1.22.3
 
 replace (
+	// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
+	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	// fix the latest working version for go1.22
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
