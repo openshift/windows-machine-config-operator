@@ -6,4 +6,4 @@ spec:
   imageDigestMirrors:
   - source: registry.stage.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator
     mirrors:
-      - quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-master
+      - quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4.19
