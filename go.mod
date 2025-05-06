@@ -3,10 +3,10 @@ module github.com/openshift/windows-machine-config-operator
 go 1.22.9
 
 replace (
+	// Fix the latest working version for go1.22
+	golang.org/x/exp => golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c
 	// fix the latest working version for go1.22, remove the replacement with the go1.23 bump
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
-  // Fix the latest working version for go1.22
-  golang.org/x/exp => golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c
 	// fix to solve the issue of unknown field IgnoredFields in struct literal of type merge.Updater
 	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
 )
@@ -42,7 +42,7 @@ require (
 	k8s.io/kubectl v0.31.8
 	k8s.io/kubelet v0.31.8
 	k8s.io/kubernetes v1.31.6
-	sigs.k8s.io/controller-runtime v0.19.5
+	sigs.k8s.io/controller-runtime v0.19.7
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -110,7 +110,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.20.5 // indirect
-	github.com/prometheus/client_model v0.6.1 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.61.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -128,7 +128,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c // indirect
+	golang.org/x/exp v0.0.0-20250506013437-ce4c2cf36ca6 // indirect
 	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
@@ -144,7 +144,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.31.5 // indirect
+	k8s.io/apiextensions-apiserver v0.31.8 // indirect
 	k8s.io/apiserver v0.31.8 // indirect
 	k8s.io/cli-runtime v0.31.8 // indirect
 	k8s.io/component-base v0.31.8 // indirect
