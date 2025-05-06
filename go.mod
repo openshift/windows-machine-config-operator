@@ -10,9 +10,9 @@ require (
 	github.com/coreos/ignition/v2 v2.20.0
 	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20250411045339-c38b55665beb
-	github.com/openshift/client-go v0.0.0-20250402181141-b3bad3b645f2
-	github.com/openshift/library-go v0.0.0-20250402180609-ce2ba53fb2a4
+	github.com/openshift/api v0.0.0-20250506110418-108fecf747f7
+	github.com/openshift/client-go v0.0.0-20250425165505-5f55ff6979a1
+	github.com/openshift/library-go v0.0.0-20250505141135-5184403e7ead
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -27,15 +27,15 @@ require (
 	golang.org/x/crypto v0.36.0
 	golang.org/x/mod v0.22.0
 	golang.org/x/sys v0.31.0
-	k8s.io/api v0.32.3
-	k8s.io/apimachinery v0.32.3
-	k8s.io/client-go v0.32.3
-	k8s.io/cloud-provider v0.32.3
+	k8s.io/api v0.32.4
+	k8s.io/apimachinery v0.32.4
+	k8s.io/client-go v0.32.4
+	k8s.io/cloud-provider v0.32.4
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/kubectl v0.32.3
-	k8s.io/kubelet v0.32.3
+	k8s.io/kubectl v0.32.4
+	k8s.io/kubelet v0.32.4
 	k8s.io/kubernetes v1.32.1
-	k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e
+	k8s.io/utils v0.0.0-20250502105355-0f33e8f1c979
 	sigs.k8s.io/controller-runtime v0.20.4
 	sigs.k8s.io/yaml v1.4.0
 )
@@ -137,10 +137,10 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.32.3 // indirect
-	k8s.io/apiserver v0.32.3 // indirect
-	k8s.io/cli-runtime v0.32.3 // indirect
-	k8s.io/component-base v0.32.3 // indirect
+	k8s.io/apiextensions-apiserver v0.32.4 // indirect
+	k8s.io/apiserver v0.32.4 // indirect
+	k8s.io/cli-runtime v0.32.4 // indirect
+	k8s.io/component-base v0.32.4 // indirect
 	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.0 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
