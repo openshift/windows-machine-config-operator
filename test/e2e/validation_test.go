@@ -375,11 +375,12 @@ func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, er
 	}
 
 	keyMountDir := "/private-key"
+	sshOptions := "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 	sshCommand := []string{"bash", "-c",
 		fmt.Sprintf(
 			// first determine if the host has PowerShell or cmd as the default shell by running a simple PowerShell
 			// command. If it succeeds, then the host's default shell is PowerShell
-			"if ssh -o StrictHostKeyChecking=no -i %s %s@%s 'Get-Help';"+
+			"if ssh "+sshOptions+" -i %s %s@%s 'Get-Help';"+
 				"then CMD_PREFIX=\"\";CMD_SUFFIX=\"\";"+
 				// to respect quoting within the given command, wrap the command as a script block
 				"COMMAND='{"+powershellDefaultCommand+"}';"+
@@ -388,7 +389,7 @@ func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, er
 				"COMMAND='{"+command+"}';"+
 				"fi;"+
 				// execute the command as a script block via the PowerShell call operator `&`
-				"ssh -o StrictHostKeyChecking=no -i %s %s@%s ${CMD_PREFIX}\" & $COMMAND \"${CMD_SUFFIX}",
+				"ssh "+sshOptions+" -i %s %s@%s ${CMD_PREFIX}\" & $COMMAND \"${CMD_SUFFIX}",
 			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip,
 			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip)}
 
