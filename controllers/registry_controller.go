@@ -22,6 +22,7 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	core "k8s.io/api/core/v1"
+	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -94,7 +95,17 @@ func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
-	for _, node := range nodes.Items {
+	for _, n := range nodes.Items {
+		// Ensure the node status is up to date, going through this list could take a long time depending on the
+		// number of Windows nodes in the cluster
+		var node core.Node
+		if err := r.client.Get(ctx, types.NamespacedName{Name: n.GetName()}, &node); err != nil {
+			if k8sapierrors.IsNotFound(err) {
+				continue
+			}
+			return ctrl.Result{}, fmt.Errorf("unable to get node %s: %w", n.GetName(), err)
+		}
+
 		winInstance, err := r.instanceFromNode(ctx, &node)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to create instance object from node: %w", err)
