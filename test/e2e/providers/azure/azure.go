@@ -27,18 +27,13 @@ const (
 	defaultImageVersion          = "latest"
 	defaultOSDiskSizeGB          = 128
 	defaultStorageAccountType    = "Premium_LRS"
-	// The default vm size set by machine-api-operator yields
-	// "unknown instance type: Standard_D4s_V3" on dev cluster instances.
-	// Use the instance type the other worker machines use.
-	defaultVMSize = "Standard_D2s_v3"
-	csiNamespace  = "openshift-cluster-csi-drivers"
+	csiNamespace                 = "openshift-cluster-csi-drivers"
 )
 
 // Provider is a provider struct for testing Azure
 type Provider struct {
 	oc *clusterinfo.OpenShift
 	*config.InfrastructureStatus
-	vmSize string
 }
 
 // New returns a new Azure provider struct with the give client set and ssh key pair
@@ -46,12 +41,11 @@ func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureSta
 	return &Provider{
 		oc:                   clientset,
 		InfrastructureStatus: infraStatus,
-		vmSize:               defaultVMSize,
 	}
 }
 
 // newAzureMachineProviderSpec returns an AzureMachineProviderSpec generated from the inputs, or an error
-func (p *Provider) newAzureMachineProviderSpec(location string, zone string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
+func (p *Provider) newAzureMachineProviderSpec(location, zone, vmSize, publicLoadBalancer string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
 	imageVersion := defaultImageVersion
 	if windowsServerVersion == windows.Server2019 {
 		// TODO: remove when VM SSH issue is patched in Azure cloud
@@ -72,7 +66,7 @@ func (p *Provider) newAzureMachineProviderSpec(location string, zone string, win
 		},
 		Location: location,
 		Zone:     zone,
-		VMSize:   p.vmSize,
+		VMSize:   vmSize,
 		Image: mapi.Image{
 			Publisher: defaultImagePublisher,
 			Offer:     defaultImageOffer,
@@ -87,11 +81,17 @@ func (p *Provider) newAzureMachineProviderSpec(location string, zone string, win
 			},
 		},
 		PublicIP:             false,
+		PublicLoadBalancer:   publicLoadBalancer,
 		Subnet:               fmt.Sprintf("%s-worker-subnet", p.InfrastructureName),
 		ManagedIdentity:      fmt.Sprintf("%s-identity", p.InfrastructureName),
 		Vnet:                 fmt.Sprintf("%s-vnet", p.InfrastructureName),
 		ResourceGroup:        p.PlatformStatus.Azure.ResourceGroupName,
 		NetworkResourceGroup: p.PlatformStatus.Azure.NetworkResourceGroupName,
+		Diagnostics: mapi.AzureDiagnostics{
+			Boot: &mapi.AzureBootDiagnostics{
+				StorageAccountType: mapi.AzureManagedAzureDiagnosticsStorage,
+			},
+		},
 	}, nil
 }
 
@@ -111,7 +111,7 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, wind
 
 	// create new machine provider spec for deploying Windows node in the same Location and Zone as master-0
 	providerSpec, err := p.newAzureMachineProviderSpec(masterProviderSpec.Location, masterProviderSpec.Zone,
-		windowsServerVersion)
+		masterProviderSpec.VMSize, masterProviderSpec.PublicLoadBalancer, windowsServerVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new azure machine provider spec: %v", err)
 	}
