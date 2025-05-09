@@ -27,7 +27,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat
-  name: windows-machine-config-operator.v10.19.0
+  name: windows-machine-config-operator.v10.20.0
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -411,7 +411,9 @@ spec:
           - use
         serviceAccountName: windows-machine-config-operator
       deployments:
-      - name: windows-machine-config-operator
+      - label:
+          name: windows-machine-config-operator
+        name: windows-machine-config-operator
         spec:
           replicas: 1
           selector:
@@ -528,4 +530,4 @@ spec:
   minKubeVersion: 1.32.0
   provider:
     name: Red Hat
-  version: 10.19.0
+  version: 10.20.0
