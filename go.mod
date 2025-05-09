@@ -5,6 +5,8 @@ go 1.22.9
 replace (
 	// Fix the latest working version for go1.22
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c
+	// fix CVE-2025-22868 with downstream tag v0.26.openshift.1
+	golang.org/x/oauth2 => github.com/openshift/golang-oauth2 v0.26.1-0.20250310184649-06a918c6239d
 	// fix the latest working version for go1.22, remove the replacement with the go1.23 bump
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 	// fix to solve the issue of unknown field IgnoredFields in struct literal of type merge.Updater
