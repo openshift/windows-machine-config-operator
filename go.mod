@@ -7,6 +7,8 @@ replace (
 	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	// Fix the latest working version for go1.22
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c
+	// fix CVE-2025-22868 with downstream tag v0.26.openshift.1
+	golang.org/x/oauth2 => github.com/openshift/golang-oauth2 v0.26.1-0.20250310184649-06a918c6239d
 	// fix CVE-2025-22869 with downstream tag v0.33.openshift.1
 	golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
 	// fix the latest working version for go1.22, remove the replacement with the go1.23 bump
