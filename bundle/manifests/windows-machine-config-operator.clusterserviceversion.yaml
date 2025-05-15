@@ -417,7 +417,7 @@ spec:
             spec:
               containers:
               - args:
-                - --debugLogging
+                - $(ARGS)
                 command:
                 - windows-machine-config-operator
                 env:
