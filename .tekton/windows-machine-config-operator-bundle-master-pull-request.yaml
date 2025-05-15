@@ -29,7 +29,11 @@ spec:
   - name: dockerfile
     value: Containerfile.bundle
   - name: git-url
-    value: '{{source_url}}'
+    value: '{{repo_url}}'
+  - name: mergeTargetBranch
+    value: "true" 
+  - name: targetBranch
+    value: "{{target_branch}}"
   - name: image-expires-after
     value: 5d
   - name: output-image
@@ -138,6 +142,10 @@ spec:
         resolver: bundles
     - name: clone-repository
       params:
+      - name: mergeTargetBranch
+        value: $(params.mergeTargetBranch)
+      - name: targetBranch
+        value: $(params.targetBranch)
       - name: url
         value: $(params.git-url)
       - name: revision
