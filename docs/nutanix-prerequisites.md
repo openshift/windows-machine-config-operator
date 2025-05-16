@@ -26,4 +26,4 @@ Note: The DNS entry can be a CNAME or an additional A record.
 The above DNS entry ensures that Windows VMs can download the ignition file from the internal API server,
 and the `kubelet` on the configured VM can communicate with the internal API server. For Linux nodes,
 CoreDNS runs on every node, which helps resolving the internal API server URL. The external API endpoint
-should have been created as part of the [cluster install](https://docs.openshift.com/container-platform/latest/installing/installing_nutanix/installing-nutanix-installer-provisioned.html).
+should have been created as part of the [cluster install](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_nutanix/installing-nutanix-installer-provisioned).

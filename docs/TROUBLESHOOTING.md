@@ -23,7 +23,7 @@ oc logs -f deployment/windows-machine-config-operator -n openshift-windows-machi
 File a GitHub issue and attach the logs to the issue along with the *MachineSet* used.
 
 ## Windows Server 2019 LTSC (1809) nodes never become Ready
-Ensure that you have not [configured the cluster network](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/configuring-hybrid-networking.html) with a
+Ensure that you have not [configured the cluster network](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/ovn-kubernetes-network-plugin) with a
 custom VXLAN port, as that is not a supported feature in 1809.
 
 ## Accessing a Windows node
@@ -32,7 +32,7 @@ not yet supported for Windows. Instead, a Windows node can be accessed using SSH
 [SSH bastion](https://github.com/eparis/ssh-bastion) needs to be setup for both methods. The following information is
 common across both methods:
 * The key used in the *cloud-private-key* [secret](../README.md#Usage) and the key used when creating the cluster should
-  be added to the [ssh-agent](https://docs.openshift.com/container-platform/latest/installing/installing_azure/installing-azure-default.html#ssh-agent-using_installing-azure-default).
+  be added to the [ssh-agent](https://docs.redhat.com/en/documentation/openshift_container_platform/4.15/html/installing_on_azure/installing-azure-default#ssh-agent-using_installing-azure-default).
   For [security reasons](https://manpages.debian.org/buster/openssh-client/ssh.1.en.html#A) we suggest removing the keys
   from the ssh-agent after use.
 * *\<username\>* is *Administrator* (AWS) or *capi* (Azure)
@@ -65,7 +65,7 @@ In general, the operator tries to minimize disruptions and avoids node reboots w
 updates at the system level still require a traditional reboot process to ensure changes are applied correctly
 and securely.
 
-To reboot a Windows node, please follow the Openshift documentation on [Rebooting a node gracefully](https://docs.openshift.com/container-platform/latest/nodes/nodes/nodes-nodes-rebooting.html#nodes-nodes-rebooting-gracefully_nodes-nodes-rebooting)
+To reboot a Windows node, please follow the Openshift documentation on [Rebooting a node gracefully](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/nodes/working-with-nodes#nodes-nodes-rebooting)
 to cordon, drain and reboot with the following command in PowerShell:
 ```powershell
   Restart-Computer -Force
