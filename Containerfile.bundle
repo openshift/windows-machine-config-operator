@@ -33,7 +33,7 @@ LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
 
 LABEL distribution-scope=public
 LABEL release="10.20.0"
-LABEL url="https://docs.openshift.com/container-platform/4.20/windows_containers/index.html"
+LABEL url="https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/windows_container_support_for_openshift/index"
 LABEL vendor="Red Hat, Inc."
 
 # Copy files to locations specified by labels.
