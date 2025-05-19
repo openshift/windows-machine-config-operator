@@ -4,18 +4,19 @@ metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/openshift/windows-machine-config-operator?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "push"
+      event == "pull_request"
       && target_branch == "master"
       && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|Containerfile.bundle)$'))
   creationTimestamp: null
   labels:
-    appstudio.openshift.io/application: windows-machine-config-operator-master
-    appstudio.openshift.io/component: windows-machine-config-operator-master
+    appstudio.openshift.io/application: windows-machine-config-operator-release-4-20
+    appstudio.openshift.io/component: windows-machine-config-operator-release-4-20
     pipelines.appstudio.openshift.io/type: build
-  name: windows-machine-config-operator-master-on-push
+  name: windows-machine-config-operator-release-4-20-on-pull-request
   namespace: windows-machine-conf-tenant
 spec:
   params:
@@ -29,8 +30,10 @@ spec:
     value: Containerfile
   - name: git-url
     value: '{{source_url}}'
+  - name: image-expires-after
+    value: 5d
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-master:{{revision}}
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4-20:on-pr-{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
@@ -518,7 +521,7 @@ spec:
           memory: 8Gi
       name: use-trusted-artifact
   taskRunTemplate:
-    serviceAccountName: build-pipeline-windows-machine-config-operator-master
+    serviceAccountName: build-pipeline-windows-machine-config-operator-release-4-20
   workspaces:
   - name: git-auth
     secret:
