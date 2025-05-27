@@ -325,12 +325,13 @@ ${DATA}
 EOF
 }
 
-# returns the number of instances from `windows-instances` ConfigMap
+# returns the number of instances from `windows-instances` ConfigMap by
+# counting the number of values in the data section
 getWindowsInstanceCountFromConfigMap() {
  oc get configmaps \
    windows-instances \
    -n "${WMCO_DEPLOY_NAMESPACE}" \
-   -o json | jq '.data | length'
+   -o jsonpath='{.data.*}' | wc -w
 }
 
 # creates the a job and required RBAC to check the number of Windows nodes performing
