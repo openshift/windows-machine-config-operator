@@ -58,6 +58,9 @@
     "setup-cfg"
   ],
   "tekton": {
+    "autoApprove": true,
+    "automerge": true,
+    "enabled": true,
     "fileMatch": [
       "\\.yaml$",
       "\\.yml$"
@@ -67,6 +70,10 @@
     ],
     "packageRules": [
       {
+        "addLabels": [
+          "approved",
+          "lgtm"
+        ],
         "matchPackageNames": [
           "/^quay.io/redhat-appstudio-tekton-catalog//",
           "/^quay.io/konflux-ci/tekton-catalog//"
