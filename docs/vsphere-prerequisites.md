@@ -3,7 +3,7 @@
 In order to successfully use the Windows Machine Config Operator (WMCO) on a vSphere Platform, 
 the following pre-requisites are required:
 
-* The vSphere cluster must be configured with [hybrid OVN Kubernetes networking with a custom VXLAN port](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/configuring-hybrid-networking.html)
+* The vSphere cluster must be configured with [hybrid OVN Kubernetes networking with a custom VXLAN port](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/ovn-kubernetes-network-plugin)
   to work around the pod-to-pod connectivity between hosts [issue](https://docs.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems#pod-to-pod-connectivity-between-hosts-is-broken-on-my-kubernetes-cluster-running-on-vsphere)
 * Set up a [VM golden image with a compatible Windows Server version](vsphere-golden-image.md#1-select-a-compatible-windows-server-version).
 * Add a [DNS entry](#adding-a-dns-entry-in-vsphere-environment) for the internal API endpoint in the vSphere environment
@@ -31,4 +31,4 @@ Note: The DNS entry can be a CNAME or an additional A record.
 The above DNS entry ensures that Windows VM can download the ignition file from the internal API server 
 and the `kubelet` on the configured VM can communicate with the internal API server. In the case of Linux nodes,
 CoreDNS is running on every node which helps in resolving the internal API server URL. The external API endpoint
-should have been created as part of the [cluster install](https://docs.openshift.com/container-platform/latest/installing/installing_vsphere/installing-vsphere-installer-provisioned.html).
+should have been created as part of the [cluster install](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html-single/installing_on_vmware_vsphere/index).

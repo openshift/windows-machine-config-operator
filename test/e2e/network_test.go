@@ -475,7 +475,7 @@ func (tc *testContext) getLogs(podLabelSelector string) (string, error) {
 // testNorthSouthNetworking deploys a Windows Server pod, and tests that we can network with it from outside the cluster
 func (tc *testContext) testNorthSouthNetworking(t *testing.T) {
 	// Ignore the application ingress load balancer test for None and vSphere platforms as it has to be created manually
-	// https://docs.openshift.com/container-platform/4.9/networking/configuring_ingress_cluster_traffic/configuring-ingress-cluster-traffic-load-balancer.html
+	// https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/configuring-ingress-cluster-traffic#configuring-ingress-cluster-traffic-ingress-controller
 	if tc.CloudProvider.GetType() == config.VSpherePlatformType ||
 		tc.CloudProvider.GetType() == config.NutanixPlatformType ||
 		tc.CloudProvider.GetType() == config.NonePlatformType {
