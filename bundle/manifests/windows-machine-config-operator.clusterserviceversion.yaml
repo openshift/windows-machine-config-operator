@@ -416,9 +416,7 @@ spec:
                 name: windows-machine-config-operator
             spec:
               containers:
-              - args:
-                - $(ARGS)
-                command:
+              - command:
                 - windows-machine-config-operator
                 env:
                 - name: WATCH_NAMESPACE
