@@ -430,7 +430,6 @@ spec:
               containers:
               - args:
                 - --metrics-bind-address=0.0.0.0:9182
-                - $(ARGS)
                 command:
                 - windows-machine-config-operator
                 env:
