@@ -65,6 +65,14 @@ func main() {
 	var debugLogging bool
 	var metricsAddr string
 
+	if extraArgs := os.Getenv("ARGS"); extraArgs != "" {
+		for _, arg := range strings.Split(extraArgs, " ") {
+			if len(arg) > 0 {
+				os.Args = append(os.Args, arg)
+			}
+		}
+	}
+
 	flag.BoolVar(&debugLogging, "debugLogging", false, "Log debug messages")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0.0.0.0:9182",
 		"The address and port the metric endpoint binds to 0.0.0.0:9182")
