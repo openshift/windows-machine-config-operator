@@ -33,8 +33,6 @@ spec:
       containers:
       - command:
         - windows-machine-config-operator
-        args:
-        - $(ARGS)
         image: controller:latest
         name: manager
         imagePullPolicy: IfNotPresent
