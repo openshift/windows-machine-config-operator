@@ -62,6 +62,14 @@ func init() {
 func main() {
 	var debugLogging bool
 
+	if extraArgs := os.Getenv("ARGS"); extraArgs != "" {
+		for _, arg := range strings.Split(extraArgs, " ") {
+			if len(arg) > 0 {
+				os.Args = append(os.Args, arg)
+			}
+		}
+	}
+
 	flag.BoolVar(&debugLogging, "debugLogging", false, "Log debug messages")
 
 	// Add flags registered by imported packages (e.g. glog and
