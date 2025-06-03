@@ -20,12 +20,12 @@ If you already have a configured cluster, move on to [Build](#build)
 - [Initialize git submodules](<https://git-scm.com/book/en/v2/Git-Tools-Submodules>)
 - Verify push/pull access to [quay.io](<https://quay.io>)
 - Create an install-config.yaml
-  - [AWS](https://docs.openshift.com/container-platform/latest/installing/installing_aws/installing-aws-default.html)
-  - [GCP](https://docs.openshift.com/container-platform/latest/installing/installing_gcp/installing-gcp-default.html)
-  - [Azure](https://docs.openshift.com/container-platform/latest/installing/installing_azure/installing-azure-default.html)
-  - [vSphere](https://docs.openshift.com/container-platform/latest/installing/installing_vsphere/installing-vsphere-installer-provisioned.html)
-  - [None](https://docs.openshift.com/container-platform/latest/installing/installing_bare_metal/installing-bare-metal.html)
-- [Set Up OVNKubernetes networking](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/configuring-hybrid-networking.html)
+  - [AWS](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_aws/index)
+  - [GCP](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_gcp/index)
+  - [Azure](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_azure/index)
+  - [vSphere](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_vsphere/index)
+  - [None](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_bare_metal/index)
+- [Set Up OVNKubernetes networking](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/ovn-kubernetes-network-plugin)
 
 ## Build
 
@@ -238,12 +238,12 @@ opm index rm --from-index $INDEX_IMAGE:$INDEX_TAG
 ```
 #### Create a CatalogSource using the index
 
-See the OpenShift docs for [adding a CatalogSource to a cluster](https://docs.openshift.com/container-platform/latest/operators/admin/olm-managing-custom-catalogs.html#olm-creating-catalog-from-index_olm-managing-custom-catalogs)
+See the OpenShift docs for [adding a CatalogSource to a cluster](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/extensions/catalogs)
 
 #### Create a subscription object 
 
 To use the custom CatalogSource you need to change the subscription object to reference the CatalogSource you are 
-introducing. See the docs for [Subscription objects](https://docs.openshift.com/container-platform/latest/operators/understanding/olm/olm-understanding-olm.html#olm-subscription_olm-understanding-olm)
+introducing. See the docs for [Subscription objects](https://docs.redhat.com/en/documentation/openshift_container_platform/4.2/html/operators/understanding-the-operator-lifecycle-manager-olm#olm-upgrades_olm-understanding-olm)
 for an example.
 
 Edit your subscription yaml to match your CatalogSource. 

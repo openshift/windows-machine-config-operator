@@ -8,14 +8,14 @@ Currently, the Windows Machine Config Operator (WMCO) stable version supports:
 * Windows Server 2022 Long-Term Servicing Channel (must contain the OS-level container networking patch [KB5012637](https://support.microsoft.com/en-us/topic/april-25-2022-kb5012637-os-build-20348-681-preview-2233d69c-d4a5-4be9-8c24-04a450861a8d))
 
 *Please note that Windows Server 2019 is unsupported, as patch [KB4565351](https://support.microsoft.com/en-us/help/4565351/windows-10-update-kb4565351)
-is not included. This is a requirement of the [hybrid OVN Kubernetes networking with a custom VXLAN port](https://docs.openshift.com/container-platform/latest/networking/ovn_kubernetes_network_provider/configuring-hybrid-networking.html) feature.*
+is not included. This is a requirement of the [hybrid OVN Kubernetes networking with a custom VXLAN port](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/ovn-kubernetes-network-plugin) feature.*
 
 ## 2. Create the virtual machine
 
 To start with, create a new virtual machine in vSphere from the selected Windows Server distribution using the ISO image.
 See [vSphere documentation](https://docs.vmware.com/en/VMware-vSphere/index.html) for installation guidelines.
 Ensure that the [virtual hardware version](https://kb.vmware.com/s/article/1003746) meets the
-[OpenShift infrastructure requirements](https://docs.openshift.com/container-platform/latest/installing/installing_vsphere/preparing-to-install-on-vsphere.html#installation-vsphere-infrastructure_preparing-to-install-on-vsphere).
+[OpenShift infrastructure requirements](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html-single/installing_an_on-premise_cluster_with_the_agent-based_installer/index#preparing-to-install-with-agent-based-installer).
 
 ### Setup VMware Tools
 

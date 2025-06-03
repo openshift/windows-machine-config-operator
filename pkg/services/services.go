@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	// See doc link for explanation of log levels:
-	// https://docs.openshift.com/container-platform/latest/rest_api/editing-kubelet-log-level-verbosity.html#log-verbosity-descriptions_editing-kubelet-log-level-verbosity
+	// See doc link for explanation of log levels:\
+	// https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/api_overview/editing-kubelet-log-level-verbosity#log-verbosity-descriptions_editing-kubelet-log-level-verbosity
 	debugLogLevel    = "4"
 	standardLogLevel = "2"
 	// hostnameOverrideVar is the variable that should be replaced with the value of the desired instance hostname

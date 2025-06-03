@@ -35,7 +35,7 @@ func testStorage(t *testing.T) {
 
 	// Create the PVC and choose the node the deployment will be scheduled on. This is necessary as ReadWriteOnly
 	// volumes can only be bound to a single node.
-	// https://docs.openshift.com/container-platform/4.12/storage/understanding-persistent-storage.html#pv-access-modes_understanding-persistent-storage
+	// https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/storage/understanding-persistent-storage
 	var pv *core.PersistentVolume
 	if tc.CloudProvider.GetType() == config.NonePlatformType {
 		err = smb.EnsureSMBControllerResources(tc.client.K8s)
