@@ -15,10 +15,10 @@ require (
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/coreos/ignition/v2 v2.20.0
 	github.com/go-imports-organizer/goio v1.5.0
-	github.com/go-logr/logr v1.4.2
-	github.com/openshift/api v0.0.0-20250520143200-3c189e99e0db
+	github.com/go-logr/logr v1.4.3
+	github.com/openshift/api v0.0.0-20250529074221-97812373b6b4
 	github.com/openshift/client-go v0.0.0-20250425165505-5f55ff6979a1
-	github.com/openshift/library-go v0.0.0-20250512121900-863508cf7a27
+	github.com/openshift/library-go v0.0.0-20250528093938-cc54847714a7
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
