@@ -17,9 +17,6 @@ ENV GOTOOLCHAIN=local
 
 ENV GOEXPERIMENT=strictfipsruntime
 
-# dos2unix is needed to build CNI plugins
-RUN yum install -y dos2unix
-
 # The source here corresponds to the code in the PR and is placed here by the CI infrastructure.
 WORKDIR /build/windows-machine-config-operator/
 # Copy .git metadata so that we can generate the version for the WMCO binary
@@ -135,6 +132,8 @@ RUN make build-daemon
 
 FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.23-openshift-4.20
 LABEL stage=operator
+
+RUN yum install -y jq
 
 WORKDIR /payload/
 # Copy WICD
