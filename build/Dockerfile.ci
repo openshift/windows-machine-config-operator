@@ -134,6 +134,9 @@ RUN make build-daemon
 FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.15
 LABEL stage=operator
 
+# jq is needed to parse oc commands
+RUN yum install -y jq
+
 WORKDIR /payload/
 # Copy WICD
 COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
