@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -41,7 +42,7 @@ func newMirror(sourceImageLocation, mirrorImageLocation string, resolveTags bool
 		mirrorHost = extractMirrorURL(sourceImageLocation, mirrorImageLocation)
 	} else {
 		// special case if source and mirror are the same. Do not drop the host repo name to avoid an empty host entry
-		mirrorHost = extractHostname(mirrorImageLocation)
+		mirrorHost = extractRegistryHostname(mirrorImageLocation)
 	}
 	return mirror{host: mirrorHost, resolveTags: resolveTags}
 }
@@ -82,14 +83,33 @@ func newMirrorSet(srcImage string, mirrorLocations []config.ImageMirror, resolve
 	for _, m := range mirrorLocations {
 		truncatedMirrors = append(truncatedMirrors, newMirror(srcImage, string(m), resolveTags))
 	}
-	return mirrorSet{source: extractHostname(srcImage), mirrors: truncatedMirrors, mirrorSourcePolicy: mirrorSourcePolicy}
+	return mirrorSet{source: extractRegistryHostname(srcImage), mirrors: truncatedMirrors, mirrorSourcePolicy: mirrorSourcePolicy}
 }
 
-// extractHostname extracts just the initial host repo from a full image location
-// e.g. mcr.microsoft.com would be extracted from mcr.microsoft.com/oss/kubernetes/pause:3.9
-func extractHostname(fullImage string) string {
-	parts := strings.Split(fullImage, imagePathSeparator)
-	return parts[0]
+// extractRegistryHostname extracts just the initial host repo from a full image location, as containerd does not allow
+// registries to exist on a subpath, given an input image `mcr.microsoft.com/oss/kubernetes/pause:3.9`,
+// mcr.microsoft.com would be the determined registry hostname.
+func extractRegistryHostname(fullImage string) string {
+	// url.Parse will only work if URL has a scheme (https://)
+	if parsedURL, err := url.Parse(fullImage); err == nil && parsedURL.Hostname() != "" {
+		if parsedURL.Port() != "" {
+			return parsedURL.Hostname() + ":" + parsedURL.Port()
+		}
+		return parsedURL.Hostname()
+	}
+	// For URLs without a scheme, just return everything before the first `/`
+	return strings.Split(fullImage, imagePathSeparator)[0]
+}
+
+// extractRegistryOrgPath returns only the org path when given a reference to a registry.
+// The input for this function should not include an image name.
+func extractRegistryOrgPath(registry string) string {
+	hostname := extractRegistryHostname(registry)
+	hostnameSplit := strings.SplitN(registry, hostname, 2)
+	if len(hostnameSplit) != 2 {
+		return ""
+	}
+	return strings.TrimPrefix(hostnameSplit[1], "/")
 }
 
 // getMergedMirrorSets extracts and merges the contents of the given mirror sets.
@@ -209,14 +229,24 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 		// set the fallback server to the first mirror to ensure the source is never contacted, even if all mirrors fail
 		fallbackServer = ms.mirrors[0].host
 	}
-	result += fmt.Sprintf("server = \"https://%s\"", fallbackServer)
-	result += "\r\n"
+	fallbackRegistry := extractRegistryHostname(fallbackServer)
+	result += fmt.Sprintf("server = \"https://%s/v2", fallbackRegistry)
+	if orgPath := extractRegistryOrgPath(fallbackServer); orgPath != "" {
+		result += "/" + orgPath
+	}
+	result += "\"\n"
+	result += "\noverride_path = true\n"
 
 	// Each mirror should result in an entry followed by a set of settings for interacting with the mirror host
 	for _, m := range ms.mirrors {
-		result += "\r\n"
-		result += fmt.Sprintf("[host.\"https://%s\"]", m.host)
-		result += "\r\n"
+		hostRegistry := extractRegistryHostname(m.host)
+		hostOrgPath := extractRegistryOrgPath(m.host)
+		result += "\n"
+		result += fmt.Sprintf("[host.\"https://%s/v2", hostRegistry)
+		if hostOrgPath != "" {
+			result += "/" + hostOrgPath
+		}
+		result += "\"]\n"
 
 		// Specify the operations the registry host may perform. IDMS mirrors can only be pulled by directly by digest,
 		// whereas ITMS mirrors have the additional resolve capability, which allows converting a tag name into a digest
@@ -227,18 +257,22 @@ func (ms *mirrorSet) generateConfig(secretsConfig credentialprovider.DockerConfi
 			hostCapabilities = "  capabilities = [\"pull\"]"
 		}
 		result += hostCapabilities
-		result += "\r\n"
+		result += "\n"
+		result += "  override_path = true\n"
 
 		// Extract the mirror repo's authorization credentials, if one exists
-		if entry, ok := secretsConfig.Auths[extractHostname(m.host)]; ok {
+		if entry, ok := secretsConfig.Auths[extractRegistryHostname(m.host)]; ok {
 			credentials := entry.Username + ":" + entry.Password
 			token := base64.StdEncoding.EncodeToString([]byte(credentials))
 
 			// Add the access token as a request header
-			result += fmt.Sprintf("  [host.\"https://%s\".header]", m.host)
-			result += "\r\n"
+			result += fmt.Sprintf("  [host.\"https://%s/v2", hostRegistry)
+			if hostOrgPath != "" {
+				result += "/" + hostOrgPath
+			}
+			result += "\".header]\n"
 			result += fmt.Sprintf("    authorization = \"Basic %s\"", token)
-			result += "\r\n"
+			result += "\n"
 		}
 	}
 
