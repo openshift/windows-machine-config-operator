@@ -79,6 +79,7 @@
           "commitMessageTopic": "{{{groupName}}}"
         },
         "commitMessageTopic": "Konflux references",
+        "commitMessagePrefix": "[{{baseBranch}}]",
         "semanticCommits": "enabled",
         "prFooter": "To execute skipped test pipelines write comment `/ok-to-test`",
         "prBodyColumns": [
