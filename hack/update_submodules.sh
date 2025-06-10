@@ -32,7 +32,12 @@ function update_libraries() {
   go get github.com/openshift/api@$base_branch
   go get github.com/openshift/client-go@$base_branch
   go get github.com/openshift/library-go@$base_branch
-  go get github.com/openshift/machine-config-operator@$base_branch
+  # react to main branch change in machine-config-operator
+  if [ "$base_branch" == "master" ]; then
+    go get github.com/openshift/machine-config-operator@main
+   else
+    go get github.com/openshift/machine-config-operator@$base_branch
+  fi
   go get -u=patch k8s.io/api
   go get -u=patch k8s.io/apimachinery
   go get -u=patch k8s.io/client-go
