@@ -15,7 +15,7 @@ LABEL name="openshift4-wincw/windows-machine-config-operator-bundle" \
     maintainer="Team Windows Containers <team-winc@redhat.com>" \
     io.openshift.tags=""
 
-LABEL version="v10.17.1"
+LABEL version="v10.17.2"
 
 # Component to file bugs against
 LABEL com.redhat.component="Windows Containers"
@@ -32,7 +32,7 @@ LABEL operators.operatorframework.io.metrics.mediatype.v1=metrics+v1
 LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
 
 LABEL distribution-scope=public
-LABEL release="10.17.1"
+LABEL release="10.17.2"
 LABEL url="https://docs.openshift.com/container-platform/4.17/windows_containers/index.html"
 LABEL vendor="Red Hat, Inc."
 
