@@ -12,7 +12,6 @@ import (
 
 type OperatorV1alpha1Interface interface {
 	RESTClient() rest.Interface
-	ClusterVersionOperatorsGetter
 	EtcdBackupsGetter
 	ImageContentSourcePoliciesGetter
 	OLMsGetter
@@ -21,10 +20,6 @@ type OperatorV1alpha1Interface interface {
 // OperatorV1alpha1Client is used to interact with features provided by the operator.openshift.io group.
 type OperatorV1alpha1Client struct {
 	restClient rest.Interface
-}
-
-func (c *OperatorV1alpha1Client) ClusterVersionOperators() ClusterVersionOperatorInterface {
-	return newClusterVersionOperators(c)
 }
 
 func (c *OperatorV1alpha1Client) EtcdBackups() EtcdBackupInterface {

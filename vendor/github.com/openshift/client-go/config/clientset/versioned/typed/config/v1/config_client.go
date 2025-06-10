@@ -15,7 +15,6 @@ type ConfigV1Interface interface {
 	APIServersGetter
 	AuthenticationsGetter
 	BuildsGetter
-	ClusterMonitoringsGetter
 	ClusterOperatorsGetter
 	ClusterVersionsGetter
 	ConsolesGetter
@@ -51,10 +50,6 @@ func (c *ConfigV1Client) Authentications() AuthenticationInterface {
 
 func (c *ConfigV1Client) Builds() BuildInterface {
 	return newBuilds(c)
-}
-
-func (c *ConfigV1Client) ClusterMonitorings() ClusterMonitoringInterface {
-	return newClusterMonitorings(c)
 }
 
 func (c *ConfigV1Client) ClusterOperators() ClusterOperatorInterface {
