@@ -702,10 +702,15 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
 			}
 			return false, fmt.Errorf("error retrieving ConfigMap: %s: %w", cmName, err)
 		}
-		// Here, we've retreived a ConfigMap but still need to ensure it is valid.
+		// Here, we've retrieved a ConfigMap but still need to ensure it is valid.
 		// If it's not valid, retry in hopes that WMCO will replace it with a valid one as expected.
 		data, err := servicescm.Parse(configMap.Data)
-		if err != nil || data.ValidateExpectedContent(expected) != nil {
+		if err != nil {
+			log.Printf("error parsing %s data: %v", cmName, err)
+			return false, nil
+		}
+		if err = data.ValidateExpectedContent(expected); err != nil {
+			log.Printf("error validating %s data: %v", cmName, err)
 			return false, nil
 		}
 		return true, nil
