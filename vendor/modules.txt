@@ -436,7 +436,7 @@ golang.org/x/crypto/openpgp/packet
 golang.org/x/crypto/openpgp/s2k
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/exp v0.0.0-20250531010427-b6e5de432a8b => golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
+# golang.org/x/exp v0.0.0-20250606033433-dcc06ee1d476 => golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 ## explicit; go 1.22.0
 golang.org/x/exp/maps
 # golang.org/x/mod v0.23.0
@@ -910,7 +910,7 @@ k8s.io/kubelet/config/v1beta1
 ## explicit; go 1.22.0
 k8s.io/kubernetes/pkg/credentialprovider
 k8s.io/kubernetes/pkg/features
-# k8s.io/utils v0.0.0-20250502105355-0f33e8f1c979
+# k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 ## explicit; go 1.18
 k8s.io/utils/buffer
 k8s.io/utils/clock
