@@ -41,7 +41,7 @@ require (
 	k8s.io/kubectl v0.32.5
 	k8s.io/kubelet v0.32.5
 	k8s.io/kubernetes v1.32.1
-	k8s.io/utils v0.0.0-20250502105355-0f33e8f1c979
+	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 	sigs.k8s.io/controller-runtime v0.20.4
 	sigs.k8s.io/yaml v1.4.0
 )
