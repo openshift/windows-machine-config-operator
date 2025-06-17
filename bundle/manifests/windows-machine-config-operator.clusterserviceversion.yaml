@@ -18,7 +18,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
     features.operators.openshift.io/token-auth-gcp: "false"
-    olm.skipRange: '>=10.15.0 <10.16.2'
+    olm.skipRange: '>=10.15.0 <10.16.3'
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     operators.openshift.io/valid-subscription: '["Red Hat OpenShift support for Windows
@@ -27,7 +27,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat
-  name: windows-machine-config-operator.v10.16.2
+  name: windows-machine-config-operator.v10.16.3
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -401,7 +401,9 @@ spec:
           - use
         serviceAccountName: windows-machine-config-operator
       deployments:
-      - name: windows-machine-config-operator
+      - label:
+          name: windows-machine-config-operator
+        name: windows-machine-config-operator
         spec:
           replicas: 1
           selector:
@@ -511,4 +513,4 @@ spec:
   minKubeVersion: 1.29.0
   provider:
     name: Red Hat
-  version: 10.16.2
+  version: 10.16.3
