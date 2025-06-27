@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -182,6 +183,28 @@ func TestUpgradePathDecrypt(t *testing.T) {
 	}
 }
 
+func TestBackwardCompatibility(t *testing.T) {
+	// This test ensures that data encrypted with the deprecated library can be decrypted by the new one.
+	// The encrypted block was generated using the old `golang.org/x/crypto/openpgp` library.
+	encryptedPayload := `-----BEGIN ENCRYPTED DATA-----
+
+wx4EBwMIYL8KsG/HtgVg8+iNJjXElhvALQYrmnA+7HvS5gF6B/0fU33WYjzltKxb
+G9CDA2rN+SNPyM9X0uRaI8HCdhZivqvHxv0rlXlVnwdVwqpltv1DDjsl+roRLxG4
+s1TgswA=
+=QPgT
+-----END ENCRYPTED DATA-----`
+	passphrase := []byte("test-passphrase")
+	expectedPlaintext := "Administrator"
+
+	// The old implementation used a marker to handle newlines.
+	// We need to replicate that behavior for the test.
+	jsonPayload := strings.Replace(encryptedPayload, "\n", wmcoMarker, -1)
+
+	decrypted, err := DecryptFromJSONString(jsonPayload, passphrase)
+	require.NoError(t, err, "decryption of old data failed")
+	assert.Equal(t, expectedPlaintext, decrypted, "decrypted data does not match original plaintext")
+}
+
 // generatePrivateKey generates a random RSA private key
 func generatePrivateKey() ([]byte, error) {
 	var keyData []byte
@@ -234,4 +257,4 @@ func generateBuggyEncryptedString(plaintext string, key []byte) (string, error) 
 	encoder.Close()
 
 	return string(msgBuffer.Bytes()), nil
-}
+} 
