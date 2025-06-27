@@ -7,6 +7,8 @@ replace (
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20240823005443-9b4947da3948
 	// https://github.com/golang/mod/compare/v0.20.0...v0.21.0
 	golang.org/x/mod => golang.org/x/mod v0.20.0
+	// fix CVE-2025-22869 with downstream tag v0.33.openshift.1
+	golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 )
 
