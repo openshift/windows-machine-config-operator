@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp"
+	"github.com/ProtonMail/go-crypto/openpgp/armor"
 )
 
 const (
@@ -121,4 +121,4 @@ func readMessage(reader io.Reader, key []byte) (io.Reader, error) {
 		return nil, fmt.Errorf("unable to decrypt message using given key: %w", err)
 	}
 	return message.UnverifiedBody, nil
-}
+} 
