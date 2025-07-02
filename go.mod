@@ -2,6 +2,9 @@ module github.com/openshift/windows-machine-config-operator
 
 go 1.20
 
+// fix CVE-2025-22869 with downstream tag v0.33.openshift.1
+replace golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
+
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.44.298
