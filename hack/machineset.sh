@@ -90,7 +90,7 @@ get_aws_ms() {
   fi
 
 
-  local az=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.placement.availibilityZone)
+  local az=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.placement.availabilityZone)
   local region=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.placement.region)
   #
   # get the AMI id for the Windows VM
