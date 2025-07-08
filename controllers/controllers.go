@@ -281,8 +281,10 @@ func markNodeAsUpgrading(ctx context.Context, c client.Client, currentNode *core
 		}
 	}
 	if len(upgradingNodes.Items) >= MaxParallelUpgrades {
-		return fmt.Errorf("cannot mark node %s as upgrading, maximum number of parallel upgrading nodes reached (%d)",
-			currentNode.Name, MaxParallelUpgrades)
+		return &UpgradeLimitExceededError{
+			NodeName: currentNode.Name,
+			Count:    len(upgradingNodes.Items),
+		}
 	}
 	return metadata.ApplyUpgradingLabel(ctx, c, currentNode)
 }
