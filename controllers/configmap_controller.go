@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -183,7 +184,13 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 	case servicescm.Name:
 		return ctrl.Result{}, r.reconcileServices(ctx, configMap)
 	case wiparser.InstanceConfigMap:
-		return ctrl.Result{}, r.reconcileNodes(ctx, configMap)
+		err := r.reconcileNodes(ctx, configMap)
+		var upgradeErr *UpgradeLimitExceededError
+		if errors.As(err, &upgradeErr) {
+			r.log.Info(upgradeErr.Error())
+		} else {
+			return ctrl.Result{}, err
+		}
 	case certificates.ProxyCertsConfigMap:
 		return ctrl.Result{}, r.reconcileProxyCerts(ctx, configMap)
 	default:
