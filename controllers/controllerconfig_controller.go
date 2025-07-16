@@ -86,6 +86,11 @@ func (r *ControllerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
 
+	if err := signer.ValidatePublicKey(r.signer.PublicKey()); err != nil {
+		r.log.Info("Warning: A weak private key is being used for controller config operations. "+
+			"It is strongly recommended to use a more secure key.", "details", err)
+	}
+
 	// fetch all Windows nodes (Machine and BYOH instances)
 	winNodes := &core.NodeList{}
 	if err = r.client.List(ctx, winNodes, client.MatchingLabels{core.LabelOSStable: "windows"}); err != nil {

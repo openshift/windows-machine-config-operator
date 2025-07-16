@@ -95,17 +95,23 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 
 	if _, ok := node.GetAnnotations()[metadata.RebootAnnotation]; ok {
 		// Create a new signer using the private key that the instances will be reconciled with
-		signer, err := signer.Create(ctx, types.NamespacedName{Namespace: r.watchNamespace,
+		instanceSigner, err := signer.Create(ctx, types.NamespacedName{Namespace: r.watchNamespace,
 			Name: secrets.PrivateKeySecret}, r.client)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 		}
+
+		if err := signer.ValidatePublicKey(instanceSigner.PublicKey()); err != nil {
+			r.log.Info("Warning: A weak private key is being used for node operations. "+
+				"It is strongly recommended to use a more secure key.", "details", err)
+		}
+
 		instanceInfo, err := r.instanceFromNode(ctx, node)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
-			instanceInfo, signer, nil, nil, r.platform)
+			instanceInfo, instanceSigner, nil, nil, r.platform)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)
 		}

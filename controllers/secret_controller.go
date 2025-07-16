@@ -165,6 +165,11 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
 
+	if err := signer.ValidatePublicKey(r.signer.PublicKey()); err != nil {
+		r.log.Info("Warning: A weak private key has been provided for instance configuration. "+
+			"It is strongly recommended to use a more secure key.", "details", err)
+	}
+
 	if request.NamespacedName.Name == secrets.TLSSecret {
 		return ctrl.Result{}, r.reconcileTLSSecret(ctx)
 	}
@@ -183,8 +188,16 @@ func (r *SecretReconciler) reconcileUserDataSecret(ctx context.Context) error {
 		}
 		return fmt.Errorf("unable to get secret %s: %w", secrets.PrivateKeySecret, err)
 	}
+
+	// get the public key from the signer
+	publicKey := keySigner.PublicKey()
+	if err := signer.ValidatePublicKey(publicKey); err != nil {
+		r.log.Info("Warning: A weak private key is being used for userdata generation. "+
+			"It is strongly recommended to use a more secure key.", "details", err)
+	}
+
 	// Generate expected userData based on the existing private key
-	validUserData, err := secrets.GenerateUserData(r.platform, keySigner.PublicKey())
+	validUserData, err := secrets.GenerateUserData(r.platform, publicKey)
 	if err != nil {
 		return fmt.Errorf("error generating %s secret: %w", secrets.UserDataSecret, err)
 	}
