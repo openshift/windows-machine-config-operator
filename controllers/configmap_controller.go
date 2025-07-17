@@ -21,11 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"reflect"
 	"strings"
 
-	config "github.com/openshift/api/config/v1"
 	oconfig "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	core "k8s.io/api/core/v1"
@@ -65,8 +63,6 @@ import (
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=delete;get;list;patch;update;watch
 //+kubebuilder:rbac:groups="",resources=nodes/status,verbs=patch;update
 //+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
-//+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=rolebindings,verbs=get;create;delete
-//+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=clusterrolebindings,verbs=get;create;delete
 
 const (
 	// BYOHLabel is a label that should be applied to all Windows nodes not associated with a Machine.
@@ -75,10 +71,10 @@ const (
 	UsernameAnnotation = "windowsmachineconfig.openshift.io/username"
 	// ConfigMapController is the name of this controller in logs and other outputs.
 	ConfigMapController = "configmap"
-	// wicdRBACResourceName is the name of the resources associated with WICD's RBAC permissions
-	wicdRBACResourceName = "windows-instance-config-daemon"
 	// InjectionRequestLabel is used to allow CNO to inject the trusted CA bundle when the global Proxy resource changes
 	InjectionRequestLabel = "config.openshift.io/inject-trusted-cabundle"
+	// wicdRBACResourceName is the name of the resources associated with WICD's RBAC permissions
+	wicdRBACResourceName = "windows-instance-config-daemon-role-binding"
 )
 
 // ConfigMapReconciler reconciles a ConfigMap object
@@ -299,7 +295,7 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(ctx context.Context, in
 	for _, instanceInfo := range instances {
 		// When platform type is none or Nutanix, kubelet will pick a random interface to use for the Node's IP. In that case we
 		// should override that with the IP that the user is providing via the ConfigMap.
-		instanceInfo.SetNodeIP = r.platform == config.NonePlatformType || r.platform == config.NutanixPlatformType
+		instanceInfo.SetNodeIP = r.platform == oconfig.NonePlatformType || r.platform == oconfig.NutanixPlatformType
 		encryptedUsername, err := crypto.EncryptToJSONString(instanceInfo.Username, privateKeyBytes)
 		if err != nil {
 			return fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err)
@@ -641,19 +637,19 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
 // ensureWICDClusterRoleBinding ensures the WICD ClusterRoleBinding resource exists as expected.
 // Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
 func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) error {
-	existingCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Get(ctx, wicdRBACResourceName,
+	existingCRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Get(ctx, wicdRBACResourceName,
 		meta.GetOptions{})
 	if err != nil && !k8sapierrors.IsNotFound(err) {
-		return err
+		return fmt.Errorf("unable to get RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
 	}
 
-	expectedCRB := &rbac.ClusterRoleBinding{
+	expectedCRB := &rbac.RoleBinding{
 		ObjectMeta: meta.ObjectMeta{
 			Name: wicdRBACResourceName,
 		},
 		RoleRef: rbac.RoleRef{
 			APIGroup: rbac.GroupName,
-			Kind:     "ClusterRole",
+			Kind:     "Role",
 			Name:     wicdRBACResourceName,
 		},
 		Subjects: []rbac.Subject{{
@@ -663,29 +659,31 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 		}},
 	}
 	if err == nil {
-		// check if existing ClusterRoleBinding's contents are as expected, delete it if not
+		// check if existing RoleBinding's contents are as expected, delete it if not
 		if existingCRB.RoleRef.Name == expectedCRB.RoleRef.Name &&
 			reflect.DeepEqual(existingCRB.Subjects, expectedCRB.Subjects) {
 			return nil
 		}
-		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(ctx, wicdRBACResourceName,
+		err = r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Delete(ctx, wicdRBACResourceName,
 			meta.DeleteOptions{})
 		if err != nil {
 			return err
 		}
-		r.log.Info("Deleted malformed resource", "ClusterRoleBinding", existingCRB.Name,
+		r.log.Info("Deleted malformed resource", "RoleBinding",
+			kubeTypes.NamespacedName{Namespace: existingCRB.Namespace, Name: existingCRB.Name},
 			"RoleRef", existingCRB.RoleRef.Name, "Subjects", existingCRB.Subjects)
-
-		r.log.Info("Process will restart to reconcile resources")
-		defer os.Exit(1)
 	}
 	// create proper resource if it does not exist
-	createdCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Create(ctx, expectedCRB, meta.CreateOptions{})
-	if err == nil {
-		r.log.Info("Created resource", "ClusterRoleBinding", createdCRB.Name,
-			"RoleRef", createdCRB.RoleRef.Name, "Subjects", createdCRB.Subjects)
+	createdCRB, err := r.k8sclientset.RbacV1().RoleBindings(r.watchNamespace).Create(ctx, expectedCRB,
+		meta.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to create RoleBinding %s/%s: %w", r.watchNamespace, wicdRBACResourceName, err)
 	}
-	return err
+	r.log.Info("Created resource", "RoleBinding",
+		kubeTypes.NamespacedName{Namespace: createdCRB.Namespace, Name: createdCRB.Name},
+		"RoleRef", createdCRB.RoleRef.Name, "Subjects", createdCRB.Subjects)
+
+	return nil
 }
 
 // generateServicesManifest generates and regenerates the services manifest.

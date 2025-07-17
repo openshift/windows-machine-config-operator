@@ -26,6 +26,7 @@ spec:
         kubectl.kubernetes.io/default-container: manager
       labels:
         name: windows-machine-config-operator
+        app: windows-machine-config-operator
     spec:
       dnsPolicy: ClusterFirstWithHostNet
       hostNetwork: true
@@ -42,6 +43,9 @@ spec:
         - containerPort: 9182
           protocol: TCP
           name: https
+        - containerPort: 9443
+          protocol: TCP
+          name: webhook-server
         resources:
          limits:
             cpu: 200m
@@ -60,6 +64,14 @@ spec:
                 fieldPath: metadata.name
           - name: OPERATOR_NAME
             value: "windows-machine-config-operator"
+        volumeMounts:
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: webhook-certs
+          readOnly: true
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: windows-machine-config-operator-webhook-certs
       serviceAccountName: windows-machine-config-operator
       terminationGracePeriodSeconds: 10
       nodeSelector:

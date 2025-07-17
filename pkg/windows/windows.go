@@ -139,6 +139,8 @@ const (
 	containersFeatureName = "Containers"
 	// WICDKubeconfigPath is the path of the kubeconfig used by WICD
 	WICDKubeconfigPath = K8sDir + "\\wicd-kubeconfig"
+	// WICDCertDir is the directory for storing WICD client certificates
+	WICDCertDir = K8sDir + "\\wicd-certs"
 	// TrustedCABundlePath is the location of the trusted CA bundle file
 	TrustedCABundlePath = K8sDir + "\\ca-bundle.crt"
 	// GetHostnameFQDNCommand is the PowerShell command to get the FQDN hostname of the Windows instance
@@ -181,6 +183,7 @@ var (
 		podManifestDirectory,
 		K8sDir,
 		TLSDir,
+		WICDCertDir, // Add WICD certificate directory
 	}
 )
 
@@ -237,7 +240,16 @@ func GetK8sDir() string {
 	return K8sDir
 }
 
-// Windows contains all the methods needed to configure a Windows VM to become a worker node
+// WICDCertConfig contains certificate authentication configuration for WICD
+type WICDCertConfig struct {
+	// CertDir is the directory where certificates will be stored
+	CertDir string
+	// CertDuration is the certificate lifetime (e.g., "24h")
+	CertDuration string
+}
+
+// Windows is an interface that provides all the functionality to interact with a Windows VM. The only requirement is
+// that the VM is accessible via ssh using the provided credentials.
 type Windows interface {
 	// GetIPv4Address returns the IPv4 address of the associated instance.
 	GetIPv4Address() string
@@ -267,7 +279,7 @@ type Windows interface {
 	// Bootstrap prepares the Windows instance and runs the WICD bootstrap command
 	Bootstrap(context.Context, string, string, string) error
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
-	ConfigureWICD(string, string) error
+	ConfigureWICD(string, string, *WICDCertConfig) error
 	// RemoveFilesAndNetworks removes all files and networks created by WMCO
 	RemoveFilesAndNetworks() error
 	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
@@ -557,12 +569,30 @@ func (vm *windows) Bootstrap(ctx context.Context, desiredVer, watchNamespace, wi
 }
 
 // ConfigureWICD starts the Windows Instance Config Daemon service
-func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string) error {
+func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string, certConfig *WICDCertConfig) error {
+	// Always ensure kubeconfig exists (needed for cleanup command and fallback)
 	if err := vm.ensureWICDFilesExist(wicdKubeconfigContents); err != nil {
 		return err
 	}
-	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --kubeconfig %s --namespace %s",
-		wicdLogDir, WICDKubeconfigPath, watchNamespace)
+
+	// Build base service arguments
+	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --namespace %s --kubeconfig %s",
+		wicdLogDir, watchNamespace, WICDKubeconfigPath)
+
+	// Certificate-based authentication is always enabled
+	if certConfig != nil {
+		wicdServiceArgs = fmt.Sprintf("%s --cert-dir %s",
+			wicdServiceArgs, certConfig.CertDir)
+		if certConfig.CertDuration != "" {
+			wicdServiceArgs = fmt.Sprintf("%s --cert-duration %s", wicdServiceArgs, certConfig.CertDuration)
+		}
+	} else {
+		// Use defaults when no cert config provided
+		wicdServiceArgs = fmt.Sprintf("%s --cert-dir %s",
+			wicdServiceArgs, WICDCertDir)
+	}
+
+	// Add CA bundle
 	wicdServiceArgs = fmt.Sprintf("%s --ca-bundle %s", wicdServiceArgs, TrustedCABundlePath)
 	// if WICD crashes, attempt to restart WICD after 10, 30, and 60 seconds, and then every 2 minutes after that.
 	// reset this counter 5 min after a period with no crashes
