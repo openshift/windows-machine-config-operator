@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	wmcorbac "github.com/openshift/windows-machine-config-operator/pkg/rbac"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
@@ -167,6 +168,12 @@ func (r *instanceReconciler) deconfigureInstance(ctx context.Context, node *core
 	if err = nc.Deconfigure(ctx); err != nil {
 		return err
 	}
+
+	// Clean up node-specific RBAC after WICD cleanup is complete, before node deletion
+	if err = wmcorbac.CleanupNodeSpecificRBAC(ctx, r.client, r.k8sclientset, r.watchNamespace, instance.Node.GetName()); err != nil {
+		r.log.Error(err, "failed to cleanup node-specific RBAC", "node", instance.Node.GetName())
+	}
+
 	if err = r.client.Delete(ctx, instance.Node); err != nil {
 		return fmt.Errorf("error deleting node %s: %w", instance.Node.GetName(), err)
 	}
