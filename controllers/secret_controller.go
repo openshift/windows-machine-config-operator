@@ -33,7 +33,7 @@ import (
 )
 
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;patch
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=create;get;list;watch;update
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=create;get;list;watch;update;delete
 
 const (
 	// SecretController is the name of this controller in logs and other outputs.
