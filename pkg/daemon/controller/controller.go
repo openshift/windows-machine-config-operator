@@ -23,17 +23,24 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
+	certificatesv1 "k8s.io/api/certificates/v1"
 	core "k8s.io/api/core/v1"
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -63,7 +70,14 @@ import (
 )
 
 // WICDController is the name of the WICD controller in logs and other outputs
-const WICDController = "WICD"
+const WICDController = "windows-instance-config-daemon-controller"
+
+// Certificate usages for WICD certificates
+var wicdCertUsages = []certificatesv1.KeyUsage{
+	certificatesv1.UsageDigitalSignature,
+	certificatesv1.UsageClientAuth,
+	certificatesv1.UsageKeyEncipherment,
+}
 
 // Options contains a list of options available when creating a new ServiceController
 type Options struct {
@@ -105,6 +119,7 @@ func setDefaults(o Options) (Options, error) {
 	return o, nil
 }
 
+// ServiceController holds client connection objects and node metadata needed for the controller to function
 type ServiceController struct {
 	manager.Manager
 	client         client.Client
@@ -134,28 +149,89 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 }
 
 // RunController is the entry point of WICD's controller functionality
-func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle string) error {
-	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle string, certDir, certDuration string) error {
+	var wg sync.WaitGroup
+	var cfg *rest.Config
+	var err error
+
+	// Certificate-based authentication is always enabled
+	klog.Info("Setting up certificate-based authentication for WICD")
+
+	// Parse certificate duration
+	duration, err := time.ParseDuration(certDuration)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid cert-duration %s: %w", certDuration, err)
 	}
-	// This is a client that reads directly from the server, not a cached client. This is required to be used here, as
-	// the cached client, created by ctrl.NewManager() will not be functional until the manager is started.
+
+	// Get bootstrap configuration from ServiceAccount
+	cfg, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		return fmt.Errorf("failed to load WICD kubeconfig: %w", err)
+	}
+
 	directClient, err := NewDirectClient(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create bootstrap client: %w", err)
 	}
 
 	addrs, err := LocalInterfaceAddresses()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get local interface addresses: %w", err)
 	}
+
 	node, err := GetAssociatedNode(ctx, directClient, addrs)
 	if err != nil {
 		return fmt.Errorf("could not find node object associated with this instance: %w", err)
 	}
 
-	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
+	// Certificate file paths
+	certFile := filepath.Join(certDir, "wicd-client-current.pem")
+	keyFile := filepath.Join(certDir, "wicd-client-current-key.pem")
+
+	certManager := certs.NewWICDCertificateManager(node.Name, certDir, kubeconfig, cfg.Host, duration)
+
+	certManagerErrCh := make(chan error, 1)
+	go func() {
+		defer wg.Done()
+		if err := certManager.StartCertificateManagement(ctx, &wg); err != nil {
+			klog.Errorf("Certificate management failed: %v", err)
+			certManagerErrCh <- err
+			return
+		}
+		klog.Info("Certificate-based authentication started successfully")
+		certManagerErrCh <- nil
+	}()
+	wg.Add(1)
+
+	err = wait.PollUntilContextTimeout(ctx, time.Second*2, time.Minute*5, true, func(ctx context.Context) (bool, error) {
+		// Check if both certificate files exist and are readable
+		if _, err := os.Stat(certFile); err != nil {
+			klog.V(4).Infof("Certificate file not yet available: %v", err)
+			return false, nil
+		}
+		if _, err := os.Stat(keyFile); err != nil {
+			klog.V(4).Infof("Key file not yet available: %v", err)
+			return false, nil
+		}
+		klog.Info("Certificate files are now available!")
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("timeout waiting for certificate files to be created: %w", err)
+	}
+
+	certificateConfig := &rest.Config{
+		Host: cfg.Host,
+		TLSClientConfig: rest.TLSClientConfig{
+			CertFile: certFile,
+			KeyFile:  keyFile,
+			CAFile:   cfg.TLSClientConfig.CAFile,
+			CAData:   cfg.TLSClientConfig.CAData,
+		},
+	}
+
+	// Create controller manager with certificate-based authentication
+	ctrlMgr, err := ctrl.NewManager(certificateConfig, ctrl.Options{
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{
 				watchNamespace: {},
@@ -165,8 +241,9 @@ func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle str
 		Logger: klog.NewKlogr(),
 	})
 	if err != nil {
-		return fmt.Errorf("unable to start manager: %w", err)
+		return fmt.Errorf("unable to start manager with certificate authentication: %w", err)
 	}
+
 	sc, err := NewServiceController(ctx, node.Name, watchNamespace,
 		Options{Client: ctrlMgr.GetClient(), caBundle: caBundle, recorder: ctrlMgr.GetEventRecorderFor(WICDController)})
 	if err != nil {
@@ -175,11 +252,25 @@ func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle str
 	if err = sc.SetupWithManager(ctx, ctrlMgr); err != nil {
 		return err
 	}
-	klog.Info("Starting manager, awaiting events")
-	if err := ctrlMgr.Start(ctx); err != nil {
+	klog.Info("Manager started with certificate-based authentication!")
+	klog.Info("WICD is now using system:wicd-node identity with enhanced permissions")
+
+	// Start the controller manager
+	managerErrCh := make(chan error, 1)
+	go func() {
+		managerErrCh <- ctrlMgr.Start(ctx)
+	}()
+
+	// Wait for either context cancellation or manager error
+	select {
+	case err := <-managerErrCh:
+		klog.Infof("Controller manager exited: %v", err)
 		return err
+	case <-ctx.Done():
+		klog.Info("Context cancelled, waiting for certificate management to finish")
+		wg.Wait()
+		return ctx.Err()
 	}
-	return nil
 }
 
 // NewServiceController returns a pointer to a ServiceController object
@@ -281,8 +372,10 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		klog.Info("waiting for reboot")
 		return ctrl.Result{}, nil
 	}
+
 	// Reconcile state of Windows services with the ConfigMap data
 	if err = sc.reconcileServices(cmData.Services); err != nil {
+		klog.Errorf("service reconciliation failed: %v", err)
 		return ctrl.Result{}, err
 	}
 
@@ -404,7 +497,7 @@ func (sc *ServiceController) reconcileService(service winsvc.Service, expected s
 		updateRequired = true
 	}
 
-	if !slicesEquivalent(config.Dependencies, expected.Dependencies) {
+	if !slices.Equal(config.Dependencies, expected.Dependencies) {
 		config.Dependencies = expected.Dependencies
 		updateRequired = true
 	}
@@ -522,7 +615,7 @@ func (sc *ServiceController) resolveVariablesInPath(script servicescm.Powershell
 
 // waitUntilNodeReady waits until the Node being configured is ready. Returns an error on timeout.
 func (sc *ServiceController) waitUntilNodeReady() error {
-	return wait.PollUntilContextTimeout(sc.ctx, 5*time.Second, time.Minute, true,
+	return wait.PollUntilContextTimeout(sc.ctx, 5*time.Second, 5*time.Minute, true,
 		func(ctx context.Context) (done bool, err error) {
 			var node core.Node
 			err = sc.client.Get(sc.ctx, client.ObjectKey{Name: sc.nodeName}, &node)

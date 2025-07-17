@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: windows-machine-config-operator
     app.kubernetes.io/part-of: wicd
-  name: windows-instance-config-daemon
+  name: system-wicd-nodes
 rules:
 - apiGroups:
   - ""
@@ -19,14 +19,14 @@ rules:
   resources:
   - nodes
   verbs:
-  - get
   - list
 - apiGroups:
-  - certificates.k8s.io
+  - ""
   resources:
-  - certificatesigningrequests
+  - nodes
+  - nodes/status
   verbs:
-  - create
   - get
-  - list
+  - patch
+  - update
   - watch
