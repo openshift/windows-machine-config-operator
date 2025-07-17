@@ -47,7 +47,8 @@ import (
 const (
 	// maxUnhealthyCount is the maximum number of nodes that are not ready to serve at a given time.
 	// TODO: https://issues.redhat.com/browse/WINC-524
-	maxUnhealthyCount = 1
+	// Increased from 1 to 2 to allow private key reconfiguration tests to work with 2 Windows machines
+	maxUnhealthyCount = 2
 	// MachineOSLabel is the label used to identify the Windows Machines.
 	MachineOSLabel = "machine.openshift.io/os-id"
 	// WindowsMachineController is the name of this controller in logs and other outputs.
