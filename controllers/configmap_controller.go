@@ -147,6 +147,11 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
 
+	if err := signer.ValidatePublicKey(r.signer.PublicKey()); err != nil {
+		r.log.Info("Warning: A weak private key is being used for configmap operations. "+
+			"It is strongly recommended to use a more secure key.", "details", err)
+	}
+
 	servicesManifest, err := generateServicesManifest(ctx, r.client, r.VXLANPort, r.platform)
 	if err != nil {
 		return ctrl.Result{}, err

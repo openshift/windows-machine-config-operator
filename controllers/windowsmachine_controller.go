@@ -227,6 +227,11 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, fmt.Errorf("unable to get signer from secret %s: %w", request.NamespacedName, err)
 	}
 
+	if err := signer.ValidatePublicKey(r.signer.PublicKey()); err != nil {
+		r.log.Info("Warning: A weak private key is being used for machine operations. "+
+			"It is strongly recommended to use a more secure key.", "details", err)
+	}
+
 	// Fetch the Machine instance
 	machine, err := r.machineClient.Machines(cluster.MachineAPINamespace).Get(ctx, request.Name, meta.GetOptions{})
 	if err != nil {

@@ -95,6 +95,12 @@ func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
+
+	if err := signer.ValidatePublicKey(r.signer.PublicKey()); err != nil {
+		r.log.Info("Warning: A weak private key is being used for registry operations. "+
+			"It is strongly recommended to use a more secure key.", "details", err)
+	}
+
 	for _, n := range nodes.Items {
 		// Ensure the node status is up to date, going through this list could take a long time depending on the
 		// number of Windows nodes in the cluster
