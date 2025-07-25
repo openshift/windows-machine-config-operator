@@ -211,7 +211,11 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 
 	// Prevent WMCO upgrades while Machine nodes are being processed
 	if err := condition.MarkAsBusy(ctx, r.client, r.watchNamespace, r.recorder, WindowsMachineController); err != nil {
-		return ctrl.Result{}, err
+		var upgradeErr *UpgradeLimitExceededError
+		if !errors.As(err, &upgradeErr) {
+			return ctrl.Result{}, err
+		}
+		r.log.Info(upgradeErr.Error())
 	}
 	defer func() {
 		reconcileErr = markAsFreeOnSuccess(ctx, r.client, r.watchNamespace, r.recorder, WindowsMachineController,
