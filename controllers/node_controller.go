@@ -35,6 +35,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	wmcorbac "github.com/openshift/windows-machine-config-operator/pkg/rbac"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 )
@@ -45,6 +46,10 @@ const (
 )
 
 // nodeReconciler holds the info required to reconcile a Node object, inclduing that of the underlying Windows instance
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=patch
+//+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=clusterroles,verbs=get;create;delete
+//+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=clusterrolebindings,verbs=get;create;delete
+
 type nodeReconciler struct {
 	instanceReconciler
 }
@@ -84,12 +89,20 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 	node := &core.Node{}
 	if err := r.client.Get(ctx, req.NamespacedName, node); err != nil {
 		if k8sapierrors.IsNotFound(err) {
-			// Request object not found, could have been deleted after reconcile request.
-			// Owned objects are automatically garbage collected. For additional cleanup logic use finalizers.
-			// Return and don't requeue
+			// Node was deleted - clean up any node-specific RBAC
+			if err := r.cleanupNodeSpecificRBAC(ctx, req.NamespacedName.Name); err != nil {
+				r.log.Error(err, "failed to cleanup node-specific RBAC", "node", req.NamespacedName.Name)
+				// Don't return error to avoid requeue on cleanup
+			}
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - return error to requeue the request.
+		return ctrl.Result{}, err
+	}
+
+	// Ensure node-specific RBAC exists for this Windows node
+	if err := r.ensureNodeSpecificRBAC(ctx, node.Name); err != nil {
+		r.log.Error(err, "failed to ensure node-specific RBAC", "node", node.Name)
 		return ctrl.Result{}, err
 	}
 
@@ -130,7 +143,7 @@ func (r *nodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return isWindowsNode(e.Object)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			return isWindowsNode(e.Object) // Enable delete events for RBAC cleanup
 		},
 	}
 	return ctrl.NewControllerManagedBy(mgr).
@@ -146,4 +159,14 @@ func isWindowsNode(obj runtime.Object) bool {
 	}
 	value, ok := node.Labels[core.LabelOSStable]
 	return ok && value == "windows"
+}
+
+// ensureNodeSpecificRBAC creates node-specific RBAC for the given node
+func (r *nodeReconciler) ensureNodeSpecificRBAC(ctx context.Context, nodeName string) error {
+	return wmcorbac.EnsureNodeSpecificRBAC(ctx, r.client, r.k8sclientset, r.watchNamespace, nodeName)
+}
+
+// cleanupNodeSpecificRBAC removes node-specific RBAC resources for a deleted node
+func (r *nodeReconciler) cleanupNodeSpecificRBAC(ctx context.Context, nodeName string) error {
+	return wmcorbac.CleanupNodeSpecificRBAC(ctx, r.client, r.k8sclientset, r.watchNamespace, nodeName)
 }

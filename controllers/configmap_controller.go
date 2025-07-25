@@ -640,6 +640,8 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
 
 // ensureWICDClusterRoleBinding ensures the WICD ClusterRoleBinding resource exists as expected.
 // Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
+// NOTE: This now creates a ClusterRoleBinding with MINIMAL permissions (discovery only).
+// Node-specific permissions are handled by ensureWICDNodeSpecificRBAC().
 func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) error {
 	existingCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Get(ctx, wicdRBACResourceName,
 		meta.GetOptions{})
@@ -650,6 +652,10 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 	expectedCRB := &rbac.ClusterRoleBinding{
 		ObjectMeta: meta.ObjectMeta{
 			Name: wicdRBACResourceName,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":    "windows-machine-config-operator",
+				"app.kubernetes.io/part-of": "wicd",
+			},
 		},
 		RoleRef: rbac.RoleRef{
 			APIGroup: rbac.GroupName,
@@ -663,27 +669,51 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 		}},
 	}
 	if err == nil {
-		// check if existing ClusterRoleBinding's contents are as expected, delete it if not
-		if existingCRB.RoleRef.Name == expectedCRB.RoleRef.Name &&
-			reflect.DeepEqual(existingCRB.Subjects, expectedCRB.Subjects) {
+		// Check if existing ClusterRoleBinding needs update
+		needsUpdate := existingCRB.RoleRef.Name != expectedCRB.RoleRef.Name ||
+			!reflect.DeepEqual(existingCRB.Subjects, expectedCRB.Subjects) ||
+			!reflect.DeepEqual(existingCRB.Labels, expectedCRB.Labels)
+
+		if !needsUpdate {
+			// Ensure the ClusterRole has been updated to minimal permissions
+			baseClusterRole, err := r.k8sclientset.RbacV1().ClusterRoles().Get(ctx, wicdRBACResourceName, meta.GetOptions{})
+			if err == nil {
+				for _, rule := range baseClusterRole.Rules {
+					for _, resource := range rule.Resources {
+						if resource == "nodes" {
+							for _, verb := range rule.Verbs {
+								if verb == "get" || verb == "patch" {
+									needsUpdate = true
+									r.log.Info("ClusterRole needs update", "ClusterRole", wicdRBACResourceName)
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if !needsUpdate {
 			return nil
 		}
+
+		// Delete existing ClusterRoleBinding to update it
 		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(ctx, wicdRBACResourceName,
 			meta.DeleteOptions{})
 		if err != nil {
 			return err
 		}
-		r.log.Info("Deleted malformed resource", "ClusterRoleBinding", existingCRB.Name,
-			"RoleRef", existingCRB.RoleRef.Name, "Subjects", existingCRB.Subjects)
+		r.log.Info("Deleted ClusterRoleBinding for update", "ClusterRoleBinding", existingCRB.Name,
+			"reason", "migrating to node-specific permissions")
 
-		r.log.Info("Process will restart to reconcile resources")
+		r.log.Info("Process will restart to reconcile resources after update")
 		defer os.Exit(1)
 	}
 	// create proper resource if it does not exist
 	createdCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Create(ctx, expectedCRB, meta.CreateOptions{})
 	if err == nil {
-		r.log.Info("Created resource", "ClusterRoleBinding", createdCRB.Name,
-			"RoleRef", createdCRB.RoleRef.Name, "Subjects", createdCRB.Subjects)
+		r.log.Info("Created discovery-only ClusterRoleBinding", "ClusterRoleBinding", createdCRB.Name)
 	}
 	return err
 }
