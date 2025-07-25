@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
+	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
 
@@ -107,12 +108,28 @@ func (r *instanceReconciler) instanceFromNode(ctx context.Context, node *core.No
 		return nil, err
 	}
 
-	// Decrypt username annotation to plain text using private key
+	// Get private key for decryption
 	privateKeyBytes, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
 		return nil, err
 	}
+
+	// Check if the username annotation is encrypted with the current private key by comparing public key hash
+	signer, err := signer.Create(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
+		Name: secrets.PrivateKeySecret}, r.client)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create signer for public key hash verification: %w", err)
+	}
+	expectedPubKeyHash := nodeconfig.CreatePubKeyHashAnnotation(signer.PublicKey())
+	currentPubKeyHash := node.Annotations[nodeconfig.PubKeyHashAnnotation]
+
+	if currentPubKeyHash != expectedPubKeyHash {
+		// The username annotation is encrypted with an old private key and hasn't been updated yet
+		// This can happen during private key rotation. Return a specific error that can be retried.
+		return nil, fmt.Errorf("node %s username annotation is encrypted with an outdated private key, waiting for secret controller to update it", node.Name)
+	}
+
 	username, err := crypto.DecryptFromJSONString(usernameAnnotation, privateKeyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("unable to decrypt username annotation for node %s: %w", node.Name, err)
