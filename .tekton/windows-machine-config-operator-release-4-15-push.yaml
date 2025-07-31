@@ -368,8 +368,6 @@ spec:
         - 'false'
     - name: sast-unicode-check
       params:
-      - name: image-url
-        value: $(tasks.build-container.results.IMAGE_URL)
       - name: image-digest
         value: $(tasks.build-container.results.IMAGE_DIGEST)
       - name: SOURCE_ARTIFACT
@@ -465,12 +463,60 @@ spec:
         requests:
           memory: 10Gi
       name: build
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: build-container
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: clone-repository
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: create-trusted-artifact
   - pipelineTaskName: prefetch-dependencies
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: sast-shell-check
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: sast-snyk-check
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: sast-unicode-check
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   taskRunTemplate:
     serviceAccountName: build-pipeline-windows-machine-config-operator-release-4-15
   workspaces:
