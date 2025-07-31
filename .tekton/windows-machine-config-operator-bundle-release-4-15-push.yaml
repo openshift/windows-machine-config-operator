@@ -372,10 +372,10 @@ spec:
         - 'false'
     - name: sast-unicode-check
       params:
-      - name: image-url
-        value: $(tasks.build-container.results.IMAGE_URL)
       - name: image-digest
         value: $(tasks.build-container.results.IMAGE_DIGEST)
+      - name: image-url
+        value: $(tasks.build-container.results.IMAGE_URL)
       - name: SOURCE_ARTIFACT
         value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
       - name: CACHI2_ARTIFACT
@@ -469,12 +469,60 @@ spec:
         requests:
           memory: 10Gi
       name: build
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: clone-repository
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: create-trusted-artifact
   - pipelineTaskName: fips-operator-bundle-check-oci-ta
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: prefetch-dependencies
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: sast-shell-check
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: sast-snyk-check
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: sast-unicode-check
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   taskRunTemplate:
     serviceAccountName: build-pipeline-windows-machine-config-operator-bundle-release-4-15
   workspaces:
