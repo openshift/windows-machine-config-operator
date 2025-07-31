@@ -640,6 +640,8 @@ func (r *ConfigMapReconciler) ensureWICDRoleBinding(ctx context.Context) error {
 
 // ensureWICDClusterRoleBinding ensures the WICD ClusterRoleBinding resource exists as expected.
 // Creates it if it doesn't exist, deletes and re-creates it if it exists with improper spec.
+// This now creates a ClusterRoleBinding with MINIMAL permissions
+// Node-specific permissions are handled by ensureWICDNodeSpecificRBAC().
 func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) error {
 	existingCRB, err := r.k8sclientset.RbacV1().ClusterRoleBindings().Get(ctx, wicdRBACResourceName,
 		meta.GetOptions{})
@@ -650,6 +652,10 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 	expectedCRB := &rbac.ClusterRoleBinding{
 		ObjectMeta: meta.ObjectMeta{
 			Name: wicdRBACResourceName,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":    "windows-machine-config-operator",
+				"app.kubernetes.io/part-of": "wicd",
+			},
 		},
 		RoleRef: rbac.RoleRef{
 			APIGroup: rbac.GroupName,
@@ -663,9 +669,32 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 		}},
 	}
 	if err == nil {
-		// check if existing ClusterRoleBinding's contents are as expected, delete it if not
-		if existingCRB.RoleRef.Name == expectedCRB.RoleRef.Name &&
-			reflect.DeepEqual(existingCRB.Subjects, expectedCRB.Subjects) {
+		// Check if existing ClusterRoleBinding needs update
+		needsUpdate := existingCRB.RoleRef.Name != expectedCRB.RoleRef.Name ||
+			!reflect.DeepEqual(existingCRB.Subjects, expectedCRB.Subjects) ||
+			!reflect.DeepEqual(existingCRB.Labels, expectedCRB.Labels)
+
+		if !needsUpdate {
+			// Ensure the ClusterRole has been updated to minimal permissions
+			baseClusterRole, err := r.k8sclientset.RbacV1().ClusterRoles().Get(ctx, wicdRBACResourceName, meta.GetOptions{})
+			if err == nil {
+				for _, rule := range baseClusterRole.Rules {
+					for _, resource := range rule.Resources {
+						if resource == "nodes" {
+							for _, verb := range rule.Verbs {
+								if verb == "get" || verb == "patch" {
+									needsUpdate = true
+									r.log.Info("ClusterRole needs update", "ClusterRole", wicdRBACResourceName)
+									break
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if !needsUpdate {
 			return nil
 		}
 		err = r.k8sclientset.RbacV1().ClusterRoleBindings().Delete(ctx, wicdRBACResourceName,
