@@ -79,7 +79,19 @@ func generateUserDataWithPubKey(pubKey string) string {
 				}
 			}
 
-			Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+			# This requires a network connection, which is not guaranteed at VM initialization. Retry to work around this.
+			$attempt = 0
+			$success = $false
+			while (-not $success -and $attempt -lt 10) {
+				try {
+					Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction Stop
+					$success = $true
+				}
+				catch {
+					$attempt++
+					Start-Sleep -Seconds 5
+				}
+			}
 			$firewallRuleName = "ContainerLogsPort"
 			$containerLogsPort = "10250"
 			New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $containerLogsPort -EdgeTraversalPolicy Allow
