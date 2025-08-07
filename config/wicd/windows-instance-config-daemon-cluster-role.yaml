@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: "windows-machine-config-operator"
     app.kubernetes.io/part-of: "wicd"
 rules:
-  # Bootstrap permissions - minimal access for initial setup
+  # Bootstrap permissions - minimal access for initial setup ONLY
   - apiGroups:
       - ""
     resources:
@@ -19,4 +19,14 @@ rules:
     resources:
       - nodes
     verbs:
+      - get
+      - patch
+  - apiGroups:
+      - certificates.k8s.io
+    resources:
+      - certificatesigningrequests
+    verbs:
+      - create
+      - get
       - list
+      - watch

@@ -35,7 +35,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
-	wmcorbac "github.com/openshift/windows-machine-config-operator/pkg/rbac"
 	"github.com/openshift/windows-machine-config-operator/pkg/registries"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
@@ -176,7 +175,6 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 		return fmt.Errorf("bootstrapping the Windows instance failed: %w", err)
 	}
 
-	var wicdNodeKC string
 	// Perform rest of the configuration with the kubelet running
 	err = func() error {
 		if nc.node == nil {
@@ -186,16 +184,7 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 			}
 		}
 
-		// Ensure node-specific RBAC exists
-		if err := nc.ensureNodeSpecificRBAC(ctx); err != nil {
-			return fmt.Errorf("error ensuring node-specific RBAC for node %s: %w", nc.node.GetName(), err)
-		}
-
-		// Generate kubeconfig using node-specific ServiceAccount
-		wicdNodeKC, err := nc.generateNodeSpecificWICDKubeconfig(ctx)
-		if err != nil {
-			return fmt.Errorf("error generating node-specific kubeconfig: %w", err)
-		}
+		// NOTE: RBAC now handled by static bundle manifests - no runtime creation needed
 
 		// Make a best effort to cordon the node until it is fully configured
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
@@ -214,8 +203,12 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 				nc.node.GetName(), err)
 		}
 
-		// Configure WICD with node-specific kubeconfig
-		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdNodeKC); err != nil {
+		// Configure WICD with certificate-based authentication (always enabled)
+		certConfig := &windows.WICDCertConfig{
+			CertDir:      windows.WICDCertDir,
+			CertDuration: "24h",
+		}
+		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdKC, certConfig); err != nil {
 			return fmt.Errorf("configuring WICD failed: %w", err)
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
@@ -252,7 +245,7 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 	// Stop the kubelet so that the node is marked NotReady in case of an error in configuration. We are stopping all
 	// the required services as they are interdependent and is safer to do so given the node is going to be NotReady.
 	if err != nil {
-		if cleanupErr := nc.Windows.RunWICDCleanup(nc.wmcoNamespace, wicdNodeKC); cleanupErr != nil {
+		if cleanupErr := nc.Windows.RunWICDCleanup(nc.wmcoNamespace, wicdKC); cleanupErr != nil {
 			nc.log.Info("Unable to mark node as NotReady", "error", cleanupErr)
 		}
 	}
@@ -548,9 +541,10 @@ func (nc *nodeConfig) Deconfigure(ctx context.Context) error {
 
 // cleanupWithWICD runs WICD cleanup and waits until the cleanup effects are fully complete
 func (nc *nodeConfig) cleanupWithWICD(ctx context.Context) error {
+	// NOTE: RBAC now handled by static bundle manifests - no runtime creation needed
 	wicdKC, err := nc.generateWICDKubeconfig(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("error generating node-specific kubeconfig for cleanup: %w", err)
 	}
 	if err := nc.Windows.RunWICDCleanup(nc.wmcoNamespace, wicdKC); err != nil {
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
@@ -779,100 +773,4 @@ func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
 // existing CA bundle string
 func appendToCABundle(bundle mcfg.ImageRegistryBundle) string {
 	return fmt.Sprintf("# %s\n%s\n\n", strings.ReplaceAll(bundle.File, "..", ":"), bundle.Data)
-}
-
-// ensureNodeSpecificRBAC ensures node-specific RBAC resources exist with proper resourceNames restriction
-// This is called by both node controller and NodeConfig for defense in depth against timing issues
-func (nc *nodeConfig) ensureNodeSpecificRBAC(ctx context.Context) error {
-	if nc.node == nil {
-		return fmt.Errorf("node object is nil, cannot ensure node-specific RBAC")
-	}
-
-	nodeName := nc.node.GetName()
-	nc.log.Info("ensuring node-specific RBAC exists", "node", nodeName)
-
-	err := wmcorbac.EnsureNodeSpecificRBAC(ctx, nc.client, nc.k8sclientset, nc.wmcoNamespace, nodeName)
-	if err != nil {
-		return err
-	}
-
-	nc.log.Info("node-specific RBAC verified/created", "node", nodeName)
-	return nil
-}
-
-// generateNodeSpecificWICDKubeconfig generates a kubeconfig for WICD using the node-specific ServiceAccount
-func (nc *nodeConfig) generateNodeSpecificWICDKubeconfig(ctx context.Context) (string, error) {
-	if nc.node == nil {
-		return "", fmt.Errorf("node object is nil, cannot generate node-specific kubeconfig")
-	}
-
-	nodeName := nc.node.GetName()
-	serviceAccountName := fmt.Sprintf("windows-instance-config-daemon-%s", nodeName)
-
-	secret, err := nc.getNodeSpecificServiceAccountSecret(ctx, serviceAccountName)
-	if err != nil {
-		return "", fmt.Errorf("error getting node-specific ServiceAccount secret: %w", err)
-	}
-
-	return newKubeconfigFromSecret(secret, "wicd")
-}
-
-// getNodeSpecificServiceAccountSecret returns the secret associated with the node-specific ServiceAccount
-func (nc *nodeConfig) getNodeSpecificServiceAccountSecret(ctx context.Context, serviceAccountName string) (*core.Secret, error) {
-	secretName := serviceAccountName
-	var tokenSecret core.Secret
-	err := nc.client.Get(ctx,
-		types.NamespacedName{Namespace: nc.wmcoNamespace, Name: secretName}, &tokenSecret)
-	if err != nil {
-		if k8sapierrors.IsNotFound(err) {
-			return nc.createNodeSpecificServiceAccountTokenSecret(ctx, serviceAccountName)
-		}
-		return nil, err
-	}
-	if validNodeSpecificServiceAccountTokenSecret(&tokenSecret, serviceAccountName) {
-		return &tokenSecret, nil
-	}
-
-	// If the secret is invalid, a new one should be created
-	if err = nc.client.Delete(ctx, &tokenSecret); err != nil {
-		return nil, fmt.Errorf("error deleting invalid node-specific service account token secret: %w", err)
-	}
-	return nc.createNodeSpecificServiceAccountTokenSecret(ctx, serviceAccountName)
-}
-
-// createNodeSpecificServiceAccountTokenSecret creates a secret with a long-lived API token for the node-specific ServiceAccount and
-// waits for the secret data to be populated. Uses the exact same approach as bootstrap.
-func (nc *nodeConfig) createNodeSpecificServiceAccountTokenSecret(ctx context.Context, serviceAccountName string) (*core.Secret, error) {
-	// Use same helper function as bootstrap
-	err := nc.client.Create(ctx, secrets.GenerateServiceAccountTokenSecret(nc.wmcoNamespace, serviceAccountName))
-	if err != nil {
-		return nil, fmt.Errorf("error creating secret for node-specific ServiceAccount: %w", err)
-	}
-	secret := &core.Secret{}
-	// wait for the secret data to be populated - SAME timeout as bootstrap
-	err = wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true,
-		func(ctx context.Context) (done bool, err error) {
-			secret, err = nc.k8sclientset.CoreV1().Secrets(nc.wmcoNamespace).Get(ctx, serviceAccountName,
-				meta.GetOptions{})
-			if err != nil {
-				return false, nil
-			}
-			caCert := secret.Data[core.ServiceAccountRootCAKey]
-			if caCert == nil {
-				return false, nil
-			}
-			token := secret.Data[core.ServiceAccountTokenKey]
-			if token == nil {
-				return false, nil
-			}
-			return true, nil
-		})
-	return secret, err
-}
-
-// validNodeSpecificServiceAccountTokenSecret checks if the secret is valid for the node-specific ServiceAccount
-func validNodeSpecificServiceAccountTokenSecret(secret *core.Secret, serviceAccountName string) bool {
-	return secret.Type == core.SecretTypeServiceAccountToken &&
-		secret.Annotations[core.ServiceAccountNameKey] == serviceAccountName &&
-		len(secret.Data[core.ServiceAccountTokenKey]) > 0
 }

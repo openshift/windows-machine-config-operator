@@ -266,6 +266,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Set up WICD CSR controller for certificate-based authentication
+	wicdCSRController, err := controllers.NewWICDCSRController(mgr, clusterConfig)
+	if err != nil {
+		setupLog.Error(err, "unable to create WICD CSR controller")
+		os.Exit(1)
+	}
+	if err = wicdCSRController.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "WICD-CSR")
+		os.Exit(1)
+	}
+
 	mcReconciler, err := controllers.NewControllerConfigReconciler(mgr, clusterConfig, watchNamespace)
 	if err != nil {
 		setupLog.Error(err, "unable to create ControllerConfig reconciler")
@@ -294,11 +305,6 @@ func main() {
 	if err := configMapReconciler.EnsureServicesConfigMapExists(ctx); err != nil {
 		setupLog.Error(err, "error ensuring object exists", "singleton", types.NamespacedName{Namespace: watchNamespace,
 			Name: servicescm.Name})
-		os.Exit(1)
-	}
-
-	if err := configMapReconciler.EnsureWICDRBAC(ctx); err != nil {
-		setupLog.Error(err, "error ensuring WICD RBAC resources exist", "namespace", watchNamespace)
 		os.Exit(1)
 	}
 

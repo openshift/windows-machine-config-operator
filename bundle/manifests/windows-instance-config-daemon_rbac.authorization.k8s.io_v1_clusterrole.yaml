@@ -4,9 +4,27 @@ metadata:
   creationTimestamp: null
   name: windows-instance-config-daemon
 rules:
+# Bootstrap permissions - minimal access for initial setup
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
 - apiGroups:
   - ""
   resources:
   - nodes
   verbs:
+  - get
+  - patch
+- apiGroups:
+  - certificates.k8s.io
+  resources:
+  - certificatesigningrequests
+  verbs:
+  - create      
+  - get    
   - list
+  - watch
