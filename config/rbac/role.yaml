@@ -61,8 +61,10 @@ rules:
   resources:
   - nodes/status
   verbs:
+  - get
   - patch
   - update
+  - watch
 - apiGroups:
   - ""
   resources:
@@ -83,6 +85,7 @@ rules:
   - secrets
   verbs:
   - create
+  - delete
   - get
   - list
   - update
@@ -107,6 +110,7 @@ rules:
   resources:
   - certificatesigningrequests
   verbs:
+  - create
   - get
   - list
   - watch
@@ -135,6 +139,7 @@ rules:
   resourceNames:
   - kubernetes.io/kube-apiserver-client-kubelet
   - kubernetes.io/kubelet-serving
+  - kubernetes.io/kube-apiserver-client
   resources:
   - signers
   verbs:
@@ -227,14 +232,8 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - clusterrolebindings
-  verbs:
-  - create
-  - delete
-  - get
+# NOTE: Removed broad ClusterRole/ClusterRoleBinding permissions
+# RBAC is now handled by static bundle manifests for better security
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:

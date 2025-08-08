@@ -57,8 +57,7 @@ spec:
     oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
     ```
     We strongly recommend not using the same
-    [private key](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/installing_on_azure/installing-on-azure#ssh-agent-using_installing-azure-customizations)
-    used when installing the cluster
+    [private key](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/installing-on-azure/installing-on-azure#ssh-agent-using_installing-azure-customizations)
 
     Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
     Please note that the windows-user-data secret will be created by the WMCO lazily when it is configuring the first
@@ -219,8 +218,10 @@ spec:
           resources:
           - nodes/status
           verbs:
+          - get
           - patch
           - update
+          - watch
         - apiGroups:
           - ""
           resources:
@@ -241,6 +242,7 @@ spec:
           - secrets
           verbs:
           - create
+          - delete
           - get
           - list
           - update
@@ -265,6 +267,7 @@ spec:
           resources:
           - certificatesigningrequests
           verbs:
+          - create
           - get
           - list
           - watch
@@ -293,6 +296,7 @@ spec:
           resourceNames:
           - kubernetes.io/kube-apiserver-client-kubelet
           - kubernetes.io/kubelet-serving
+          - kubernetes.io/kube-apiserver-client
           resources:
           - signers
           verbs:
@@ -444,7 +448,7 @@ spec:
                 - name: OPERATOR_NAME
                   value: windows-machine-config-operator
                 image: REPLACE_IMAGE
-                imagePullPolicy: IfNotPresent
+                imagePullPolicy: Always
                 name: manager
                 ports:
                 - containerPort: 9182
@@ -509,6 +513,25 @@ spec:
           verbs:
           - create
           - patch
+        - apiGroups:
+          - ""
+          resources:
+          - serviceaccounts
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+        - apiGroups:
+          - ""
+          resources:
+          - secrets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - watch
         serviceAccountName: windows-machine-config-operator
     strategy: deployment
   installModes:

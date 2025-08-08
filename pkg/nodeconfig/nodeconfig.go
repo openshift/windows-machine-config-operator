@@ -184,6 +184,8 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 			}
 		}
 
+		// NOTE: RBAC now handled by static bundle manifests - no runtime creation needed
+
 		// Make a best effort to cordon the node until it is fully configured
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
 			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
@@ -201,7 +203,12 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 				nc.node.GetName(), err)
 		}
 
-		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdKC); err != nil {
+		// Configure WICD with certificate-based authentication (always enabled)
+		certConfig := &windows.WICDCertConfig{
+			CertDir:      windows.WICDCertDir,
+			CertDuration: "24h",
+		}
+		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdKC, certConfig); err != nil {
 			return fmt.Errorf("configuring WICD failed: %w", err)
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
@@ -216,8 +223,9 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 		}
 
 		// Now that the node has been fully configured, update the node object in nodeConfig once more
-		if err := nc.setNode(ctx, false); err != nil {
-			return fmt.Errorf("error getting node object: %w", err)
+		// to ensure stale data that was written before the version annotation was not used
+		if err := nc.setNode(ctx, true); err != nil {
+			return fmt.Errorf("error setting node object: %w", err)
 		}
 
 		// Uncordon the node now that it is fully configured
@@ -237,8 +245,8 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 	// Stop the kubelet so that the node is marked NotReady in case of an error in configuration. We are stopping all
 	// the required services as they are interdependent and is safer to do so given the node is going to be NotReady.
 	if err != nil {
-		if err := nc.Windows.RunWICDCleanup(nc.wmcoNamespace, wicdKC); err != nil {
-			nc.log.Info("Unable to mark node as NotReady", "error", err)
+		if cleanupErr := nc.Windows.RunWICDCleanup(nc.wmcoNamespace, wicdKC); cleanupErr != nil {
+			nc.log.Info("Unable to mark node as NotReady", "error", cleanupErr)
 		}
 	}
 	return err
@@ -255,8 +263,8 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 	if err := drain.RunCordonOrUncordon(drainer, nc.node, true); err != nil {
 		return fmt.Errorf("unable to cordon node %s: %w", nc.node.Name, err)
 	}
-	if err := drain.RunNodeDrain(drainer, nc.node.Name); err != nil {
-		return fmt.Errorf("unable to drain node %s: %w", nc.node.Name, err)
+	if err := drain.RunNodeDrain(drainer, nc.node.GetName()); err != nil {
+		return fmt.Errorf("unable to drain node %s: %w", nc.node.GetName(), err)
 	}
 
 	if err := nc.Windows.RebootAndReinitialize(ctx); err != nil {
@@ -274,7 +282,7 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 }
 
 // getWICDServiceAccountSecret returns the secret which holds the credentials for the WICD ServiceAccount, creating one
-// if necessary
+// if necessary. Uses shared discovery ServiceAccount for bootstrap.
 func (nc *nodeConfig) getWICDServiceAccountSecret(ctx context.Context) (*core.Secret, error) {
 	var tokenSecret core.Secret
 	err := nc.client.Get(ctx,
@@ -325,9 +333,16 @@ func (nc *nodeConfig) createWICDServiceAccountTokenSecret(ctx context.Context) (
 	return secret, err
 }
 
+// validWICDServiceAccountTokenSecret returns true if the given secret provides a token for the WICD SA
+func validWICDServiceAccountTokenSecret(secret core.Secret) bool {
+	if secret.Type != core.SecretTypeServiceAccountToken {
+		return false
+	}
+	return secret.Annotations[core.ServiceAccountNameKey] == windows.WicdServiceName
+}
+
 // createBootstrapFiles creates all prerequisite files on the node required to start kubelet using latest ignition spec
 func (nc *nodeConfig) createBootstrapFiles(ctx context.Context) error {
-	filePathsToContents := make(map[string]string)
 	filePathsToContents, err := nc.createFilesFromIgnition(ctx)
 	if err != nil {
 		return err
@@ -526,9 +541,10 @@ func (nc *nodeConfig) Deconfigure(ctx context.Context) error {
 
 // cleanupWithWICD runs WICD cleanup and waits until the cleanup effects are fully complete
 func (nc *nodeConfig) cleanupWithWICD(ctx context.Context) error {
+	// NOTE: RBAC now handled by static bundle manifests - no runtime creation needed
 	wicdKC, err := nc.generateWICDKubeconfig(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("error generating node-specific kubeconfig for cleanup: %w", err)
 	}
 	if err := nc.Windows.RunWICDCleanup(nc.wmcoNamespace, wicdKC); err != nil {
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
@@ -757,15 +773,4 @@ func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
 // existing CA bundle string
 func appendToCABundle(bundle mcfg.ImageRegistryBundle) string {
 	return fmt.Sprintf("# %s\n%s\n\n", strings.ReplaceAll(bundle.File, "..", ":"), bundle.Data)
-}
-
-// validWICDServiceAccountTokenSecret returns true if the given secret provides a token for the WICD SA
-func validWICDServiceAccountTokenSecret(secret core.Secret) bool {
-	if secret.Type != core.SecretTypeServiceAccountToken {
-		return false
-	}
-	if secret.Annotations[core.ServiceAccountNameKey] != windows.WicdServiceName {
-		return false
-	}
-	return true
 }

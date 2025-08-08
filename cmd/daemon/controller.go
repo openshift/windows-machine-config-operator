@@ -40,6 +40,9 @@ var (
 	windowsService bool
 	logDir         string
 	caBundle       string
+	// Certificate-based authentication options
+	certDir      string
+	certDuration string
 )
 
 func init() {
@@ -50,6 +53,12 @@ func init() {
 		"Enables running as a Windows service")
 	controllerCmd.PersistentFlags().StringVar(&caBundle, "ca-bundle", "",
 		"the full path to CA bundle file containing certificates trusted by the cluster")
+
+	// Certificate-based authentication is the only supported method
+	controllerCmd.PersistentFlags().StringVar(&certDir, "cert-dir", "C:\\k\\wicd-certs",
+		"Directory to store WICD client certificates")
+	controllerCmd.PersistentFlags().StringVar(&certDuration, "cert-duration", "24h",
+		"Duration for WICD certificates (e.g., 24h, 48h)")
 }
 
 func runControllerCmd(cmd *cobra.Command, args []string) {
@@ -60,6 +69,10 @@ func runControllerCmd(cmd *cobra.Command, args []string) {
 		fs.Set("logtostderr", "false")
 		fs.Set("log_dir", logDir)
 	}
+
+	// Certificate-based authentication is always enabled
+	klog.Info("Using certificate-based authentication (only supported method)")
+
 	ctx := ctrl.SetupSignalHandler()
 	if windowsService {
 		if err := initService(ctx); err != nil {
@@ -68,7 +81,7 @@ func runControllerCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 	klog.Info("service controller running")
-	if err := controller.RunController(ctx, namespace, kubeconfig, caBundle); err != nil {
+	if err := controller.RunController(ctx, namespace, kubeconfig, caBundle, certDir, certDuration); err != nil {
 		klog.Error(err)
 		os.Exit(1)
 	}
