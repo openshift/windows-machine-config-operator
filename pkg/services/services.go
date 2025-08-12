@@ -108,6 +108,10 @@ func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service
 	hybridOverlayServiceCmd := fmt.Sprintf("%s --node NODE_NAME --bootstrap-kubeconfig=%s --cert-dir=%s --cert-duration=24h "+
 		"--windows-service --logfile "+"%s\\hybrid-overlay.log", windows.HybridOverlayPath, windows.KubeconfigPath, windows.CniConfDir,
 		windows.HybridOverlayLogDir)
+
+	// append cacert option pointing to the trusted CA bundle path
+	hybridOverlayServiceCmd = fmt.Sprintf("%s --k8s-cacert %s", hybridOverlayServiceCmd, windows.TrustedCABundlePath)
+
 	if len(vxlanPort) > 0 {
 		hybridOverlayServiceCmd = fmt.Sprintf("%s --hybrid-overlay-vxlan-port %s", hybridOverlayServiceCmd, vxlanPort)
 	}
