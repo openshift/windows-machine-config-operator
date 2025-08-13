@@ -29,7 +29,7 @@ const (
 func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort string, platform config.PlatformType,
 	debug bool) (*servicescm.Data, error) {
 	windowsExporterServiceCommand := fmt.Sprintf("%s --collectors.enabled "+
-		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info --web.config.file %s",
+		"cpu,cs,logical_disk,net,os,service,system,container,memory,cpu_info --web.config.file %s",
 		windows.WindowsExporterPath, windows.TLSConfPath)
 	kubeletConfiguration, err := getKubeletServiceConfiguration(kubeletArgsFromIgnition, debug, platform)
 	if err != nil {
