@@ -465,7 +465,7 @@ func (tc *testContext) getWinServices(addr string) (map[string]winService, error
 	// Remove the header and trailing whitespace from the command output
 	outSplit := strings.SplitAfterN(out, "\"Name\",\"State\",\"Description\"\r\n", 2)
 	if len(outSplit) != 2 {
-		return nil, fmt.Errorf("unexpected command output: " + out)
+		return nil, fmt.Errorf("unexpected command output: %s", out)
 	}
 	trimmedList := strings.TrimSpace(outSplit[1])
 
@@ -476,7 +476,7 @@ func (tc *testContext) getWinServices(addr string) (map[string]winService, error
 		// Split into 3 substrings, Name, State, Description. The description can contain a comma, so SplitN is required
 		fields := strings.SplitN(line, ",", 3)
 		if len(fields) != 3 {
-			return nil, fmt.Errorf("expected comma separated values, found: " + line)
+			return nil, fmt.Errorf("expected comma separated values, found: %s", line)
 		}
 		name := strings.Trim(fields[0], "\"")
 		state := strings.Trim(fields[1], "\"")

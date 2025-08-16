@@ -3,7 +3,7 @@
 # building the operator from the PR source without using the operator-sdk.
 
 # build stage for building binaries
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.23-openshift-4.20 as build
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.20 as build
 LABEL stage=build
 WORKDIR /build/
 
@@ -133,7 +133,7 @@ RUN make build-daemon
 #│   └── windows-exporter-webconfig.yaml
 #└── windows-instance-config-daemon.exe
 
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.23-openshift-4.20
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.24-openshift-4.20
 LABEL stage=operator
 
 WORKDIR /payload/
