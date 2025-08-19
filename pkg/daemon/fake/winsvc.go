@@ -63,7 +63,7 @@ func (f *FakeService) Control(cmd svc.Cmd) (svc.Status, error) {
 		for _, serviceName := range existingServices {
 			service, present := f.serviceList.read(serviceName)
 			if !present {
-				return svc.Status{}, fmt.Errorf("unable to open service " + serviceName)
+				return svc.Status{}, fmt.Errorf("unable to open service %s", serviceName)
 			}
 			config, err := service.Config()
 			if err != nil {
@@ -77,8 +77,8 @@ func (f *FakeService) Control(cmd svc.Cmd) (svc.Status, error) {
 						return svc.Status{}, fmt.Errorf("error querying %s service status: %w", serviceName, err)
 					}
 					if status.State != svc.Stopped {
-						return svc.Status{}, fmt.Errorf("cannot stop service as other service " + serviceName +
-							" is dependent on it")
+						return svc.Status{}, fmt.Errorf("cannot stop service: %s, as other service is dependent on"+
+							"it", serviceName)
 					}
 				}
 			}
