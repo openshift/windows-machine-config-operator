@@ -35,7 +35,7 @@ spec:
   description: |-
     ### Introduction
     The Windows Machine Config Operator configures Windows Machines into nodes, enabling Windows container workloads to
-    be run on OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/windows_container_support_for_openshift/creating-windows-machine-sets),
+    be run on OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/windows_container_support_for_openshift/creating-windows-machine-sets#creating-windows-machineset-aws),
     or by specifying existing instances through a [ConfigMap](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/windows_container_support_for_openshift/byoh-windows-instance)
     The operator completes all the necessary steps to configure the Windows instance so that it can join the cluster as a worker node.
 
@@ -57,7 +57,7 @@ spec:
     oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
     ```
     We strongly recommend not using the same
-    [private key](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/installing_on_azure/installing-on-azure#ssh-agent-using_installing-azure-customizations)
+    [private key](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/installing_on_azure/installing-azure-default#ssh-agent-using_installing-azure-default)
     used when installing the cluster
 
     Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
@@ -153,7 +153,7 @@ spec:
 
     ### Reporting issues
     Support for this distribution of WMCO requires a Red Hat OpenShfit subscription. Support should be requested through the Red Hat Customer Portal.
-    Please read through the [troubleshooting document](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/support/troubleshooting)
+    Please read through the [troubleshooting document](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/support/troubleshooting#olm-reinstall_troubleshooting-operator-issues)
     before opening a support case.
   displayName: Windows Machine Config Operator
   icon:
@@ -291,6 +291,14 @@ spec:
         - apiGroups:
           - certificates.k8s.io
           resourceNames:
+          - kubernetes.io/kube-apiserver-client
+          resources:
+          - signers
+          verbs:
+          - approve
+        - apiGroups:
+          - certificates.k8s.io
+          resourceNames:
           - kubernetes.io/kube-apiserver-client-kubelet
           - kubernetes.io/kubelet-serving
           resources:
@@ -386,22 +394,6 @@ spec:
           - update
           - watch
         - apiGroups:
-          - rbac.authorization.k8s.io
-          resources:
-          - clusterrolebindings
-          verbs:
-          - create
-          - delete
-          - get
-        - apiGroups:
-          - rbac.authorization.k8s.io
-          resources:
-          - rolebindings
-          verbs:
-          - create
-          - delete
-          - get
-        - apiGroups:
           - security.openshift.io
           resourceNames:
           - hostnetwork
@@ -425,6 +417,7 @@ spec:
               annotations:
                 kubectl.kubernetes.io/default-container: manager
               labels:
+                app: windows-machine-config-operator
                 name: windows-machine-config-operator
             spec:
               containers:
@@ -450,6 +443,9 @@ spec:
                 - containerPort: 9182
                   name: https
                   protocol: TCP
+                - containerPort: 9443
+                  name: webhook-server
+                  protocol: TCP
                 resources:
                   limits:
                     cpu: 200m
@@ -457,6 +453,10 @@ spec:
                   requests:
                     cpu: 20m
                     memory: 300Mi
+                volumeMounts:
+                - mountPath: /tmp/k8s-webhook-server/serving-certs
+                  name: webhook-certs
+                  readOnly: true
               dnsPolicy: ClusterFirstWithHostNet
               hostNetwork: true
               nodeSelector:
@@ -476,6 +476,10 @@ spec:
                 key: node.kubernetes.io/not-ready
                 operator: Exists
                 tolerationSeconds: 120
+              volumes:
+              - name: webhook-certs
+                secret:
+                  secretName: windows-machine-config-operator-webhook-certs
       permissions:
       - rules:
         - apiGroups:
@@ -530,3 +534,26 @@ spec:
   provider:
     name: Red Hat
   version: 10.20.0
+  webhookdefinitions:
+  - admissionReviewVersions:
+    - v1
+    - v1beta1
+    containerPort: 443
+    deploymentName: windows-machine-config-operator
+    failurePolicy: Fail
+    generateName: wicd-node-admission.openshift.io
+    objectSelector: {}
+    rules:
+    - apiGroups:
+      - ""
+      apiVersions:
+      - v1
+      operations:
+      - UPDATE
+      resources:
+      - nodes
+      scope: Cluster
+    sideEffects: None
+    targetPort: 9443
+    type: ValidatingAdmissionWebhook
+    webhookPath: /validate--v1-node

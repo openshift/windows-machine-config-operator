@@ -1,0 +1,62 @@
+---
+# Webhook Service with serving certificate annotation
+# This service exposes the WMCO webhook server for node validation
+# OpenShift will automatically generate serving certificates for this service
+apiVersion: v1
+kind: Service
+metadata:
+  name: windows-machine-config-operator-webhook-service
+  labels:
+    app.kubernetes.io/name: "windows-machine-config-operator"
+    app.kubernetes.io/part-of: "wicd"
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: windows-machine-config-operator-webhook-certs
+spec:
+  ports:
+  - name: webhook-server
+    port: 443
+    protocol: TCP
+    targetPort: 9443
+  selector:
+    app: windows-machine-config-operator
+---
+# WICD Node Admission Webhook
+# This webhook enforces node-specific access control for WICD certificate-based users.
+# 
+# Security Model:
+# 1. ServiceAccount (bootstrap): Broad permissions during initial setup
+# 2. Certificate users (operational): Node-specific access enforced by this webhook
+#
+# The webhook validates that:
+# - WICD certificate-based users (system:wicd-node:nodename) can only modify their own nodes
+# - WICD users can only modify allowed annotations (windowsmachineconfig.openshift.io/*)
+# - Non-WICD users cannot modify WICD-specific annotations
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: wicd-node-admission-webhook
+  labels:
+    app.kubernetes.io/name: "windows-machine-config-operator"
+    app.kubernetes.io/part-of: "wicd"
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+webhooks:
+  - name: wicd-node-admission.openshift.io
+    clientConfig:
+      service:
+        name: windows-machine-config-operator-webhook-service
+        namespace: openshift-windows-machine-config-operator
+        path: /validate--v1-node
+      # caBundle will be injected by OpenShift's service CA operator
+    admissionReviewVersions: ['v1', 'v1beta1']
+    sideEffects: None
+    failurePolicy: Fail
+    rules:
+    - operations: ["UPDATE"]
+      apiGroups: [""]
+      apiVersions: ["v1"]
+      resources: ["nodes"]
+      scope: "Cluster"
+    # Only intercept requests that might modify WICD annotations
+    namespaceSelector: {}
+    objectSelector: {}
