@@ -273,6 +273,7 @@ type Windows interface {
 	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
 	// services are also stopped
 	RunWICDCleanup(string, string) error
+	Close() error
 }
 
 // windows implements the Windows interface
@@ -291,6 +292,10 @@ type windows struct {
 	defaultShellPowerShell bool
 	// filesToTransfer is the map of files needed for the windows VM
 	filesToTransfer map[*payload.FileInfo]string
+}
+
+func (vm *windows) Close() error {
+	return vm.interact.close()
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM

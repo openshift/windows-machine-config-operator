@@ -115,6 +115,12 @@ func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)
 		}
+		defer func() {
+			err := nc.Close()
+			if err != nil {
+				r.log.Info("WARNING: error closing nodeconfig", "error", err.Error())
+			}
+		}()
 
 		r.log.Info("updating containerd config", "directory", windows.ContainerdConfigDir, "node", node.Name)
 		// TODO: If this flakes for any one node, we have to loop over all nodes again and re-transfer the directory to
