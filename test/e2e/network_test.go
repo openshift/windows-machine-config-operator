@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -436,12 +437,12 @@ func (tc *testContext) collectDeploymentLogs(deployment *appsv1.Deployment) erro
 		keyValPairs = append(keyValPairs, key+"="+value)
 	}
 	labelSelector := strings.Join(keyValPairs, ",")
-	_, err := tc.gatherPodLogs(labelSelector)
+	_, err := tc.gatherPodLogs(labelSelector, false)
 	return err
 }
 
 // getLogs uses a label selector and returns the logs associated with each pod
-func (tc *testContext) getLogs(podLabelSelector string) (string, error) {
+func (tc *testContext) getLogs(podLabelSelector string, latestOnly bool) (string, error) {
 	if podLabelSelector == "" {
 		return "", fmt.Errorf("pod label selector is empty")
 	}
@@ -454,6 +455,12 @@ func (tc *testContext) getLogs(podLabelSelector string) (string, error) {
 		return "", fmt.Errorf("expected at least 1 pod and found 0")
 	}
 	var logs string
+	if latestOnly {
+		latestPod := slices.MaxFunc(pods.Items, func(a, b v1.Pod) int {
+			return a.Status.StartTime.Time.Compare(b.Status.StartTime.Time)
+		})
+		pods.Items = []v1.Pod{latestPod}
+	}
 	for _, pod := range pods.Items {
 		logStream, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).GetLogs(pod.Name,
 			&v1.PodLogOptions{}).Stream(context.TODO())
@@ -1120,25 +1127,28 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if !slices.ContainsFunc(job.Status.Conditions, func(condition batchv1.JobCondition) bool {
+			return condition.Type == batchv1.JobComplete && condition.Status == v1.ConditionTrue
+		}) {
+			// job not yet complete, keep waiting
+			time.Sleep(retryInterval)
+			continue
+		}
 		labelSelector = "job-name=" + job.Name
-		if job.Status.Succeeded > 0 {
-			logs, err := tc.gatherPodLogs(labelSelector)
-			if err != nil {
-				log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
-			}
-			return logs, nil
+		logs, err := tc.gatherPodLogs(labelSelector, true)
+		if err != nil {
+			log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
 		}
-		if job.Status.Failed > 0 {
-			_, err = tc.gatherPodLogs(labelSelector)
-			if err != nil {
-				log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
-			}
+		if !slices.ContainsFunc(job.Status.Conditions, func(condition batchv1.JobCondition) bool {
+			return condition.Type == batchv1.JobSuccessCriteriaMet && condition.Status == v1.ConditionTrue
+		}) {
+			// Job did not succeed, return error
 			events, _ := tc.getPodEvents(name)
-			return "", fmt.Errorf("job %v failed: %v", job, events)
+			return logs, fmt.Errorf("job %v failed: %v", job, events)
 		}
-		time.Sleep(retryInterval)
+		return logs, nil
 	}
-	_, err = tc.gatherPodLogs(labelSelector)
+	_, err = tc.gatherPodLogs(labelSelector, true)
 	if err != nil {
 		log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
 	}
@@ -1148,7 +1158,7 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 
 // gatherPodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts
 // dir. Returns the written logs.
-func (tc *testContext) gatherPodLogs(labelSelector string) (string, error) {
+func (tc *testContext) gatherPodLogs(labelSelector string, latestOnly bool) (string, error) {
 	podArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "pods")
 	podDir := filepath.Join(podArtifacts, labelSelector)
 	err := os.MkdirAll(podDir, os.ModePerm)
@@ -1156,7 +1166,7 @@ func (tc *testContext) gatherPodLogs(labelSelector string) (string, error) {
 		return "", fmt.Errorf("error creating pod log collection directory %s: %w", podDir, err)
 	}
 
-	logs, err := tc.getLogs(labelSelector)
+	logs, err := tc.getLogs(labelSelector, latestOnly)
 	if err != nil {
 		return "", fmt.Errorf("unable to get logs for pod %s: %w", labelSelector, err)
 	}
