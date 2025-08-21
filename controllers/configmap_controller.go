@@ -545,6 +545,12 @@ func (r *ConfigMapReconciler) ensureTrustedCABundleInNode(ctx context.Context, n
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
 	}
+	defer func() {
+		err := nc.Close()
+		if err != nil {
+			r.log.Info("WARNING: error closing nodeconfig", "error", err.Error())
+		}
+	}()
 	return nc.SyncTrustedCABundle(ctx)
 }
 

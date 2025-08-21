@@ -323,6 +323,7 @@ func findHostName(instanceInfo *instance.Info, instanceSigner ssh.Signer) (strin
 	if err != nil {
 		return "", fmt.Errorf("error instantiating Windows instance: %w", err)
 	}
+	defer win.Close()
 	// get the instance host name  by running hostname command on remote VM
 	return win.GetHostname()
 }
