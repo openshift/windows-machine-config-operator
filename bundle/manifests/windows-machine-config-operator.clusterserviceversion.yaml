@@ -460,7 +460,7 @@ spec:
               dnsPolicy: ClusterFirstWithHostNet
               hostNetwork: true
               nodeSelector:
-                node-role.kubernetes.io/master: ""
+                node-role.kubernetes.io/control-plane: ""
               priorityClassName: system-cluster-critical
               serviceAccountName: windows-machine-config-operator
               terminationGracePeriodSeconds: 10
