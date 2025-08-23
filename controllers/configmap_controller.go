@@ -202,17 +202,27 @@ func (r *ConfigMapReconciler) reconcileServices(ctx context.Context, windowsServ
 
 	// If a ConfigMap with invalid values is found, WMCO will delete and recreate it with proper values
 	data, err := servicescm.Parse(windowsServices.Data)
-	if err != nil || data.ValidateExpectedContent(r.servicesManifest) != nil {
-		// Deleting will trigger an event for the configmap_controller, which will re-create a proper ConfigMap
-		if err = r.client.Delete(ctx, windowsServices); err != nil {
-			return err
+	if err == nil {
+		validateErr := data.ValidateExpectedContent(r.servicesManifest)
+		if validateErr == nil {
+			return nil
 		}
-		r.log.Info("Deleted invalid resource", "ConfigMap",
-			kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: windowsServices.Name}, "Error", err.Error())
-		return nil
+		r.log.V(1).Info("Invalid content",
+			"ConfigMap", kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: windowsServices.Name},
+			"Error", validateErr)
+	} else {
+		r.log.V(1).Info("Parse error",
+			"ConfigMap", kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: windowsServices.Name},
+			"Error", err)
 	}
-	// TODO: actually react to changes to the services ConfigMap
+	// Deleting will trigger an event for the configmap_controller, which will re-create a proper ConfigMap
+	if err = r.client.Delete(ctx, windowsServices); err != nil {
+		return err
+	}
+	r.log.Info("Deleted invalid resource", "ConfigMap",
+		kubeTypes.NamespacedName{Namespace: r.watchNamespace, Name: windowsServices.Name})
 	return nil
+	// TODO: actually react to changes to the services ConfigMap
 }
 
 // removeOutdatedServicesConfigMaps deletes any outdated services ConfigMaps, if all nodes have moved past that version
