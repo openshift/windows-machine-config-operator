@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -44,6 +45,8 @@ type connectivity interface {
 	transfer(*sftp.Client, io.Reader, string, string) error
 	// transferFiles transfers the given files to a given remote directory
 	transferFiles(*sftp.Client, map[string][]byte, string) error
+	// close closes all network connections
+	close() error
 }
 
 // sshConnectivity encapsulates the information needed to connect to the Windows VM over ssh
@@ -188,4 +191,13 @@ func (c *sshConnectivity) transferFiles(sftpClient *sftp.Client, files map[strin
 		}
 	}
 	return nil
+}
+
+func (c *sshConnectivity) close() error {
+	err := c.sshClient.Close()
+	// If the error is due to the underlying connection being already closed, don't return an error
+	if errors.Is(syscall.EINVAL, err) {
+		return nil
+	}
+	return err
 }

@@ -109,6 +109,12 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)
 		}
+		defer func() {
+			err := nc.Close()
+			if err != nil {
+				r.log.Info("WARNING: error closing nodeconfig", "error", err.Error())
+			}
+		}()
 
 		if err := nc.SafeReboot(ctx); err != nil {
 			return ctrl.Result{}, fmt.Errorf("full instance reboot failed: %w", err)

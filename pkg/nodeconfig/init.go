@@ -10,9 +10,9 @@ import (
 	crclientcfg "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
-// cache holds the information of the nodeConfig that is invariant for multiple reconciliation cycles. We'll use this
+// cache holds the information of the NodeConfig that is invariant for multiple reconciliation cycles. We'll use this
 // information when we don't want to get the information from the global context coming from reconciler
-// but to have something at nodeConfig package locally which will be passed onto other structs. There is no need to
+// but to have something at NodeConfig package locally which will be passed onto other structs. There is no need to
 // invalidate this cache as of now, since if someone wants to change any of the fields, they've to restart the operator
 // which will invalidate the cache automatically.
 type cache struct {
@@ -20,10 +20,10 @@ type cache struct {
 	apiServerEndpoint string
 }
 
-// cache has the information related to nodeConfig that should not be changed.
+// cache has the information related to NodeConfig that should not be changed.
 var nodeConfigCache = cache{}
 
-// init populates the cache that we need for nodeConfig
+// init populates the cache that we need for NodeConfig
 func init() {
 	var kubeAPIServerEndpoint string
 	log := ctrl.Log.WithName("nodeconfig").WithName("init")

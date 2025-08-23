@@ -66,9 +66,9 @@ const (
 	MccName = "machine-config-controller"
 )
 
-// nodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
+// NodeConfig holds the information to make the given VM a kubernetes node. As of now, it holds the information
 // related to kubeclient and the windowsVM.
-type nodeConfig struct {
+type NodeConfig struct {
 	client client.Client
 	// k8sclientset holds the information related to kubernetes clientset
 	k8sclientset *kubernetes.Clientset
@@ -113,11 +113,11 @@ func (ow OutWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// NewNodeConfig creates a new instance of nodeConfig to be used by the caller.
+// NewNodeConfig creates a new instance of NodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
 func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, wmcoNamespace string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
-	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*nodeConfig, error) {
+	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*NodeConfig, error) {
 
 	if err := cluster.ValidateCIDR(clusterServiceCIDR); err != nil {
 		return nil, fmt.Errorf("error receiving valid CIDR value for "+
@@ -135,14 +135,14 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 		return nil, fmt.Errorf("error instantiating Windows instance from VM: %w", err)
 	}
 
-	return &nodeConfig{client: c, k8sclientset: clientset, Windows: win, node: instanceInfo.Node,
+	return &NodeConfig{client: c, k8sclientset: clientset, Windows: win, node: instanceInfo.Node,
 		platformType: platformType, wmcoNamespace: wmcoNamespace, clusterServiceCIDR: clusterServiceCIDR,
 		publicKeyHash: CreatePubKeyHashAnnotation(signer.PublicKey()), log: log, additionalLabels: additionalLabels,
 		additionalAnnotations: additionalAnnotations}, nil
 }
 
 // Configure configures the Windows VM to make it a Windows worker node
-func (nc *nodeConfig) Configure(ctx context.Context) error {
+func (nc *NodeConfig) Configure(ctx context.Context) error {
 	drainHelper := nc.newDrainHelper(ctx)
 	// If a Node object exists already, it implies that we are reconfiguring and we should cordon the node
 	if nc.node != nil {
@@ -178,7 +178,7 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 	// Perform rest of the configuration with the kubelet running
 	err = func() error {
 		if nc.node == nil {
-			// populate node object in nodeConfig in the case of a new Windows instance
+			// populate node object in NodeConfig in the case of a new Windows instance
 			if err := nc.setNode(ctx, false); err != nil {
 				return fmt.Errorf("error setting node object: %w", err)
 			}
@@ -215,7 +215,7 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 				nc.node.GetName(), err)
 		}
 
-		// Now that the node has been fully configured, update the node object in nodeConfig once more
+		// Now that the node has been fully configured, update the node object in NodeConfig once more
 		if err := nc.setNode(ctx, false); err != nil {
 			return fmt.Errorf("error getting node object: %w", err)
 		}
@@ -246,7 +246,7 @@ func (nc *nodeConfig) Configure(ctx context.Context) error {
 
 // safeReboot safely restarts the underlying instance, first cordoning and draining the associated node.
 // Waits for reboot to take effect before uncordoning the node.
-func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
+func (nc *NodeConfig) SafeReboot(ctx context.Context) error {
 	if nc.node == nil {
 		return fmt.Errorf("safe reboot of the instance requires an associated node")
 	}
@@ -275,7 +275,7 @@ func (nc *nodeConfig) SafeReboot(ctx context.Context) error {
 
 // getWICDServiceAccountSecret returns the secret which holds the credentials for the WICD ServiceAccount, creating one
 // if necessary
-func (nc *nodeConfig) getWICDServiceAccountSecret(ctx context.Context) (*core.Secret, error) {
+func (nc *NodeConfig) getWICDServiceAccountSecret(ctx context.Context) (*core.Secret, error) {
 	var tokenSecret core.Secret
 	err := nc.client.Get(ctx,
 		types.NamespacedName{Namespace: nc.wmcoNamespace, Name: windows.WicdServiceName}, &tokenSecret)
@@ -298,7 +298,7 @@ func (nc *nodeConfig) getWICDServiceAccountSecret(ctx context.Context) (*core.Se
 
 // createWICDServiceAccountTokenSecret creates a secret with a long-lived API token for the WICD ServiceAccount and
 // waits for the secret data to be populated
-func (nc *nodeConfig) createWICDServiceAccountTokenSecret(ctx context.Context) (*core.Secret, error) {
+func (nc *NodeConfig) createWICDServiceAccountTokenSecret(ctx context.Context) (*core.Secret, error) {
 	err := nc.client.Create(ctx, secrets.GenerateServiceAccountTokenSecret(nc.wmcoNamespace, windows.WicdServiceName))
 	if err != nil {
 		return nil, fmt.Errorf("error creating secret for WICD ServiceAccount: %w", err)
@@ -326,7 +326,7 @@ func (nc *nodeConfig) createWICDServiceAccountTokenSecret(ctx context.Context) (
 }
 
 // createBootstrapFiles creates all prerequisite files on the node required to start kubelet using latest ignition spec
-func (nc *nodeConfig) createBootstrapFiles(ctx context.Context) error {
+func (nc *NodeConfig) createBootstrapFiles(ctx context.Context) error {
 	filePathsToContents := make(map[string]string)
 	filePathsToContents, err := nc.createFilesFromIgnition(ctx)
 	if err != nil {
@@ -344,7 +344,7 @@ func (nc *nodeConfig) createBootstrapFiles(ctx context.Context) error {
 }
 
 // write outputs the data to the path on the underlying Windows instance for each given pair. Creates files if needed.
-func (nc *nodeConfig) write(pathToData map[string]string) error {
+func (nc *NodeConfig) write(pathToData map[string]string) error {
 	for path, data := range pathToData {
 		dir, fileName := windows.SplitPath(path)
 		if err := nc.Windows.EnsureFileContent([]byte(data), fileName, dir); err != nil {
@@ -355,7 +355,7 @@ func (nc *nodeConfig) write(pathToData map[string]string) error {
 }
 
 // createRegistryConfigFiles creates all files on the node required for containerd to mirror images
-func (nc *nodeConfig) createRegistryConfigFiles(ctx context.Context) error {
+func (nc *NodeConfig) createRegistryConfigFiles(ctx context.Context) error {
 	configFiles, err := registries.GenerateConfigFiles(ctx, nc.client)
 	if err != nil {
 		return err
@@ -365,7 +365,7 @@ func (nc *nodeConfig) createRegistryConfigFiles(ctx context.Context) error {
 
 // createFilesFromIgnition returns the contents and write locations on the instance for any file it can create from
 // ignition spec: kubelet CA cert, cloud-config file
-func (nc *nodeConfig) createFilesFromIgnition(ctx context.Context) (map[string]string, error) {
+func (nc *NodeConfig) createFilesFromIgnition(ctx context.Context) (map[string]string, error) {
 	ign, err := ignition.New(ctx, nc.client)
 	if err != nil {
 		return nil, err
@@ -392,7 +392,7 @@ func (nc *nodeConfig) createFilesFromIgnition(ctx context.Context) (map[string]s
 }
 
 // generateBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server
-func (nc *nodeConfig) generateBootstrapKubeconfig(ctx context.Context) (string, error) {
+func (nc *NodeConfig) generateBootstrapKubeconfig(ctx context.Context) (string, error) {
 	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(ctx, mcoBootstrapSecret,
 		meta.GetOptions{})
 	if err != nil {
@@ -402,7 +402,7 @@ func (nc *nodeConfig) generateBootstrapKubeconfig(ctx context.Context) (string, 
 }
 
 // generateWICDKubeconfig returns the contents of a kubeconfig created from the WICD ServiceAccount
-func (nc *nodeConfig) generateWICDKubeconfig(ctx context.Context) (string, error) {
+func (nc *NodeConfig) generateWICDKubeconfig(ctx context.Context) (string, error) {
 	wicdSASecret, err := nc.getWICDServiceAccountSecret(ctx)
 	if err != nil {
 		return "", err
@@ -447,9 +447,9 @@ func createKubeletConf(clusterServiceCIDR string) (string, error) {
 }
 
 // setNode finds the Node associated with the VM that has been configured, and sets the node field of the
-// nodeConfig object. If quickCheck is set, the function does a quicker check for the node which is useful in the node
+// NodeConfig object. If quickCheck is set, the function does a quicker check for the node which is useful in the node
 // reconfiguration case.
-func (nc *nodeConfig) setNode(ctx context.Context, quickCheck bool) error {
+func (nc *NodeConfig) setNode(ctx context.Context, quickCheck bool) error {
 	retryInterval := retry.Interval
 	retryTimeout := retry.Timeout
 	if quickCheck {
@@ -482,7 +482,7 @@ func (nc *nodeConfig) setNode(ctx context.Context, quickCheck bool) error {
 }
 
 // newDrainHelper returns new drain.Helper instance
-func (nc *nodeConfig) newDrainHelper(ctx context.Context) *drain.Helper {
+func (nc *NodeConfig) newDrainHelper(ctx context.Context) *drain.Helper {
 	return &drain.Helper{
 		Ctx:    ctx,
 		Client: nc.k8sclientset,
@@ -498,7 +498,7 @@ func (nc *nodeConfig) newDrainHelper(ctx context.Context) *drain.Helper {
 }
 
 // Deconfigure removes the node from the cluster, reverting changes made by the Configure function
-func (nc *nodeConfig) Deconfigure(ctx context.Context) error {
+func (nc *NodeConfig) Deconfigure(ctx context.Context) error {
 	if nc.node == nil {
 		return fmt.Errorf("instance does not a have an associated node to deconfigure")
 	}
@@ -525,7 +525,7 @@ func (nc *nodeConfig) Deconfigure(ctx context.Context) error {
 }
 
 // cleanupWithWICD runs WICD cleanup and waits until the cleanup effects are fully complete
-func (nc *nodeConfig) cleanupWithWICD(ctx context.Context) error {
+func (nc *NodeConfig) cleanupWithWICD(ctx context.Context) error {
 	wicdKC, err := nc.generateWICDKubeconfig(ctx)
 	if err != nil {
 		return err
@@ -540,7 +540,7 @@ func (nc *nodeConfig) cleanupWithWICD(ctx context.Context) error {
 // UpdateKubeletClientCA updates the kubelet client CA certificate file in the Windows node. No service restart or
 // reboot required, kubelet detects the changes in the file system and use the new CA certificate. The file is replaced
 // if and only if it does not exist or there is a checksum mismatch.
-func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
+func (nc *NodeConfig) UpdateKubeletClientCA(contents []byte) error {
 	// check CA bundle contents
 	if len(contents) == 0 {
 		// nothing do to, return
@@ -555,7 +555,7 @@ func (nc *nodeConfig) UpdateKubeletClientCA(contents []byte) error {
 
 // SyncTrustedCABundle builds the trusted CA ConfigMap from image registry certificates and the proxy trust bundle
 // and ensures the cert bundle on the instance has up-to-date data
-func (nc *nodeConfig) SyncTrustedCABundle(ctx context.Context) error {
+func (nc *NodeConfig) SyncTrustedCABundle(ctx context.Context) error {
 	caBundle := ""
 	var cc mcfg.ControllerConfig
 	if err := nc.client.Get(ctx, types.NamespacedName{Namespace: nc.wmcoNamespace,
@@ -580,13 +580,13 @@ func (nc *nodeConfig) SyncTrustedCABundle(ctx context.Context) error {
 }
 
 // UpdateTrustedCABundleFile updates the file containing the trusted CA bundle in the Windows node, if needed
-func (nc *nodeConfig) UpdateTrustedCABundleFile(data string) error {
+func (nc *NodeConfig) UpdateTrustedCABundleFile(data string) error {
 	dir, fileName := windows.SplitPath(windows.TrustedCABundlePath)
 	return nc.Windows.EnsureFileContent([]byte(data), fileName, dir)
 }
 
 // createTLSCerts creates cert files containing the TLS cert and the key on the Windows node
-func (nc *nodeConfig) createTLSCerts(ctx context.Context) error {
+func (nc *NodeConfig) createTLSCerts(ctx context.Context) error {
 	tlsSecret := &core.Secret{}
 	if err := nc.client.Get(ctx, types.NamespacedName{Name: secrets.TLSSecret,
 		Namespace: nc.wmcoNamespace}, tlsSecret); err != nil {
@@ -600,6 +600,10 @@ func (nc *nodeConfig) createTLSCerts(ctx context.Context) error {
 	certFiles["tls.key"] = tlsData["tls.key"]
 
 	return nc.Windows.ReplaceDir(certFiles, windows.TLSCertsPath)
+}
+
+func (nc *NodeConfig) Close() error {
+	return nc.Windows.Close()
 }
 
 // generateKubeconfig creates a kubeconfig spec with the certificate and token data from the given secret

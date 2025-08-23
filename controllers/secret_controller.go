@@ -247,6 +247,12 @@ func (r *SecretReconciler) reconcileTLSSecret(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to create new nodeconfig: %w", err)
 		}
+		defer func() {
+			err := nc.Close()
+			if err != nil {
+				r.log.Info("WARNING: error closing nodeconfig", "error", err.Error())
+			}
+		}()
 		if err = nc.Windows.ReplaceDir(certFiles, windows.TLSCertsPath); err != nil {
 			return fmt.Errorf("unable to transfer TLS certs: %w", err)
 		}

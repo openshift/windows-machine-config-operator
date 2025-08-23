@@ -77,6 +77,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(ctx context.Context, insta
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
 	}
+	defer r.nodeConfigCleanup(nc)
 
 	// Check if the instance was configured by a previous version of WMCO and must be deconfigured before being
 	// configured again.
@@ -132,6 +133,7 @@ func (r *instanceReconciler) updateKubeletCA(ctx context.Context, node core.Node
 	if err != nil {
 		return fmt.Errorf("error creating nodeConfig for instance %s: %w", winInstance.Address, err)
 	}
+	defer r.nodeConfigCleanup(nodeConfig)
 	r.log.Info("updating kubelet CA client certificates in", "node", node.Name)
 	return nodeConfig.UpdateKubeletClientCA(contents)
 }
@@ -163,6 +165,7 @@ func (r *instanceReconciler) deconfigureInstance(ctx context.Context, node *core
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
 	}
+	defer r.nodeConfigCleanup(nc)
 
 	if err = nc.Deconfigure(ctx); err != nil {
 		return err
@@ -171,6 +174,13 @@ func (r *instanceReconciler) deconfigureInstance(ctx context.Context, node *core
 		return fmt.Errorf("error deleting node %s: %w", instance.Node.GetName(), err)
 	}
 	return nil
+}
+
+func (r *instanceReconciler) nodeConfigCleanup(nc *nodeconfig.NodeConfig) {
+	err := nc.Close()
+	if err != nil {
+		r.log.Info("WARNING: error closing nodeconfig", "error", err.Error())
+	}
 }
 
 // windowsNodeVersionChangePredicate returns a predicate whose filter catches Windows nodes that indicate a version
