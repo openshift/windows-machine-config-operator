@@ -38,6 +38,7 @@ const (
 	// vmConfigurationTime is the maximum amount of time expected for a Windows VM to be fully configured and ready for WMCO
 	// after the hardware is provisioned.
 	vmConfigurationTime = 10 * time.Minute
+	configTimeFileName  = "config-time-report.json"
 )
 
 func creationTestSuite(t *testing.T) {
@@ -175,15 +176,79 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	}
 	_, err := tc.createWindowsMachineSet(gc.numberOfMachineNodes, false)
 	require.NoError(t, err, "failed to create Windows MachineSet")
+	machineCreationTime := time.Now()
 
 	t.Run("Machine configuration while private key change", tc.testMachineConfigurationWhilePrivateKeyChange)
 
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
+	machineProvisionedTime := time.Now()
+	var addresses []string
+	for _, m := range machines.Items {
+		addr, err := controllers.GetAddress(m.Status.Addresses)
+		require.NoError(t, err)
+		addresses = append(addresses, addr)
+	}
+	err = tc.waitForSSHAvailable(addresses)
+	require.NoError(t, err)
+	sshAvailableTime := time.Now()
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 	assert.NoError(t, err, "Windows node creation failed")
+
+	// Save timings as an artifact for performance measuring purposes
+	configTimes := configurationTimes{
+		InstanceType:       "machine",
+		NodeCount:          int(gc.numberOfMachineNodes),
+		MachineProvisioned: machineProvisionedTime.Sub(machineCreationTime).Round(time.Second).String(),
+		SSHAvailable:       sshAvailableTime.Sub(machineProvisionedTime).Round(time.Second).String(),
+		NodeConfigured:     time.Now().Sub(sshAvailableTime).Round(time.Second).String(),
+	}
+	path := filepath.Join(tc.artifactDir, configTimeFileName)
+	require.NoError(t, configTimes.appendToFile(path))
+
 	tc.machineLogCollection(machines.Items)
 	tc.machineAwsEC2LogCollection(machines.Items)
+}
+
+type configurationTimes struct {
+	InstanceType       string `json:"instanceType"`
+	NodeCount          int    `json:"nodeCount"`
+	MachineProvisioned string `json:"machineProvisioned,omitempty"`
+	SSHAvailable       string `json:"sshAvailable,omitempty"`
+	NodeConfigured     string `json:"nodeConfigured"`
+}
+
+// appendToFile writes the data held in the struct to a file with the given path
+func (c *configurationTimes) appendToFile(path string) error {
+	times, err := json.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("error marshaling: %w", err)
+	}
+	times = append(times, '\n')
+	fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("error opening destination file %s: %w", path, err)
+	}
+	defer fd.Close()
+	_, err = fd.Write(times)
+	if err != nil {
+		return fmt.Errorf("error writing to destination file %s: %w", path, err)
+	}
+	return nil
+}
+
+func (tc *testContext) waitForSSHAvailable(addresses []string) error {
+	hosts := "HOSTS='"
+	for _, addr := range addresses {
+		hosts += addr + " "
+	}
+	hosts += "'"
+	cmd := fmt.Sprintf("%s; for ((i=1; i<=60; i++)); do "+
+		"if ( for host in $HOSTS; do nc -z -w 1 \"$host\" 22 || exit 1; done ); then echo 'All hosts reachable'; exit 0; fi; "+
+		"echo \"Attempt $i/60 failed. Retrying in 5s\"; sleep 5; done; echo 'All attempts exhausted.'; exit 1",
+		hosts)
+	_, err := tc.runJob("check-ssh-available", []string{"bash", "-c", cmd})
+	return err
 }
 
 // testMachineConfigurationWhilePrivateKeyChange tests that machines which have not yet been configured by WMCO are
@@ -314,11 +379,22 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 		err = tc.provisionBYOHConfigMapWithMachineSet()
 		require.NoError(t, err, "error provisioning BYOH ConfigMap with MachineSets")
 	}
+	configMapCreatedTime := time.Now()
 	// Wait for Windows worker node to become available
 	t.Run("VM is configured by ConfigMap controller", func(t *testing.T) {
 		err := tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, false, true)
 		assert.NoError(t, err, "Windows node creation failed")
 	})
+
+	// Save timings as an artifact for performance measuring purposes
+	configTimes := configurationTimes{
+		InstanceType:   "byoh",
+		NodeCount:      int(gc.numberOfBYOHNodes),
+		NodeConfigured: time.Now().Sub(configMapCreatedTime).Round(time.Second).String(),
+	}
+	path := filepath.Join(tc.artifactDir, configTimeFileName)
+	require.NoError(t, configTimes.appendToFile(path))
+
 	// Make a best effort attempt to collect logs from each BYOH instance
 	tc.byohLogCollection()
 }
