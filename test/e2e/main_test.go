@@ -89,6 +89,8 @@ type testContext struct {
 	windowsServerVersion windows.ServerVersion
 	// mirrorRegistry is the container mirror registry URL
 	mirrorRegistry string
+	// artifactDir is a directory that logs are saved to. It will be created if it does not exist.
+	artifactDir string
 }
 
 // NewTestContext returns a new test context to be used by every test.
@@ -115,11 +117,17 @@ func NewTestContext() (*testContext, error) {
 		"pod-security.kubernetes.io/audit":   "privileged",
 		"pod-security.kubernetes.io/warn":    "privileged",
 	}
+	artifactDir := os.Getenv("ARTIFACT_DIR")
+	err = os.MkdirAll(artifactDir, os.ModePerm)
+	if err != nil {
+		return nil, fmt.Errorf("error creating artifact dir: %w", err)
+	}
 
 	// number of nodes, retry interval and timeout should come from user-input flags
 	return &testContext{client: oc, timeout: retry.Timeout, retryInterval: retry.Interval,
 		CloudProvider: cloudProvider, workloadNamespace: "wmco-test", workloadNamespaceLabels: workloadNamespaceLabels,
-		windowsServerVersion: windowsServerVersion, toolsImage: toolsImage, mirrorRegistry: mirrorRegistry}, nil
+		windowsServerVersion: windowsServerVersion, toolsImage: toolsImage, mirrorRegistry: mirrorRegistry,
+		artifactDir: artifactDir}, nil
 }
 
 // vmUsername returns the name of the user which can be used to log into each Windows instance
