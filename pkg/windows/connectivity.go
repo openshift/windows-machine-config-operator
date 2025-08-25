@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"syscall"
 	"time"
@@ -196,7 +197,7 @@ func (c *sshConnectivity) transferFiles(sftpClient *sftp.Client, files map[strin
 func (c *sshConnectivity) close() error {
 	err := c.sshClient.Close()
 	// If the error is due to the underlying connection being already closed, don't return an error
-	if errors.Is(syscall.EINVAL, err) {
+	if errors.Is(err, syscall.EINVAL) || errors.Is(err, net.ErrClosed) {
 		return nil
 	}
 	return err
