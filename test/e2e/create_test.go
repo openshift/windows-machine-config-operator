@@ -102,7 +102,7 @@ func (tc *testContext) testWindowsNodeCreation(t *testing.T) {
 	// TODO: Remove this dependency by rotating keys as part of https://issues.redhat.com/browse/WINC-655
 	t.Run("ConfigMap controller", tc.testBYOHConfiguration)
 
-	err := retrieveWindowsNodeObjects()
+	err := retrieveWindowsNodeObjects(tc.artifactDir)
 	if err != nil {
 		log.Printf("error retrieving windows node objects: %s", err)
 	}
@@ -696,7 +696,7 @@ func (tc *testContext) createPullSecret() error {
 }
 
 // retrieveWindowsNodeObjects retrieves the Windows node objects from the cluster and writes them to the given directory
-func retrieveWindowsNodeObjects() error {
+func retrieveWindowsNodeObjects(dir string) error {
 	outputFormat := "json"
 	cmd := exec.Command("oc", "get", "nodes", "-l kubernetes.io/os=windows", "-o"+outputFormat)
 	out, err := cmd.Output()
@@ -708,7 +708,7 @@ func retrieveWindowsNodeObjects() error {
 		}
 		return fmt.Errorf("oc get nodes failed with exit code %s and output: %s: %s", err, string(out), stderr)
 	}
-	destDir := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes")
+	destDir := filepath.Join(dir, "nodes")
 	err = os.MkdirAll(destDir, os.ModePerm)
 	if err != nil {
 		return err

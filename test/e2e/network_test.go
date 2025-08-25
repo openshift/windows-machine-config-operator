@@ -197,8 +197,8 @@ func (tc *testContext) stopPacketTrace(node *v1.Node) error {
 			return tc.isGatherDone(createdPod)
 		})
 
-	// Copy the packet trace from the pod to $ARTIFACT_DIR/nodes/$nodename/trace
-	nodeDir := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes", node.Name)
+	// Copy the packet trace from the pod to the artifact directory
+	nodeDir := filepath.Join(tc.artifactDir, "nodes", node.Name)
 	err = os.MkdirAll(filepath.Join(nodeDir), os.ModePerm)
 	if err != nil {
 		return err
@@ -1159,7 +1159,7 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 // gatherPodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts
 // dir. Returns the written logs.
 func (tc *testContext) gatherPodLogs(labelSelector string, latestOnly bool) (string, error) {
-	podArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "pods")
+	podArtifacts := filepath.Join(tc.artifactDir, "pods")
 	podDir := filepath.Join(podArtifacts, labelSelector)
 	err := os.MkdirAll(podDir, os.ModePerm)
 	if err != nil {
