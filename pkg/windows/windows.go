@@ -970,7 +970,7 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 		err = wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
 			// reinitialize and retry on failure to avoid connection reset SSH errors
 			if err := vm.removeHNSNetwork(network); err != nil {
-				vm.log.V(1).Error(err, "error removing %s HNS network", "network", network)
+				vm.log.V(1).Info("error removing HNS network", "network", network, "err", err.Error())
 				if err := vm.reinitialize(); err != nil {
 					return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
 				}
@@ -981,7 +981,7 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 			}
 			out, err := vm.Run(getHNSNetworkCmd(network), true)
 			if err != nil {
-				vm.log.V(1).Error(err, "error waiting for HNS network", "network", network)
+				vm.log.V(1).Info("error waiting for HNS network", "network", network, "err", err.Error())
 				return false, nil
 			}
 			return !strings.Contains(out, network), nil
