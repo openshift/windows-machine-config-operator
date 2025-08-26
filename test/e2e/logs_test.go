@@ -29,7 +29,7 @@ func (tc *testContext) testNodeLogs(t *testing.T) {
 		"wicd/windows-instance-config-daemon.exe.INFO",
 		"csi-proxy/csi-proxy.log",
 	}
-	nodeArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "nodes")
+	nodeArtifacts := filepath.Join(tc.artifactDir, "nodes")
 	for _, node := range gc.allNodes() {
 		nodeDir := filepath.Join(nodeArtifacts, node.Name)
 		for _, file := range mandatoryLogs {
