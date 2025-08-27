@@ -183,7 +183,7 @@ func (nc *NodeConfig) Configure(ctx context.Context) error {
 				return fmt.Errorf("error setting node object: %w", err)
 			}
 		}
-
+		
 		// Make a best effort to cordon the node until it is fully configured
 		if err := drain.RunCordonOrUncordon(drainHelper, nc.node, true); err != nil {
 			nc.log.Info("unable to cordon", "node", nc.node.GetName(), "error", err)
@@ -201,7 +201,12 @@ func (nc *NodeConfig) Configure(ctx context.Context) error {
 				nc.node.GetName(), err)
 		}
 
-		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdKC); err != nil {
+		// Configure WICD with certificate-based authentication (always enabled)
+		certConfig := &windows.WICDCertConfig{
+			CertDir:      windows.WICDCertDir,
+			CertDuration: "10m",
+		}
+		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdKC, certConfig); err != nil {
 			return fmt.Errorf("configuring WICD failed: %w", err)
 		}
 		// Set the desired version annotation, communicating to WICD which Windows services configmap to use
@@ -215,9 +220,8 @@ func (nc *NodeConfig) Configure(ctx context.Context) error {
 				nc.node.GetName(), err)
 		}
 
-		// Now that the node has been fully configured, update the node object in NodeConfig once more
 		if err := nc.setNode(ctx, false); err != nil {
-			return fmt.Errorf("error getting node object: %w", err)
+			return fmt.Errorf("error setting node object: %w", err)
 		}
 
 		// Uncordon the node now that it is fully configured
@@ -244,7 +248,7 @@ func (nc *NodeConfig) Configure(ctx context.Context) error {
 	return err
 }
 
-// safeReboot safely restarts the underlying instance, first cordoning and draining the associated node.
+// SafeReboot safely restarts the underlying instance, first cordoning and draining the associated node.
 // Waits for reboot to take effect before uncordoning the node.
 func (nc *NodeConfig) SafeReboot(ctx context.Context) error {
 	if nc.node == nil {
@@ -255,8 +259,8 @@ func (nc *NodeConfig) SafeReboot(ctx context.Context) error {
 	if err := drain.RunCordonOrUncordon(drainer, nc.node, true); err != nil {
 		return fmt.Errorf("unable to cordon node %s: %w", nc.node.Name, err)
 	}
-	if err := drain.RunNodeDrain(drainer, nc.node.Name); err != nil {
-		return fmt.Errorf("unable to drain node %s: %w", nc.node.Name, err)
+	if err := drain.RunNodeDrain(drainer, nc.node.GetName()); err != nil {
+		return fmt.Errorf("unable to drain node %s: %w", nc.node.GetName(), err)
 	}
 
 	if err := nc.Windows.RebootAndReinitialize(ctx); err != nil {
@@ -403,11 +407,57 @@ func (nc *NodeConfig) generateBootstrapKubeconfig(ctx context.Context) (string, 
 
 // generateWICDKubeconfig returns the contents of a kubeconfig created from the WICD ServiceAccount
 func (nc *NodeConfig) generateWICDKubeconfig(ctx context.Context) (string, error) {
+	// First, try to use certificate-based authentication if available
+	if certKubeconfig, err := nc.generateWICDCertificateKubeconfig(); err == nil {
+		nc.log.Info("Using certificate-based kubeconfig for WICD operations")
+		return certKubeconfig, nil
+	}
+
 	wicdSASecret, err := nc.getWICDServiceAccountSecret(ctx)
 	if err != nil {
 		return "", err
 	}
 	return newKubeconfigFromSecret(wicdSASecret, "wicd")
+}
+
+// generateWICDCertificateKubeconfig creates a kubeconfig using certificate-based authentication
+func (nc *NodeConfig) generateWICDCertificateKubeconfig() (string, error) {
+	if nc.node == nil {
+		return "", fmt.Errorf("node not available for certificate-based auth")
+	}
+	certPath := windows.WICDCurrentCertPath
+	keyPath := windows.WICDCurrentKeyPath
+	// Check if certificate files exist on the Windows node
+	checkCertCmd := fmt.Sprintf("Test-Path \"%s\"", certPath)
+	if out, err := nc.Windows.Run(checkCertCmd, false); err != nil || strings.TrimSpace(out) != "True" {
+		return "", fmt.Errorf("WICD certificate not found at %s", certPath)
+	}
+
+	checkKeyCmd := fmt.Sprintf("Test-Path \"%s\"", keyPath)
+	if out, err := nc.Windows.Run(checkKeyCmd, false); err != nil || strings.TrimSpace(out) != "True" {
+		return "", fmt.Errorf("WICD private key not found at %s", keyPath)
+	}
+
+	// Get CA certificate from the cluster
+	wicdSASecret, err := nc.getWICDServiceAccountSecret(context.TODO())
+	if err != nil {
+		return "", fmt.Errorf("failed to get CA cert for certificate-based kubeconfig: %w", err)
+	}
+
+	caCert := wicdSASecret.Data[core.ServiceAccountRootCAKey]
+	if caCert == nil {
+		return "", fmt.Errorf("unable to find CA cert in secret")
+	}
+
+	// Generate kubeconfig using certificate paths
+	username := fmt.Sprintf("system:wicd-node:%s", nc.node.Name)
+	kc := generateCertificateKubeconfig(caCert, certPath, keyPath, nodeConfigCache.apiServerEndpoint, username)
+
+	kubeconfigData, err := json.Marshal(kc)
+	if err != nil {
+		return "", err
+	}
+	return string(kubeconfigData), nil
 }
 
 // newKubeconfigFromSecret returns the contents of a kubeconfig generated from the given service account token secret
@@ -634,6 +684,35 @@ func generateKubeconfig(caCert []byte, token, apiServerURL, username string) cli
 	return kubeconfig
 }
 
+// generateCertificateKubeconfig creates a WICD kubeconfig using certificate-based authentication
+func generateCertificateKubeconfig(caCert []byte, certPath, keyPath, apiServerURL, username string) clientcmdv1.Config {
+	kubeconfig := clientcmdv1.Config{
+		Clusters: []clientcmdv1.NamedCluster{{
+			Name: "local",
+			Cluster: clientcmdv1.Cluster{
+				Server:                   apiServerURL,
+				CertificateAuthorityData: caCert,
+			}},
+		},
+		AuthInfos: []clientcmdv1.NamedAuthInfo{{
+			Name: username,
+			AuthInfo: clientcmdv1.AuthInfo{
+				ClientCertificate: certPath,
+				ClientKey:         keyPath,
+			},
+		}},
+		Contexts: []clientcmdv1.NamedContext{{
+			Name: username,
+			Context: clientcmdv1.Context{
+				Cluster:  "local",
+				AuthInfo: username,
+			},
+		}},
+		CurrentContext: username,
+	}
+	return kubeconfig
+}
+
 // generateKubeletConfiguration returns the configuration spec for the kubelet Windows service
 func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfiguration {
 	// default numeric values chosen based on the OpenShift kubelet config recommendations for Linux worker nodes
@@ -768,8 +847,5 @@ func validWICDServiceAccountTokenSecret(secret core.Secret) bool {
 	if secret.Type != core.SecretTypeServiceAccountToken {
 		return false
 	}
-	if secret.Annotations[core.ServiceAccountNameKey] != windows.WicdServiceName {
-		return false
-	}
-	return true
+	return secret.Annotations[core.ServiceAccountNameKey] == windows.WicdServiceName
 }
