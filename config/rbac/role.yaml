@@ -133,6 +133,14 @@ rules:
 - apiGroups:
   - certificates.k8s.io
   resourceNames:
+  - kubernetes.io/kube-apiserver-client
+  resources:
+  - signers
+  verbs:
+  - approve
+- apiGroups:
+  - certificates.k8s.io
+  resourceNames:
   - kubernetes.io/kube-apiserver-client-kubelet
   - kubernetes.io/kubelet-serving
   resources:
@@ -227,22 +235,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - clusterrolebindings
-  verbs:
-  - create
-  - delete
-  - get
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - rolebindings
-  verbs:
-  - create
-  - delete
-  - get
 - apiGroups:
   - security.openshift.io
   resourceNames:

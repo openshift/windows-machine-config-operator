@@ -291,6 +291,14 @@ spec:
         - apiGroups:
           - certificates.k8s.io
           resourceNames:
+          - kubernetes.io/kube-apiserver-client
+          resources:
+          - signers
+          verbs:
+          - approve
+        - apiGroups:
+          - certificates.k8s.io
+          resourceNames:
           - kubernetes.io/kube-apiserver-client-kubelet
           - kubernetes.io/kubelet-serving
           resources:
