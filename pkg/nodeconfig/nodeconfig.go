@@ -667,6 +667,8 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 		EnableSystemLogHandler: &trueBool,
 		EnableSystemLogQuery:   &trueBool,
 		FeatureGates: map[string]bool{
+			// NodeLogQuery is required for EnableSystemLogQuery
+			"NodeLogQuery":                   true,
 			"RotateKubeletServerCertificate": true,
 		},
 		ContainerLogMaxSize: "50Mi",
