@@ -110,7 +110,7 @@ func (tc *testContext) testParallelUpgradesChecker(t *testing.T) {
 	failedPods, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
 		LabelSelector: "job-name=" + parallelUpgradesCheckerJobName, FieldSelector: "status.phase=Failed"})
 	require.NoError(t, err)
-	_, err = tc.gatherPodLogs("job-name=" + parallelUpgradesCheckerJobName)
+	_, err = tc.gatherPodLogs("job-name="+parallelUpgradesCheckerJobName, false)
 	if err != nil {
 		log.Printf("unable to gather logs: %v", err)
 	}
