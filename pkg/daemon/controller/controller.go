@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -63,7 +64,7 @@ import (
 )
 
 // WICDController is the name of the WICD controller in logs and other outputs
-const WICDController = "WICD"
+const WICDController = "windows-instance-config-daemon-controller"
 
 // Options contains a list of options available when creating a new ServiceController
 type Options struct {
@@ -134,28 +135,51 @@ func (sc *ServiceController) Bootstrap(desiredVersion string) error {
 }
 
 // RunController is the entry point of WICD's controller functionality
-func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle string) error {
+func RunController(ctx context.Context, watchNamespace, kubeconfig, caBundle string, certDir string, certDuration time.Duration) error {
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load WICD kubeconfig: %w", err)
 	}
 	// This is a client that reads directly from the server, not a cached client. This is required to be used here, as
 	// the cached client, created by ctrl.NewManager() will not be functional until the manager is started.
 	directClient, err := NewDirectClient(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create bootstrap client: %w", err)
 	}
 
 	addrs, err := LocalInterfaceAddresses()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get local interface addresses: %w", err)
 	}
 	node, err := GetAssociatedNode(ctx, directClient, addrs)
 	if err != nil {
 		return fmt.Errorf("could not find node object associated with this instance: %w", err)
 	}
 
-	ctrlMgr, err := ctrl.NewManager(cfg, ctrl.Options{
+	certManager, err := certs.NewWICDCertificateManager(node.Name, certDir, kubeconfig, cfg.Host, certDuration)
+	if err != nil {
+		return fmt.Errorf("failed to create certificate manager: %w", err)
+	}
+
+	if err := certManager.StartCertificateManagement(); err != nil {
+		return fmt.Errorf("certificate management failed: %w", err)
+	}
+	defer certManager.Stop()
+
+	certFile := certManager.GetCertificatePaths()
+	err = wait.PollUntilContextTimeout(ctx, time.Second*2, time.Minute*5, true, func(ctx context.Context) (bool, error) {
+		if _, err := os.Stat(certFile); err != nil {
+			klog.Infof("Certificate file not yet available: %v", err)
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("timeout waiting for certificate files to be created: %w", err)
+	}
+
+	certificateConfig := certManager.GetCertificateConfig()
+	ctrlMgr, err := ctrl.NewManager(certificateConfig, ctrl.Options{
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{
 				watchNamespace: {},
