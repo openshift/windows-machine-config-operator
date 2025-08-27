@@ -266,6 +266,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	wicdCSRController, err := controllers.NewWICDCSRController(mgr, watchNamespace)
+	if err != nil {
+		setupLog.Error(err, "unable to create WICD CSR controller")
+		os.Exit(1)
+	}
+	if err = wicdCSRController.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "WICD-CSR")
+		os.Exit(1)
+	}
+
 	mcReconciler, err := controllers.NewControllerConfigReconciler(mgr, clusterConfig, watchNamespace)
 	if err != nil {
 		setupLog.Error(err, "unable to create ControllerConfig reconciler")
