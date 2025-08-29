@@ -29,6 +29,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/condition"
 	"github.com/openshift/windows-machine-config-operator/pkg/crypto"
 	"github.com/openshift/windows-machine-config-operator/pkg/csr"
+	"github.com/openshift/windows-machine-config-operator/pkg/csr/validation"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	nc "github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
@@ -722,7 +723,7 @@ func (tc *testContext) findNodeCSRs(nodeName string) ([]certificates.Certificate
 		if c.Status.Conditions == nil || len(c.Status.Conditions) == 0 {
 			continue
 		}
-		parsedCSR, err := csr.ParseCSR(c.Spec.Request)
+		parsedCSR, err := validation.ParseCSR(c.Spec.Request)
 		if err != nil {
 			return nil, err
 		}

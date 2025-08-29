@@ -40,6 +40,9 @@ var (
 	windowsService bool
 	logDir         string
 	caBundle       string
+	// Certificate-based authentication options
+	certDir      string
+	certDuration string
 )
 
 func init() {
@@ -50,6 +53,10 @@ func init() {
 		"Enables running as a Windows service")
 	controllerCmd.PersistentFlags().StringVar(&caBundle, "ca-bundle", "",
 		"the full path to CA bundle file containing certificates trusted by the cluster")
+	controllerCmd.PersistentFlags().StringVar(&certDir, "cert-dir", "C:\\k\\wicd-certs",
+		"Directory to store WICD client certificates")
+	controllerCmd.PersistentFlags().StringVar(&certDuration, "cert-duration", "10m",
+		"Duration for WICD certificates (e.g., 10m, 1h, 24h)")
 }
 
 func runControllerCmd(cmd *cobra.Command, args []string) {
@@ -60,6 +67,7 @@ func runControllerCmd(cmd *cobra.Command, args []string) {
 		fs.Set("logtostderr", "false")
 		fs.Set("log_dir", logDir)
 	}
+
 	ctx := ctrl.SetupSignalHandler()
 	if windowsService {
 		if err := initService(ctx); err != nil {
@@ -68,7 +76,7 @@ func runControllerCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 	klog.Info("service controller running")
-	if err := controller.RunController(ctx, namespace, kubeconfig, caBundle); err != nil {
+	if err := controller.RunController(ctx, namespace, kubeconfig, caBundle, certDir, certDuration); err != nil {
 		klog.Error(err)
 		os.Exit(1)
 	}
