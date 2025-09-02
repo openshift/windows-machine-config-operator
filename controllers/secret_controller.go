@@ -147,8 +147,6 @@ type SecretReconciler struct {
 // Result.Requeue is true, otherwise upon completion it will remove the work from the queue.
 func (r *SecretReconciler) Reconcile(ctx context.Context,
 	request ctrl.Request) (result reconcile.Result, reconcileErr error) {
-	r.log = r.log.WithValues(SecretController, request.NamespacedName)
-
 	var err error
 	// Prevent WMCO upgrades while secret-based resources are being processed
 	if err := condition.MarkAsBusy(ctx, r.client, r.watchNamespace, r.recorder, SecretController); err != nil {
@@ -159,6 +157,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context,
 			result.Requeue, reconcileErr)
 	}()
 
+	r.log.V(1).Info("reconciling", "secret", request.NamespacedName.String())
 	r.signer, err = signer.Create(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
 		Name: secrets.PrivateKeySecret}, r.client)
 	if err != nil {
