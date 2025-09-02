@@ -78,8 +78,7 @@ func NewRegistryReconciler(mgr manager.Manager, clusterConfig cluster.Config,
 // Reconcile is part of the main kubernetes reconciliation loop which reads that state of the cluster for objects
 // related to image registry config and aims to move the current state of the cluster closer to the desired state.
 func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	r.log = r.log.WithValues(RegistryController, req.NamespacedName)
-
+	r.log.V(1).Info("reconciling", "name", req.NamespacedName.String())
 	configFiles, err := registries.GenerateConfigFiles(ctx, r.client)
 	if err != nil {
 		return ctrl.Result{}, err
