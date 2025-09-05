@@ -56,6 +56,7 @@ func TestWMCO(t *testing.T) {
 	t.Run("image mirroring", testImageMirroring)
 	t.Run("network", testNetwork)
 	t.Run("storage", testStorage)
+	t.Run("wicd rbac", wicdRBACTestSuite)
 	t.Run("service reconciliation", testDependentServiceChanges)
 	t.Run("cluster-wide proxy", proxyTestSuite)
 	// The reconfigurationTestSuite must be run directly before the deletionTestSuite. This is because we do not
