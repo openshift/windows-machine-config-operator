@@ -300,7 +300,7 @@ github.com/mxk/go-flowrate/flowrate
 ## explicit; go 1.22.0
 # github.com/onsi/gomega v1.36.2
 ## explicit; go 1.22.0
-# github.com/openshift/api v0.0.0-20250901120840-a638ff2e96fb
+# github.com/openshift/api v0.0.0-20250908082407-d394d8c50346
 ## explicit; go 1.24.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -1270,7 +1270,7 @@ k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
 k8s.io/klog/v2/internal/verbosity
 k8s.io/klog/v2/textlogger
-# k8s.io/kube-openapi v0.0.0-20250902184714-7fc278399c7f => k8s.io/kube-openapi v0.0.0-20250628140032-d90c4fd18f59
+# k8s.io/kube-openapi v0.0.0-20250905212525-66792eed8611 => k8s.io/kube-openapi v0.0.0-20250628140032-d90c4fd18f59
 ## explicit; go 1.22
 k8s.io/kube-openapi/pkg/cached
 k8s.io/kube-openapi/pkg/common
