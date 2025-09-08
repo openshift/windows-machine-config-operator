@@ -4,18 +4,19 @@ metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/openshift/windows-machine-config-operator?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: '3'
     pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "push"
+      event == "pull_request"
       && target_branch == "master"
-      && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|Containerfile.bundle)$'))
+      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() || ".tekton/windows-machine-config-operator-bundle-*".pathChanged() )
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: windows-machine-config-operator-release-4-20
-    appstudio.openshift.io/component: windows-machine-config-operator-release-4-20
+    appstudio.openshift.io/application: windows-machine-config-operator-release-4-21
+    appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-4-21
     pipelines.appstudio.openshift.io/type: build
-  name: windows-machine-config-operator-release-4-20-on-push
+  name: windows-machine-config-operator-bundle-release-4-21-on-pull-request
   namespace: windows-machine-conf-tenant
 spec:
   params:
@@ -26,11 +27,13 @@ spec:
   - name: prefetch-input
     value: '{"type": "gomod", "path": "."}'
   - name: dockerfile
-    value: Containerfile
+    value: Containerfile.bundle
   - name: git-url
     value: '{{source_url}}'
+  - name: image-expires-after
+    value: 5d
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4-20:{{revision}}
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-bundle-release-4-21:on-pr-{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
@@ -263,7 +266,31 @@ spec:
         - name: name
           value: deprecated-image-check
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.5@sha256:c49732039f105de809840be396f83ead8c46f6a6948e1335b76d37e9eb469574
+          value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.5@sha256:1d07d16810c26713f3d875083924d93697900147364360587ccb5a63f2c31012
+        - name: kind
+          value: task
+        resolver: bundles
+      when:
+      - input: $(params.skip-checks)
+        operator: in
+        values:
+        - 'false'
+    - name: fips-operator-bundle-check-oci-ta
+      params:
+      - name: image-digest
+        value: $(tasks.build-container.results.IMAGE_DIGEST)
+      - name: image-url
+        value: $(tasks.build-container.results.IMAGE_URL)
+      - name: SOURCE_ARTIFACT
+        value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
+      runAfter:
+      - build-container
+      taskRef:
+        params:
+        - name: name
+          value: fips-operator-bundle-check-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-fips-operator-bundle-check-oci-ta:0.1@sha256:d512b24647cbce96f29e3655d30eb1828ca521f59d55ef491e48584bb0b99bd6
         - name: kind
           value: task
         resolver: bundles
@@ -285,27 +312,7 @@ spec:
         - name: name
           value: clair-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:076d5cde62b55bbfcdda2b4782392256bbda5ad38f839013b4330b3aba70a973
-        - name: kind
-          value: task
-        resolver: bundles
-      when:
-      - input: $(params.skip-checks)
-        operator: in
-        values:
-        - 'false'
-    - name: ecosystem-cert-preflight-checks
-      params:
-      - name: image-url
-        value: $(tasks.build-container.results.IMAGE_URL)
-      runAfter:
-      - build-container
-      taskRef:
-        params:
-        - name: name
-          value: ecosystem-cert-preflight-checks
-        - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:365c65ed8dfbd83c4a49300dcb9c74c5c3f027efec0be1a1f0baa9633c29b249
+          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:893ffa3ce26b061e21bb4d8db9ef7ed4ddd4044fe7aa5451ef391034da3ff759
         - name: kind
           value: task
         resolver: bundles
@@ -471,14 +478,6 @@ spec:
         requests:
           memory: 8Gi
       name: use-trusted-artifact
-  - pipelineTaskName: build-container
-    stepSpecs:
-    - computeResources:
-        limits:
-          memory: 8Gi
-        requests:
-          memory: 8Gi
-      name: use-trusted-artifact
   - pipelineTaskName: clone-repository
     stepSpecs:
     - computeResources:
@@ -487,6 +486,14 @@ spec:
         requests:
           memory: 8Gi
       name: create-trusted-artifact
+  - pipelineTaskName: fips-operator-bundle-check-oci-ta
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: prefetch-dependencies
     stepSpecs:
     - computeResources:
@@ -520,7 +527,7 @@ spec:
           memory: 8Gi
       name: use-trusted-artifact
   taskRunTemplate:
-    serviceAccountName: build-pipeline-windows-machine-config-operator-release-4-20
+    serviceAccountName: build-pipeline-windows-machine-config-operator-bundle-release-4-21
   workspaces:
   - name: git-auth
     secret:
