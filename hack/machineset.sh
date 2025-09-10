@@ -263,16 +263,19 @@ EOF
 # get_vsphere_ms creates a MachineSet for vSphere Cloud Provider
 get_vsphere_ms() {
 
-  if [ "$#" -lt 2 ]; then
+  if [ "$#" -lt 3 ]; then
     error-exit incorrect parameter count for get_vsphere_ms $#
   fi
 
   local infraID=$1
-  local byoh=$2
+  local winver=$2
+  local byoh=$3
 
   # set golden image template name
-  # TODO: read from parameter
   template="windows-golden-images/windows-server-2022-template-ipv6-disabled"
+  if [ "$winver" == "2019" ]; then
+     error-exit "No template available for Windows Server 2019 in DevQE vCenter"
+  fi
 
   # TODO: Reduce the number of API calls, make just one call
   #       to `oc get machines` and pass the data around. This is the
@@ -433,7 +436,7 @@ case "$platform" in
       ms=$(get_gcp_ms $infraID $linuxWorkerSpec $winver $byoh)
     ;;
     VSphere)
-      ms=$(get_vsphere_ms $infraID $byoh)
+      ms=$(get_vsphere_ms $infraID $winver $byoh)
     ;;
     Nutanix)
       ms=$(get_nutanix_ms $infraID $byoh)
