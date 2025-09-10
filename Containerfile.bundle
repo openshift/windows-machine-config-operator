@@ -16,7 +16,7 @@ LABEL name="openshift4-wincw/windows-machine-config-operator-bundle" \
     io.openshift.tags=""
 
 # Used to tag the released image. Should be a semver.
-LABEL version="v10.20.0"
+LABEL version="v10.21.0"
 # Component to file bugs against
 LABEL com.redhat.component="Windows Containers"
 
@@ -32,8 +32,8 @@ LABEL operators.operatorframework.io.metrics.mediatype.v1=metrics+v1
 LABEL operators.operatorframework.io.metrics.project_layout=go.kubebuilder.io/v3
 
 LABEL distribution-scope=public
-LABEL release="10.20.0"
-LABEL url="https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/windows_container_support_for_openshift/index"
+LABEL release="10.21.0"
+LABEL url="https://docs.redhat.com/en/documentation/openshift_container_platform/4.21/html/windows_container_support_for_openshift/index"
 LABEL vendor="Red Hat, Inc."
 
 # Copy files to locations specified by labels.

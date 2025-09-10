@@ -13,10 +13,10 @@ metadata:
       && !files.all.all(x, x.matches('^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|Containerfile.bundle)$'))
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: windows-machine-config-operator-release-4-20
-    appstudio.openshift.io/component: windows-machine-config-operator-release-4-20
+    appstudio.openshift.io/application: windows-machine-config-operator-release-4-21
+    appstudio.openshift.io/component: windows-machine-config-operator-release-4-21
     pipelines.appstudio.openshift.io/type: build
-  name: windows-machine-config-operator-release-4-20-on-pull-request
+  name: windows-machine-config-operator-release-4-21-on-pull-request
   namespace: windows-machine-conf-tenant
 spec:
   params:
@@ -33,7 +33,7 @@ spec:
   - name: image-expires-after
     value: 5d
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4-20:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-4-21:on-pr-{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
@@ -266,7 +266,7 @@ spec:
         - name: name
           value: deprecated-image-check
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.5@sha256:c49732039f105de809840be396f83ead8c46f6a6948e1335b76d37e9eb469574
+          value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.5@sha256:1d07d16810c26713f3d875083924d93697900147364360587ccb5a63f2c31012
         - name: kind
           value: task
         resolver: bundles
@@ -288,7 +288,7 @@ spec:
         - name: name
           value: clair-scan
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:076d5cde62b55bbfcdda2b4782392256bbda5ad38f839013b4330b3aba70a973
+          value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.2@sha256:893ffa3ce26b061e21bb4d8db9ef7ed4ddd4044fe7aa5451ef391034da3ff759
         - name: kind
           value: task
         resolver: bundles
@@ -523,7 +523,7 @@ spec:
           memory: 8Gi
       name: use-trusted-artifact
   taskRunTemplate:
-    serviceAccountName: build-pipeline-windows-machine-config-operator-release-4-20
+    serviceAccountName: build-pipeline-windows-machine-config-operator-release-4-21
   workspaces:
   - name: git-auth
     secret:
