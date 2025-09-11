@@ -107,6 +107,7 @@ rules:
   resources:
   - certificatesigningrequests
   verbs:
+  - create
   - get
   - list
   - watch
@@ -235,6 +236,22 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterrolebindings
+  verbs:
+  - create
+  - delete
+  - get
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  verbs:
+  - create
+  - delete
+  - get
 - apiGroups:
   - security.openshift.io
   resourceNames:

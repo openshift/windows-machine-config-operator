@@ -307,6 +307,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := configMapReconciler.EnsureWICDRBAC(ctx); err != nil {
+		setupLog.Error(err, "error ensuring WICD RBAC resources exist", "namespace", watchNamespace)
+		os.Exit(1)
+	}
+
 	// If proxy is enabled, disabled, or edited during WMCO runtime, the WMCO pod will be restarted by OLM. This could
 	// happen in the middle of node configuration, at which the controllers will reconcile once the WMCO pod restarts
 	if proxyEnabled {
