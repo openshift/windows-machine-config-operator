@@ -148,7 +148,8 @@ func (a *Approver) validateKubeletClientCSR(ctx context.Context) (bool, error) {
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("unable to get node %s: %w", nodeName, err)
 	} else if err == nil {
-		return false, fmt.Errorf("%s node already exists, cannot validate CSR: %s", nodeName, a.csr.Name)
+		a.log.Info("node already exists, cannot validate CSR", "node", nodeName, "CSR", a.csr.Name)
+		return false, nil
 	}
 
 	if err := a.clientValidator.ValidateCSR(ctx, a.csr); err != nil {

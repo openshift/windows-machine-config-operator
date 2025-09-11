@@ -422,7 +422,7 @@ func (nc *NodeConfig) generateWICDCertificateKubeconfig(ctx context.Context) (st
 	}
 
 	// Check if certificate file exists on the Windows node
-	checkCertCmd := fmt.Sprintf("Test-Path \"%s\"", windows.WICDCurrentCertPath)
+	checkCertCmd := fmt.Sprintf("Test-Path %s", windows.WICDCurrentCertPath)
 	if out, err := nc.Windows.Run(checkCertCmd, true); err != nil || strings.TrimSpace(out) != "True" {
 		return "", fmt.Errorf("WICD certificate not found at %s", windows.WICDCurrentCertPath)
 	}
