@@ -21,6 +21,8 @@ rules:
     verbs:
       - get
       - list
+      - patch
+      - update
   - apiGroups:
       - certificates.k8s.io
     resources:

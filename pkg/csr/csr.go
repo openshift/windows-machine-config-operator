@@ -9,8 +9,10 @@ package csr
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net"
+	"reflect"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -62,7 +64,7 @@ func NewApprover(client client.Client, clientSet *kubernetes.Clientset, csr *cer
 		return nil, fmt.Errorf("kubernetes client, clientSet or CSR should not be nil")
 	}
 
-	// Create validators for both kubelet certificate types
+	// Create validators for kubelet types
 	clientValidator := csrvalidation.NewCSRValidator(client, csrvalidation.KubeletClientCertType)
 	servingValidator := csrvalidation.NewCSRValidator(client, csrvalidation.KubeletServingCertType)
 
@@ -114,13 +116,19 @@ func (a *Approver) Approve(ctx context.Context) error {
 // If the CSR is not from a BYOH Windows instance, it returns false with no error.
 // If there is an error during validation, it returns false with the error.
 func (a *Approver) validateCSRContents(ctx context.Context) (bool, error) {
-	if a.clientValidator.IsCorrectCertificateType(a.csr) {
-		return a.validateKubeletClientCSR(ctx)
-	} else if a.servingValidator.IsCorrectCertificateType(a.csr) {
-		return a.validateKubeletServingCSR(ctx)
+	parsedCSR, err := csrvalidation.ParseCSR(a.csr.Spec.Request)
+	if err != nil {
+		return false, fmt.Errorf("error parsing CSR %s: %w", a.csr.Name, err)
 	}
 
-	return false, nil
+	if !strings.HasPrefix(parsedCSR.Subject.CommonName, csrvalidation.NodeUserNamePrefix) {
+		return false, nil
+	}
+
+	if a.isNodeClientCert(parsedCSR) {
+		return a.validateKubeletClientCSR(ctx)
+	}
+	return a.validateKubeletServingCSR(ctx)
 }
 
 // validateKubeletClientCSR validates kubelet client certificates
@@ -148,7 +156,8 @@ func (a *Approver) validateKubeletClientCSR(ctx context.Context) (bool, error) {
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("unable to get node %s: %w", nodeName, err)
 	} else if err == nil {
-		return false, fmt.Errorf("%s node already exists, cannot validate CSR: %s", nodeName, a.csr.Name)
+		a.log.Info("node already exists, cannot validate CSR", "node", nodeName, "CSR", a.csr.Name)
+		return false, nil
 	}
 
 	if err := a.clientValidator.ValidateCSR(ctx, a.csr); err != nil {
@@ -285,4 +294,17 @@ func matchesDNS(nodeName string, windowsInstances []*instance.Info) (bool, error
 		}
 	}
 	return false, nil
+}
+
+// isNodeClientCert returns true if the CSR is from a kube-apiserver-client-kubelet signer.
+// Client certificates have no DNS names, email addresses, or IP addresses (no SAN).
+// Reference: https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/#kubernetes-signers
+func (a *Approver) isNodeClientCert(x509cr *x509.CertificateRequest) bool {
+	if !reflect.DeepEqual([]string{csrvalidation.NodeGroup}, x509cr.Subject.Organization) {
+		return false
+	}
+	if (len(x509cr.DNSNames) > 0) || (len(x509cr.EmailAddresses) > 0) || (len(x509cr.IPAddresses) > 0) {
+		return false
+	}
+	return true
 }

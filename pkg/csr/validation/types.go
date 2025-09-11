@@ -6,7 +6,7 @@ import (
 
 const (
 	// Node certificate constants
-	nodeGroup          = "system:nodes"
+	NodeGroup          = "system:nodes"
 	nodeUserName       = "system:node"
 	systemPrefix       = "system:authenticated"
 	NodeUserNamePrefix = nodeUserName + ":"
@@ -17,7 +17,7 @@ var (
 	KubeletClientCertType = CertificateType{
 		Name:               "kubelet-client",
 		UserPrefix:         nodeUserName,
-		GroupName:          nodeGroup,
+		GroupName:          NodeGroup,
 		RequiredGroups:     []string{}, // Client certs don't require specific groups in CSR spec
 		ValidateNodeExists: false,      // Node doesn't exist yet during bootstrapping
 		AllowDNSNames:      false,
@@ -28,8 +28,8 @@ var (
 	KubeletServingCertType = CertificateType{
 		Name:               "kubelet-serving",
 		UserPrefix:         nodeUserName,
-		GroupName:          nodeGroup,
-		RequiredGroups:     []string{nodeGroup, systemPrefix}, // Serving certs require specific groups
+		GroupName:          NodeGroup,
+		RequiredGroups:     []string{NodeGroup, systemPrefix}, // Serving certs require specific groups
 		ValidateNodeExists: true,                              // Node must exist for serving certs
 		AllowDNSNames:      true,                              // Serving certs can have DNS names
 		AllowIPAddresses:   true,                              // Serving certs can have IP addresses

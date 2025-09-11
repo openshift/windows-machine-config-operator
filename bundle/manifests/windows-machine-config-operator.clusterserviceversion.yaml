@@ -265,6 +265,7 @@ spec:
           resources:
           - certificatesigningrequests
           verbs:
+          - create
           - get
           - list
           - watch
