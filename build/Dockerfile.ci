@@ -25,12 +25,6 @@ WORKDIR /build/windows-machine-config-operator/
 # Copy .git metadata so that we can generate the version for the WMCO binary
 COPY .git .git
 
-# Build hybrid-overlay
-WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
-COPY ovn-kubernetes/ .
-WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/go-controller/
-RUN make windows
-
 # Build promu utility tool, needed to build the windows_exporter.exe metrics binary
 WORKDIR /build/windows-machine-config-operator/promu/
 COPY promu/ .
@@ -133,6 +127,13 @@ RUN make build-daemon
 #│   └── windows-exporter-webconfig.yaml
 #└── windows-instance-config-daemon.exe
 
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.20 as build-hybrid-overlay
+# hybrid-overlay uses a different go version
+WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
+COPY ovn-kubernetes/ .
+WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/go-controller/
+RUN make windows
+
 FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.23-openshift-4.19
 LABEL stage=operator
 
@@ -141,7 +142,7 @@ WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
 
 # Copy hybrid-overlay-node.exe
-COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
+COPY --from=build-hybrid-overlay /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
 
 # Copy windows_exporter.exe and windows-exporter-webconfig.yaml
 WORKDIR /payload/windows-exporter/
