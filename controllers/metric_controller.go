@@ -72,7 +72,7 @@ func NewMetricReconciler(mgr manager.Manager, clusterConfig cluster.Config, cfg 
 // Reconcile is part of the main kubernetes reconciliation loop which reads that state of the cluster for a
 // Node object and aims to move the current state of the cluster closer to the desired state.
 func (r *metricReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	r.log = r.log.WithValues(MetricController, req.NamespacedName)
+	r.log.V(1).Info("reconciling", "name", req.NamespacedName.String())
 	// validate if cluster monitoring is enabled in the operator namespace
 	enabled, err := r.validate(ctx)
 	if err != nil {
