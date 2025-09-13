@@ -17,12 +17,6 @@ RUN yum install -y dos2unix
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
-# Build hybrid-overlay
-WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
-COPY ovn-kubernetes/ .
-WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/go-controller/
-RUN make windows
-
 # Build promu utility tool, needed to build the windows_exporter.exe metrics binary
 WORKDIR /build/windows-machine-config-operator/promu/
 COPY promu/ .
@@ -76,12 +70,19 @@ WORKDIR /build/windows-machine-config-operator/csi-proxy
 COPY csi-proxy/ .
 RUN GOOS=windows make build
 
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.20 as build-hybrid-overlay
+# hybrid-overlay uses a different go version
+WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/
+COPY ovn-kubernetes/ .
+WORKDIR /build/windows-machine-config-operator/ovn-kubernetes/go-controller/
+RUN make windows
+
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=base
 
 WORKDIR /payload/
 # Copy hybrid-overlay-node.exe
-COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
+COPY --from=build-hybrid-overlay /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
 
 # Copy windows_exporter.exe and TLS windows-exporter-webconfig.yaml
 WORKDIR /payload/windows-exporter/
