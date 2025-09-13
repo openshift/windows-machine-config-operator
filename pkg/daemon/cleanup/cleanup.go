@@ -21,9 +21,12 @@ package cleanup
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	core "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,13 +41,80 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
+// ensureCertificateForCleanup attempts to create WICD certificates if they don't exist
+// This is needed during upgrades where old WICD versions don't have certificate support
+func ensureCertificateForCleanup(ctx context.Context, cfg *rest.Config, node *core.Node) (client.Client, error) {
+	if node == nil {
+		klog.Infof("no node available for certificate creation")
+		return controller.NewDirectClient(cfg)
+	}
+	certDuration, err := time.ParseDuration(windows.WICDCertDuration)
+	if err != nil {
+		klog.Infof("invalid cert duration %s: %v", windows.WICDCertDuration, err)
+		return controller.NewDirectClient(cfg)
+	}
+
+	// Check if certificates already exist
+	certFile := windows.WICDCurrentCertPath
+	if _, err := os.Stat(certFile); err == nil {
+		klog.Infof("WICD certificate found at %s", certFile)
+		certConfig := &rest.Config{
+			Host: cfg.Host,
+			TLSClientConfig: rest.TLSClientConfig{
+				CertFile: certFile,
+				KeyFile:  certFile,
+				CAFile:   cfg.TLSClientConfig.CAFile,
+				CAData:   cfg.TLSClientConfig.CAData,
+			},
+		}
+		certClient, err := controller.NewDirectClient(certConfig)
+		if err != nil {
+			klog.Infof("failed to create certificate-based client: %v", err)
+			return controller.NewDirectClient(cfg)
+		}
+		return certClient, nil
+	}
+
+	certManager, err := certs.NewWICDCertificateManager(node.Name, windows.WICDCertDir, "", cfg.Host, certDuration)
+	if err != nil {
+		klog.Infof("failed to create certificate manager: %v", err)
+		return controller.NewDirectClient(cfg)
+	}
+	if err := certManager.StartCertificateManagement(); err != nil {
+		klog.Infof("failed to start certificate management: %v", err)
+		return controller.NewDirectClient(cfg)
+	}
+	defer certManager.Stop()
+
+	err = wait.PollUntilContextTimeout(ctx, time.Second*2, time.Minute*2, true, func(ctx context.Context) (bool, error) {
+		if _, err := os.Stat(certFile); err != nil {
+			klog.Infof("Certificate file not yet available: %v", err)
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		klog.Infof("timeout waiting for certificate creation: %v", err)
+		return controller.NewDirectClient(cfg)
+	}
+
+	certificateConfig := certManager.GetCertificateConfig()
+	certClient, err := controller.NewDirectClient(certificateConfig)
+	if err != nil {
+		klog.Infof("failed to create certificate-based client: %v", err)
+		return controller.NewDirectClient(cfg)
+	}
+
+	return certClient, nil
+}
+
 // Deconfigure removes all managed services from the instance and the version annotation, if it has an associated node.
 // If we are able to get the services ConfigMap tied to the desired version, all services defined in it are cleaned up.
 // Otherwise, cleanup is based on the latest services ConfigMap.
 // TODO: remove services with the OpenShift managed tag in best effort cleanup https://issues.redhat.com/browse/WINC-853
 func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace string) error {
 	// Cannot use a cached client as no manager will be started to populate cache
-	directClient, err := controller.NewDirectClient(cfg)
+	saClient, err := controller.NewDirectClient(cfg)
 	if err != nil {
 		return fmt.Errorf("could not create authenticated client from service account: %w", err)
 	}
@@ -52,9 +122,15 @@ func Deconfigure(cfg *rest.Config, ctx context.Context, configMapNamespace strin
 	if err != nil {
 		return err
 	}
-	node, err := controller.GetAssociatedNode(ctx, directClient, addrs)
+	node, err := controller.GetAssociatedNode(ctx, saClient, addrs)
 	if err != nil {
 		klog.Infof("no associated node found")
+	}
+
+	// Create certificate-based client, certs may not be present if this is upgrade
+	directClient, err := ensureCertificateForCleanup(ctx, cfg, node)
+	if err != nil {
+		return fmt.Errorf("could not create authenticated client: %w", err)
 	}
 	svcMgr, err := manager.New()
 	if err != nil {

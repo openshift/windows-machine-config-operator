@@ -1,0 +1,29 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system-wicd-nodes
+  labels:
+    app.kubernetes.io/name: "windows-machine-config-operator"
+    app.kubernetes.io/part-of: "wicd"
+rules:
+  # Allow reading ConfigMaps for bootstrap phase and cleanup
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  # Allow listing nodes for node discovery (no resourceNames restriction needed)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list"]
+  # WICD certificate-based approach: broader access than OVN due to Windows management needs
+  # Current implementation (Phase 1): Certificate authentication + group RBAC
+  # - CSR controller ensures only legitimate nodes get certificates
+  # - Certificate provides node-specific identity (system:wicd-node:nodename)
+  # - Group RBAC grants necessary permissions for Windows node configuration
+  # Future enhancement (Phase 2): Add admission webhook for operation-specific validation
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/status"]
+    verbs: ["get", "patch", "update", "watch"]
+  # Allow creating CSRs for certificate renewal
+  - apiGroups: ["certificates.k8s.io"]
+    resources: ["certificatesigningrequests"]
+    verbs: ["create", "get", "list", "watch"]
