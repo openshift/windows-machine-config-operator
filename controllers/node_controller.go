@@ -71,7 +71,6 @@ func NewNodeReconciler(mgr manager.Manager, clusterConfig cluster.Config, watchN
 // Reconcile is part of the main kubernetes reconciliation loop which reads that state of the cluster for a
 // Node object and aims to move the current state of the cluster closer to the desired state.
 func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	r.log = r.log.WithValues(NodeController, req.NamespacedName)
 	// Prevent WMCO upgrades while Node objects are being processed
 	if err := condition.MarkAsBusy(ctx, r.client, r.watchNamespace, r.recorder, NodeController); err != nil {
 		return ctrl.Result{}, err
@@ -93,6 +92,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 		return ctrl.Result{}, err
 	}
 
+	r.log.V(1).Info("reconciling", "name", req.NamespacedName.String())
 	if _, ok := node.GetAnnotations()[metadata.RebootAnnotation]; ok {
 		// Create a new signer using the private key that the instances will be reconciled with
 		signer, err := signer.Create(ctx, types.NamespacedName{Namespace: r.watchNamespace,
