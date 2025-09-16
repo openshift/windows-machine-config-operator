@@ -265,6 +265,7 @@ spec:
           resources:
           - certificatesigningrequests
           verbs:
+          - create
           - get
           - list
           - watch
@@ -288,6 +289,14 @@ spec:
           - get
           - patch
           - update
+        - apiGroups:
+          - certificates.k8s.io
+          resourceNames:
+          - kubernetes.io/kube-apiserver-client
+          resources:
+          - signers
+          verbs:
+          - approve
         - apiGroups:
           - certificates.k8s.io
           resourceNames:
