@@ -227,3 +227,18 @@ Compare-And-Replace-Config -ConfigPath $kubeProxyConfigPath -NewConfigContent $k
 	require.NoError(t, err)
 	assert.Equal(t, string(expectedOut), actual)
 }
+
+func TestParseShaFile(t *testing.T) {
+	fileContents := []byte(`2aef669a32f8f238f07e27d96ed1762b2708df04919f4fea09c9f2a96a25acf6  /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe
+1941470b345cb8d19a0a56c4d0ffab7edc1fdffb7f059b197be11f171f496a99  /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe
+11053881c723b1bfbd52b91e7d884049d1a2a6b08f211348dfa7231ff8950322  /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe
+`)
+	expected := map[string]string{
+		"windows-instance-config-daemon.exe": "2aef669a32f8f238f07e27d96ed1762b2708df04919f4fea09c9f2a96a25acf6",
+		"hybrid-overlay-node.exe":            "1941470b345cb8d19a0a56c4d0ffab7edc1fdffb7f059b197be11f171f496a99",
+		"windows_exporter.exe":               "11053881c723b1bfbd52b91e7d884049d1a2a6b08f211348dfa7231ff8950322",
+	}
+	out, err := parseShaFile(fileContents)
+	require.NoError(t, err)
+	assert.Equal(t, expected, out)
+}
