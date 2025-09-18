@@ -127,7 +127,8 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=operator
 
 # This block contains standard Red Hat container labels
-LABEL name="openshift4-wincw/windows-machine-config-operator" \
+LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \
+    cpe="cpe:/a:redhat:windows_machine_config:10.19::el9" \
     License="ASL 2.0" \
     io.k8s.display-name="Windows Machine Config Operator" \
     io.k8s.description="Windows Machine Config Operator" \
