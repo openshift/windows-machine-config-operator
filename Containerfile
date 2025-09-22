@@ -127,7 +127,8 @@ LABEL stage=operator
 COPY LICENSE /licenses/LICENSE
 
 # This block contains standard Red Hat container labels
-LABEL name="openshift4-wincw/windows-machine-config-operator" \
+LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \
+    cpe="cpe:/a:redhat:windows_machine_config:10.18::el9" \
     License="ASL 2.0" \
     io.k8s.display-name="Windows Machine Config Operator" \
     io.k8s.description="Windows Machine Config Operator" \
