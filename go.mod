@@ -4,9 +4,29 @@ go 1.21
 
 replace (
 	// fix the latest working version for go1.21
+	github.com/google/gnostic-models => github.com/google/gnostic-models v0.6.9
+	// fix the latest working version for go1.21
+	golang.org/x/crypto => golang.org/x/crypto v0.32.0
+	// fix the latest working version for go1.21
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20231006140011-7918f672742d
+	// fix the latest working version for go1.21
+	golang.org/x/mod => golang.org/x/mod v0.20.0
+	// fix the latest working versio nfor go.1.21
+	golang.org/x/net => golang.org/x/net v0.33.0
+	// fix the latest working version for go1.21
+	golang.org/x/sync => golang.org/x/sync v0.10.0
+	// fix the latest working version for go1.21
+	golang.org/x/sys => golang.org/x/sys v0.29.0
+	// fix the latest working version for go1.21
+	golang.org/x/term => golang.org/x/term v0.28.0
+	// fix the latest working version for go1.21
+	golang.org/x/text => golang.org/x/text v0.21.0
 	// fix CVE-2025-22869 with downstream tag v0.33.openshift.1
 	golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
+	// fix the lates tworking version for go1.21
+	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
+	// fix the latest working version for go1.21
+	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 	// fix the issue of unknown field IgnoredFields in struct literal of type merge.Updater
 	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
@@ -18,9 +38,9 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.4.3
-	github.com/openshift/api v0.0.0-20240830023148-b7d0481c9094
+	github.com/openshift/api v0.0.0-20250707132008-5f9522bd5e3e
 	github.com/openshift/client-go v0.0.0-20240510131258-f646d5f29250
-	github.com/openshift/library-go v0.0.0-20240711192904-190fec8c3f09
+	github.com/openshift/library-go v0.0.0-20250826155958-12060d460008
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -31,9 +51,9 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.26.0
-	golang.org/x/crypto v0.32.0
-	golang.org/x/mod v0.20.0
-	golang.org/x/sys v0.29.0
+	golang.org/x/crypto v0.41.0
+	golang.org/x/mod v0.27.0
+	golang.org/x/sys v0.35.0
 	k8s.io/api v0.29.15
 	k8s.io/apimachinery v0.29.15
 	k8s.io/client-go v0.29.15
@@ -72,7 +92,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.0.1 // indirect
-	github.com/google/gnostic-models v0.6.9 // indirect
+	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
@@ -110,11 +130,11 @@ require (
 	go.starlark.net v0.0.0-20230525235612-a134d8f9ddca // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20250606033433-dcc06ee1d476 // indirect
-	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/oauth2 v0.15.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/term v0.28.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
+	golang.org/x/term v0.34.0 // indirect
+	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
