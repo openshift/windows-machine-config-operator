@@ -19,6 +19,7 @@ LABEL name="openshift4-wincw/windows-machine-config-operator-bundle" \
 LABEL version="v10.19.1"
 # Component to file bugs against
 LABEL com.redhat.component="Windows Containers"
+LABEL cpe="cpe:/a:redhat:windows_machine_config:10.19::el9"
 
 # Core bundle labels.
 LABEL operators.operatorframework.io.bundle.mediatype.v1=registry+v1
