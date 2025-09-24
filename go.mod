@@ -13,6 +13,8 @@ replace (
 	golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
 	// fix the latest working verison for go1.22 
 	google.golang.org/protobuf => google.golang.org/protobuf v1.36.6 
+	// fix the latest working version for go1.22
+	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
 	// fix the latest working version for go1.22, remove the replacement with the go1.23 bump
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 	// fix to solve the issue of unknown field IgnoredFields in struct literal of type merge.Updater
