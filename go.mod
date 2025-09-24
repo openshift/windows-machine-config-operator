@@ -7,6 +7,8 @@ replace (
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	// fix CVE-2025-22869 with downstream tag v0.33.openshift.1
 	golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
+
+	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 	// fix the issue of unknown field IgnoredFields in struct literal of type merge.Updater
 	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
