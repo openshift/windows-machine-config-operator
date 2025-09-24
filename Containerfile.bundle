@@ -35,6 +35,7 @@ LABEL distribution-scope=public
 LABEL release="10.16.3"
 LABEL url="https://docs.openshift.com/container-platform/4.17/windows_containers/index.html"
 LABEL vendor="Red Hat, Inc."
+LABEL cpe="cpe:/a:redhat:windows_machine_config:10.16::el9"
 
 # Copy files to locations specified by labels.
 COPY --from=image-replacer /manifests /manifests/
