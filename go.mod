@@ -9,9 +9,12 @@ replace (
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	// fix CVE-2025-22869 with downstream tag v0.33.openshift.1
 	golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
+	// fix the latest working version for go.1.22
+	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
 	sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 	// fix to solve the issue of unknown field IgnoredFields in struct literal of type merge.Updater
 	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
+
 )
 
 require (
@@ -20,9 +23,9 @@ require (
 	github.com/coreos/ignition/v2 v2.16.2
 	github.com/go-imports-organizer/goio v1.3.3
 	github.com/go-logr/logr v1.4.3
-	github.com/openshift/api v0.0.0-20250429124558-ace59d6ad5ce
+	github.com/openshift/api v0.0.0-20250617031845-db4fa2d6cce4
 	github.com/openshift/client-go v0.0.0-20240528061634-b054aa794d87
-	github.com/openshift/library-go v0.0.0-20241118144106-bfd968d8eef4
+	github.com/openshift/library-go v0.0.0-20250826155954-a62511a37d56
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -37,9 +40,9 @@ require (
 	golang.org/x/crypto v0.33.0
 	golang.org/x/mod v0.23.0
 	golang.org/x/sys v0.30.0
-	k8s.io/api v0.30.13
-	k8s.io/apimachinery v0.30.13
-	k8s.io/client-go v0.30.13
+	k8s.io/api v0.30.14
+	k8s.io/apimachinery v0.30.14
+	k8s.io/client-go v0.30.14
 	k8s.io/cloud-provider v0.30.13
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/kubectl v0.30.13
