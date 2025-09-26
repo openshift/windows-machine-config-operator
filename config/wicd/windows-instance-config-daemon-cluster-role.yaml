@@ -2,21 +2,33 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: windows-instance-config-daemon
+  labels:
+    app.kubernetes.io/name: "windows-machine-config-operator"
+    app.kubernetes.io/part-of: "wicd"
 rules:
+  # Bootstrap permissions - minimal access for initial setup ONLY
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
   - apiGroups:
       - ""
     resources:
       - nodes
     verbs:
-      - list
-      - watch
       - get
+      - list
       - patch
       - update
   - apiGroups:
-      - ""
+      - certificates.k8s.io
     resources:
-      - nodes/status
+      - certificatesigningrequests
     verbs:
-      - patch
-      - update
+      - create
+      - get
+      - list
+      - watch
