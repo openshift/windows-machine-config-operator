@@ -61,9 +61,9 @@
     "autoApprove": true,
     "automerge": true,
     "enabled": true,
-    "fileMatch": [
-      "\\.yaml$",
-      "\\.yml$"
+    "managerFilePatterns": [
+      "/\\.yaml$/",
+      "/\\.yml$/"
     ],
     "includePaths": [
       ".tekton/**"
@@ -115,7 +115,9 @@
         "groupName": "RPM updates",
         "commitMessageAction": "",
         "commitMessageTopic": "RPM updates",
-        "matchManagers": ["rpm"]
+        "matchManagers": [
+          "rpm"
+        ]
       }
     ],
     "additionalBranchPrefix": "{{baseBranch}}/",
@@ -274,6 +276,8 @@
     "branchPrefix": "konflux/mintmaker/"
   },
   "forkProcessing": "enabled",
-  "allowedPostUpgradeCommands": ["^rpm-lockfile-prototype rpms.in.yaml$"],
+  "allowedCommands": [
+    "^rpm-lockfile-prototype rpms.in.yaml$"
+  ],
   "dependencyDashboard": false
 }
