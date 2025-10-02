@@ -979,26 +979,9 @@ func (tc *testContext) waitUntilDeploymentScaled(name string) error {
 			return false, nil
 		})
 	if err != nil {
-		events, _ := tc.getPodEvents(name)
-		return fmt.Errorf("error waiting for deployment %v to scale: %v: %w", deployment, events, err)
+		return fmt.Errorf("error waiting for deployment %s to scale: %w", deployment.Name, err)
 	}
 	return nil
-}
-
-// getPodEvents gets all events for any pod with the input in its name. Used for debugging purposes
-func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
-	eventList, err := tc.client.K8s.CoreV1().Events(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
-		FieldSelector: "involvedObject.kind=Pod"})
-	if err != nil {
-		return []v1.Event{}, err
-	}
-	var podEvents []v1.Event
-	for _, event := range eventList.Items {
-		if strings.Contains(event.InvolvedObject.Name, name) {
-			podEvents = append(podEvents, event)
-		}
-	}
-	return podEvents, nil
 }
 
 // createLinuxCurlerJob creates a linux job to curl a specific endpoint. curl must be present in the container image.
@@ -1125,7 +1108,7 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 	for i := 0; i < 60; i++ {
 		job, err = tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("error getting job with name %s: %w", name, err)
 		}
 		if !slices.ContainsFunc(job.Status.Conditions, func(condition batchv1.JobCondition) bool {
 			return condition.Type == batchv1.JobComplete && condition.Status == v1.ConditionTrue
@@ -1143,8 +1126,7 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 			return condition.Type == batchv1.JobSuccessCriteriaMet && condition.Status == v1.ConditionTrue
 		}) {
 			// Job did not succeed, return error
-			events, _ := tc.getPodEvents(name)
-			return logs, fmt.Errorf("job %v failed: %v", job, events)
+			return logs, fmt.Errorf("job %s failed", name)
 		}
 		return logs, nil
 	}
@@ -1152,8 +1134,7 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 	if err != nil {
 		log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
 	}
-	events, _ := tc.getPodEvents(name)
-	return "", fmt.Errorf("job %v timed out: %v", job, events)
+	return "", fmt.Errorf("job %s timed out", name)
 }
 
 // gatherPodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts
