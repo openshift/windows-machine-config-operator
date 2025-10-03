@@ -17,6 +17,7 @@
     "enabled": false
   },
   "enabledManagers": [
+    "gomod",
     "tekton",
     "dockerfile",
     "rpm",
@@ -130,6 +131,39 @@
     "branchTopic": "lock-file-maintenance",
     "schedule": [
       "at any time"
+    ]
+  },
+  "gomod": {
+    "enabled": true,
+    "additionalBranchPrefix": "{{baseBranch}}/",
+    "branchPrefix": "konflux/mintmaker/",
+    "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
+    "postUpgradeTasks": {
+      "commands": ["go mod vendor", "go mod verify"],
+      "fileFilters": ["vendor/**"]
+    },
+    "packageRules": [
+      {
+        "groupName": "Go dependencies",
+        "commitMessageAction": "",
+        "commitMessageTopic": "Go dependencies",
+        "matchManagers": ["gomod"],
+        "excludePackageNames": [
+          "k8s.io/kubernetes",
+          "github.com/openshift/api",
+          "github.com/openshift/client-go",
+          "github.com/openshift/library-go"
+        ]
+      },
+      {
+        "groupName": "Kubernetes dependencies",
+        "commitMessageAction": "",
+        "commitMessageTopic": "Kubernetes dependencies",
+        "matchPackagePatterns": ["^k8s.io/"],
+        "excludePackageNames": [
+          "k8s.io/kubernetes"
+        ]
+      }
     ]
   },
   "git-submodules": {
@@ -278,6 +312,12 @@
   "forkProcessing": "enabled",
   "allowedCommands": [
     "^rpm-lockfile-prototype rpms.in.yaml$"
+  ],
+  "allowedPostUpgradeCommands": [
+    "^rpm-lockfile-prototype rpms.in.yaml$",
+    "^go mod vendor$",
+    "^go mod tidy$",
+    "^go mod verify$"
   ],
   "dependencyDashboard": false
 }
