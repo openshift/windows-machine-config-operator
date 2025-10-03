@@ -139,6 +139,10 @@ const (
 	containersFeatureName = "Containers"
 	// WICDKubeconfigPath is the path of the kubeconfig used by WICD
 	WICDKubeconfigPath = K8sDir + "\\wicd-kubeconfig"
+	// WICDCertDir is the directory for storing WICD client certificates
+	WICDCertDir = K8sDir + "\\wicd-certs"
+	// WICDCurrentCertPath is the path to the current WICD client certificate
+	WICDCurrentCertPath = WICDCertDir + "\\wicd-client-current.pem"
 	// TrustedCABundlePath is the location of the trusted CA bundle file
 	TrustedCABundlePath = K8sDir + "\\ca-bundle.crt"
 	// GetHostnameFQDNCommand is the PowerShell command to get the FQDN hostname of the Windows instance
@@ -181,6 +185,7 @@ var (
 		podManifestDirectory,
 		K8sDir,
 		TLSDir,
+		WICDCertDir,
 	}
 )
 
@@ -237,7 +242,11 @@ func GetK8sDir() string {
 	return K8sDir
 }
 
-// Windows contains all the methods needed to configure a Windows VM to become a worker node
+const (
+	// WICDCertDuration is the default certificate lifetime for WICD
+	WICDCertDuration = "1h"
+)
+
 type Windows interface {
 	// GetIPv4Address returns the IPv4 address of the associated instance.
 	GetIPv4Address() string
@@ -566,9 +575,8 @@ func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string) 
 	if err := vm.ensureWICDFilesExist(wicdKubeconfigContents); err != nil {
 		return err
 	}
-	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --kubeconfig %s --namespace %s",
-		wicdLogDir, WICDKubeconfigPath, watchNamespace)
-	wicdServiceArgs = fmt.Sprintf("%s --ca-bundle %s", wicdServiceArgs, TrustedCABundlePath)
+	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --namespace %s --kubeconfig %s --cert-dir %s --cert-duration %s --ca-bundle %s",
+		wicdLogDir, watchNamespace, WICDKubeconfigPath, WICDCertDir, WICDCertDuration, TrustedCABundlePath)
 	// if WICD crashes, attempt to restart WICD after 10, 30, and 60 seconds, and then every 2 minutes after that.
 	// reset this counter 5 min after a period with no crashes
 	recoveryActions := []recoveryAction{
