@@ -141,7 +141,7 @@ func (p *Provider) CreatePVC(client client.Interface, namespace string, _ *core.
 		return nil, err
 	}
 	// Use a StorageClass to allow for dynamic volume provisioning
-	// https://docs.openshift.com/container-platform/4.12/storage/dynamic-provisioning.html#about_dynamic-provisioning
+	// https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/storage/dynamic-provisioning
 	sc, err := p.ensureStorageClass(client)
 	if err != nil {
 		return nil, fmt.Errorf("unable to ensure a usable StorageClass is created: %w", err)
