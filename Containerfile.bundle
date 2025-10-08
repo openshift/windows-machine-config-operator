@@ -37,6 +37,10 @@ LABEL url="https://docs.openshift.com/container-platform/4.17/windows_containers
 LABEL vendor="Red Hat, Inc."
 LABEL cpe="cpe:/a:redhat:windows_machine_config:10.16::el9"
 
+# create licenses directory
+# See https://docs.redhat.com/en/documentation/red_hat_software_certification/2025/html-single/red_hat_openshift_software_certification_policy_guide/index#con-image-content-requirements_openshift-sw-cert-policy-container-images
+COPY LICENSE /licenses/
+
 # Copy files to locations specified by labels.
 COPY --from=image-replacer /manifests /manifests/
 COPY bundle/metadata /metadata/
