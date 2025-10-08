@@ -3,8 +3,8 @@
 package internal
 
 import (
-	"fmt"
-	"sync"
+	fmt "fmt"
+	sync "sync"
 
 	typed "sigs.k8s.io/structured-merge-diff/v4/typed"
 )
@@ -115,6 +115,9 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: com.github.openshift.api.machine.v1.ControlPlaneMachineSetSpec
   map:
     fields:
+    - name: machineNamePrefix
+      type:
+        scalar: string
     - name: replicas
       type:
         scalar: numeric
@@ -173,6 +176,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: machineType
       type:
         scalar: string
+      default: ""
     - name: machines_v1beta1_machine_openshift_io
       type:
         namedType: com.github.openshift.api.machine.v1.OpenShiftMachineV1Beta1MachineTemplate
@@ -316,7 +320,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: lastTransitionTime
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
-      default: {}
     - name: message
       type:
         scalar: string
@@ -491,6 +494,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: authoritativeAPI
       type:
         scalar: string
+      default: MachineAPI
     - name: deletePolicy
       type:
         scalar: string
@@ -517,6 +521,14 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: availableReplicas
       type:
         scalar: numeric
+    - name: conditions
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.machine.v1beta1.Condition
+          elementRelationship: associative
+          keys:
+          - type
     - name: errorMessage
       type:
         scalar: string
@@ -545,6 +557,7 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: authoritativeAPI
       type:
         scalar: string
+      default: MachineAPI
     - name: lifecycleHooks
       type:
         namedType: com.github.openshift.api.machine.v1beta1.LifecycleHooks
@@ -667,7 +680,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: timeout
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Duration
-      default: 0
     - name: type
       type:
         scalar: string
@@ -731,7 +743,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: lastTransitionTime
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
-      default: {}
     - name: message
       type:
         scalar: string
@@ -832,7 +843,6 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: creationTimestamp
       type:
         namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
-      default: {}
     - name: deletionGracePeriodSeconds
       type:
         scalar: numeric

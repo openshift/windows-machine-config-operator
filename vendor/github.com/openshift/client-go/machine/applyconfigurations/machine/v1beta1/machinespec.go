@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// MachineSpecApplyConfiguration represents an declarative configuration of the MachineSpec type for use
+// MachineSpecApplyConfiguration represents a declarative configuration of the MachineSpec type for use
 // with apply.
 type MachineSpecApplyConfiguration struct {
 	*ObjectMetaApplyConfiguration `json:"metadata,omitempty"`
@@ -19,7 +19,7 @@ type MachineSpecApplyConfiguration struct {
 	AuthoritativeAPI              *machinev1beta1.MachineAuthority  `json:"authoritativeAPI,omitempty"`
 }
 
-// MachineSpecApplyConfiguration constructs an declarative configuration of the MachineSpec type for use with
+// MachineSpecApplyConfiguration constructs a declarative configuration of the MachineSpec type for use with
 // apply.
 func MachineSpec() *MachineSpecApplyConfiguration {
 	return &MachineSpecApplyConfiguration{}
@@ -30,7 +30,7 @@ func MachineSpec() *MachineSpecApplyConfiguration {
 // If called multiple times, the Name field is set to the value of the last call.
 func (b *MachineSpecApplyConfiguration) WithName(value string) *MachineSpecApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.Name = &value
+	b.ObjectMetaApplyConfiguration.Name = &value
 	return b
 }
 
@@ -39,7 +39,7 @@ func (b *MachineSpecApplyConfiguration) WithName(value string) *MachineSpecApply
 // If called multiple times, the GenerateName field is set to the value of the last call.
 func (b *MachineSpecApplyConfiguration) WithGenerateName(value string) *MachineSpecApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.GenerateName = &value
+	b.ObjectMetaApplyConfiguration.GenerateName = &value
 	return b
 }
 
@@ -48,7 +48,7 @@ func (b *MachineSpecApplyConfiguration) WithGenerateName(value string) *MachineS
 // If called multiple times, the Namespace field is set to the value of the last call.
 func (b *MachineSpecApplyConfiguration) WithNamespace(value string) *MachineSpecApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.Namespace = &value
+	b.ObjectMetaApplyConfiguration.Namespace = &value
 	return b
 }
 
@@ -58,11 +58,11 @@ func (b *MachineSpecApplyConfiguration) WithNamespace(value string) *MachineSpec
 // overwriting an existing map entries in Labels field with the same key.
 func (b *MachineSpecApplyConfiguration) WithLabels(entries map[string]string) *MachineSpecApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	if b.Labels == nil && len(entries) > 0 {
-		b.Labels = make(map[string]string, len(entries))
+	if b.ObjectMetaApplyConfiguration.Labels == nil && len(entries) > 0 {
+		b.ObjectMetaApplyConfiguration.Labels = make(map[string]string, len(entries))
 	}
 	for k, v := range entries {
-		b.Labels[k] = v
+		b.ObjectMetaApplyConfiguration.Labels[k] = v
 	}
 	return b
 }
@@ -73,11 +73,11 @@ func (b *MachineSpecApplyConfiguration) WithLabels(entries map[string]string) *M
 // overwriting an existing map entries in Annotations field with the same key.
 func (b *MachineSpecApplyConfiguration) WithAnnotations(entries map[string]string) *MachineSpecApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	if b.Annotations == nil && len(entries) > 0 {
-		b.Annotations = make(map[string]string, len(entries))
+	if b.ObjectMetaApplyConfiguration.Annotations == nil && len(entries) > 0 {
+		b.ObjectMetaApplyConfiguration.Annotations = make(map[string]string, len(entries))
 	}
 	for k, v := range entries {
-		b.Annotations[k] = v
+		b.ObjectMetaApplyConfiguration.Annotations[k] = v
 	}
 	return b
 }
@@ -91,7 +91,7 @@ func (b *MachineSpecApplyConfiguration) WithOwnerReferences(values ...*metav1.Ow
 		if values[i] == nil {
 			panic("nil value passed to WithOwnerReferences")
 		}
-		b.OwnerReferences = append(b.OwnerReferences, *values[i])
+		b.ObjectMetaApplyConfiguration.OwnerReferences = append(b.ObjectMetaApplyConfiguration.OwnerReferences, *values[i])
 	}
 	return b
 }
