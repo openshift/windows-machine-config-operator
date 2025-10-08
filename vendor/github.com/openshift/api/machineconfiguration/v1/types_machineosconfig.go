@@ -11,13 +11,13 @@ import (
 // +kubebuilder:resource:path=machineosconfigs,scope=Cluster
 // +kubebuilder:subresource:status
 // +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/2090
-// +openshift:enable:FeatureGate=OnClusterBuild
 // +openshift:file-pattern=cvoRunLevel=0000_80,operatorName=machine-config,operatorOrdering=01
 // +kubebuilder:metadata:labels=openshift.io/operator-managed=
 
 // MachineOSConfig describes the configuration for a build process managed by the MCO
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
+// +kubebuilder:validation:XValidation:rule="self.metadata.name == self.spec.machineConfigPool.name || oldSelf.hasValue() && oldSelf.spec.machineConfigPool.name.value() == self.spec.machineConfigPool.name",optionalOldSelf=true,message="MachineOSConfig name must match the referenced MachineConfigPool name; can only have one MachineOSConfig per MachineConfigPool"
 type MachineOSConfig struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -98,13 +98,11 @@ type MachineOSConfigSpec struct {
 // MachineOSConfigStatus describes the status this config object and relates it to the builds associated with this MachineOSConfig
 type MachineOSConfigStatus struct {
 	// conditions are state related conditions for the object.
-	// +patchMergeKey=type
-	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	// TODO(jerzhang): add godoc after conditions are finalized. Also consider adding printer columns.
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// observedGeneration represents the generation of the MachineOSConfig object observed by the Machine Config Operator's build controller.
 	// +kubebuilder:validation:XValidation:rule="self >= oldSelf", message="observedGeneration must not move backwards"
 	// +kubebuilder:validation:Minimum=0
@@ -176,7 +174,7 @@ type MachineConfigPoolReference struct {
 	// This value should be at most 253 characters, and must contain only lowercase
 	// alphanumeric characters, hyphens and periods, and should start and end with an alphanumeric character.
 	// +kubebuilder:validation:MaxLength:=253
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')`,message="a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
+	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self).hasValue()",message="a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
 	// +required
 	Name string `json:"name"`
 }
@@ -187,7 +185,7 @@ type ImageSecretObjectReference struct {
 	// Must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
 	// This secret must be in the openshift-machine-config-operator namespace.
 	// +kubebuilder:validation:MaxLength:=253
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')`,message="a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
+	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self).hasValue()",message="a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
 	// +required
 	Name string `json:"name"`
 }
