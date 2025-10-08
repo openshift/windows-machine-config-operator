@@ -65,13 +65,6 @@ func NewSecretReconciler(mgr manager.Manager, clusterConfig cluster.Config,
 
 // SetupWithManager sets up a new Secret controller
 func (r *SecretReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
-	// Check that the private key exists, if it doesn't, log a warning
-	_, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
-		Name: secrets.PrivateKeySecret}, mgr.GetClient())
-	if err != nil {
-		r.log.Error(err, "Unable to retrieve private key, please ensure it is created")
-	}
-
 	secretPredicate := builder.WithPredicates(predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return isPrivateKeySecret(e.Object, r.watchNamespace) || isTlsSecret(e.Object, r.watchNamespace)
