@@ -121,20 +121,30 @@
     "enabled": true,
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/",
-    "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
+    "postUpdateOptions": [
+      "gomodTidy",
+      "gomodUpdateImportPaths"
+    ],
     "postUpgradeTasks": {
-      "commands": ["go mod vendor", "go mod verify"],
-      "fileFilters": ["vendor/**"]
+      "commands": [
+        "go mod vendor",
+        "go mod verify"
+      ],
+      "fileFilters": [
+        "vendor/**"
+      ]
     },
     "packageRules": [
       {
         "groupName": "Go dependencies",
-        "matchManagers": ["gomod"],
-        "excludePackageNames": [
-          "k8s.io/kubernetes",
-          "github.com/openshift/api",
-          "github.com/openshift/client-go",
-          "github.com/openshift/library-go"
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchPackageNames": [
+          "!k8s.io/kubernetes",
+          "!github.com/openshift/api",
+          "!github.com/openshift/client-go",
+          "!github.com/openshift/library-go"
         ]
       }
     ]
