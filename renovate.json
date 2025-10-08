@@ -20,7 +20,6 @@
     "gomod",
     "tekton",
     "dockerfile",
-    "rpm",
     "custom.regex",
     "argocd",
     "crossplane",
@@ -106,21 +105,6 @@
   },
   "dockerfile": {
     "enabled": true,
-    "additionalBranchPrefix": "{{baseBranch}}/",
-    "branchPrefix": "konflux/mintmaker/"
-  },
-  "rpm": {
-    "enabled": true,
-    "packageRules": [
-      {
-        "groupName": "RPM updates",
-        "commitMessageAction": "",
-        "commitMessageTopic": "RPM updates",
-        "matchManagers": [
-          "rpm"
-        ]
-      }
-    ],
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/"
   },
