@@ -3,161 +3,31 @@
 package fake
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-
-	operatorv1 "github.com/openshift/api/operator/v1"
-	applyconfigurationsoperatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	v1 "github.com/openshift/api/operator/v1"
+	operatorv1 "github.com/openshift/client-go/operator/applyconfigurations/operator/v1"
+	typedoperatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
+	gentype "k8s.io/client-go/gentype"
 )
 
-// FakeNetworks implements NetworkInterface
-type FakeNetworks struct {
+// fakeNetworks implements NetworkInterface
+type fakeNetworks struct {
+	*gentype.FakeClientWithListAndApply[*v1.Network, *v1.NetworkList, *operatorv1.NetworkApplyConfiguration]
 	Fake *FakeOperatorV1
 }
 
-var networksResource = schema.GroupVersionResource{Group: "operator.openshift.io", Version: "v1", Resource: "networks"}
-
-var networksKind = schema.GroupVersionKind{Group: "operator.openshift.io", Version: "v1", Kind: "Network"}
-
-// Get takes name of the network, and returns the corresponding network object, and an error if there is any.
-func (c *FakeNetworks) Get(ctx context.Context, name string, options v1.GetOptions) (result *operatorv1.Network, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(networksResource, name), &operatorv1.Network{})
-	if obj == nil {
-		return nil, err
+func newFakeNetworks(fake *FakeOperatorV1) typedoperatorv1.NetworkInterface {
+	return &fakeNetworks{
+		gentype.NewFakeClientWithListAndApply[*v1.Network, *v1.NetworkList, *operatorv1.NetworkApplyConfiguration](
+			fake.Fake,
+			"",
+			v1.SchemeGroupVersion.WithResource("networks"),
+			v1.SchemeGroupVersion.WithKind("Network"),
+			func() *v1.Network { return &v1.Network{} },
+			func() *v1.NetworkList { return &v1.NetworkList{} },
+			func(dst, src *v1.NetworkList) { dst.ListMeta = src.ListMeta },
+			func(list *v1.NetworkList) []*v1.Network { return gentype.ToPointerSlice(list.Items) },
+			func(list *v1.NetworkList, items []*v1.Network) { list.Items = gentype.FromPointerSlice(items) },
+		),
+		fake,
 	}
-	return obj.(*operatorv1.Network), err
-}
-
-// List takes label and field selectors, and returns the list of Networks that match those selectors.
-func (c *FakeNetworks) List(ctx context.Context, opts v1.ListOptions) (result *operatorv1.NetworkList, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(networksResource, networksKind, opts), &operatorv1.NetworkList{})
-	if obj == nil {
-		return nil, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &operatorv1.NetworkList{ListMeta: obj.(*operatorv1.NetworkList).ListMeta}
-	for _, item := range obj.(*operatorv1.NetworkList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested networks.
-func (c *FakeNetworks) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(networksResource, opts))
-}
-
-// Create takes the representation of a network and creates it.  Returns the server's representation of the network, and an error, if there is any.
-func (c *FakeNetworks) Create(ctx context.Context, network *operatorv1.Network, opts v1.CreateOptions) (result *operatorv1.Network, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(networksResource, network), &operatorv1.Network{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*operatorv1.Network), err
-}
-
-// Update takes the representation of a network and updates it. Returns the server's representation of the network, and an error, if there is any.
-func (c *FakeNetworks) Update(ctx context.Context, network *operatorv1.Network, opts v1.UpdateOptions) (result *operatorv1.Network, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(networksResource, network), &operatorv1.Network{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*operatorv1.Network), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeNetworks) UpdateStatus(ctx context.Context, network *operatorv1.Network, opts v1.UpdateOptions) (*operatorv1.Network, error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(networksResource, "status", network), &operatorv1.Network{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*operatorv1.Network), err
-}
-
-// Delete takes name of the network and deletes it. Returns an error if one occurs.
-func (c *FakeNetworks) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(networksResource, name, opts), &operatorv1.Network{})
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeNetworks) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(networksResource, listOpts)
-
-	_, err := c.Fake.Invokes(action, &operatorv1.NetworkList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched network.
-func (c *FakeNetworks) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *operatorv1.Network, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(networksResource, name, pt, data, subresources...), &operatorv1.Network{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*operatorv1.Network), err
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied network.
-func (c *FakeNetworks) Apply(ctx context.Context, network *applyconfigurationsoperatorv1.NetworkApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.Network, err error) {
-	if network == nil {
-		return nil, fmt.Errorf("network provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(network)
-	if err != nil {
-		return nil, err
-	}
-	name := network.Name
-	if name == nil {
-		return nil, fmt.Errorf("network.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(networksResource, *name, types.ApplyPatchType, data), &operatorv1.Network{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*operatorv1.Network), err
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *FakeNetworks) ApplyStatus(ctx context.Context, network *applyconfigurationsoperatorv1.NetworkApplyConfiguration, opts v1.ApplyOptions) (result *operatorv1.Network, err error) {
-	if network == nil {
-		return nil, fmt.Errorf("network provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(network)
-	if err != nil {
-		return nil, err
-	}
-	name := network.Name
-	if name == nil {
-		return nil, fmt.Errorf("network.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(networksResource, *name, types.ApplyPatchType, data, "status"), &operatorv1.Network{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*operatorv1.Network), err
 }
