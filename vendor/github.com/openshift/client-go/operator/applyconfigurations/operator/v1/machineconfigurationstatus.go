@@ -2,13 +2,21 @@
 
 package v1
 
-// MachineConfigurationStatusApplyConfiguration represents an declarative configuration of the MachineConfigurationStatus type for use
+import (
+	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
+)
+
+// MachineConfigurationStatusApplyConfiguration represents a declarative configuration of the MachineConfigurationStatus type for use
 // with apply.
 type MachineConfigurationStatusApplyConfiguration struct {
-	StaticPodOperatorStatusApplyConfiguration `json:",inline"`
+	ObservedGeneration             *int64                                            `json:"observedGeneration,omitempty"`
+	Conditions                     []metav1.ConditionApplyConfiguration              `json:"conditions,omitempty"`
+	NodeDisruptionPolicyStatus     *NodeDisruptionPolicyStatusApplyConfiguration     `json:"nodeDisruptionPolicyStatus,omitempty"`
+	ManagedBootImagesStatus        *ManagedBootImagesApplyConfiguration              `json:"managedBootImagesStatus,omitempty"`
+	BootImageSkewEnforcementStatus *BootImageSkewEnforcementStatusApplyConfiguration `json:"bootImageSkewEnforcementStatus,omitempty"`
 }
 
-// MachineConfigurationStatusApplyConfiguration constructs an declarative configuration of the MachineConfigurationStatus type for use with
+// MachineConfigurationStatusApplyConfiguration constructs a declarative configuration of the MachineConfigurationStatus type for use with
 // apply.
 func MachineConfigurationStatus() *MachineConfigurationStatusApplyConfiguration {
 	return &MachineConfigurationStatusApplyConfiguration{}
@@ -25,7 +33,7 @@ func (b *MachineConfigurationStatusApplyConfiguration) WithObservedGeneration(va
 // WithConditions adds the given value to the Conditions field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the Conditions field.
-func (b *MachineConfigurationStatusApplyConfiguration) WithConditions(values ...*OperatorConditionApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+func (b *MachineConfigurationStatusApplyConfiguration) WithConditions(values ...*metav1.ConditionApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
 	for i := range values {
 		if values[i] == nil {
 			panic("nil value passed to WithConditions")
@@ -35,60 +43,26 @@ func (b *MachineConfigurationStatusApplyConfiguration) WithConditions(values ...
 	return b
 }
 
-// WithVersion sets the Version field in the declarative configuration to the given value
+// WithNodeDisruptionPolicyStatus sets the NodeDisruptionPolicyStatus field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Version field is set to the value of the last call.
-func (b *MachineConfigurationStatusApplyConfiguration) WithVersion(value string) *MachineConfigurationStatusApplyConfiguration {
-	b.Version = &value
+// If called multiple times, the NodeDisruptionPolicyStatus field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithNodeDisruptionPolicyStatus(value *NodeDisruptionPolicyStatusApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.NodeDisruptionPolicyStatus = value
 	return b
 }
 
-// WithReadyReplicas sets the ReadyReplicas field in the declarative configuration to the given value
+// WithManagedBootImagesStatus sets the ManagedBootImagesStatus field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ReadyReplicas field is set to the value of the last call.
-func (b *MachineConfigurationStatusApplyConfiguration) WithReadyReplicas(value int32) *MachineConfigurationStatusApplyConfiguration {
-	b.ReadyReplicas = &value
+// If called multiple times, the ManagedBootImagesStatus field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithManagedBootImagesStatus(value *ManagedBootImagesApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.ManagedBootImagesStatus = value
 	return b
 }
 
-// WithGenerations adds the given value to the Generations field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the Generations field.
-func (b *MachineConfigurationStatusApplyConfiguration) WithGenerations(values ...*GenerationStatusApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithGenerations")
-		}
-		b.Generations = append(b.Generations, *values[i])
-	}
-	return b
-}
-
-// WithLatestAvailableRevision sets the LatestAvailableRevision field in the declarative configuration to the given value
+// WithBootImageSkewEnforcementStatus sets the BootImageSkewEnforcementStatus field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the LatestAvailableRevision field is set to the value of the last call.
-func (b *MachineConfigurationStatusApplyConfiguration) WithLatestAvailableRevision(value int32) *MachineConfigurationStatusApplyConfiguration {
-	b.LatestAvailableRevision = &value
-	return b
-}
-
-// WithLatestAvailableRevisionReason sets the LatestAvailableRevisionReason field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the LatestAvailableRevisionReason field is set to the value of the last call.
-func (b *MachineConfigurationStatusApplyConfiguration) WithLatestAvailableRevisionReason(value string) *MachineConfigurationStatusApplyConfiguration {
-	b.LatestAvailableRevisionReason = &value
-	return b
-}
-
-// WithNodeStatuses adds the given value to the NodeStatuses field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the NodeStatuses field.
-func (b *MachineConfigurationStatusApplyConfiguration) WithNodeStatuses(values ...*NodeStatusApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithNodeStatuses")
-		}
-		b.NodeStatuses = append(b.NodeStatuses, *values[i])
-	}
+// If called multiple times, the BootImageSkewEnforcementStatus field is set to the value of the last call.
+func (b *MachineConfigurationStatusApplyConfiguration) WithBootImageSkewEnforcementStatus(value *BootImageSkewEnforcementStatusApplyConfiguration) *MachineConfigurationStatusApplyConfiguration {
+	b.BootImageSkewEnforcementStatus = value
 	return b
 }
