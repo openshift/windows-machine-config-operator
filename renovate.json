@@ -128,8 +128,14 @@
     },
     "packageRules": [
       {
+        "matchManagers": ["gomod"],
+        "matchBaseBranches": ["!master"],
+        "enabled": false
+      },
+      {
         "groupName": "Go dependencies",
         "matchManagers": ["gomod"],
+        "matchBaseBranches": ["master"],
         "excludePackageNames": [
           "k8s.io/kubernetes",
           "github.com/openshift/api",
