@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"testing"
@@ -80,7 +81,10 @@ func (tc *testContext) testMirrorSettingsApplied(t *testing.T) {
 			err = wait.PollUntilContextTimeout(context.TODO(), nodeRetryInterval, 5*time.Minute, true,
 				func(ctx context.Context) (done bool, err error) {
 					count, err := tc.countItemsInDir(windows.ContainerdConfigDir, addr)
-					require.NoErrorf(t, err, "error counting items in dir %s on node %s", windows.ContainerdConfigDir, addr)
+					if err != nil {
+						log.Printf("error counting items in dir %s on node %s: %s", windows.ContainerdConfigDir, addr, err)
+						return false, nil
+					}
 					return count == expectedNumConfigFiles, nil
 				})
 			assert.NoError(t, err, "error waiting for mirror settings to be applied")
