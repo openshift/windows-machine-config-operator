@@ -10,7 +10,6 @@ package csr
 import (
 	"context"
 	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"net"
 	"reflect"
@@ -23,12 +22,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubeTypes "k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	csrvalidation "github.com/openshift/windows-machine-config-operator/pkg/csr/validation"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
@@ -39,38 +38,6 @@ import (
 //+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests/approval,verbs=update
 //+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests,verbs=get;list;watch
 //+kubebuilder:rbac:groups="certificates.k8s.io",resources=signers,verbs=approve,resourceNames=kubernetes.io/kube-apiserver-client-kubelet;kubernetes.io/kubelet-serving
-
-const (
-	nodeGroup          = "system:nodes"
-	nodeUserName       = "system:node"
-	NodeUserNamePrefix = nodeUserName + ":"
-	systemPrefix       = "system:authenticated"
-)
-
-var (
-	// kubeletClientUsages contains the permitted key usages from a kube-apiserver-client-kubelet signer
-	kubeletClientUsages = []certificates.KeyUsage{
-		certificates.UsageKeyEncipherment,
-		certificates.UsageDigitalSignature,
-		certificates.UsageClientAuth,
-	}
-	// kubeletClientUsagesNoRSA contains the permitted client usages when kubelet is given a non-RSA key
-	kubeletClientUsagesNoRSA = []certificates.KeyUsage{
-		certificates.UsageDigitalSignature,
-		certificates.UsageClientAuth,
-	}
-	// kubeletServerUsages contains the permitted key usages from a kubelet-serving signer
-	kubeletServerUsages = []certificates.KeyUsage{
-		certificates.UsageKeyEncipherment,
-		certificates.UsageDigitalSignature,
-		certificates.UsageServerAuth,
-	}
-	// kubeletServerUsagesNoRSA contains the permitted server usages when kubelet is given a non-RSA key
-	kubeletServerUsagesNoRSA = []certificates.KeyUsage{
-		certificates.UsageDigitalSignature,
-		certificates.UsageServerAuth,
-	}
-)
 
 // Approver holds the information required to approve a node CSR
 type Approver struct {
@@ -84,6 +51,10 @@ type Approver struct {
 	recorder record.EventRecorder
 	// namespace is the namespace in which CSR's are present
 	namespace string
+	// clientValidator validates kubelet client certificates
+	clientValidator *csrvalidation.CSRValidator
+	// servingValidator validates kubelet serving certificates
+	servingValidator *csrvalidation.CSRValidator
 }
 
 // NewApprover returns a pointer to the Approver
@@ -92,12 +63,21 @@ func NewApprover(client client.Client, clientSet *kubernetes.Clientset, csr *cer
 	if client == nil || csr == nil || clientSet == nil {
 		return nil, fmt.Errorf("kubernetes client, clientSet or CSR should not be nil")
 	}
-	return &Approver{client,
-		clientSet,
-		csr,
-		log,
-		recorder,
-		watchNamespace}, nil
+
+	// Create validators for kubelet types
+	clientValidator := csrvalidation.NewCSRValidator(client, csrvalidation.KubeletClientCertType)
+	servingValidator := csrvalidation.NewCSRValidator(client, csrvalidation.KubeletServingCertType)
+
+	return &Approver{
+		client:           client,
+		k8sclientset:     clientSet,
+		csr:              csr,
+		log:              log,
+		recorder:         recorder,
+		namespace:        watchNamespace,
+		clientValidator:  clientValidator,
+		servingValidator: servingValidator,
+	}, nil
 }
 
 // Approve determines if a CSR should be approved by WMCO, and if so, approves it by updating its status. This function
@@ -136,15 +116,62 @@ func (a *Approver) Approve(ctx context.Context) error {
 // If the CSR is not from a BYOH Windows instance, it returns false with no error.
 // If there is an error during validation, it returns false with the error.
 func (a *Approver) validateCSRContents(ctx context.Context) (bool, error) {
-	parsedCSR, err := ParseCSR(a.csr.Spec.Request)
+	parsedCSR, err := csrvalidation.ParseCSR(a.csr.Spec.Request)
 	if err != nil {
-		return false, fmt.Errorf("error parsing CSR: %s: %w", a.csr.Name, err)
+		return false, fmt.Errorf("error parsing CSR %s: %w", a.csr.Name, err)
 	}
 
-	nodeName := strings.TrimPrefix(parsedCSR.Subject.CommonName, NodeUserNamePrefix)
-	if nodeName == "" {
-		return false, fmt.Errorf("CSR %s subject name does not contain the required node user prefix: %s",
-			a.csr.Name, NodeUserNamePrefix)
+	if !strings.HasPrefix(parsedCSR.Subject.CommonName, csrvalidation.NodeUserNamePrefix) {
+		return false, nil
+	}
+
+	if a.isNodeClientCert(parsedCSR) {
+		return a.validateKubeletClientCSR(ctx)
+	}
+	return a.validateKubeletServingCSR(ctx)
+}
+
+// validateKubeletClientCSR validates kubelet client certificates
+func (a *Approver) validateKubeletClientCSR(ctx context.Context) (bool, error) {
+	nodeName, err := a.clientValidator.GetNodeNameFromCSR(a.csr)
+	if err != nil {
+		return false, fmt.Errorf("error extracting node name from CSR %s: %w", a.csr.Name, err)
+	}
+
+	valid, err := a.validateNodeName(ctx, nodeName)
+	if err != nil {
+		return false, fmt.Errorf("error validating node name %s for CSR: %s: %w", nodeName, a.csr.Name, err)
+	}
+	// CSR is not from a BYOH Windows instance, don't return error to avoid requeue, instead log if it is invalid
+	// as it might be from a linux node.
+	if !valid {
+		a.log.Info("CSR contents are invalid for approval by WMCO", "CSR", a.csr.Name)
+		return false, nil
+	}
+
+	// Node client bootstrapper CSR is received before the instance becomes a node
+	// hence we should not proceed if a corresponding node already exists
+	node := &core.Node{}
+	err = a.client.Get(ctx, kubeTypes.NamespacedName{Namespace: a.namespace, Name: nodeName}, node)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return false, fmt.Errorf("unable to get node %s: %w", nodeName, err)
+	} else if err == nil {
+		a.log.Info("node already exists, cannot validate CSR", "node", nodeName, "CSR", a.csr.Name)
+		return false, nil
+	}
+
+	if err := a.clientValidator.ValidateCSR(ctx, a.csr); err != nil {
+		return false, fmt.Errorf("kubelet client CSR validation failed: %w", err)
+	}
+
+	return true, nil
+}
+
+// validateKubeletServingCSR validates kubelet serving certificates
+func (a *Approver) validateKubeletServingCSR(ctx context.Context) (bool, error) {
+	nodeName, err := a.servingValidator.GetNodeNameFromCSR(a.csr)
+	if err != nil {
+		return false, fmt.Errorf("error extracting node name from CSR %s: %w", a.csr.Name, err)
 	}
 
 	// lookup the node name against the instance configMap addresses/host names
@@ -158,25 +185,9 @@ func (a *Approver) validateCSRContents(ctx context.Context) (bool, error) {
 		a.log.Info("CSR contents are invalid for approval by WMCO", "CSR", a.csr.Name)
 		return false, nil
 	}
-	// Kubelet on a node needs two certificates for its normal operation:
-	// Client certificate for securely communicating with the Kubernetes API server
-	// Server certificate for use by Kubernetes API server to talk back to kubelet
-	// Both types are validated based on their contents
-	if a.isNodeClientCert(parsedCSR) {
-		// Node client bootstrapper CSR is received before the instance becomes a node
-		// hence we should not proceed if a corresponding node already exists
-		node := &core.Node{}
-		err := a.client.Get(ctx, kubeTypes.NamespacedName{Namespace: a.namespace,
-			Name: nodeName}, node)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("unable to get node %s: %w", nodeName, err)
-		} else if err == nil {
-			return false, fmt.Errorf("%s node already exists, cannot validate CSR: %s", nodeName, a.csr.Name)
-		}
-	} else {
-		if err := a.validateKubeletServingCSR(parsedCSR); err != nil {
-			return false, fmt.Errorf("unable to validate kubelet serving CSR: %s: %w", a.csr.Name, err)
-		}
+
+	if err := a.servingValidator.ValidateCSR(ctx, a.csr); err != nil {
+		return false, fmt.Errorf("kubelet serving CSR validation failed: %w", err)
 	}
 	return true, nil
 }
@@ -229,73 +240,6 @@ func (a *Approver) validateWithHostName(ctx context.Context, nodeName string, wi
 			"Requirements for internet hosts", nodeName)
 	}
 	return true, nil
-}
-
-// validateKubeletServingCSR validates a kubelet serving CSR for its contents
-func (a *Approver) validateKubeletServingCSR(parsedCsr *x509.CertificateRequest) error {
-	if a.csr == nil || parsedCsr == nil {
-		return fmt.Errorf("CSR or request should not be nil")
-	}
-	// Check groups, we need at least: system:nodes, system:authenticated
-	if len(a.csr.Spec.Groups) < 2 {
-		return fmt.Errorf("CSR %s contains invalid number of groups: %d", a.csr.Name,
-			len(a.csr.Spec.Groups))
-	}
-	groups := sets.NewString(a.csr.Spec.Groups...)
-	if !groups.HasAll(nodeGroup, systemPrefix) {
-		return fmt.Errorf("CSR %s does not contain required groups", a.csr.Name)
-	}
-
-	// Check usages, the list can include: digital signature, key encipherment and server auth
-	if !hasUsages(a.csr, kubeletServerUsages) && !hasUsages(a.csr, kubeletServerUsagesNoRSA) {
-		return fmt.Errorf("CSR %s does not contain required usages", a.csr.Name)
-	}
-
-	var hasOrg bool
-	for i := range parsedCsr.Subject.Organization {
-		if parsedCsr.Subject.Organization[i] == nodeGroup {
-			hasOrg = true
-			break
-		}
-	}
-	if !hasOrg {
-		return fmt.Errorf("CSR %s does not contain required subject organization", a.csr.Name)
-	}
-	return nil
-}
-
-// isNodeClientCert returns true if the CSR is from a  kube-apiserver-client-kubelet signer
-// reference: https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/#kubernetes-signers
-func (a *Approver) isNodeClientCert(x509cr *x509.CertificateRequest) bool {
-	if !reflect.DeepEqual([]string{nodeGroup}, x509cr.Subject.Organization) {
-		return false
-	}
-	if (len(x509cr.DNSNames) > 0) || (len(x509cr.EmailAddresses) > 0) || (len(x509cr.IPAddresses) > 0) {
-		return false
-	}
-	// Check usages, the list can include: digital signature, key encipherment and client auth
-	if !hasUsages(a.csr, kubeletClientUsages) && !hasUsages(a.csr, kubeletClientUsagesNoRSA) {
-		return false
-	}
-	return true
-}
-
-// hasUsages verifies if the required usages exist in the CSR spec
-func hasUsages(csr *certificates.CertificateSigningRequest, usages []certificates.KeyUsage) bool {
-	if csr == nil || len(csr.Spec.Usages) < 2 {
-		return false
-	}
-	usageMap := map[certificates.KeyUsage]struct{}{}
-	for _, u := range usages {
-		usageMap[u] = struct{}{}
-	}
-
-	for _, u := range csr.Spec.Usages {
-		if _, ok := usageMap[u]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 // matchesHostname returns true if given node name matches with host name of any of the instances present
@@ -352,15 +296,15 @@ func matchesDNS(nodeName string, windowsInstances []*instance.Info) (bool, error
 	return false, nil
 }
 
-// ParseCSR extracts the CSR from the API object and decodes it.
-func ParseCSR(csr []byte) (*x509.CertificateRequest, error) {
-	if len(csr) == 0 {
-		return nil, fmt.Errorf("CSR request spec should not be empty")
+// isNodeClientCert returns true if the CSR is from a kube-apiserver-client-kubelet signer.
+// Client certificates have no DNS names, email addresses, or IP addresses (no SAN).
+// Reference: https://kubernetes.io/docs/reference/access-authn-authz/certificate-signing-requests/#kubernetes-signers
+func (a *Approver) isNodeClientCert(x509cr *x509.CertificateRequest) bool {
+	if !reflect.DeepEqual([]string{csrvalidation.NodeGroup}, x509cr.Subject.Organization) {
+		return false
 	}
-	// extract PEM from request object
-	block, _ := pem.Decode(csr)
-	if block == nil || block.Type != "CERTIFICATE REQUEST" {
-		return nil, fmt.Errorf("PEM block type must be CERTIFICATE REQUEST")
+	if (len(x509cr.DNSNames) > 0) || (len(x509cr.EmailAddresses) > 0) || (len(x509cr.IPAddresses) > 0) {
+		return false
 	}
-	return x509.ParseCertificateRequest(block.Bytes)
+	return true
 }
