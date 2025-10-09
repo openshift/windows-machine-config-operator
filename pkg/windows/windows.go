@@ -25,10 +25,10 @@ const (
 	remoteDir = "C:\\Temp"
 	// GcpGetHostnameScriptRemotePath is the remote location of the PowerShell script that resolves the hostname
 	// for GCP instances
-	GcpGetHostnameScriptRemotePath = remoteDir + "\\" + payload.GcpGetHostnameScriptName
+	GcpGetHostnameScriptRemotePath = remoteDir + "\\gcp-get-hostname.ps1"
 	// WinDefenderExclusionScriptRemotePath is the remote location of the PowerShell script that creates an exclusion
 	// for containerd if the Windows Defender Antivirus is active
-	WinDefenderExclusionScriptRemotePath = remoteDir + "\\" + payload.WinDefenderExclusionScriptName
+	WinDefenderExclusionScriptRemotePath = remoteDir + "\\windows-defender-exclusion.ps1"
 	// HNSPSModule is the remote location of the hns.psm1 module
 	HNSPSModule = remoteDir + "\\hns.psm1"
 	// K8sDir is the remote kubernetes executable directory
@@ -79,7 +79,7 @@ const (
 	// NetworkConfScriptPath is the location of the network configuration script
 	NetworkConfScriptPath = remoteDir + "\\network-conf.ps1"
 	// AzureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
-	AzureCloudNodeManagerPath = K8sDir + "\\" + payload.AzureCloudNodeManager
+	AzureCloudNodeManagerPath = K8sDir + "\\azure-cloud-node-manager.exe"
 	// ECRCredentialProviderPath is the location of ecr credential provider exe
 	ECRCredentialProviderPath = K8sDir + "\\ecr-credential-provider.exe"
 	// podManifestDirectory is the directory needed by kubelet for the static pods
@@ -190,13 +190,13 @@ var (
 )
 
 // createPayload returns the map of files to transfer with generated file info
-func createPayload(platform *config.PlatformType) (map[*payload.FileInfo]string, error) {
+func createPayload(platform *config.PlatformType) (map[*payload.CompressedFileInfo]string, error) {
 	srcDestPairs := getFilesToTransfer(platform)
-	files := make(map[*payload.FileInfo]string)
+	files := make(map[*payload.CompressedFileInfo]string)
 	for src, dest := range srcDestPairs {
-		f, err := payload.NewFileInfo(src)
+		f, err := payload.NewCompressedFileInfo(src)
 		if err != nil {
-			return nil, fmt.Errorf("could not create FileInfo object for file %s: %w", src, err)
+			return nil, fmt.Errorf("could not create CompressedFileInfo object for file %s: %w", src, err)
 		}
 		files[f] = dest
 	}
@@ -255,7 +255,7 @@ type Windows interface {
 	// EnsureFile ensures the given file exists within the specified directory on the Windows VM. The file will be copied
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
-	EnsureFile(*payload.FileInfo, string) error
+	EnsureFile(*payload.CompressedFileInfo, string) error
 	// EnsureFileContent ensures the given filename and content exists within the specified directory on the Windows VM.
 	// The content will be copied to the Windows VM if the file is not present or has incorrect contents. The remote
 	// directory is created if it does not exist.
@@ -300,7 +300,7 @@ type windows struct {
 	// defaultShellPowerShell indicates if the default SSH shell is PowerShell
 	defaultShellPowerShell bool
 	// filesToTransfer is the map of files needed for the windows VM
-	filesToTransfer map[*payload.FileInfo]string
+	filesToTransfer map[*payload.CompressedFileInfo]string
 }
 
 func (vm *windows) Close() error {
@@ -391,9 +391,11 @@ func (vm *windows) EnsureFileContent(contents []byte, filename string, remoteDir
 	return nil
 }
 
-func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
+func (vm *windows) EnsureFile(file *payload.CompressedFileInfo, remoteDir string) error {
 	// Only copy the file to the Windows VM if it does not already exist wth the desired content
-	remotePath := remoteDir + "\\" + filepath.Base(file.Path)
+	compressedFileName := filepath.Base(file.Path)
+	fileName := strings.TrimSuffix(compressedFileName, ".tar.gz")
+	remotePath := remoteDir + "\\" + fileName
 	fileExists, err := vm.FileExists(remotePath, file.SHA256)
 	if err != nil {
 		return fmt.Errorf("error checking if file '%s' exists on the Windows VM: %w", remotePath, err)
@@ -423,8 +425,13 @@ func (vm *windows) EnsureFile(file *payload.FileInfo, remoteDir string) error {
 		}
 	}()
 
-	if err := vm.interact.transfer(c, f, filepath.Base(file.Path), remoteDir); err != nil {
+	if err := vm.interact.transfer(c, f, compressedFileName, remoteDir); err != nil {
 		return fmt.Errorf("unable to transfer %s to remote dir %s: %w", file.Path, remoteDir, err)
+	}
+	decompressCMD := fmt.Sprintf("tar -xzf '%s\\%s' -C '%s'; if ($?) {Remove-Item -LiteralPath '%s\\%s'}", remoteDir, compressedFileName, remoteDir, remoteDir, compressedFileName)
+	out, err := vm.Run(decompressCMD, true)
+	if err != nil {
+		return fmt.Errorf("decompression failed with output %s: %w", out, err)
 	}
 	return nil
 }
@@ -618,9 +625,9 @@ func (vm *windows) ensureWICDFilesExist(wicdKubeconfig string) error {
 	if _, err := vm.Run(mkdirCmd(K8sDir), false); err != nil {
 		return fmt.Errorf("unable to create remote directory %s: %w", K8sDir, err)
 	}
-	wicdFileInfo, err := payload.NewFileInfo(payload.WICDPath)
+	wicdFileInfo, err := payload.NewCompressedFileInfo(payload.WICDPath)
 	if err != nil {
-		return fmt.Errorf("could not create FileInfo object for file %s: %w", payload.WICDPath, err)
+		return fmt.Errorf("could not create CompressedFileInfo object for file %s: %w", payload.WICDPath, err)
 	}
 	if err := vm.EnsureFile(wicdFileInfo, K8sDir); err != nil {
 		return fmt.Errorf("error copying %s to %s: %w", wicdFileInfo.Path, K8sDir, err)
@@ -954,8 +961,8 @@ func (vm *windows) startService(svc *service) error {
 	return nil
 }
 
-// newFileInfo returns a pointer to a FileInfo object created from the specified file on the Windows VM
-func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
+// newFileInfo returns a pointer to a CompressedFileInfo object created from the specified file on the Windows VM
+func (vm *windows) newFileInfo(path string) (*payload.CompressedFileInfo, error) {
 	// Get-FileHash returns an object with multiple properties, we are interested in the `Hash` property
 	command := "$out = Get-FileHash " + path + " -Algorithm SHA256; $out.Hash"
 	out, err := vm.Run(command, true)
@@ -965,7 +972,7 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 	// The returned hash will be in all caps with newline characters, doing ToLower() to
 	// make the output normalized with the go sha256 library
 	sha := strings.ToLower(strings.TrimSpace(out))
-	return &payload.FileInfo{Path: path, SHA256: sha}, nil
+	return &payload.CompressedFileInfo{Path: path, SHA256: sha}, nil
 }
 
 // ensureHNSNetworksAreRemoved ensures the HNS networks created by the hybrid-overlay configuration process are removed

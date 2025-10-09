@@ -148,6 +148,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := payload.PopulateSHAMap(); err != nil {
+		setupLog.Error(err, "error using payload checksums")
+		os.Exit(1)
+	}
 	if err := payload.PopulateNetworkConfScript(clusterConfig.Network().GetServiceCIDR(), windows.OVNKubeOverlayNetwork,
 		windows.HNSPSModule, windows.CniConfDir+"\\cni.conf"); err != nil {
 		setupLog.Error(err, "unable to generate CNI config script")

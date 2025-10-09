@@ -36,18 +36,25 @@ FROM wmco-base:latest
 LABEL stage=operator
 
 # Copy WICD to payload
-WORKDIR /payload/
 COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
+WORKDIR /payload/
+RUN pushd / && tar -cf - windows-instance-config-daemon.exe | gzip -9 > /payload/windows-instance-config-daemon.exe.tar.gz && popd && \
+sha256sum /windows-instance-config-daemon.exe >> sha256sum
 
-# Created directory for generated files with open permissions, this allows WMCO to write to this directory
-RUN mkdir generated
-RUN chmod 0777 generated
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+LABEL stage=operator
 
-# Copy required powershell scripts
-WORKDIR /payload/powershell/
-COPY pkg/internal/gcp-get-hostname.ps1 .
-COPY pkg/internal/windows-defender-exclusion.ps1 .
-COPY pkg/internal/hns.psm1 .
+# This block contains standard Red Hat container labels
+LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \
+    cpe="cpe:/a:redhat:windows_machine_config:10.21::el9" \
+    License="ASL 2.0" \
+    io.k8s.display-name="Windows Machine Config Operator" \
+    io.k8s.description="Windows Machine Config Operator" \
+    description="Windows Machine Config Operator" \
+    summary="Windows Machine Config Operator" \
+    maintainer="Team Windows Containers <team-winc@redhat.com>" \
+    com.redhat.component="windows-machine-config-operator-container" \
+    io.openshift.tags=""
 
 WORKDIR /
 
@@ -62,5 +69,8 @@ COPY build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
 
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
+
+# Used to tag the released image. Should be a semver.
+LABEL version="v10.21.0"
 
 USER ${USER_UID}
