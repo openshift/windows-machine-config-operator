@@ -189,6 +189,10 @@ COPY pkg/internal/hns.psm1 .
 
 WORKDIR /
 
+# create licenses directory
+# See https://docs.redhat.com/en/documentation/red_hat_software_certification/2025/html-single/red_hat_openshift_software_certification_policy_guide/index#con-image-content-requirements_openshift-sw-cert-policy-container-images
+COPY LICENSE /licenses/
+
 ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
     USER_UID=1001 \
     USER_NAME=windows-machine-config-operator
