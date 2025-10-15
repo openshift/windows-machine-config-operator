@@ -167,7 +167,7 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&skipWorkloadDeletion, "skip-workload-deletion", false,
 		"skips deletion of workloads at the end of tests")
 	flag.Func("windows-server-version", "Windows Server version to test. "+
-		"Supported versions: 2019 or 2022 (default 2022)",
+		"Supported versions: 2019, 2022 or 2025 (default 2022)",
 		func(value string) error {
 			if len(value) == 0 {
 				windowsServerVersion = windows.Server2022

@@ -867,6 +867,8 @@ func (tc *testContext) getWindowsServerContainerImage() string {
 	case windows.Server2019:
 		return "mcr.microsoft.com/powershell:lts-nanoserver-1809"
 	case windows.Server2022:
+	case windows.Server2025:
+		// 2022-based container images are compatible with Windows Server 2025
 	default:
 	}
 	// the default container image must be compatible with Windows Server 2022

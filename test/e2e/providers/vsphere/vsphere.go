@@ -109,6 +109,7 @@ func (p *Provider) getProviderSpecFromExistingMachineSet() (*mapi.VSphereMachine
 
 // GenerateMachineSet generates the MachineSet object which is vSphere provider specific
 func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*mapi.MachineSet, error) {
+	// TODO: (vsphere) add support for Windows Server 2025 when golden image is available for 2025
 	if windowsServerVersion != windows.Server2022 {
 		return nil, fmt.Errorf("vSphere does not support Windows Server %s", windowsServerVersion)
 	}
