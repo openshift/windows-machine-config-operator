@@ -43,7 +43,7 @@ func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, wind
 	return machineset.New(rawSpec, p.InfrastructureName, replicas, withIgnoreLabel, p.InfrastructureName+"-"), nil
 }
 
-// newGCPProviderSpec returns a GCPMachineProviderSpec which describes a Windows server 2022 VM
+// newGCPProviderSpec returns a GCPMachineProviderSpec which describes a machine for the given Windows Server version
 func (p *Provider) newGCPProviderSpec(windowsServerVersion windows.ServerVersion) (*mapi.GCPMachineProviderSpec, error) {
 	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-machine-role=worker"}
 	machines, err := p.oc.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
@@ -108,7 +108,10 @@ func getImage(windowsServerVersion windows.ServerVersion) string {
 	switch windowsServerVersion {
 	case windows.Server2019:
 		return "projects/windows-cloud/global/images/family/windows-2019-core"
+	case windows.Server2025:
+		return "projects/windows-cloud/global/images/family/windows-2025-core"
 	case windows.Server2022:
+		// default to Windows Server 2022
 	default:
 	}
 	// use the latest image from the `windows-2022-core` family in the `windows-cloud` project

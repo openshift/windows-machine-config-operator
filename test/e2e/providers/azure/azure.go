@@ -347,6 +347,8 @@ func getImageSKU(windowsServerVersion windows.ServerVersion) string {
 	switch windowsServerVersion {
 	case windows.Server2019:
 		return "2019-datacenter-smalldisk"
+	case windows.Server2025:
+		return "2025-datacenter-smalldisk"
 	case windows.Server2022:
 	default:
 	}

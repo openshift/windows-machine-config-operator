@@ -368,9 +368,10 @@ func (tc *testContext) ensureTestRunnerRBAC() error {
 // runPowerShellSSHJob creates and waits for a Kubernetes job to run. The command provided will be executed through
 // PowerShell, on the host specified by the provided IP.
 func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, error) {
-	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022.
+	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022 and
+	// later
 	powershellDefaultCommand := command
-	if tc.windowsServerVersion == e2e_windows.Server2022 {
+	if tc.windowsServerVersion != e2e_windows.Server2019 {
 		powershellDefaultCommand = strings.ReplaceAll(command, "\\\"", "\"")
 	}
 
