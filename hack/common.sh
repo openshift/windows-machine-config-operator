@@ -284,6 +284,8 @@ run_WMCO() {
   # Run the operator in the given namespace
   OSDK_WMCO_management run $OSDK
 
+  enable_debug_logging
+
   # Additional guard that ensures that operator was deployed given the SDK flakes in error reporting
   if ! oc rollout status deployment windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE --timeout=5s; then
     return 1
@@ -375,4 +377,41 @@ deleteParallelUpgradeCheckerResources() {
   oc delete -f hack/e2e/resources/parallel-upgrade-checker-job.yaml || {
     echo "error deleting parallel upgrade checker job"
   }
+}
+
+
+enable_debug_logging() {
+  if [[ $(oc get -n $WMCO_DEPLOY_NAMESPACE pod -l name=windows-machine-config-operator -ojson) == *"--debugLogging"* ]]; then
+    # debug logging already enabled
+    return 0
+  fi
+  WMCO_SUB=$(oc get sub -n $WMCO_DEPLOY_NAMESPACE --no-headers |awk '{print $1}')
+  oc patch subscription $WMCO_SUB -n $WMCO_DEPLOY_NAMESPACE --type=merge -p '{"spec":{"config":{"env":[{"name":"ARGS","value":"--debugLogging"}]}}}'
+  # delete the deployment to ensure the changes are picked up in a timely matter
+  oc delete deployment -n $WMCO_DEPLOY_NAMESPACE windows-machine-config-operator
+  retries=0
+  debug_logging_enabled=0
+  until [[ $debug_logging_enabled -eq 1 || $retries -gt 30 ]]; do
+    pod_json=$(oc get -n $WMCO_DEPLOY_NAMESPACE pod -l name=windows-machine-config-operator -ojson)
+    pod_count=$(echo $pod_json |jq '.items | length')
+    if [[ $pod_count -ne 1 ]]; then
+      echo "Found $pod_count WMCO pod(s), waiting for 1"
+      sleep 10
+      retries=$((retries+1))
+      continue
+    fi
+    if [[ $pod_json != *"--debugLogging"* ]]; then
+      echo "Waiting for debugLogging to be set"
+      sleep 10
+      retries=$((retries+1))
+      continue
+    fi
+    debug_logging_enabled=1
+  done
+  if [[ $debug_logging_enabled -ne 1 ]]; then
+    echo "Error enabling debug logging"
+    exit 1
+  fi
+  # Final wait to ensure the pod is fully running
+  oc wait --timeout=10m --for condition=Available -n $WMCO_DEPLOY_NAMESPACE deployment windows-machine-config-operator
 }
