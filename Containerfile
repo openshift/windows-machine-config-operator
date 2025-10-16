@@ -59,10 +59,10 @@ WORKDIR /build/windows-machine-config-operator/cloud-provider-azure/
 COPY cloud-provider-azure/ .
 RUN GOOS=windows go build -o azure-cloud-node-manager.exe ./cmd/cloud-node-manager
 
-# Build ecr-credential-provider
+# Build ecr-credential-provider and rename it to have the appropriate extension
 WORKDIR /build/windows-machine-config-operator/cloud-provider-aws/
 COPY cloud-provider-aws/ .
-RUN env -u VERSION GOOS=windows make ecr-credential-provider
+RUN env -u VERSION GOOS=windows make ecr-credential-provider && mv ecr-credential-provider ecr-credential-provider.exe
 
 # Build CNI plugins
 WORKDIR /build/windows-machine-config-operator/containernetworking-plugins/
@@ -95,7 +95,6 @@ RUN make build-daemon
 # /payload/
 #├── azure-cloud-node-manager.exe
 #├── cni/
-#│   ├── flannel.exe
 #│   ├── host-local.exe
 #│   ├── win-bridge.exe
 #│   └── win-overlay.exe
@@ -119,7 +118,67 @@ RUN make build-daemon
 #├── windows-exporter/
 #│   ├── windows_exporter.exe
 #│   └── windows-exporter-webconfig.yaml
-#└── windows-instance-config-daemon.exe
+#├── windows-instance-config-daemon.exe
+#└── sha256sum
+
+WORKDIR /payload/
+# Copy WICD
+RUN pushd /build/windows-machine-config-operator/build/_output/bin/ && tar -cf - windows-instance-config-daemon.exe | gzip -9 > /payload/windows-instance-config-daemon.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe >> sha256sum && \
+# Copy hybrid-overlay-node.exe
+pushd /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/ && tar -cf - hybrid-overlay-node.exe | gzip -9 > /payload/hybrid-overlay-node.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe >> sha256sum && \
+# Copy windows_exporter.exe and TLS windows-exporter-webconfig.yaml
+mkdir /payload/windows-exporter && \
+pushd /build/windows-machine-config-operator/windows_exporter/ && tar -cf - windows_exporter.exe | gzip -9 > /payload/windows-exporter/windows_exporter.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe >> sha256sum && \
+pushd /build/windows-machine-config-operator/pkg/internal/ && tar -cf - windows-exporter-webconfig.yaml | gzip -9 > /payload/windows-exporter/windows-exporter-webconfig.yaml.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/pkg/internal/windows-exporter-webconfig.yaml >> sha256sum && \
+# Copy azure-cloud-node-manager.exe
+pushd /build/windows-machine-config-operator/cloud-provider-azure/ && tar -cf - azure-cloud-node-manager.exe | gzip -9 > /payload/azure-cloud-node-manager.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe >> sha256sum && \
+# Copy ecr-credential-provider
+pushd /build/windows-machine-config-operator/cloud-provider-aws/ && tar -cf - ecr-credential-provider.exe | gzip -9 > /payload/ecr-credential-provider.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/cloud-provider-aws/ecr-credential-provider.exe >> sha256sum && \
+# Copy containerd.exe, containerd-shim-runhcs-v1.exe and containerd config containerd_conf.toml
+mkdir /payload/containerd && \
+pushd /build/windows-machine-config-operator/containerd/bin/ && tar -cf - containerd.exe | gzip -9 > /payload/containerd/containerd.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/containerd/bin/containerd.exe >> sha256sum && \
+pushd /build/windows-machine-config-operator/hcsshim/ && tar -cf - containerd-shim-runhcs-v1.exe | gzip -9 > /payload/containerd/containerd-shim-runhcs-v1.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/hcsshim/containerd-shim-runhcs-v1.exe >> sha256sum && \
+pushd /build/windows-machine-config-operator/pkg/internal/ && tar -cf - containerd_conf.toml | gzip -9 > /payload/containerd/containerd_conf.toml.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/pkg/internal/containerd_conf.toml >> sha256sum && \
+# Copy kubelet.exe, kube-log-runner.exe and kube-proxy.exe
+mkdir /payload/kube-node && \
+pushd /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/ && tar -cf - kubelet.exe | gzip -9 > /payload/kube-node/kubelet.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kubelet.exe >> sha256sum && \
+pushd /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/ && tar -cf - kube-log-runner.exe | gzip -9 > /payload/kube-node/kube-log-runner.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kube-log-runner.exe >> sha256sum && \
+pushd /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/ && tar -cf - kube-proxy.exe | gzip -9 > /payload/kube-node/kube-proxy.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kube-proxy.exe >> sha256sum && \
+# Copy CNI plugin binaries
+mkdir /payload/cni && \
+pushd /build/windows-machine-config-operator/containernetworking-plugins/bin/ && tar -cf - host-local.exe | gzip -9 > /payload/cni/host-local.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe >> sha256sum && \
+pushd /build/windows-machine-config-operator/containernetworking-plugins/bin/ && tar -cf - win-bridge.exe | gzip -9 > /payload/cni/win-bridge.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe >> sha256sum && \
+pushd /build/windows-machine-config-operator/containernetworking-plugins/bin/ && tar -cf - win-overlay.exe | gzip -9 > /payload/cni/win-overlay.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe >> sha256sum && \
+# Copy csi-proxy.exe
+mkdir /payload/csi-proxy && \
+pushd /build/windows-machine-config-operator/csi-proxy/bin/ && tar -cf - csi-proxy.exe | gzip -9 > /payload/csi-proxy/csi-proxy.exe.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/csi-proxy/bin/csi-proxy.exe >> sha256sum && \
+# Copy required powershell scripts
+mkdir /payload/powershell && \
+pushd /build/windows-machine-config-operator/pkg/internal/ && tar -cf - gcp-get-hostname.ps1 | gzip -9 > /payload/powershell/gcp-get-hostname.ps1.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/pkg/internal/gcp-get-hostname.ps1 >> sha256sum && \
+pushd /build/windows-machine-config-operator/pkg/internal/ && tar -cf - windows-defender-exclusion.ps1 | gzip -9 > /payload/powershell/windows-defender-exclusion.ps1.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/pkg/internal/windows-defender-exclusion.ps1 >> sha256sum && \
+pushd /build/windows-machine-config-operator/pkg/internal/ && tar -cf - hns.psm1 | gzip -9 > /payload/powershell/hns.psm1.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/pkg/internal/hns.psm1 >> sha256sum && \
+chmod -R 644 /payload && chmod -R +X /payload &&\
+# Create directory for generated files with open permissions, this allows WMCO to write to this directory
+mkdir -m 0777 /payload/generated
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=operator
@@ -136,58 +195,7 @@ LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \
     com.redhat.component="windows-machine-config-operator-container" \
     io.openshift.tags=""
 
-WORKDIR /payload/
-# Copy WICD
-COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
-
-# Copy hybrid-overlay-node.exe
-COPY --from=build /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe .
-
-# Copy windows_exporter.exe and TLS windows-exporter-webconfig.yaml
-WORKDIR /payload/windows-exporter
-COPY --from=build /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe .
-COPY pkg/internal/windows-exporter-webconfig.yaml .
-
-# Copy azure-cloud-node-manager.exe
-WORKDIR /payload/
-COPY --from=build /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe .
-
-# Copy ecr-credential-provider
-COPY --from=build /build/windows-machine-config-operator/cloud-provider-aws/ecr-credential-provider ecr-credential-provider.exe
-
-# Copy containerd.exe, containerd-shim-runhcs-v1.exe and containerd config containerd_conf.toml
-WORKDIR /payload/containerd/
-COPY --from=build /build/windows-machine-config-operator/containerd/bin/containerd.exe .
-COPY --from=build /build/windows-machine-config-operator/hcsshim/containerd-shim-runhcs-v1.exe .
-COPY pkg/internal/containerd_conf.toml .
-
-# Copy kubelet.exe, kube-log-runner.exe and kube-proxy.exe
-WORKDIR /payload/kube-node/
-COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kubelet.exe .
-COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kube-log-runner.exe .
-COPY --from=build /build/windows-machine-config-operator/kubelet/_output/local/bin/windows/amd64/kube-proxy.exe .
-
-# Copy CNI plugin binaries
-WORKDIR /payload/cni/
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/host-local.exe .
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-bridge.exe .
-COPY --from=build /build/windows-machine-config-operator/containernetworking-plugins/bin/win-overlay.exe .
-
-# Build csi-proxy.exe
-WORKDIR /payload/csi-proxy/
-COPY --from=build /build/windows-machine-config-operator/csi-proxy/bin/csi-proxy.exe .
-
-# Create directory for generated files with open permissions, this allows WMCO to write to this directory
-RUN mkdir /payload/generated
-RUN chmod 0777 /payload/generated
-
-# Copy required powershell scripts
-WORKDIR /payload/powershell/
-COPY pkg/internal/gcp-get-hostname.ps1 .
-COPY pkg/internal/windows-defender-exclusion.ps1 .
-COPY pkg/internal/hns.psm1 .
-
-WORKDIR /
+COPY --from=build /payload /payload
 
 # create licenses directory
 # See https://docs.redhat.com/en/documentation/red_hat_software_certification/2025/html-single/red_hat_openshift_software_certification_policy_guide/index#con-image-content-requirements_openshift-sw-cert-policy-container-images

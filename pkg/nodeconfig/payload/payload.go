@@ -1,79 +1,84 @@
 package payload
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
-	"io/fs"
-	"io/ioutil"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
-// Payload files
 const (
+	// sha25sumColumnSeparator is the separator used in the utility sha256sum. This is between the file name and the sha256 sum value.
+	sha256sumColumnSeparator = "  "
 	// payloadDirectory is the directory in the operator image where are all the binaries live
 	payloadDirectory = "/payload/"
 	// WICDPath is the path to the Windows Instance Config Daemon exe
-	WICDPath = payloadDirectory + "windows-instance-config-daemon.exe"
+	WICDPath = payloadDirectory + "windows-instance-config-daemon.exe.tar.gz"
 	// KubeletPath contains the path of the kubelet binary. The container image should already have this binary mounted
-	KubeletPath = payloadDirectory + "/kube-node/kubelet.exe"
+	KubeletPath = payloadDirectory + "/kube-node/kubelet.exe.tar.gz"
 	// KubeProxyPath contains the path of the kube-proxy binary. The container image should already have this binary
 	// mounted
-	KubeProxyPath = payloadDirectory + "/kube-node/kube-proxy.exe"
+	KubeProxyPath = payloadDirectory + "/kube-node/kube-proxy.exe.tar.gz"
 	// KubeLogRunnerPath contains the path of the kube-log-runner binary.
-	KubeLogRunnerPath = payloadDirectory + "/kube-node/kube-log-runner.exe"
+	KubeLogRunnerPath = payloadDirectory + "/kube-node/kube-log-runner.exe.tar.gz"
 	// ContainerdPath contains the path of the containerd binary. The container image should already have this binary
 	// mounted
-	ContainerdPath = payloadDirectory + "/containerd/containerd.exe"
+	ContainerdPath = payloadDirectory + "/containerd/containerd.exe.tar.gz"
 	//HcsshimPath contains the path of the hcsshim binary. The container image should already have this binary mounted
-	HcsshimPath = payloadDirectory + "/containerd/containerd-shim-runhcs-v1.exe"
+	HcsshimPath = payloadDirectory + "/containerd/containerd-shim-runhcs-v1.exe.tar.gz"
 	// ContainerdConfPath contains the path of the containerd config file.
-	ContainerdConfPath = payloadDirectory + "/containerd/containerd_conf.toml"
+	ContainerdConfPath = payloadDirectory + "/containerd/containerd_conf.toml.tar.gz"
 	// GcpGetHostnameScriptName is the name of the PowerShell script that resolves the hostname for GCP instances
-	GcpGetHostnameScriptName = "gcp-get-hostname.ps1"
+	GcpGetHostnameScriptName = "gcp-get-hostname.ps1.tar.gz"
 	// GcpGetValidHostnameScriptPath is the path of the PowerShell script that resolves the hostname for GCP instances
 	GcpGetValidHostnameScriptPath = payloadDirectory + "/powershell/" + GcpGetHostnameScriptName
 	// WinDefenderExclusionScriptName is the name of the PowerShell script that creates an exclusion for containerd if
 	// the Windows Defender Antivirus is active
-	WinDefenderExclusionScriptName = "windows-defender-exclusion.ps1"
+	WinDefenderExclusionScriptName = "windows-defender-exclusion.ps1.tar.gz"
 	// WinDefenderExclusionScriptPath is the path of the PowerShell script that creates an exclusion for containerd if
 	// the Windows Defender Antivirus is active
 	WinDefenderExclusionScriptPath = payloadDirectory + "/powershell/" + WinDefenderExclusionScriptName
 	// HNSPSModule is the path to the powershell module which defines various functions for dealing with Windows HNS
 	// networks
-	HNSPSModule = payloadDirectory + "/powershell/hns.psm1"
+	HNSPSModule = payloadDirectory + "/powershell/hns.psm1.tar.gz"
 	// cniDirectory is the directory for storing the CNI plugins and the CNI config template
 	cniDirectory = "/cni/"
 	// HostLocalCNIPlugin is the path of the host-local CNI plugin binary. The container image should already have
 	// this binary mounted
-	HostLocalCNIPlugin = payloadDirectory + cniDirectory + "host-local.exe"
+	HostLocalCNIPlugin = payloadDirectory + cniDirectory + "host-local.exe.tar.gz"
 	// WinBridgeCNIPlugin is the path of the win-bridge CNI plugin binary. The container image should already have
 	// this binary mounted
-	WinBridgeCNIPlugin = payloadDirectory + cniDirectory + "win-bridge.exe"
+	WinBridgeCNIPlugin = payloadDirectory + cniDirectory + "win-bridge.exe.tar.gz"
 	// WinOverlayCNIPlugin is the path of the win-overlay CNI Plugin binary. The container image should already have
 	// this binary mounted
-	WinOverlayCNIPlugin = payloadDirectory + cniDirectory + "win-overlay.exe"
+	WinOverlayCNIPlugin = payloadDirectory + cniDirectory + "win-overlay.exe.tar.gz"
 	// NetworkConfigurationScript is the path for generated Network configuration Script
-	NetworkConfigurationScript = payloadDirectory + "/generated/network-conf.ps1"
+	NetworkConfigurationScript = payloadDirectory + "/generated/network-conf.ps1.tar.gz"
 	// HybridOverlayName is the name of the hybrid overlay executable
-	HybridOverlayName = "hybrid-overlay-node.exe"
+	HybridOverlayName = "hybrid-overlay-node.exe.tar.gz"
 	// HybridOverlayPath contains the path of the hybrid overlay binary. The container image should already have this
 	// binary mounted
 	HybridOverlayPath = payloadDirectory + HybridOverlayName
 	// CSIProxyPath contains the path of the csi-proxy executable. This should be mounted in the container image.
-	CSIProxyPath = payloadDirectory + "csi-proxy/csi-proxy.exe"
+	CSIProxyPath = payloadDirectory + "csi-proxy/csi-proxy.exe.tar.gz"
 	// WindowsExporterName is the name of the Windows metrics exporter executable
-	WindowsExporterName = "windows_exporter.exe"
+	WindowsExporterName = "windows_exporter.exe.tar.gz"
 	// WindowsExporterDirectory is the directory for storing the windows-exporter binary and the TLS webconfig file
 	WindowsExporterDirectory = "windows-exporter/"
 	// WindowsExporterPath contains the path of the windows_exporter binary. The container image should already have
 	// this binary mounted
 	WindowsExporterPath = payloadDirectory + WindowsExporterDirectory + WindowsExporterName
 	// TLSConfPath contains the path of the TLS config file
-	TLSConfPath = payloadDirectory + WindowsExporterDirectory + "windows-exporter-webconfig.yaml"
+	TLSConfPath = payloadDirectory + WindowsExporterDirectory + "windows-exporter-webconfig.yaml.tar.gz"
 	// ECRCredentialProviderPath is the path to ecr-credential-provider.exe
-	ECRCredentialProviderPath = payloadDirectory + "ecr-credential-provider.exe"
+	ECRCredentialProviderPath = payloadDirectory + "ecr-credential-provider.exe.tar.gz"
 	// AzureCloudNodeManager is the name of the cloud node manager for Azure platform
-	AzureCloudNodeManager = "azure-cloud-node-manager.exe"
+	AzureCloudNodeManager = "azure-cloud-node-manager.exe.tar.gz"
 	// AzureCloudNodeManagerPath contains the path of the azure cloud node manager binary. The container image should
 	// already have this binary mounted
 	AzureCloudNodeManagerPath = payloadDirectory + AzureCloudNodeManager
@@ -296,21 +301,64 @@ Compare-And-Replace-Config -ConfigPath $kubeProxyConfigPath -NewConfigContent $k
 `
 )
 
-// FileInfo contains information about a file
-type FileInfo struct {
-	Path   string
+// This is okay to be global as for each program run, this can only have one valid instance due it representing the
+// actual state of the /payload directory.
+// This should not be written to once the operator controllers have started, as it is not threadsafe to read+write at the same time.
+var shaMap map[string]string
+
+// PopulateSHAMap populates the global shaMap with the SHA256sums from the payload
+func PopulateSHAMap() error {
+	data, err := os.ReadFile("/payload/sha256sum")
+	if err != nil {
+		return fmt.Errorf("error reading from /payload/sha256sum: %w", err)
+	}
+	shaMap, err = parseShaFile(data)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// parseShaFile returns a mapping of file names to SHA256 sums
+// input should be of the format generated by the sha256sum binary: `SHA256SUM  filepath`
+func parseShaFile(fileData []byte) (map[string]string, error) {
+	m := make(map[string]string)
+	for _, line := range strings.Split(string(fileData), "\n") {
+		lineContents := strings.TrimSpace(line)
+		if len(lineContents) == 0 {
+			continue
+		}
+		columnSplit := strings.SplitN(lineContents, sha256sumColumnSeparator, 2)
+		if len(columnSplit) != 2 || len(columnSplit[0]) == 0 || len(columnSplit[1]) == 0 {
+			return nil, fmt.Errorf("unexpected sha256sum line format %s", line)
+		}
+		fileName := filepath.Base(columnSplit[1])
+		if _, present := m[fileName]; present {
+			return nil, fmt.Errorf("duplicate sha256sum entry for %s", fileName)
+		}
+		m[fileName] = columnSplit[0]
+	}
+	return m, nil
+}
+
+// CompressedFileInfo contains information about a compressed file
+type CompressedFileInfo struct {
+	// Path to a compressed (.tar.gz) file
+	Path string
+	// SHA256 sum of the file when uncompressed
 	SHA256 string
 }
 
-// NewFileInfo returns a pointer to a FileInfo object created from the specified file
-func NewFileInfo(path string) (*FileInfo, error) {
-	contents, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("could not get contents of file: %w", err)
+// NewCompressedFileInfo returns a pointer to a CompressedFileInfo object created from the specified .tar.gz file
+func NewCompressedFileInfo(path string) (*CompressedFileInfo, error) {
+	uncompressedName := strings.TrimSuffix(filepath.Base(path), ".tar.gz")
+	val, present := shaMap[uncompressedName]
+	if !present {
+		return nil, fmt.Errorf("missing SHA256Sum for %s", uncompressedName)
 	}
-	return &FileInfo{
+	return &CompressedFileInfo{
 		Path:   path,
-		SHA256: fmt.Sprintf("%x", sha256.Sum256(contents)),
+		SHA256: val,
 	}, nil
 }
 
@@ -321,7 +369,14 @@ func PopulateNetworkConfScript(clusterCIDR, hnsNetworkName, hnsPSModulePath, cni
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(NetworkConfigurationScript, []byte(scriptContents), fs.ModePerm)
+	fileName := strings.TrimSuffix(filepath.Base(NetworkConfigurationScript), ".tar.gz")
+	shaMap[fileName] = fmt.Sprintf("%x", sha256.Sum256([]byte(scriptContents)))
+	compressedFile, err := os.Create(NetworkConfigurationScript)
+	if err != nil {
+		return fmt.Errorf("failed to create target file: %w", err)
+	}
+	defer compressedFile.Close()
+	return createTarGzFile([]byte(scriptContents), fileName, compressedFile)
 }
 
 // generateNetworkConfigScript generates the contents of the .ps1 file responsible for CNI configuration
@@ -337,4 +392,28 @@ func generateNetworkConfigScript(clusterCIDR, hnsNetworkName, hnsPSModulePath,
 		networkConfScript = strings.ReplaceAll(networkConfScript, key, val)
 	}
 	return networkConfScript, nil
+}
+
+// Creates a .tar.gz archive from file data
+func createTarGzFile(data []byte, fileName string, outWriter io.Writer) error {
+	// Chain writers: File -> Gzip -> Tar
+	gzipWriter := gzip.NewWriter(outWriter)
+	defer gzipWriter.Close()
+	tarWriter := tar.NewWriter(gzipWriter)
+	defer tarWriter.Close()
+
+	header := &tar.Header{
+		Name:    fileName,
+		Size:    int64(len(data)),
+		Mode:    0644,
+		ModTime: time.Now(),
+	}
+
+	if err := tarWriter.WriteHeader(header); err != nil {
+		return fmt.Errorf("failed to write tar header: %w", err)
+	}
+	if _, err := tarWriter.Write(data); err != nil {
+		return fmt.Errorf("failed to write data to tar writer: %w", err)
+	}
+	return nil
 }
