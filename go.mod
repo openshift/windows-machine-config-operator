@@ -19,7 +19,7 @@ require (
 	github.com/coreos/ignition/v2 v2.23.0
 	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.3
-	github.com/openshift/api v0.0.0-20251002150504-230d0e045316
+	github.com/openshift/api 44baf885fd37
 	github.com/openshift/client-go v0.0.0-20250922201106-dd37bfd2e597
 	github.com/openshift/library-go v0.0.0-20251003131124-f838eb5c6019
 	github.com/operator-framework/api v0.16.0
