@@ -20,6 +20,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	nodev1 "k8s.io/api/node/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -69,39 +70,39 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 	}{
 		{
 			name:            "linux curling windows",
-			webserverOS:     windowsOS,
 			curlerOS:        linux,
+			webserverOS:     windowsOS,
 			useClusterIPSVC: false,
 		},
 		{
 			name:            "windows curling windows",
-			webserverOS:     windowsOS,
 			curlerOS:        windowsOS,
+			webserverOS:     windowsOS,
 			useClusterIPSVC: false,
 		},
 		{
 			name:            "linux curling windows through a clusterIP svc",
-			webserverOS:     windowsOS,
 			curlerOS:        linux,
+			webserverOS:     windowsOS,
 			useClusterIPSVC: true,
 		},
 		{
 			name:            "windows curling windows through a clusterIP svc",
-			webserverOS:     windowsOS,
 			curlerOS:        windowsOS,
+			webserverOS:     windowsOS,
+			useClusterIPSVC: true,
+		},
+		{
+			name:            "windows curling linux through a clusterIP svc",
+			curlerOS:        windowsOS,
+			webserverOS:     linux,
 			useClusterIPSVC: true,
 		},
 		{
 			name:            "windows curling linux",
-			webserverOS:     linux,
 			curlerOS:        windowsOS,
+			webserverOS:     linux,
 			useClusterIPSVC: false,
-		},
-		{
-			name:            "windows curling linux through a clusterIP svc",
-			webserverOS:     linux,
-			curlerOS:        windowsOS,
-			useClusterIPSVC: true,
 		},
 	}
 	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node to run")
@@ -110,12 +111,12 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 
 	linuxServerDeployment, err := tc.deployLinuxWebServer()
 	require.NoError(t, err)
+	defer tc.collectDeploymentLogs(linuxServerDeployment)
 	defer tc.deleteDeployment(linuxServerDeployment.GetName())
 	linuxServerClusterIP, err := tc.createService(linuxServerDeployment.GetName(), 8080, v1.ServiceTypeClusterIP,
 		*linuxServerDeployment.Spec.Selector)
 	require.NoError(t, err)
 	defer tc.deleteService(linuxServerClusterIP.GetName())
-	linuxServerIP, err := tc.getPodIP(*linuxServerDeployment.Spec.Selector)
 	require.NoError(t, err)
 	for _, node := range gc.allNodes() {
 		t.Run(node.Name, func(t *testing.T) {
@@ -133,12 +134,8 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 				}
 			}
 			require.NoError(t, err, "could not create Windows Server deployment")
+			defer tc.collectDeploymentLogs(winServerDeployment)
 			defer tc.deleteDeployment(winServerDeployment.Name)
-			tc.collectDeploymentLogs(winServerDeployment)
-
-			// Get the pod so we can use its IP
-			winServerIP, err := tc.getPodIP(*winServerDeployment.Spec.Selector)
-			require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeployment.Spec.Selector)
 
 			// Create a clusterIP service which can be used to reach the Windows webserver
 			intermediarySVC, err := tc.createService(winServerDeployment.Name, 80, v1.ServiceTypeClusterIP, *winServerDeployment.Spec.Selector)
@@ -155,13 +152,17 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 						if tt.useClusterIPSVC {
 							endpointIP = intermediarySVC.Spec.ClusterIP
 						} else {
-							endpointIP = winServerIP
-
+							// Get the pod so we can use its IP
+							endpointIP, err = tc.getPodIP(*winServerDeployment.Spec.Selector)
+							require.NoError(t, err, "could not retrieve pod with selector %v", *winServerDeployment.Spec.Selector)
 						}
 					} else {
 						if tt.useClusterIPSVC {
 							endpointIP = linuxServerClusterIP.Spec.ClusterIP
 						} else {
+							linuxServerIP, err := tc.getPodIP(*linuxServerDeployment.Spec.Selector)
+							require.NoError(t, err)
+
 							endpointIP = linuxServerIP + ":8080"
 						}
 					}
@@ -184,7 +185,7 @@ func (tc *testContext) testEastWestNetworking(t *testing.T) {
 					defer tc.deleteJob(curlerJob.Name)
 
 					_, err = tc.waitUntilJobSucceeds(curlerJob.Name)
-					assert.NoError(t, err, "could not curl the Windows server")
+					assert.NoErrorf(t, err, "error curling endpoint %s from %s pod", endpointIP, tt.curlerOS)
 				})
 			}
 			t.Run("service DNS resolution", func(t *testing.T) {
@@ -226,19 +227,19 @@ func (tc *testContext) testPodDNSResolution(t *testing.T) {
 }
 
 // collectDeploymentLogs collects logs of a deployment to the Artifacts directory
-func (tc *testContext) collectDeploymentLogs(deployment *appsv1.Deployment) {
+func (tc *testContext) collectDeploymentLogs(deployment *appsv1.Deployment) error {
 	// map of labels expected to be on each pod in the deployment
 	matchLabels := deployment.Spec.Selector.MatchLabels
 	if len(matchLabels) == 0 {
-		log.Printf("deployment pod label map is empty")
-		return
+		return fmt.Errorf("deployment pod label map is empty")
 	}
 	var keyValPairs []string
 	for key, value := range matchLabels {
 		keyValPairs = append(keyValPairs, key+"="+value)
 	}
 	labelSelector := strings.Join(keyValPairs, ",")
-	tc.writePodLogs(labelSelector)
+	_, err := tc.gatherPodLogs(labelSelector)
+	return err
 }
 
 // getLogs uses a label selector and returns the logs associated with each pod
@@ -297,7 +298,9 @@ func (tc *testContext) testNorthSouthNetworking(t *testing.T) {
 	}
 	require.NoError(t, err, "could not create Windows Server deployment")
 	defer tc.deleteDeployment(winServerDeployment.GetName())
-	tc.collectDeploymentLogs(winServerDeployment)
+	if err := tc.collectDeploymentLogs(winServerDeployment); err != nil {
+		log.Printf("error collecting deployment logs: %v", err)
+	}
 	// Assert that we can successfully GET the webserver
 	err = tc.getThroughLoadBalancer(winServerDeployment)
 	assert.NoError(t, err, "unable to GET the webserver through a load balancer")
@@ -466,13 +469,27 @@ func (tc *testContext) deployWindowsWebServer(name string, affinity *v1.Affinity
 		volumes, volumeMounts = append([]v1.Volume{}, v), append([]v1.VolumeMount{}, vm)
 	}
 	// This will run a Server on the container, which can be reached with a GET request
-	winServerCommand := []string{powerShellExe, "-command",
-		"$listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start(); " +
-			"Write-Host('Listening at http://*:80/'); while ($listener.IsListening) { " +
-			"$context = $listener.GetContext(); $response = $context.Response; " +
-			"$content='<html><body><H1>Windows Container Web Server</H1></body></html>'; " +
-			"$buffer = [System.Text.Encoding]::UTF8.GetBytes($content); $response.ContentLength64 = $buffer.Length; " +
-			"$response.OutputStream.Write($buffer, 0, $buffer.Length); $response.Close(); };"}
+	winServerCommand := []string{
+		powerShellExe,
+		"-command",
+		"$ipconfigOutput = ipconfig;" +
+			"$listener = New-Object System.Net.HttpListener;" +
+			"$listener.Prefixes.Add('http://*:80/');" +
+			"$listener.Start();" +
+			"Write-Host('Listening at http://*:80/');" +
+			"while ($listener.IsListening) { " +
+			"  $context = $listener.GetContext();" +
+			"  $clientIPAddress = $context.Request.RemoteEndpoint.Address.ToString();" +
+			"  $timestamp = Get-Date;" +
+			"  Write-Host $clientIPAddress [$timestamp] $context.Request.HttpMethod $context.Request.Url.AbsolutePath" +
+			"  'HTTP/'$context.Request.ProtocolVersion $context.Request.UserAgent;" +
+			"  $response = $context.Response;" +
+			"  $content='<html><body><H1>Windows Container Web Server</H1>'+$ipconfigOutput+'</body></html>'; " +
+			"  $buffer = [System.Text.Encoding]::UTF8.GetBytes($content);" +
+			"  $response.ContentLength64 = $buffer.Length;" +
+			"  $response.OutputStream.Write($buffer, 0, $buffer.Length);" +
+			"  $response.Close();" +
+			"};"}
 	winServerDeployment, err := tc.createWindowsServerDeployment(name, winServerCommand, affinity, volumes, volumeMounts)
 	if err != nil {
 		return nil, fmt.Errorf("could not create Windows deployment: %w", err)
@@ -524,6 +541,16 @@ func (tc *testContext) deployLinuxWebServer() (*appsv1.Deployment, error) {
 									MountPath: "/var/www/html/",
 								},
 							},
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("500m"),
+									v1.ResourceMemory: resource.MustParse("256Mi"),
+								},
+								Requests: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("500m"),
+									v1.ResourceMemory: resource.MustParse("256Mi"),
+								},
+							},
 						},
 					},
 					InitContainers: []v1.Container{
@@ -531,7 +558,36 @@ func (tc *testContext) deployLinuxWebServer() (*appsv1.Deployment, error) {
 							Name:    "index-creator",
 							Image:   tc.toolsImage,
 							Command: []string{"bash"},
-							Args:    []string{"-c", "echo '<!DOCTYPE html><html><head><title>Hello world</title></head><body><p>Hello world</p></body></html>' > /var/www/html/index.html"},
+							Args: []string{"-c",
+								"echo '<!DOCTYPE html>" +
+									"<html>" +
+									"	<head>" +
+									"		<title>Linux Webserver</title>" +
+									"	</head>" +
+									"	<body>" +
+									"		<p>Linux pod IP: '$(POD_IP)'</p>" +
+									"		<p>Linux host IP: '$(HOST_IP)'</p>" +
+									"	</body>" +
+									"</html>'" +
+									" > /var/www/html/index.html"},
+							Env: []v1.EnvVar{
+								{
+									Name: "POD_IP",
+									ValueFrom: &v1.EnvVarSource{
+										FieldRef: &v1.ObjectFieldSelector{
+											FieldPath: "status.podIP",
+										},
+									},
+								},
+								{
+									Name: "HOST_IP",
+									ValueFrom: &v1.EnvVarSource{
+										FieldRef: &v1.ObjectFieldSelector{
+											FieldPath: "status.hostIP",
+										},
+									},
+								},
+							},
 							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "html",
@@ -674,6 +730,16 @@ func (tc *testContext) createWindowsServerDeployment(name string, command []stri
 								},
 							},
 							VolumeMounts: volumeMounts,
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("500m"),
+									v1.ResourceMemory: resource.MustParse("500Mi"),
+								},
+								Requests: v1.ResourceList{
+									v1.ResourceCPU:    resource.MustParse("500m"),
+									v1.ResourceMemory: resource.MustParse("500Mi"),
+								},
+							},
 						},
 					},
 					RuntimeClassName: &rcName,
@@ -734,10 +800,10 @@ func (tc *testContext) getPodEvents(name string) ([]v1.Event, error) {
 func (tc *testContext) createLinuxCurlerJob(jobSuffix, endpoint string, continuous bool) (*batchv1.Job, error) {
 	// Retries a failed curl attempt once to avoid flakes
 	curlCommand := fmt.Sprintf(
-		"curl %s;"+
+		"curl -v %s;"+
 			" if [ $? != 0 ]; then"+
 			" sleep 60;"+
-			" curl %s || exit 1;"+
+			" curl -v %s || exit 1;"+
 			" fi",
 		endpoint, endpoint)
 	if continuous {
@@ -764,14 +830,29 @@ func (tc *testContext) createWinCurlerJob(name string, winServerIP string, affin
 	return winCurlerJob, err
 }
 
-// getWinCurlerCommand generates a command to curl a Windows server from the given IP address
-func (tc *testContext) getWinCurlerCommand(winServerIP string) string {
-	// This will continually try to read from the Windows Server. We have to try multiple times as the Windows container
-	// takes some time to finish initial network setup.
-	return "for (($i =0), ($j = 0); $i -lt 60; $i++) { " +
-		"$response = Invoke-Webrequest -UseBasicParsing -Uri " + winServerIP +
-		"; $code = $response.StatusCode; echo \"GET returned code $code\";" +
-		"If ($code -eq 200) {exit 0}; Start-Sleep -s 10;}; exit 1"
+// getWinCurlerCommand generates a PowerShell command to curl the given server URI
+// The command will attempt to curl the server URI up to 25 times, waiting 5 seconds between each attempt
+// resulting in a total timeout of 2 minutes. We have to try multiple times as a Windows container
+// may take more time to pull image and finish initial network setup.
+func (tc *testContext) getWinCurlerCommand(serverURI string) string {
+	return "ipconfig;" +
+		"for ($i = 1; $i -le 25; $i++) { " +
+		" echo \"\";" +
+		" echo \"Attempt #$i\";" +
+		" echo \"Curling server URI: " + serverURI + "\";" +
+		" $response = Invoke-WebRequest -UseBasicParsing -Uri " + serverURI + ";" +
+		" $code = $response.StatusCode;" +
+		" echo \"GET returned code $code\";" +
+		" echo \"GET returned content:\";" +
+		" echo $response.RawContent;" +
+		" If ($code -eq 200) {" +
+		"  exit 0" +
+		" };" +
+		" echo \"Waiting 5 seconds...\";" +
+		" Start-Sleep -s 5;" +
+		"};" +
+		"echo \"Time exceeded, cannot reach " + serverURI + "\";" +
+		"exit 1"
 }
 
 // createWindowsServerJob creates a job which will run the provided PowerShell command with a Windows Server image
@@ -841,44 +922,52 @@ func (tc *testContext) waitUntilJobSucceeds(name string) (string, error) {
 			return "", err
 		}
 		labelSelector = "job-name=" + job.Name
-		tc.writePodLogs(labelSelector)
 		if job.Status.Succeeded > 0 {
-			logs, err := tc.getLogs(labelSelector)
+			logs, err := tc.gatherPodLogs(labelSelector)
 			if err != nil {
-				log.Printf("Unable to get logs associated with pod: %s", labelSelector)
+				log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
 			}
 			return logs, nil
 		}
 		if job.Status.Failed > 0 {
+			_, err = tc.gatherPodLogs(labelSelector)
+			if err != nil {
+				log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
+			}
 			events, _ := tc.getPodEvents(name)
 			return "", fmt.Errorf("job %v failed: %v", job, events)
 		}
 		time.Sleep(retryInterval)
 	}
-	tc.writePodLogs(labelSelector)
+	_, err = tc.gatherPodLogs(labelSelector)
+	if err != nil {
+		log.Printf("Unable to get logs associated with pod %s: %v", labelSelector, err)
+	}
 	events, _ := tc.getPodEvents(name)
 	return "", fmt.Errorf("job %v timed out: %v", job, events)
 }
 
-// writePodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts dir
-func (tc *testContext) writePodLogs(labelSelector string) {
-	logs, err := tc.getLogs(labelSelector)
-	if err != nil {
-		log.Printf("Unable to get logs associated with pod: %s", labelSelector)
-		return
-	}
-	podLogFile := fmt.Sprintf("%s.log", labelSelector)
+// gatherPodLogs writes the logs associated with the label selector of a given pod job or deployment to the Artifacts
+// dir. Returns the written logs.
+func (tc *testContext) gatherPodLogs(labelSelector string) (string, error) {
 	podArtifacts := filepath.Join(os.Getenv("ARTIFACT_DIR"), "pods")
 	podDir := filepath.Join(podArtifacts, labelSelector)
-	err = os.MkdirAll(podDir, os.ModePerm)
+	err := os.MkdirAll(podDir, os.ModePerm)
 	if err != nil {
-		log.Printf("Error creating pod log collection directory in directory: %s", podDir)
+		return "", fmt.Errorf("error creating pod log collection directory %s: %w", podDir, err)
 	}
+
+	logs, err := tc.getLogs(labelSelector)
+	if err != nil {
+		return "", fmt.Errorf("unable to get logs for pod %s: %w", labelSelector, err)
+	}
+	podLogFile := fmt.Sprintf("%s.log", labelSelector)
 	outputFile := filepath.Join(podDir, filepath.Base(podLogFile))
 	logsErr := ioutil.WriteFile(outputFile, []byte(logs), os.ModePerm)
 	if logsErr != nil {
-		log.Printf("Unable to write pod logs with label %s to file %s", labelSelector, outputFile)
+		return "", fmt.Errorf("unable to write %s pod logs to %s: %w", labelSelector, outputFile, logsErr)
 	}
+	return logs, nil
 }
 
 // getRuntimeClassName returns the name of a runtime class for the given server version. If one does not exist on the
