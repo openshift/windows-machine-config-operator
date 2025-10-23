@@ -32,6 +32,7 @@ func New(oc *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*
 
 // GenerateMachineSet generates a Windows MachineSet which is Nutanix provider specific
 func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*machinev1beta1.MachineSet, error) {
+	// TODO: (nutanix) add support for Windows Server 2025 when golden image is available for 2025
 	if windowsServerVersion != windows.Server2022 {
 		return nil, fmt.Errorf("Windows Server %s is not available in Nutanix CI", windowsServerVersion)
 	}

@@ -82,6 +82,7 @@ func generateUserDataWithPubKey(platformType oconfig.PlatformType, pubKey string
 			}
 
 			# This requires a network connection, which is not guaranteed at VM initialization. Retry to work around this.
+			# Required for Windows Server 2019 and 2022 only, Windows Server 2025 has the OpenSSH capability installed by default
 			$attempt = 0
 			$success = $false
 			while (-not $success -and $attempt -lt 10) {
@@ -98,6 +99,13 @@ func generateUserDataWithPubKey(platformType oconfig.PlatformType, pubKey string
 			$containerLogsPort = "10250"
 			New-NetFirewallRule -DisplayName $firewallRuleName -Direction Inbound -Action Allow -Protocol TCP -LocalPort $containerLogsPort -EdgeTraversalPolicy Allow
 			New-NetFirewallRule -DisplayName "WindowsExporter" -Direction Inbound -Action Allow -Protocol TCP -LocalPort "` + windowsExporterPort + `" -EdgeTraversalPolicy Allow
+
+			$firewallRuleNameOpenSSHServer = "OpenSSH-Server-In-TCP"
+			if (!(Get-NetFirewallRule -Name $firewallRuleNameOpenSSHServer -ErrorAction SilentlyContinue)) { New-NetFirewallRule -Name $firewallRuleNameOpenSSHServer -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 }
+			Enable-NetFirewallRule -Name $firewallRuleNameOpenSSHServer
+			Set-NetFirewallRule -Name $firewallRuleNameOpenSSHServer -Profile Any
+			Get-NetFirewallRule -Name $firewallRuleNameOpenSSHServer | Format-List
+
 			Set-Service -Name sshd -StartupType 'Automatic'
 			Start-Service sshd
 			(Get-Content -path C:\ProgramData\ssh\sshd_config) | ForEach-Object {

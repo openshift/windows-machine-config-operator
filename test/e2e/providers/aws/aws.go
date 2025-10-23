@@ -61,6 +61,8 @@ func getWindowsAMIFilter(windowsServerVersion windows.ServerVersion) string {
 	switch windowsServerVersion {
 	case windows.Server2019:
 		return "Windows_Server-2019-English-Core-Base-????.??.??"
+	case windows.Server2025:
+		return "Windows_Server-2025-English-Core-Base-????.??.??"
 	case windows.Server2022:
 	default:
 	}
@@ -138,6 +140,10 @@ func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, wind
 		Subnet:             linuxWorkerSpec.Subnet,
 		Placement:          linuxWorkerSpec.Placement,
 		UserDataSecret:     &core.LocalObjectReference{Name: clusterinfo.UserDataSecretName},
+		MetadataServiceOptions: mapi.MetadataServiceOptions{
+			// Setting the MetadataService to optional as IMDSv2 is not yet supported by WMCO
+			Authentication: mapi.MetadataServiceAuthenticationOptional,
+		},
 	}
 
 	rawBytes, err := json.Marshal(providerSpec)

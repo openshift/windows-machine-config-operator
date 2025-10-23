@@ -84,10 +84,20 @@ get_aws_ms() {
   local winver=$3
   local byoh=$4
 
-  local filter="Windows_Server-2022-English-Core-Base-????.??.??"
-  if [ "$winver" == "2019" ]; then
-    filter="Windows_Server-2019-English-Core-Base-????.??.??"
-  fi
+  # check Windows version and set AMI filter
+  filter=""
+  case "$winver" in
+    "2019")
+      filter="Windows_Server-2019-English-Core-Base-????.??.??"
+      ;;
+    "2025")
+      filter="Windows_Server-2025-English-Core-Base-????.??.??"
+      ;;
+    *)
+      # default to 2022
+      filter="Windows_Server-2022-English-Core-Base-????.??.??"
+      ;;
+  esac
 
 
   local az=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.placement.availabilityZone)
@@ -118,6 +128,8 @@ $(get_spec $infraID $az aws $byoh)
             id: ${infraID}-worker-profile
           instanceType: m5a.large
           kind: AWSMachineProviderConfig
+          metadataServiceOptions:
+            authentication: Optional
           placement:
             availabilityZone: ${az}
             region: ${region}
@@ -151,13 +163,24 @@ get_azure_ms() {
   local winver=$3
   local byoh=$4
 
-  local sku="2022-datacenter-smalldisk"
+  # check Windows version and set sku
+  local sku=""
   local release="latest"
-  if [ "$winver" == "2019" ]; then
-    sku="2019-datacenter-smalldisk"
-    # TODO: remove when VM SSH issue is patched in Azure cloud
-    release="17763.6293.240905"
-  fi
+  case "$winver" in
+    "2019")
+      sku="2019-datacenter-smalldisk"
+      # TODO: remove when VM SSH issue is patched in Azure cloud
+      release="17763.6293.240905"
+      ;;
+    "2025")
+      sku="2025-datacenter-smalldisk"
+      ;;
+    *)
+      # default to 2022
+      sku="2022-datacenter-smalldisk"
+      ;;
+  esac
+
   local az=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.zone | sed 's/null/""/g')
   local region=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.location)
   local loadBalancer=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.publicLoadBalancer)
@@ -213,10 +236,20 @@ get_gcp_ms() {
   local winver=$3
   local byoh=$4
 
-  local image="projects/windows-cloud/global/images/family/windows-2022-core"
-  if [ "$winver" == "2019" ]; then
-    image="projects/windows-cloud/global/images/family/windows-2019-core"
-  fi
+  # check Windows version and set image family
+  local image=""
+  case "$winver" in
+    "2019")
+      image="projects/windows-cloud/global/images/family/windows-2019-core"
+      ;;
+    "2025")
+      image="projects/windows-cloud/global/images/family/windows-2025-core"
+      ;;
+    *)
+      # default to 2022
+      image="projects/windows-cloud/global/images/family/windows-2022-core"
+      ;;
+  esac
 
   local az=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.zone)
   local region=$(echo "$linuxWorkerSpec" | jq -r .providerSpec.value.region)
@@ -391,8 +424,8 @@ while getopts ":w:b" opt; do
   case ${opt} in
     w ) # Windows Server version to use in the MachineSet. Defaults to 2022. Other option is 2019.
       winver="$OPTARG"
-      if [[ ! "$winver" =~ 2019|2022$ ]]; then
-        echo "Invalid -w option $winver. Valid options are 2019 or 2022"
+      if [[ ! "$winver" =~ 2019|2022|2025$ ]]; then
+        echo "Invalid -w option $winver. Valid options are 2019, 2022 or 2025"
         exit 1
       fi
       ;;
