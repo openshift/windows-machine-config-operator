@@ -231,9 +231,6 @@ github.com/google/go-cmp/cmp/internal/diff
 github.com/google/go-cmp/cmp/internal/flags
 github.com/google/go-cmp/cmp/internal/function
 github.com/google/go-cmp/cmp/internal/value
-# github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
-## explicit; go 1.13
-github.com/google/shlex
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
@@ -938,7 +935,7 @@ k8s.io/apiserver/pkg/warning
 k8s.io/apiserver/plugin/pkg/authenticator/token/webhook
 k8s.io/apiserver/plugin/pkg/authorizer/webhook
 k8s.io/apiserver/plugin/pkg/authorizer/webhook/metrics
-# k8s.io/cli-runtime v0.33.5
+# k8s.io/cli-runtime v0.34.1
 ## explicit; go 1.24.0
 k8s.io/cli-runtime/pkg/genericclioptions
 k8s.io/cli-runtime/pkg/genericiooptions
@@ -1246,7 +1243,7 @@ k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/cloud-provider v0.33.5
+# k8s.io/cloud-provider v0.34.1
 ## explicit; go 1.24.0
 k8s.io/cloud-provider/api
 # k8s.io/component-base v0.34.1
@@ -1266,7 +1263,7 @@ k8s.io/component-base/tracing
 k8s.io/component-base/tracing/api/v1
 k8s.io/component-base/version
 k8s.io/component-base/zpages/features
-# k8s.io/controller-manager v0.33.5
+# k8s.io/controller-manager v0.34.1
 ## explicit; go 1.24.0
 k8s.io/controller-manager/pkg/features
 # k8s.io/klog/v2 v2.130.1
@@ -1296,7 +1293,7 @@ k8s.io/kube-openapi/pkg/validation/errors
 k8s.io/kube-openapi/pkg/validation/spec
 k8s.io/kube-openapi/pkg/validation/strfmt
 k8s.io/kube-openapi/pkg/validation/strfmt/bson
-# k8s.io/kubectl v0.33.5
+# k8s.io/kubectl v0.34.1
 ## explicit; go 1.24.0
 k8s.io/kubectl/pkg/cmd/util
 k8s.io/kubectl/pkg/drain
@@ -1307,11 +1304,11 @@ k8s.io/kubectl/pkg/util/openapi
 k8s.io/kubectl/pkg/util/templates
 k8s.io/kubectl/pkg/util/term
 k8s.io/kubectl/pkg/validation
-# k8s.io/kubelet v0.33.5
+# k8s.io/kubelet v0.34.1
 ## explicit; go 1.24.0
 k8s.io/kubelet/config/v1
 k8s.io/kubelet/config/v1beta1
-# k8s.io/kubernetes v1.33.4
+# k8s.io/kubernetes v1.34.1
 ## explicit; go 1.24.0
 k8s.io/kubernetes/pkg/credentialprovider
 k8s.io/kubernetes/pkg/features
@@ -1325,7 +1322,6 @@ k8s.io/utils/internal/third_party/forked/golang/net
 k8s.io/utils/lru
 k8s.io/utils/net
 k8s.io/utils/path
-k8s.io/utils/pointer
 k8s.io/utils/ptr
 k8s.io/utils/trace
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2
@@ -1388,7 +1384,7 @@ sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
 ## explicit; go 1.23
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/kustomize/api v0.19.0
+# sigs.k8s.io/kustomize/api v0.20.1
 ## explicit; go 1.22.7
 sigs.k8s.io/kustomize/api/filters/annotations
 sigs.k8s.io/kustomize/api/filters/fieldspec
@@ -1434,7 +1430,7 @@ sigs.k8s.io/kustomize/api/provider
 sigs.k8s.io/kustomize/api/resmap
 sigs.k8s.io/kustomize/api/resource
 sigs.k8s.io/kustomize/api/types
-# sigs.k8s.io/kustomize/kyaml v0.19.0
+# sigs.k8s.io/kustomize/kyaml v0.20.1
 ## explicit; go 1.22.7
 sigs.k8s.io/kustomize/kyaml/comments
 sigs.k8s.io/kustomize/kyaml/errors
@@ -1480,7 +1476,6 @@ sigs.k8s.io/structured-merge-diff/v6/value
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
-sigs.k8s.io/yaml/goyaml.v2
-sigs.k8s.io/yaml/goyaml.v3
+sigs.k8s.io/yaml/kyaml
 # github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 # github.com/golang-jwt/jwt/v5 => github.com/golang-jwt/jwt/v5 v5.2.2
