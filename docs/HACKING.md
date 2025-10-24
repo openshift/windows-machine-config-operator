@@ -238,7 +238,7 @@ opm index rm --from-index $INDEX_IMAGE:$INDEX_TAG
 ```
 #### Create a CatalogSource using the index
 
-See the OpenShift docs for [adding a CatalogSource to a cluster](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/extensions/catalogs)
+See the OpenShift docs for [adding a CatalogSource to a cluster](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/extensions/catalogs)
 
 #### Create a subscription object 
 
