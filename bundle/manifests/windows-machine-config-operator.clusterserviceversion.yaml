@@ -18,7 +18,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
     features.operators.openshift.io/token-auth-gcp: "false"
-    olm.skipRange: '>=10.19.0 <10.20.0'
+    olm.skipRange: '>=10.19.0 <10.20.1'
     operatorframework.io/cluster-monitoring: "true"
     operatorframework.io/suggested-namespace: openshift-windows-machine-config-operator
     operators.openshift.io/valid-subscription: '["Red Hat OpenShift support for Windows
@@ -27,7 +27,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v3
     repository: https://github.com/openshift/windows-machine-config-operator
     support: Red Hat
-  name: windows-machine-config-operator.v10.20.0
+  name: windows-machine-config-operator.v10.20.1
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -35,7 +35,7 @@ spec:
   description: |-
     ### Introduction
     The Windows Machine Config Operator configures Windows Machines into nodes, enabling Windows container workloads to
-    be run on OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/windows_container_support_for_openshift/creating-windows-machine-sets),
+    be run on OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/windows_container_support_for_openshift/creating-windows-machine-sets#creating-windows-machineset-aws),
     or by specifying existing instances through a [ConfigMap](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/windows_container_support_for_openshift/byoh-windows-instance)
     The operator completes all the necessary steps to configure the Windows instance so that it can join the cluster as a worker node.
 
@@ -57,7 +57,7 @@ spec:
     oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
     ```
     We strongly recommend not using the same
-    [private key](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/installing_on_azure/installing-on-azure#ssh-agent-using_installing-azure-customizations)
+    [private key](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/installing_on_azure/installing-azure-default#ssh-agent-using_installing-azure-default)
     used when installing the cluster
 
     Below is an example of a vSphere Windows MachineSet which can create Windows Machines that the WMCO can react upon.
@@ -153,7 +153,7 @@ spec:
 
     ### Reporting issues
     Support for this distribution of WMCO requires a Red Hat OpenShfit subscription. Support should be requested through the Red Hat Customer Portal.
-    Please read through the [troubleshooting document](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/support/troubleshooting)
+    Please read through the [troubleshooting document](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/support/troubleshooting#olm-reinstall_troubleshooting-operator-issues)
     before opening a support case.
   displayName: Windows Machine Config Operator
   icon:
@@ -529,4 +529,4 @@ spec:
   minKubeVersion: 1.33.0
   provider:
     name: Red Hat
-  version: 10.20.0
+  version: 10.20.1
