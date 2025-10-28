@@ -24,7 +24,7 @@ const (
 	ovnKubernetesNetwork = "OVNKubernetes"
 	// baseK8sVersion specifies the base k8s version supported by the operator. (For eg. All versions in the format
 	// 1.20.x are supported for baseK8sVersion 1.20)
-	baseK8sVersion = "v1.33"
+	baseK8sVersion = "v1.34"
 	// MachineAPINamespace is the name of the namespace in which machine objects and userData secret is created.
 	MachineAPINamespace = "openshift-machine-api"
 )
