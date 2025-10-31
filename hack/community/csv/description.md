@@ -9,8 +9,8 @@ version of OKD/OCP you are using. This CSV is meant for OKD/OCP COMMUNITY_VERSIO
 ## Documentation
 ### Introduction
 The Windows Machine Config Operator configures Windows instances into nodes, enabling Windows container workloads
-to be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/windows_container_support_for_openshift/creating-windows-machine-sets#creating-windows-machineset-aws),
-or by specifying existing instances through a [ConfigMap](https://docs.redhat.com/en/documentation/openshift_container_platform/4.18/html/windows_container_support_for_openshift/byoh-windows-instance).
+to be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/windows_container_support_for_openshift/creating-windows-machine-sets#creating-windows-machineset-aws),
+or by specifying existing instances through a [ConfigMap](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/windows_container_support_for_openshift/byoh-windows-instance).
 The operator will do all the necessary steps to configure the instance so that it can join the cluster as a worker node.
 ### Pre-requisites
 - [Cluster and OS pre-requisites](https://github.com/openshift/windows-machine-config-operator/blob/COMMUNITY_VERSION/docs/wmco-prerequisites.md)

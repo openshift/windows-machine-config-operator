@@ -318,13 +318,13 @@ autoscaling support is not available for Windows workloads.
 
 ### Other limitations
 WMCO / Windows nodes does not work with the following products:
-* [odo](https://docs.redhat.com/en/documentation/openshift_container_platform/4.8/html/cli_tools/developer-cli-odo)
+* [odo](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/cli_tools/developer-cli-odo)
 * [OpenShift Builds](https://docs.redhat.com/en/documentation/builds_for_red_hat_openshift/1.4/html/about_builds/overview-of-builds)
 * [OpenShift Pipelines](https://docs.redhat.com/en/documentation/red_hat_openshift_pipelines/1.17/html-single/about_openshift_pipelines/index)
 * [OpenShift Service Mesh](https://docs.redhat.com/en/documentation/openshift_container_platform/4.1/html/service_mesh/service-mesh-architecture#understanding-service-mesh)
 * [Red Hat Insights cost management](https://docs.redhat.com/en/documentation/cost_management_service/1-latest)
 * [Red Hat OpenShift Local](https://developers.redhat.com/products/openshift-local/overview)
-* [OpenShift monitoring of user defined project](https://docs.redhat.com/en/documentation/openshift_container_platform/4.10/html/monitoring/enabling-monitoring-for-user-defined-projects)
+* [OpenShift monitoring of user defined project](https://docs.redhat.com/en/documentation/openshift_container_platform/4.13/html/monitoring/enabling-monitoring-for-user-defined-projects)
 * [HugePages](https://kubernetes.io/docs/tasks/manage-hugepages/scheduling-hugepages/)
 
 ### Trunk port
