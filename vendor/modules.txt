@@ -300,7 +300,7 @@ github.com/mxk/go-flowrate/flowrate
 ## explicit; go 1.22.0
 # github.com/onsi/gomega v1.36.2
 ## explicit; go 1.22.0
-# github.com/openshift/api v0.0.0-20251023193535-8691c3014652
+# github.com/openshift/api v0.0.0-20251028221238-1b67472a2ba8
 ## explicit; go 1.24.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
