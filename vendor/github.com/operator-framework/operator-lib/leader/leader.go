@@ -20,7 +20,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/operator-framework/operator-lib/internal/utils"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +27,8 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/operator-framework/operator-lib/internal/utils"
 )
 
 // ErrNoNamespace indicates that a namespace could not be found for the current
@@ -42,16 +43,17 @@ var readNamespace = utils.GetOperatorNamespace
 
 var log = logf.Log.WithName("leader")
 
-// maxBackoffInterval defines the maximum amount of time to wait between
+// defaultMaxBackoffInterval defines the default maximum amount of time to wait between
 // attempts to become the leader.
-const maxBackoffInterval = time.Second * 16
+const defaultMaxBackoffInterval = time.Second * 16
 
 // Option is a function that can modify Become's Config
 type Option func(*Config) error
 
 // Config defines the configuration for Become
 type Config struct {
-	Client crclient.Client
+	Client             crclient.Client
+	MaxBackoffInterval time.Duration
 }
 
 func (c *Config) setDefaults() error {
@@ -66,6 +68,12 @@ func (c *Config) setDefaults() error {
 			return err
 		}
 		c.Client = client
+	}
+
+	// Humans tend to understand a duration value as positive numbers. The constant
+	// defaultMaxBackoffInterval will overwrite the content to avoid an unintended behaviour.
+	if c.MaxBackoffInterval <= 0 {
+		c.MaxBackoffInterval = defaultMaxBackoffInterval
 	}
 	return nil
 }
@@ -179,11 +187,19 @@ func Become(ctx context.Context, lockName string, opts ...Option) error {
 					if err != nil {
 						log.Error(err, "Leader pod could not be deleted.")
 					}
+				case isPodPreempted(*leaderPod) && leaderPod.GetDeletionTimestamp() == nil:
+					log.Info("Operator pod with leader lock has been preempted.", "leader", leaderPod.Name)
+					log.Info("Deleting preempted leader.")
+					// Pod may not delete immediately, continue with backoff
+					err := config.Client.Delete(ctx, leaderPod)
+					if err != nil {
+						log.Error(err, "Leader pod could not be deleted.")
+					}
 				case isNotReadyNode(ctx, config.Client, leaderPod.Spec.NodeName):
 					log.Info("the status of the node where operator pod with leader lock was running has been 'notReady'")
 					log.Info("Deleting the leader.")
 
-					//Mark the termainating status to the leaderPod and Delete the configmap lock
+					// Mark the termainating status to the leaderPod and Delete the configmap lock
 					if err := deleteLeader(ctx, config.Client, leaderPod, existing); err != nil {
 						return err
 					}
@@ -195,7 +211,7 @@ func Become(ctx context.Context, lockName string, opts ...Option) error {
 
 			select {
 			case <-time.After(wait.Jitter(backoff, .2)):
-				if backoff < maxBackoffInterval {
+				if backoff < config.MaxBackoffInterval {
 					backoff *= 2
 				}
 				continue
@@ -233,6 +249,12 @@ func isPodEvicted(pod corev1.Pod) bool {
 	return podFailed && podEvicted
 }
 
+func isPodPreempted(pod corev1.Pod) bool {
+	podFailed := pod.Status.Phase == corev1.PodFailed
+	podPreempted := pod.Status.Reason == "Preempting"
+	return podFailed && podPreempted
+}
+
 // getPod returns a Pod object that corresponds to the pod in which the code
 // is currently running.
 // It expects the environment variable POD_NAME to be set by the downwards API.
@@ -251,11 +273,6 @@ func getPod(ctx context.Context, client crclient.Client, ns string) (*corev1.Pod
 		log.Error(err, "Failed to get Pod", "Pod.Namespace", ns, "Pod.Name", podName)
 		return nil, err
 	}
-
-	// .Get() clears the APIVersion and Kind,
-	// so we need to set them before returning the object.
-	pod.TypeMeta.APIVersion = "v1"
-	pod.TypeMeta.Kind = "Pod"
 
 	log.V(1).Info("Found Pod", "Pod.Namespace", ns, "Pod.Name", pod.Name)
 
@@ -283,7 +300,6 @@ func isNotReadyNode(ctx context.Context, client crclient.Client, nodeName string
 		}
 	}
 	return false
-
 }
 
 func deleteLeader(ctx context.Context, client crclient.Client, leaderPod *corev1.Pod, existing *corev1.ConfigMap) error {

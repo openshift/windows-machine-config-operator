@@ -48,7 +48,7 @@ You should run it configured with:
 env:
   - name: POD_NAME
     valueFrom:
-      fieldRef:
-        fieldPath: metadata.name
+    fieldRef:
+    fieldPath: metadata.name
 */
 package leader
