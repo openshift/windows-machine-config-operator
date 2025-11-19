@@ -509,7 +509,8 @@ spec:
     workspaces:
     - name: git-auth
       optional: true
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-windows-machine-config-operator-bundle-release-4-19
   workspaces:
   - name: git-auth
     secret:
