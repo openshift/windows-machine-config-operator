@@ -121,7 +121,6 @@
     "enabled": true,
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/",
-    "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
     "postUpgradeTasks": {
       "commands": ["go mod vendor", "go mod verify"],
       "fileFilters": ["vendor/**"]
@@ -140,7 +139,9 @@
           "k8s.io/kubernetes",
           "github.com/openshift/api",
           "github.com/openshift/client-go",
-          "github.com/openshift/library-go"
+          "github.com/openshift/library-go",
+          "github.com/golang-jwt/jwt/v4",
+          "github.com/golang-jwt/jwt/v5"
         ]
       }
     ]
@@ -290,10 +291,7 @@
   },
   "forkProcessing": "enabled",
   "allowedCommands": [
-    "^rpm-lockfile-prototype rpms.in.yaml$",
-    "^go mod vendor$",
-    "^go mod tidy$",
-    "^go mod verify$"
+    "^rpm-lockfile-prototype rpms.in.yaml$"
   ],
   "dependencyDashboard": false
 }
