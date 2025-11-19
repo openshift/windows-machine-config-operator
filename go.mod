@@ -5,6 +5,8 @@ go 1.22.0
 toolchain go1.22.3
 
 replace (
+	// fix the latest working version for go.1.22
+	github.com/go-openapi/jsonreference => github.com/go-openapi/jsonreference v0.21.0
 	// fix the latest working version for go1.22
 	golang.org/x/exp => golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	// fix CVE-2025-22869 with downstream tag v0.33.openshift.1
