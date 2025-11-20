@@ -121,10 +121,6 @@
     "enabled": true,
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/",
-    "postUpgradeTasks": {
-      "commands": ["go mod vendor", "go mod verify"],
-      "fileFilters": ["vendor/**"]
-    },
     "packageRules": [
       {
         "matchManagers": ["gomod"],
