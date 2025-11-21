@@ -26,8 +26,8 @@ const (
 
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
 // will be enabled for services that support it.
-func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort string, platform config.PlatformType,
-	debug bool) (*servicescm.Data, error) {
+func GenerateManifest(kubeletArgsFromIgnition map[string]string, apiServerEndpoint string, vxlanPort string,
+	platform config.PlatformType, debug bool) (*servicescm.Data, error) {
 	windowsExporterServiceCommand := fmt.Sprintf("%s --collectors.enabled "+
 		"cpu,cs,logical_disk,net,os,service,system,textfile,container,memory,cpu_info --web.config.file %s",
 		windows.WindowsExporterPath, windows.TLSConfPath)
@@ -46,7 +46,7 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, vxlanPort strin
 	},
 		containerdConfiguration(debug),
 		kubeletConfiguration,
-		hybridOverlayConfiguration(vxlanPort, debug),
+		hybridOverlayConfiguration(apiServerEndpoint, vxlanPort, debug),
 		kubeProxyConfiguration(debug),
 		csiProxyConfiguration(debug),
 	}
@@ -104,13 +104,16 @@ func azureCloudNodeManagerConfiguration() servicescm.Service {
 }
 
 // hybridOverlayConfiguration returns the Service definition for hybrid-overlay
-func hybridOverlayConfiguration(vxlanPort string, debug bool) servicescm.Service {
+func hybridOverlayConfiguration(apiServerEndpoint, vxlanPort string, debug bool) servicescm.Service {
 	hybridOverlayServiceCmd := fmt.Sprintf("%s --node NODE_NAME --bootstrap-kubeconfig=%s --cert-dir=%s --cert-duration=24h "+
 		"--windows-service --logfile "+"%s\\hybrid-overlay.log", windows.HybridOverlayPath, windows.KubeconfigPath, windows.CniConfDir,
 		windows.HybridOverlayLogDir)
 
+	// append k8s apiserver option pointing to the api server URL
+	hybridOverlayServiceCmd = fmt.Sprintf("%s --k8s-apiserver=%s", hybridOverlayServiceCmd, apiServerEndpoint)
+
 	// append cacert option pointing to the trusted CA bundle path
-	hybridOverlayServiceCmd = fmt.Sprintf("%s --k8s-cacert %s", hybridOverlayServiceCmd, windows.TrustedCABundlePath)
+	hybridOverlayServiceCmd = fmt.Sprintf("%s --k8s-cacert %s", hybridOverlayServiceCmd, windows.BootstrapCaCertPath)
 
 	if len(vxlanPort) > 0 {
 		hybridOverlayServiceCmd = fmt.Sprintf("%s --hybrid-overlay-vxlan-port %s", hybridOverlayServiceCmd, vxlanPort)
