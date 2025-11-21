@@ -118,7 +118,7 @@
     ]
   },
   "gomod": {
-    "enabled": true,
+    "enabled": false,
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/",
     "packageRules": [
