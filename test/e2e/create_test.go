@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math"
 	"net"
@@ -791,5 +790,5 @@ func retrieveWindowsNodeObjects(dir string) error {
 		return err
 	}
 	outputFile := filepath.Join(destDir, "nodes"+"."+outputFormat)
-	return ioutil.WriteFile(outputFile, out, os.ModePerm)
+	return os.WriteFile(outputFile, out, os.ModePerm)
 }

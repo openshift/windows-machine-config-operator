@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 
 	"golang.org/x/crypto/openpgp"
@@ -97,7 +96,7 @@ func decrypt(encrypted string, key []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	plainTextBytes, err := ioutil.ReadAll(msgBody)
+	plainTextBytes, err := io.ReadAll(msgBody)
 	if err != nil {
 		return "", fmt.Errorf("unable to parse decrypted data into a readable value: %w", err)
 	}
