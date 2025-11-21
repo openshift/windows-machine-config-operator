@@ -64,6 +64,7 @@ import (
 //+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
 //+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=rolebindings,verbs=get;create;delete
 //+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=clusterrolebindings,verbs=get;create;delete
+//+kubebuilder:rbac:groups="config.openshift.io",resources=infrastructures,verbs=get;list;watch
 
 const (
 	// BYOHLabel is a label that should be applied to all Windows nodes not associated with a Machine.
@@ -97,6 +98,18 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, err
 	}
+
+	// Fetch the infrastructure object to get the API server endpoint
+	infra := &config.Infrastructure{}
+	if err := directClient.Get(context.TODO(), kubeTypes.NamespacedName{Name: "cluster"}, infra); err != nil {
+		return nil, fmt.Errorf("unable to get cluster infrastructure: %w", err)
+	}
+
+	apiServerEndpoint := infra.Status.APIServerInternalURL
+	if apiServerEndpoint == "" {
+		return nil, fmt.Errorf("APIServerInternalURL is not set in infrastructure")
+	}
+
 	ign, err := ignition.New(directClient)
 	if err != nil {
 		return nil, fmt.Errorf("error creating ignition object: %w", err)
@@ -105,7 +118,7 @@ func NewConfigMapReconciler(mgr manager.Manager, clusterConfig cluster.Config, w
 	if err != nil {
 		return nil, err
 	}
-	svcData, err := services.GenerateManifest(argsFromIgnition, clusterConfig.Network().VXLANPort(),
+	svcData, err := services.GenerateManifest(argsFromIgnition, apiServerEndpoint, clusterConfig.Network().VXLANPort(),
 		clusterConfig.Platform(), ctrl.Log.V(1).Enabled())
 	if err != nil {
 		return nil, fmt.Errorf("error generating expected Windows service state: %w", err)
