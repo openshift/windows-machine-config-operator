@@ -132,6 +132,7 @@ func (r *metricReconciler) ensureServiceMonitor(ctx context.Context) error {
 	replacement1 := "$1:9182"
 	replacement2 := metrics.WindowsMetricsResource
 	attachMetadataBool := true
+	endpointSliceRole := monv1.EndpointSliceRole
 	expectedSM := &monv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      metrics.WindowsMetricsResource,
@@ -141,6 +142,7 @@ func (r *metricReconciler) ensureServiceMonitor(ctx context.Context) error {
 			},
 		},
 		Spec: monv1.ServiceMonitorSpec{
+			ServiceDiscoveryRole: &endpointSliceRole,
 			AttachMetadata: &monv1.AttachMetadata{
 				Node: &attachMetadataBool,
 			},
@@ -165,7 +167,7 @@ func (r *metricReconciler) ensureServiceMonitor(ctx context.Context) error {
 							Replacement: &replacement0,
 							TargetLabel: "instance",
 							SourceLabels: []monv1.LabelName{
-								"__meta_kubernetes_endpoint_address_target_name",
+								"__meta_kubernetes_endpointslice_endpoint_target_name",
 							},
 						},
 						{ // Include only Windows nodes for this serviceMonitor
