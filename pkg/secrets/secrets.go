@@ -140,12 +140,18 @@ func appendAwsUserDataConfig(userData string) string {
 	// See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launchv2-versions.html#ec2launchv2-version-history
 	EC2LaunchMinimumVersion := "2.0.2107"
 
+	// EC2LaunchMaxSupportedVersion is the latest supported EC2Launch v2 version
+	// the versions 2.3.56 (November 4, 2025) and 2.3.5 (September 15, 2025) introduce conflicts between instance
+	// metadata and HNS networks. See OCPBUGS-65903
+	EC2LaunchMaxSupportedVersion := "2.2.63"
+
 	// S3 URL for the latest EC2Launch version
 	// see https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launch-v2-install.html#lv2-download-s3
-	EC2LaunchS3LatestURL := "https://s3.amazonaws.com/amazon-ec2launch-v2/windows/amd64/latest/AmazonEC2Launch.msi"
+	EC2LaunchS3LatestURL := fmt.Sprintf("https://s3.amazonaws.com/amazon-ec2launch-v2/windows/amd64/%s/AmazonEC2Launch.msi",
+		EC2LaunchMaxSupportedVersion)
 
 	// append the EC2Launch installation script
-	userData += `function Install-LatestEC2LaunchV2 {
+	userData += `function Install-LatestSupportedEC2LaunchV2 {
 				# set download dir
 				$DownloadDir = "$env:USERPROFILE\Desktop\EC2Launchv2"
 				New-Item -Path "$DownloadDir" -ItemType Directory -Force
@@ -154,17 +160,23 @@ func appendAwsUserDataConfig(userData string) string {
 				# set download location
 				$DownloadFile = "$DownloadDir" + "\" + $(Split-Path -Path $Url -Leaf)
 				# download the agent
-				Invoke-WebRequest -Uri $Url -OutFile $DownloadFile
+				Write-Output "Downloading $DownloadFile from $Url"
+				Invoke-WebRequest -Uri $Url -OutFile $DownloadFile -Verbose
 				# run the install
-				msiexec /i "$DownloadFile"
+				$msiexecLogFile = "$DownloadDir" + "\" + "msiexec-install.log"
+				Write-Output "Installing $DownloadFile"
+				msiexec /qn /i "$DownloadFile" /l*v $msiexecLogFile
+				Write-Output "Installation logs $msiexecLogFile"
+				Get-Content $msiexecLogFile
 			}
 			$EC2LaunchMinimumVersion = "` + EC2LaunchMinimumVersion + `"
+			$EC2LaunchMaxSupportedVersion = "` + EC2LaunchMaxSupportedVersion + `"
 			$EC2LaunchExeLocation = "$env:ProgramFiles\Amazon\EC2Launch\EC2Launch.exe"
 			
 			if ( -not (Test-Path -Path $EC2LaunchExeLocation -PathType Leaf) ) {
 				Write-Output "EC2Launch binary not found in $EC2LaunchExeLocation, installing..."
 			
-				Install-LatestEC2LaunchV2
+				Install-LatestSupportedEC2LaunchV2
 			}
 			
 			$currentVersion = $(& $EC2LaunchExeLocation version)
@@ -173,7 +185,17 @@ func appendAwsUserDataConfig(userData string) string {
 			if ($currentVersion -lt $EC2LaunchMinimumVersion) {   
 				Write-Output "EC2Launch upgrading from version $currentVersion"
 			
-				Install-LatestEC2LaunchV2
+				Install-LatestSupportedEC2LaunchV2
+			
+				$currentVersion = $(& $EC2LaunchExeLocation version)
+			}
+
+			# check max supported version
+			if ($currentVersion -gt $EC2LaunchMaxSupportedVersion) {   
+				Write-Output "Found unsupported EC2Launch version $currentVersion"
+				Write-Output "Downgrading EC2Launch to version $EC2LaunchMaxSupportedVersion"
+			
+				Install-LatestSupportedEC2LaunchV2
 			
 				$currentVersion = $(& $EC2LaunchExeLocation version)
 			}
