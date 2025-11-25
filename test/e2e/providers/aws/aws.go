@@ -78,8 +78,12 @@ func getLatestWindowsAMI(region string, windowsServerVersion windows.ServerVersi
 	windowsAMIFilterValue := getWindowsAMIFilter(windowsServerVersion)
 	searchFilter := ec2.Filter{Name: aws.String("name"), Values: []*string{&windowsAMIFilterValue}}
 
+	winDateFilterName := "creation-date"
+	winDateFilterVal := "2025-09-11T*"
+	dateFilter := ec2.Filter{Name: &winDateFilterName, Values: []*string{&winDateFilterVal}}
+
 	describedImages, err := ec2Client.DescribeImages(&ec2.DescribeImagesInput{
-		Filters: []*ec2.Filter{&searchFilter},
+		Filters: []*ec2.Filter{&searchFilter, &dateFilter},
 		Owners:  []*string{aws.String("amazon")},
 	})
 	if err != nil {
