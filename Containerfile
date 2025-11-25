@@ -192,6 +192,9 @@ LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \
     description="Windows Machine Config Operator" \
     summary="Windows Machine Config Operator" \
     maintainer="Team Windows Containers <team-winc@redhat.com>" \
+    distribution-scope="public" \
+    url="https://catalog.redhat.com/en/software/container-stacks/detail/66b6400d1db8d82852703bc1" \
+    vendor="Red Hat, Inc." \
     com.redhat.component="windows-machine-config-operator-container" \
     io.openshift.tags=""
 
@@ -215,5 +218,6 @@ ENTRYPOINT ["/usr/local/bin/entrypoint"]
 
 # Used to tag the released image. Should be a semver.
 LABEL version="v10.21.0"
+LABEL release="v10.21.0"
 
 USER ${USER_UID}
