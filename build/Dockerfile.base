@@ -83,6 +83,8 @@ sha256sum /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_o
 mkdir /payload/windows-exporter && \
 pushd /build/windows-machine-config-operator/windows_exporter/ && tar -cf - windows_exporter.exe | gzip -9 > /payload/windows-exporter/windows_exporter.exe.tar.gz && popd && \
 sha256sum /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe >> sha256sum && \
+pushd /build/windows-machine-config-operator/pkg/internal/ && tar -cf - windows-exporter-webconfig.yaml | gzip -9 > /payload/windows-exporter/windows-exporter-webconfig.yaml.tar.gz && popd && \
+sha256sum /build/windows-machine-config-operator/pkg/internal/windows-exporter-webconfig.yaml >> sha256sum && \
 # Copy azure-cloud-node-manager.exe
 pushd /build/windows-machine-config-operator/cloud-provider-azure/ && tar -cf - azure-cloud-node-manager.exe | gzip -9 > /payload/azure-cloud-node-manager.exe.tar.gz && popd && \
 sha256sum /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe >> sha256sum && \
