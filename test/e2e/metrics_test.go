@@ -82,6 +82,41 @@ func (tc *testContext) testPrometheus(t *testing.T) {
 
 }
 
+// testPrometheusEndpointSliceCleanup verifies that no Windows nodes remain in kubelet EndpointSlices
+func (tc *testContext) testPrometheusEndpointSliceCleanup(t *testing.T) {
+	// List all EndpointSlices for the kubelet service in kube-system namespace
+	endpointSlices, err := tc.client.K8s.DiscoveryV1().EndpointSlices("kube-system").List(
+		context.TODO(),
+		metav1.ListOptions{
+			LabelSelector: "kubernetes.io/service-name=kubelet",
+		},
+	)
+	require.NoError(t, err, "error listing EndpointSlices for kubelet service")
+
+	// Verify that no Windows node addresses appear in any EndpointSlice
+	var foundWindowsNodes []string
+	for _, slice := range endpointSlices.Items {
+		for _, endpoint := range slice.Endpoints {
+			// Check if this endpoint references a node
+			if endpoint.TargetRef == nil || endpoint.TargetRef.Kind != "Node" {
+				continue
+			}
+			// Try to get the node to check its OS
+			node, err := tc.client.K8s.CoreV1().Nodes().Get(context.Background(),
+				endpoint.TargetRef.Name, metav1.GetOptions{})
+			require.NoError(t, err, "node %s referenced in EndpointSlice not found - EndpointSlice not synced properly",
+				endpoint.TargetRef.Name)
+			// Check if this is a Windows node
+			if nodeOS, exists := node.Labels["kubernetes.io/os"]; exists && nodeOS == "windows" {
+				foundWindowsNodes = append(foundWindowsNodes, node.Name)
+			}
+		}
+	}
+
+	require.Empty(t, foundWindowsNodes,
+		"Found Windows nodes in kubelet EndpointSlices after deletion: %v", foundWindowsNodes)
+}
+
 // PrometheusQuery defines the result of the /query request
 // Example Reference of Prometheus Query Response: https://prometheus.io/docs/prometheus/latest/querying/api/
 type PrometheusQuery struct {
@@ -239,9 +274,12 @@ func (tc *testContext) testPodMetrics(t *testing.T, podName string) {
 		fmt.Sprintf("pod_interface_network:container_network_receive_bytes:irate5m{pod='%s',namespace='%s'}", podName, tc.workloadNamespace),
 		fmt.Sprintf("pod_interface_network:container_network_transmit_bytes_total:irate5m{pod='%s',namespace='%s'}", podName, tc.workloadNamespace),
 	}
+	// Use extended timeout to account for EndpointSlice propagation, metric scraping,
+	// and recording rule evaluation when using EndpointSlice-based service discovery
+	podMetricsTimeout := 5 * time.Minute
 	for i, query := range queries {
 		t.Run("query "+strconv.Itoa(i), func(t *testing.T) {
-			err := wait.PollUntilContextTimeout(context.TODO(), retry.Interval, retry.ResourceChangeTimeout, true,
+			err := wait.PollUntilContextTimeout(context.TODO(), retry.Interval, podMetricsTimeout, true,
 				func(ctx context.Context) (done bool, err error) {
 					results, err := makePrometheusQuery(prometheusRoute.Spec.Host, query, prometheusToken)
 					if err != nil {
