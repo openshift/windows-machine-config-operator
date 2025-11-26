@@ -3,7 +3,6 @@ package e2e
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -81,5 +80,5 @@ func retrieveLog(nodeName, srcPath, destDir string) error {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 	outputFile := filepath.Join(destDir, splitPath[0], filepath.Base(srcPath))
-	return ioutil.WriteFile(outputFile, out, os.ModePerm)
+	return os.WriteFile(outputFile, out, os.ModePerm)
 }

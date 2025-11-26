@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -467,7 +467,7 @@ func (tc *testContext) getLogs(podLabelSelector string, latestOnly bool) (string
 		if err != nil {
 			return "", fmt.Errorf("error getting pod logs: %w", err)
 		}
-		podLogs, err := ioutil.ReadAll(logStream)
+		podLogs, err := io.ReadAll(logStream)
 		if err != nil {
 			logStream.Close()
 			return "", fmt.Errorf("error reading pod logs: %w", err)
@@ -1155,7 +1155,7 @@ func (tc *testContext) gatherPodLogs(labelSelector string, latestOnly bool) (str
 	}
 	podLogFile := fmt.Sprintf("%s.log", labelSelector)
 	outputFile := filepath.Join(podDir, filepath.Base(podLogFile))
-	logsErr := ioutil.WriteFile(outputFile, []byte(logs), os.ModePerm)
+	logsErr := os.WriteFile(outputFile, []byte(logs), os.ModePerm)
 	if logsErr != nil {
 		return "", fmt.Errorf("unable to write %s pod logs to %s: %w", labelSelector, outputFile, logsErr)
 	}

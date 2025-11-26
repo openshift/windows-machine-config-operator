@@ -8,8 +8,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 	"testing"
 	"time"
 
@@ -233,7 +233,7 @@ func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 	var keyData []byte
 	var err error
 	if useKnownKey {
-		keyData, err = ioutil.ReadFile(gc.privateKeyPath)
+		keyData, err = os.ReadFile(gc.privateKeyPath)
 		if err != nil {
 			return fmt.Errorf("unable to read private key data from file %s: %w", gc.privateKeyPath, err)
 		}
