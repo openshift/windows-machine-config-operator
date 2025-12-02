@@ -3,6 +3,8 @@ module github.com/openshift/windows-machine-config-operator
 go 1.22.9
 
 replace (
+	// fix the latest working version for go1.22
+	github.com/go-openapi/jsonreference => github.com/go-openapi/jsonreference v0.21.0
 	// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
 	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	// Fix the latest working version for go1.22
