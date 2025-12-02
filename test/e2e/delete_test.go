@@ -183,9 +183,20 @@ func (tc *testContext) checkAWSMetadataEndpointRouteIsRestored(t *testing.T, add
 	if tc.CloudProvider.GetType() != config.AWSPlatformType {
 		t.Skipf("Skipping for %s", tc.CloudProvider.GetType())
 	}
-	out, err := tc.runPowerShellSSHJob("check-routes", "Get-NetRoute", address)
-	require.NoError(t, err, "error checking routes")
-	assert.True(t, strings.Contains(out, "169.254.169.254"), "metadata endpoint route is not restored")
+
+	// To allow time for route restoration during node cleanup
+	// since EndpointSlice discovery may have
+	// different cleanup timing compared to Endpoints.
+	err := wait.PollUntilContextTimeout(context.Background(), tc.retryInterval, 5*time.Minute, true,
+		func(ctx context.Context) (bool, error) {
+			out, err := tc.runPowerShellSSHJob("check-routes", "Get-NetRoute", address)
+			if err != nil {
+				t.Logf("error checking routes (will retry): %v", err)
+				return false, nil
+			}
+			return strings.Contains(out, "169.254.169.254"), nil
+		})
+	require.NoError(t, err, "metadata endpoint route was not restored within timeout")
 }
 
 // waitForWindowsNodeRemoval returns when there are zero Windows nodes of the given type, machine or byoh, in the cluster
@@ -264,8 +275,9 @@ func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 	_, err = tc.waitForWindowsMachines(int(expectedNodeCount), "", true)
 	require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
 
-	// Test if prometheus configuration is updated to have no node entries in the endpoints object
+	// Test if prometheus configuration is updated to have no node entries in the endpointslice objects.
 	t.Run("Prometheus configuration", tc.testPrometheus)
+	t.Run("Prometheus endpoint slice cleanup", tc.testPrometheusEndpointSliceCleanup)
 
 	// Cleanup windows-instances ConfigMap
 	tc.deleteWindowsInstanceConfigMap()
