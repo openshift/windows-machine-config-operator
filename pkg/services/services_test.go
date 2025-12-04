@@ -48,15 +48,17 @@ func TestGetHostnameCmd(t *testing.T) {
 func TestHybridOverlayConfiguration(t *testing.T) {
 	tests := []struct {
 		name                   string
+		apiServerEndpoint      string
 		vxlanPort              string
 		debug                  bool
 		expectedCmdContains    []string
 		expectedCmdNotContains []string
 	}{
 		{
-			name:      "Basic configuration with no optional flags",
-			vxlanPort: "",
-			debug:     false,
+			name:              "Basic configuration with no optional flags",
+			apiServerEndpoint: "https://api-server.endpoint.local:6443",
+			vxlanPort:         "",
+			debug:             false,
 			expectedCmdContains: []string{
 				windows.HybridOverlayPath,
 				"--node NODE_NAME",
@@ -66,7 +68,7 @@ func TestHybridOverlayConfiguration(t *testing.T) {
 				"--windows-service",
 				"--logfile",
 				windows.HybridOverlayLogDir + "\\hybrid-overlay.log",
-				"--k8s-cacert " + windows.TrustedCABundlePath,
+				"--k8s-cacert " + windows.BootstrapCaCertPath,
 			},
 			expectedCmdNotContains: []string{
 				"--hybrid-overlay-vxlan-port",
@@ -74,9 +76,10 @@ func TestHybridOverlayConfiguration(t *testing.T) {
 			},
 		},
 		{
-			name:      "Configuration with debug logging enabled",
-			vxlanPort: "",
-			debug:     true,
+			name:              "Configuration with debug logging enabled",
+			apiServerEndpoint: "https://api-server.endpoint.local:6443",
+			vxlanPort:         "",
+			debug:             true,
 			expectedCmdContains: []string{
 				windows.HybridOverlayPath,
 				"--node NODE_NAME",
@@ -86,7 +89,7 @@ func TestHybridOverlayConfiguration(t *testing.T) {
 				"--windows-service",
 				"--logfile",
 				windows.HybridOverlayLogDir + "\\hybrid-overlay.log",
-				"--k8s-cacert " + windows.TrustedCABundlePath,
+				"--k8s-cacert " + windows.BootstrapCaCertPath,
 				"--loglevel 5",
 			},
 			expectedCmdNotContains: []string{
@@ -94,9 +97,10 @@ func TestHybridOverlayConfiguration(t *testing.T) {
 			},
 		},
 		{
-			name:      "Configuration with all optional flags enabled",
-			vxlanPort: "4789",
-			debug:     true,
+			name:              "Configuration with all optional flags enabled",
+			apiServerEndpoint: "https://api-server.endpoint.local:6443",
+			vxlanPort:         "4789",
+			debug:             true,
 			expectedCmdContains: []string{
 				windows.HybridOverlayPath,
 				"--node NODE_NAME",
@@ -106,7 +110,7 @@ func TestHybridOverlayConfiguration(t *testing.T) {
 				"--windows-service",
 				"--logfile",
 				windows.HybridOverlayLogDir + "\\hybrid-overlay.log",
-				"--k8s-cacert " + windows.TrustedCABundlePath,
+				"--k8s-cacert " + windows.BootstrapCaCertPath,
 				"--hybrid-overlay-vxlan-port 4789",
 				"--loglevel 5",
 			},
@@ -116,7 +120,7 @@ func TestHybridOverlayConfiguration(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := hybridOverlayConfiguration(test.vxlanPort, test.debug)
+			result := hybridOverlayConfiguration(test.apiServerEndpoint, test.vxlanPort, test.debug)
 
 			assert.Equal(t, windows.HybridOverlayServiceName, result.Name,
 				"Service name should match expected value")
