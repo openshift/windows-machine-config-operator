@@ -273,8 +273,9 @@ func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 	_, err = tc.waitForWindowsMachines(int(expectedNodeCount), "", true)
 	require.NoError(t, err, "ConfigMap controller Windows machine deletion failed")
 
-	// Test if prometheus configuration is updated to have no node entries in the endpoints object
+	// Test if prometheus configuration is updated to have no node entries in the endpointslice objects.
 	t.Run("Prometheus configuration", tc.testPrometheus)
+	t.Run("Prometheus endpoint slice cleanup", tc.testPrometheusEndpointSliceCleanup)
 
 	// Cleanup windows-instances ConfigMap
 	tc.deleteWindowsInstanceConfigMap()
