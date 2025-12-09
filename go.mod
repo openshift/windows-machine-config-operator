@@ -16,8 +16,8 @@ require (
 	github.com/coreos/ignition/v2 v2.23.0
 	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.3
-	github.com/openshift/api v0.0.0-20251124165233-999c45c0835a
-	github.com/openshift/client-go v0.0.0-20251123231646-4685125c2287
+	github.com/openshift/api v0.0.0-20251202143230-02f6733e651c
+	github.com/openshift/client-go v0.0.0-20251202151200-fb4471581cf8
 	github.com/openshift/library-go v0.0.0-20251120164824-14a789e09884
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
@@ -73,18 +73,18 @@ require (
 	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.22.3 // indirect
 	github.com/go-openapi/jsonreference v0.21.3 // indirect
-	github.com/go-openapi/swag v0.25.3 // indirect
-	github.com/go-openapi/swag/cmdutils v0.25.3 // indirect
-	github.com/go-openapi/swag/conv v0.25.3 // indirect
-	github.com/go-openapi/swag/fileutils v0.25.3 // indirect
-	github.com/go-openapi/swag/jsonname v0.25.3 // indirect
-	github.com/go-openapi/swag/jsonutils v0.25.3 // indirect
-	github.com/go-openapi/swag/loading v0.25.3 // indirect
-	github.com/go-openapi/swag/mangling v0.25.3 // indirect
-	github.com/go-openapi/swag/netutils v0.25.3 // indirect
-	github.com/go-openapi/swag/stringutils v0.25.3 // indirect
-	github.com/go-openapi/swag/typeutils v0.25.3 // indirect
-	github.com/go-openapi/swag/yamlutils v0.25.3 // indirect
+	github.com/go-openapi/swag v0.25.4 // indirect
+	github.com/go-openapi/swag/cmdutils v0.25.4 // indirect
+	github.com/go-openapi/swag/conv v0.25.4 // indirect
+	github.com/go-openapi/swag/fileutils v0.25.4 // indirect
+	github.com/go-openapi/swag/jsonname v0.25.4 // indirect
+	github.com/go-openapi/swag/jsonutils v0.25.4 // indirect
+	github.com/go-openapi/swag/loading v0.25.4 // indirect
+	github.com/go-openapi/swag/mangling v0.25.4 // indirect
+	github.com/go-openapi/swag/netutils v0.25.4 // indirect
+	github.com/go-openapi/swag/stringutils v0.25.4 // indirect
+	github.com/go-openapi/swag/typeutils v0.25.4 // indirect
+	github.com/go-openapi/swag/yamlutils v0.25.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.26.0 // indirect
@@ -116,6 +116,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.4 // indirect
 	github.com/prometheus/procfs v0.19.2 // indirect
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
@@ -154,7 +155,7 @@ require (
 	k8s.io/cli-runtime v0.34.2 // indirect
 	k8s.io/component-base v0.34.2 // indirect
 	k8s.io/controller-manager v0.34.2 // indirect
-	k8s.io/kube-openapi v0.0.0-20251121143641-b6aabc6c6745 // indirect
+	k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/kustomize/api v0.20.1 // indirect

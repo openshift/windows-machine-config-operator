@@ -179,43 +179,43 @@ github.com/go-openapi/jsonpointer
 ## explicit; go 1.24.0
 github.com/go-openapi/jsonreference
 github.com/go-openapi/jsonreference/internal
-# github.com/go-openapi/swag v0.25.3
+# github.com/go-openapi/swag v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag
-# github.com/go-openapi/swag/cmdutils v0.25.3
+# github.com/go-openapi/swag/cmdutils v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/cmdutils
-# github.com/go-openapi/swag/conv v0.25.3
+# github.com/go-openapi/swag/conv v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/conv
-# github.com/go-openapi/swag/fileutils v0.25.3
+# github.com/go-openapi/swag/fileutils v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/fileutils
-# github.com/go-openapi/swag/jsonname v0.25.3
+# github.com/go-openapi/swag/jsonname v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/jsonname
-# github.com/go-openapi/swag/jsonutils v0.25.3
+# github.com/go-openapi/swag/jsonutils v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/jsonutils
 github.com/go-openapi/swag/jsonutils/adapters
 github.com/go-openapi/swag/jsonutils/adapters/ifaces
 github.com/go-openapi/swag/jsonutils/adapters/stdlib/json
-# github.com/go-openapi/swag/loading v0.25.3
+# github.com/go-openapi/swag/loading v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/loading
-# github.com/go-openapi/swag/mangling v0.25.3
+# github.com/go-openapi/swag/mangling v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/mangling
-# github.com/go-openapi/swag/netutils v0.25.3
+# github.com/go-openapi/swag/netutils v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/netutils
-# github.com/go-openapi/swag/stringutils v0.25.3
+# github.com/go-openapi/swag/stringutils v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/stringutils
-# github.com/go-openapi/swag/typeutils v0.25.3
+# github.com/go-openapi/swag/typeutils v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/typeutils
-# github.com/go-openapi/swag/yamlutils v0.25.3
+# github.com/go-openapi/swag/yamlutils v0.25.4
 ## explicit; go 1.24.0
 github.com/go-openapi/swag/yamlutils
 # github.com/gogo/protobuf v1.3.2
@@ -325,7 +325,7 @@ github.com/mxk/go-flowrate/flowrate
 ## explicit; go 1.22.0
 # github.com/onsi/gomega v1.36.2
 ## explicit; go 1.22.0
-# github.com/openshift/api v0.0.0-20251124165233-999c45c0835a
+# github.com/openshift/api v0.0.0-20251202143230-02f6733e651c
 ## explicit; go 1.24.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -339,7 +339,7 @@ github.com/openshift/api/machineconfiguration/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/route/v1
-# github.com/openshift/client-go v0.0.0-20251123231646-4685125c2287
+# github.com/openshift/client-go v0.0.0-20251202151200-fb4471581cf8
 ## explicit; go 1.24.0
 github.com/openshift/client-go/config/applyconfigurations
 github.com/openshift/client-go/config/applyconfigurations/config/v1
@@ -447,6 +447,8 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
+# github.com/rogpeppe/go-internal v1.14.1
+## explicit; go 1.23
 # github.com/russross/blackfriday/v2 v2.1.0
 ## explicit
 github.com/russross/blackfriday/v2
@@ -1301,7 +1303,7 @@ k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
 k8s.io/klog/v2/internal/verbosity
 k8s.io/klog/v2/textlogger
-# k8s.io/kube-openapi v0.0.0-20251121143641-b6aabc6c6745
+# k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e
 ## explicit; go 1.23.0
 k8s.io/kube-openapi/pkg/cached
 k8s.io/kube-openapi/pkg/common
