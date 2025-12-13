@@ -338,3 +338,50 @@ In OpenShift, it is used when enforcing OS-specific pod security standards.
 ## Development
 
 See [HACKING.md](docs/HACKING.md).
+
+## AI Coding Assistants
+
+This repository includes an [AGENTS.md](AGENTS.md) file that provides context and instructions for AI coding assistants working on this codebase. The file follows the [AGENTS.md specification](https://agents.md/) and serves as a "README for AI agents."
+
+### Supported AI Assistants
+
+The AGENTS.md file is automatically recognized by several AI coding tools:
+
+| Tool | Configuration |
+|------|---------------|
+| **Cursor** | Automatically reads `AGENTS.md` from repository root |
+| **Claude Code** | Uses `CLAUDE.md` symlink (included in repository) |
+| **Gemini CLI** | Requires configuration (see below) |
+
+### Claude Code Setup
+
+A symlink `CLAUDE.md -> AGENTS.md` is included in the repository for Claude Code compatibility:
+
+```bash
+# The symlink is already created, but if needed:
+ln -s AGENTS.md CLAUDE.md
+```
+
+### Gemini CLI Setup
+
+Configure Gemini CLI to use AGENTS.md by creating or editing `.gemini/settings.json`:
+
+```json
+{
+  "contextFileName": "AGENTS.md"
+}
+```
+
+### What's Included
+
+The AGENTS.md file contains:
+- Project architecture and overview
+- Build, test, and code generation commands
+- Code organization and key interfaces
+- Common workflows (adding services, node configuration)
+- Testing patterns and mocks
+- Code style conventions
+- Security considerations
+- Platform-specific gotchas
+- Contributing guidelines and PR workflow
+- Links to documentation and resources
