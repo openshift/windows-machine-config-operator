@@ -332,6 +332,11 @@ func (nc *NodeConfig) createBootstrapFiles(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	filePathsToContents[windows.BootstrapCaCertPath], err = nc.generateBootstrapCaCert(ctx)
+	if err != nil {
+		return err
+	}
 	filePathsToContents[windows.BootstrapKubeconfigPath], err = nc.generateBootstrapKubeconfig(ctx)
 	if err != nil {
 		return err
@@ -389,6 +394,21 @@ func (nc *NodeConfig) createFilesFromIgnition(ctx context.Context) (map[string]s
 
 	filePathsToContents[windows.K8sDir+"\\"+KubeletClientCAFilename] = string(ign.GetKubeletCAData())
 	return filePathsToContents, nil
+}
+
+// generateBootstrapCaCert returns the contents of the Root CA certificate
+func (nc *NodeConfig) generateBootstrapCaCert(ctx context.Context) (string, error) {
+	bootstrapSecret, err := nc.k8sclientset.CoreV1().Secrets(mcoNamespace).Get(ctx, mcoBootstrapSecret,
+		meta.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	rootCA := bootstrapSecret.Data[core.ServiceAccountRootCAKey]
+	if rootCA == nil {
+		return "", fmt.Errorf("unable to find %s CA cert in secret %s", core.ServiceAccountRootCAKey,
+			bootstrapSecret.GetName())
+	}
+	return string(rootCA), nil
 }
 
 // generateBootstrapKubeconfig returns contents of a kubeconfig for kubelet to initially communicate with the API server

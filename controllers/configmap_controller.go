@@ -67,6 +67,7 @@ import (
 //+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
 //+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=rolebindings,verbs=get;create;delete
 //+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=clusterrolebindings,verbs=get;create;delete
+//+kubebuilder:rbac:groups="config.openshift.io",resources=infrastructures,verbs=get;list;watch
 
 const (
 	// BYOHLabel is a label that should be applied to all Windows nodes not associated with a Machine.
@@ -708,6 +709,17 @@ func (r *ConfigMapReconciler) ensureWICDClusterRoleBinding(ctx context.Context) 
 // this gets called when the configmap reconciler is first created, to create the services manifest,
 // and also when the rendered-worker configmap is changed, to regenerate it.
 func generateServicesManifest(ctx context.Context, client client.Client, port string, platform oconfig.PlatformType) (*servicescm.Data, error) {
+	// Fetch the infrastructure object to get the API server endpoint
+	infra := &oconfig.Infrastructure{}
+	if err := client.Get(ctx, kubeTypes.NamespacedName{Name: "cluster"}, infra); err != nil {
+		return nil, fmt.Errorf("unable to get cluster infrastructure: %w", err)
+	}
+
+	apiServerEndpoint := infra.Status.APIServerInternalURL
+	if apiServerEndpoint == "" {
+		return nil, fmt.Errorf("APIServerInternalURL is not set in infrastructure")
+	}
+
 	ign, err := ignition.New(ctx, client)
 	if err != nil {
 		return nil, fmt.Errorf("error creating ignition object: %w", err)
@@ -716,7 +728,8 @@ func generateServicesManifest(ctx context.Context, client client.Client, port st
 	if err != nil {
 		return nil, fmt.Errorf("Error getting kubelet args from ignition: %w", err)
 	}
-	svcData, err := services.GenerateManifest(argsFromIgnition, port, platform, ctrl.Log.V(1).Enabled())
+	svcData, err := services.GenerateManifest(argsFromIgnition, apiServerEndpoint, port, platform,
+		ctrl.Log.V(1).Enabled())
 	if err != nil {
 		return nil, fmt.Errorf("error generating expected Windows service state: %w", err)
 	}

@@ -168,6 +168,8 @@ rules:
   - infrastructures
   verbs:
   - get
+  - list
+  - watch
 - apiGroups:
   - config.openshift.io
   - operator.openshift.io

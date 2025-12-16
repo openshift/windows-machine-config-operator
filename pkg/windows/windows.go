@@ -87,6 +87,8 @@ const (
 	podManifestDirectory = K8sDir + "\\etc\\kubernetes\\manifests"
 	// BootstrapKubeconfigPath is the location of the bootstrap kubeconfig
 	BootstrapKubeconfigPath = K8sDir + "\\bootstrap-kubeconfig"
+	// BootstrapCaCertPath is the location of the bootstrap CA certificate
+	BootstrapCaCertPath = K8sDir + "\\bootstrap-ca.crt"
 	// KubeletPath is the location of the kubelet exe
 	KubeletPath = K8sDir + "\\kubelet.exe"
 	// KubeLogRunnerPath is the location of the kube-log-runner exe
