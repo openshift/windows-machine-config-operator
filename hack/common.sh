@@ -382,13 +382,29 @@ deleteParallelUpgradeCheckerResources() {
 
 enable_debug_logging() {
   if [[ $(oc get -n $WMCO_DEPLOY_NAMESPACE pod -l name=windows-machine-config-operator -ojson) == *"--debugLogging"* ]]; then
-    # debug logging already enabled
+     echo "Debug logging already enabled"
     return 0
   fi
-  WMCO_SUB=$(oc get sub -n $WMCO_DEPLOY_NAMESPACE --no-headers |awk '{print $1}')
-  oc patch subscription $WMCO_SUB -n $WMCO_DEPLOY_NAMESPACE --type=merge -p '{"spec":{"config":{"env":[{"name":"ARGS","value":"--debugLogging"}]}}}'
-  # delete the deployment to ensure the changes are picked up in a timely matter
-  oc delete deployment -n $WMCO_DEPLOY_NAMESPACE windows-machine-config-operator
+
+  # Detect OLM version and patch accordingly
+  WMCO_SUB=$(oc get sub -n "$WMCO_DEPLOY_NAMESPACE" --no-headers 2>/dev/null | awk '{print $1}')
+  if [[ -n "$WMCO_SUB" ]]; then
+    echo "Detected OLMv0, patching subscription $WMCO_SUB"
+    oc patch subscription $WMCO_SUB -n $WMCO_DEPLOY_NAMESPACE --type=merge -p '{"spec":{"config":{"env":[{"name":"ARGS","value":"--debugLogging"}]}}}'
+    # delete the deployment to ensure the changes are picked up in a timely matter
+    oc delete deployment -n $WMCO_DEPLOY_NAMESPACE windows-machine-config-operator
+  elif oc get clusterextension windows-machine-config-operator &>/dev/null; then
+    echo "Detected OLMv1, patching deployment directly..."
+    # Add debug env variable to the WMCO manager container
+    oc set env deployment/windows-machine-config-operator -n "$WMCO_DEPLOY_NAMESPACE" ARGS="--debugLogging" -c manager
+    # force restart to pick up the env variable change
+    oc scale deployment/windows-machine-config-operator -n "$WMCO_DEPLOY_NAMESPACE" --replicas=0
+    oc scale deployment/windows-machine-config-operator -n "$WMCO_DEPLOY_NAMESPACE" --replicas=1
+  else
+    echo "Error: Unable to detect OLM version; no subscription or clusterextension found"
+    return 1
+  fi
+
   retries=0
   debug_logging_enabled=0
   until [[ $debug_logging_enabled -eq 1 || $retries -gt 30 ]]; do
