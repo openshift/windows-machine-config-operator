@@ -185,7 +185,7 @@ LABEL stage=operator
 
 # This block contains standard Red Hat container labels
 LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \
-    cpe="cpe:/a:redhat:windows_machine_config:10.21::el9" \
+    cpe="cpe:/a:redhat:windows_machine_config:10.22::el9" \
     License="ASL 2.0" \
     io.k8s.display-name="Windows Machine Config Operator" \
     io.k8s.description="Windows Machine Config Operator" \
@@ -217,7 +217,7 @@ RUN  /usr/local/bin/user_setup
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
 
 # Used to tag the released image. Should be a semver.
-LABEL version="v10.21.0"
-LABEL release="v10.21.0"
+LABEL version="v10.22.0"
+LABEL release="v10.22.0"
 
 USER ${USER_UID}

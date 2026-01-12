@@ -3,11 +3,11 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the WMCO_VERSION as arg of the bundle target (e.g make bundle WMCO_VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export WMCO_VERSION=0.0.2)
-WMCO_VERSION ?= 10.21.0
+WMCO_VERSION ?= 10.22.0
 
 # *_GIT_VERSION are the k8s versions. Any update to the build line could potentially require an update to the sed
 # command in generate_k8s_version_commit() in hack/update_submodules.sh
-KUBELET_GIT_VERSION=v1.34.2+e98e941
+KUBELET_GIT_VERSION=v1.34.2+581cfc7
 CONTAINERD_GIT_VERSION=v1.7.27
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "preview,fast,stable")
