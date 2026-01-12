@@ -110,6 +110,9 @@ if  ! oc get deploy/windows-machine-config-operator -n $WMCO_DEPLOY_NAMESPACE > 
       retries+=1
   done
   wmco_deployed_by_script=true
+else
+  echo "operator installed in $WMCO_DEPLOY_NAMESPACE, skipping deployment step"
+  oc get pods -n $WMCO_DEPLOY_NAMESPACE
 fi
 
 enable_debug_logging
