@@ -5,6 +5,7 @@ import (
 	"crypto/dsa"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
 
@@ -18,7 +19,7 @@ import (
 // minRSABitLen is the minimum RSA key size recommended for security.
 const minRSABitLen = 2048
 
-// Create creates a signer using the private key data
+// Create creates a signer using the private key data and validates it can perform basic operations
 func Create(ctx context.Context, secret kubeTypes.NamespacedName, c client.Client) (ssh.Signer, error) {
 	privateKey, err := secrets.GetPrivateKey(ctx, secret, c)
 	if err != nil {
@@ -28,7 +29,51 @@ func Create(ctx context.Context, secret kubeTypes.NamespacedName, c client.Clien
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse private key: %w", err)
 	}
+
+	// Perform a test signature operation to ensure the key is functional
+	// This catches corruption issues that might not be detected during parsing resulting in runtime panics
+	// (e.g., curve25519: internal error: scalarBaseMult was not 32 bytes)
+	if err := validateKeyOperation(signer); err != nil {
+		return nil, fmt.Errorf("private key operation validation failed: %w", err)
+	}
+
 	return signer, nil
+}
+
+// validateKeyOperation performs a test signature operation to verify the key is functional
+// This will catch issues like:
+// - Malformed key material
+// - Corrupted private key data
+// - Invalid key parameters
+func validateKeyOperation(signer ssh.Signer) error {
+	testMessage := []byte("signer-signature-validation")
+
+	signature, err := signer.Sign(rand.Reader, testMessage)
+	if err != nil {
+		return fmt.Errorf("key failed to sign test message: %w", err)
+	}
+	if signature == nil {
+		return fmt.Errorf("key produced nil signature")
+	}
+	if signature.Format == "" {
+		return fmt.Errorf("key produced signature with empty format")
+	}
+	if len(signature.Blob) == 0 {
+		return fmt.Errorf("key produced signature with empty blob")
+	}
+	// For Ed25519 keys, verify the signature format matches expectations
+	pubKey := signer.PublicKey()
+	if pubKey.Type() == ssh.KeyAlgoED25519 && signature.Format != ssh.KeyAlgoED25519 {
+		return fmt.Errorf("key for %s produced signature with wrong format: %s", ssh.KeyAlgoED25519, signature.Format)
+	}
+
+	// check can marshal the public key for corruption in the public key material
+	marshaled := pubKey.Marshal()
+	if len(marshaled) == 0 {
+		return fmt.Errorf("key public key failed to marshal")
+	}
+
+	return nil
 }
 
 // ValidatePublicKey checks if the given public key meets security standards.
