@@ -94,7 +94,7 @@ func (c *sshConnectivity) init() error {
 	var sshClient *ssh.Client
 	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data
 	err = wait.PollImmediate(time.Minute, retry.Timeout, func() (bool, error) {
-		sshClient, err = ssh.Dial("tcp", c.ipAddress+":"+sshPort, config)
+		sshClient, err = c.dialWithPanicRecovery(config)
 		if err == nil {
 			return true, nil
 		}
@@ -110,6 +110,26 @@ func (c *sshConnectivity) init() error {
 	}
 	c.sshClient = sshClient
 	return nil
+}
+
+// dialWithPanicRecovery wraps ssh.Dial with panic recovery to handle cryptographic panics gracefully
+// This is particularly important for catching panics in the crypto libraries (e.g., curve25519)
+// that can occur when SSH keys are corrupted or malformed
+func (c *sshConnectivity) dialWithPanicRecovery(config *ssh.ClientConfig) (client *ssh.Client, err error) {
+	// Set up panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			c.log.Error(err, "Recovered from panic during SSH dial", "panic", r, "ipAddress", c.ipAddress, "username",
+				c.username, "keyType", c.signer.PublicKey().Type())
+			// ensure error indicating possible key corruption
+			client = nil
+			err = fmt.Errorf("SSH connection panic (likely corrupted key): %v. "+
+				"This typically indicates the SSH private key in the secret is corrupted or malformed. "+
+				"Please regenerate the key using: ssh-keygen -t ed25519 -f <keyfile>", r)
+		}
+	}()
+	client, err = ssh.Dial("tcp", c.ipAddress+":"+sshPort, config)
+	return client, err
 }
 
 // run instantiates a new SSH session and runs the command on the VM and returns the combined stdout and stderr output
