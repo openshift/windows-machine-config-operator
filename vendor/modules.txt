@@ -325,7 +325,7 @@ github.com/mxk/go-flowrate/flowrate
 ## explicit; go 1.22.0
 # github.com/onsi/gomega v1.36.2
 ## explicit; go 1.22.0
-# github.com/openshift/api v0.0.0-20260107103503-6d35063ca179
+# github.com/openshift/api v0.0.0-20260116192047-6fb7fdae95fd
 ## explicit; go 1.24.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -339,7 +339,7 @@ github.com/openshift/api/machineconfiguration/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/route/v1
-# github.com/openshift/client-go v0.0.0-20260105124352-f93a4291f9ae
+# github.com/openshift/client-go v0.0.0-20260108185524-48f4ccfc4e13
 ## explicit; go 1.24.0
 github.com/openshift/client-go/config/applyconfigurations
 github.com/openshift/client-go/config/applyconfigurations/config/v1
@@ -1338,7 +1338,7 @@ k8s.io/kubelet/config/v1beta1
 ## explicit; go 1.24.0
 k8s.io/kubernetes/pkg/credentialprovider
 k8s.io/kubernetes/pkg/features
-# k8s.io/utils v0.0.0-20260106112306-0fe9cd71b2f8
+# k8s.io/utils v0.0.0-20260108192941-914a6e750570
 ## explicit; go 1.23
 k8s.io/utils/buffer
 k8s.io/utils/clock
@@ -1356,7 +1356,7 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/controller-runtime v0.22.4
+# sigs.k8s.io/controller-runtime v0.22.5
 ## explicit; go 1.24.0
 sigs.k8s.io/controller-runtime
 sigs.k8s.io/controller-runtime/pkg/builder
