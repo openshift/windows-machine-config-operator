@@ -515,12 +515,12 @@ github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1y
 github.com/onsi/gomega v1.10.2/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
 github.com/onsi/gomega v1.36.2 h1:koNYke6TVk6ZmnyHrCXba/T/MoLBXFjeC1PtvYgw0A8=
 github.com/onsi/gomega v1.36.2/go.mod h1:DdwyADRjrc825LhMEkD76cHR5+pUnjhUN8GlHlRPHzY=
-github.com/openshift/api v0.0.0-20260116192047-6fb7fdae95fd h1:Hpjq/55Qb0Gy65RewTSWWlyxpSovaRF86EPjYQkdlRU=
-github.com/openshift/api v0.0.0-20260116192047-6fb7fdae95fd/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
+github.com/openshift/api v0.0.0-20260126183958-606bd613f9f7 h1:96rhgJpWlWzKEslMd6aYFMixV9vQVY32M71JcO4Gzn0=
+github.com/openshift/api v0.0.0-20260126183958-606bd613f9f7/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
 github.com/openshift/client-go v0.0.0-20260108185524-48f4ccfc4e13 h1:6rd4zSo2UaWQcAPZfHK9yzKVqH0BnMv1hqMzqXZyTds=
 github.com/openshift/client-go v0.0.0-20260108185524-48f4ccfc4e13/go.mod h1:YvOmPmV7wcJxpfhTDuFqqs2Xpb3M3ovsM6Qs/i2ptq4=
-github.com/openshift/library-go v0.0.0-20260108135436-db8dbd64c462 h1:zX9Od4Jg8sVmwQLwk6Vd+BX7tcyC/462FVvDdzHEPPk=
-github.com/openshift/library-go v0.0.0-20260108135436-db8dbd64c462/go.mod h1:nIzWQQE49XbiKizVnVOip9CEB7HJ0hoJwNi3g3YKnKc=
+github.com/openshift/library-go v0.0.0-20260126182522-861ed3e2e3f0 h1:kVTaZDdqWksnxufHvBO0iZ7g9gJ02uhhF0ezc50CWUs=
+github.com/openshift/library-go v0.0.0-20260126182522-861ed3e2e3f0/go.mod h1:nIzWQQE49XbiKizVnVOip9CEB7HJ0hoJwNi3g3YKnKc=
 github.com/operator-framework/api v0.5.2/go.mod h1:L7IvLd/ckxJEJg/t4oTTlnHKAJIP/p51AvEslW3wYdY=
 github.com/operator-framework/api v0.16.0 h1:swUOhVv7QDszxBTwYM8QAtyeqI4EQHNVAiKMS+xjakY=
 github.com/operator-framework/api v0.16.0/go.mod h1:kk8xJahHJR3bKqrA+A+1VIrhOTmyV76k+ARv+iV+u1Q=
