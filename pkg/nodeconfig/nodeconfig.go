@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
+	logsapi "k8s.io/component-base/logs/api/v1"
 	"k8s.io/kubectl/pkg/drain"
 	kubeletconfigv1 "k8s.io/kubelet/config/v1"
 	kubeletconfig "k8s.io/kubelet/config/v1beta1"
@@ -743,14 +744,20 @@ func generateKubeletConfiguration(clusterDNS string) kubeletconfig.KubeletConfig
 				Enabled: &falseBool,
 			},
 		},
-		ClusterDomain:          "cluster.local",
-		ClusterDNS:             []string{clusterDNS},
-		CgroupsPerQOS:          &falseBool,
-		RuntimeRequestTimeout:  meta.Duration{Duration: 10 * time.Minute},
-		MaxPods:                250,
-		KubeAPIQPS:             &kubeAPIQPS,
-		KubeAPIBurst:           100,
-		SerializeImagePulls:    &falseBool,
+		ClusterDomain:         "cluster.local",
+		ClusterDNS:            []string{clusterDNS},
+		CgroupsPerQOS:         &falseBool,
+		RuntimeRequestTimeout: meta.Duration{Duration: 10 * time.Minute},
+		MaxPods:               250,
+		KubeAPIQPS:            &kubeAPIQPS,
+		KubeAPIBurst:          100,
+		SerializeImagePulls:   &falseBool,
+		Logging: logsapi.LoggingConfiguration{
+			FlushFrequency: logsapi.TimeOrMetaDuration{
+				Duration:          meta.Duration{Duration: 5 * time.Second},
+				SerializeAsString: true,
+			},
+		},
 		EnableSystemLogHandler: &trueBool,
 		EnableSystemLogQuery:   &trueBool,
 		FeatureGates: map[string]bool{
