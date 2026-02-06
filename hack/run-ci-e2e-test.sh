@@ -191,6 +191,9 @@ if [[ "$TEST" = "upgrade-test" ]]; then
   go test ./test/e2e/... -run=TestUpgrade -v -timeout=30m -args $GO_TEST_ARGS
 fi
 
+# Collect debug data for namespace, this will be helpful for debugging any issues in CI cluster
+mkdir -p ${ARTIFACT_DIR}/inspect
+oc --insecure-skip-tls-verify adm inspect namespace/"${WMCO_DEPLOY_NAMESPACE}" --dest-dir "${ARTIFACT_DIR}/inspect" > "${ARTIFACT_DIR}/inspect/inspect.log"
 
 # Run the deletion tests while testing operator restart functionality. This will clean up VMs created
 # in the previous step
