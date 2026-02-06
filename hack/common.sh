@@ -380,6 +380,10 @@ deleteParallelUpgradeCheckerResources() {
 }
 
 
+# Enables debug logging and set smaller size for services log file in the operator pod to make it easier to
+# troubleshoot issues in CI.
+# The method for patching the deployment depends on the OLM version, which is detected by checking for the presence
+# of a subscription (OLMv0) or clusterextension (OLMv1).
 enable_debug_logging() {
   if [[ $(oc get -n $WMCO_DEPLOY_NAMESPACE pod -l name=windows-machine-config-operator -ojson) == *"--debugLogging"* ]]; then
      echo "Debug logging already enabled"
@@ -390,13 +394,16 @@ enable_debug_logging() {
   WMCO_SUB=$(oc get sub -n "$WMCO_DEPLOY_NAMESPACE" --no-headers 2>/dev/null | awk '{print $1}')
   if [[ -n "$WMCO_SUB" ]]; then
     echo "Detected OLMv0, patching subscription $WMCO_SUB"
-    oc patch subscription $WMCO_SUB -n $WMCO_DEPLOY_NAMESPACE --type=merge -p '{"spec":{"config":{"env":[{"name":"ARGS","value":"--debugLogging"}]}}}'
+    oc patch subscription $WMCO_SUB -n $WMCO_DEPLOY_NAMESPACE --type=merge -p '{"spec":{"config":{"env":[{"name":"ARGS","value":"--debugLogging"},{"name":"SERVICES_LOG_FILE_SIZE","value":"1k"}]}}}'
     # delete the deployment to ensure the changes are picked up in a timely matter
     oc delete deployment -n $WMCO_DEPLOY_NAMESPACE windows-machine-config-operator
   elif oc get clusterextension windows-machine-config-operator &>/dev/null; then
     echo "Detected OLMv1, patching deployment directly..."
-    # Add debug env variable to the WMCO manager container
-    oc set env deployment/windows-machine-config-operator -n "$WMCO_DEPLOY_NAMESPACE" ARGS="--debugLogging" -c manager
+    # Add debug env variable and log file limit to the WMCO manager container
+    oc set env deployment/windows-machine-config-operator -n "$WMCO_DEPLOY_NAMESPACE" \
+      ARGS="--debugLogging" \
+      SERVICES_LOG_FILE_SIZE="50k" \
+      -c manager
     # force restart to pick up the env variable change
     oc scale deployment/windows-machine-config-operator -n "$WMCO_DEPLOY_NAMESPACE" --replicas=0
     oc scale deployment/windows-machine-config-operator -n "$WMCO_DEPLOY_NAMESPACE" --replicas=1
