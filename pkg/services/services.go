@@ -2,10 +2,13 @@ package services
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	config "github.com/openshift/api/config/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
 	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
@@ -22,6 +25,19 @@ const (
 	// hostnameOverrideVar is the variable that should be replaced with the value of the desired instance hostname
 	hostnameOverrideVar = "HOSTNAME_OVERRIDE"
 	NodeIPVar           = "NODE_IP"
+
+	// logFileSizeEnvVar is the environment variable name for log file size limit
+	logFileSizeEnvVar = "SERVICES_LOG_FILE_SIZE"
+	// logFileAgeEnvVar is the environment variable name for log file age retention
+	logFileAgeEnvVar = "SERVICES_LOG_FILE_AGE"
+	// logFlushIntervalEnvVar is the environment variable name for log flush interval
+	logFlushIntervalEnvVar = "SERVICES_LOG_FLUSH_INTERVAL"
+	// defaultLogFileSize is the default log file size limit before rotation (100MB)
+	defaultLogFileSize = "100M"
+	// defaultLogFileAge is the default log file age retention (7 days)
+	defaultLogFileAge = "168h"
+	// defaultFlushInterval is the default interval for flushing logs to disk
+	defaultFlushInterval = "5s"
 )
 
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
@@ -222,8 +238,7 @@ func getKubeletServiceConfiguration(argsFromIginition map[string]string, debug b
 		preScripts = append(preScripts, hostnameOverridePowershellVar)
 	}
 
-	kubeletServiceCmd := fmt.Sprintf("%s -log-file=%s %s",
-		windows.KubeLogRunnerPath, windows.KubeletLog, windows.KubeletPath)
+	kubeletServiceCmd := getLogRunnerForCmd(windows.KubeletPath, windows.KubeletLog)
 
 	for _, arg := range kubeletArgs {
 		kubeletServiceCmd += fmt.Sprintf(" %s", arg)
@@ -306,4 +321,59 @@ func getHostnameCmd(platformType config.PlatformType) string {
 		// by default do not override the hostname, the cloud provider determines the name of the node
 		return ""
 	}
+}
+
+// getLogRunnerForCmd returns the command string to run the given commandPath with kube-log-runner
+// logging to the given logfilePath. Log rotation parameters can be configured via environment variables.
+func getLogRunnerForCmd(commandPath, logfilePath string) string {
+	cmdBuilder := strings.Builder{}
+	// log runner path must be first
+	cmdBuilder.WriteString(windows.KubeLogRunnerPath)
+
+	// add log file option
+	cmdBuilder.WriteString(" -log-file=")
+	cmdBuilder.WriteString(logfilePath)
+
+	// log file size limit before creating a backup
+	cmdBuilder.WriteString(" -log-file-size=")
+	cmdBuilder.WriteString(logFileSize)
+
+	// log retention for backup files created after the size limit is reached
+	cmdBuilder.WriteString(" -log-file-age=")
+	cmdBuilder.WriteString(logFileAge)
+
+	// explicit flush to ensure recent log entries are written to disk in near real-time
+	cmdBuilder.WriteString(" -flush-interval=")
+	cmdBuilder.WriteString(flushInterval)
+
+	// last, add the target command to be run
+	cmdBuilder.WriteString(" " + commandPath)
+
+	return cmdBuilder.String()
+}
+
+// getEnvQuantityOrDefault returns the value of the environment variable with the given key
+// if it represents a valid quantity, otherwise returns the default value
+func getEnvQuantityOrDefault(key, defaultValue string) string {
+	value := os.Getenv(key)
+	value = strings.TrimSpace(value)
+	if value != "" {
+		if _, err := resource.ParseQuantity(value); err == nil {
+			return value
+		}
+	}
+	return defaultValue
+}
+
+// getEnvDurationOrDefault returns the value of the environment variable with the given key
+// if it represents a valid duration, otherwise returns the default value
+func getEnvDurationOrDefault(key, defaultValue string) string {
+	value := os.Getenv(key)
+	value = strings.TrimSpace(value)
+	if value != "" {
+		if _, err := time.ParseDuration(value); err == nil {
+			return value
+		}
+	}
+	return defaultValue
 }

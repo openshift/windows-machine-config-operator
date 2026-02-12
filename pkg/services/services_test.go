@@ -154,3 +154,178 @@ func TestHybridOverlayConfiguration(t *testing.T) {
 		})
 	}
 }
+
+func TestGetLogRunnerForCmd(t *testing.T) {
+	tests := []struct {
+		name             string
+		commandPath      string
+		logfilePath      string
+		expectedContains []string
+	}{
+		{
+			name:        "uses default values",
+			commandPath: "C:\\k\\kubelet.exe",
+			logfilePath: "C:\\var\\log\\kubelet\\kubelet.log",
+			expectedContains: []string{
+				windows.KubeLogRunnerPath,
+				" -log-file=C:\\var\\log\\kubelet\\kubelet.log",
+				" -log-file-size=100M",
+				" -log-file-age=168h",
+				" -flush-interval=5s",
+				" C:\\k\\kubelet.exe",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := getLogRunnerForCmd(test.commandPath, test.logfilePath)
+			for _, expectedStr := range test.expectedContains {
+				assert.Contains(t, got, expectedStr,
+					"expected: %s\ngot: %s", expectedStr, got)
+			}
+		})
+	}
+}
+
+func TestGetEnvQuantityOrDefault(t *testing.T) {
+	tests := []struct {
+		name         string
+		envValue     string
+		setEnv       bool
+		defaultValue string
+		expected     string
+	}{
+		{
+			name:         "returns default when env var not set",
+			setEnv:       false,
+			defaultValue: "100M",
+			expected:     "100M",
+		},
+		{
+			name:         "returns env value when set with valid quantity",
+			envValue:     "200M",
+			setEnv:       true,
+			defaultValue: "100M",
+			expected:     "200M",
+		},
+		{
+			name:         "returns env value with numeric only quantity",
+			envValue:     "1000",
+			setEnv:       true,
+			defaultValue: "100M",
+			expected:     "1000",
+		},
+		{
+			name:         "returns default when env var is empty string",
+			envValue:     "",
+			setEnv:       true,
+			defaultValue: "100M",
+			expected:     "100M",
+		},
+		{
+			name:         "returns default when env var is only spaces",
+			envValue:     "   ",
+			setEnv:       true,
+			defaultValue: "100M",
+			expected:     "100M",
+		},
+		{
+			name:         "returns default when env var is whitespace mix",
+			envValue:     " \t \n ",
+			setEnv:       true,
+			defaultValue: "100M",
+			expected:     "100M",
+		},
+		{
+			name:         "returns env value when trimmed value is valid",
+			envValue:     "  500M  ",
+			setEnv:       true,
+			defaultValue: "100M",
+			expected:     "500M",
+		},
+		{
+			name:         "returns default when env var has invalid format",
+			envValue:     "invalid",
+			setEnv:       true,
+			defaultValue: "100M",
+			expected:     "100M",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.setEnv {
+				t.Setenv("TEST_QUANTITY", test.envValue)
+			}
+
+			result := getEnvQuantityOrDefault("TEST_QUANTITY", test.defaultValue)
+			assert.Equal(t, test.expected, result,
+				"getEnvQuantityOrDefault(key, %q) = %q; want %q", test.defaultValue, result, test.expected)
+		})
+	}
+}
+
+func TestGetEnvDurationOrDefault(t *testing.T) {
+	tests := []struct {
+		name         string
+		envValue     string
+		setEnv       bool
+		defaultValue string
+		expected     string
+	}{
+		{
+			name:         "returns default when env var not set",
+			setEnv:       false,
+			defaultValue: "5s",
+			expected:     "5s",
+		},
+		{
+			name:         "returns env value when set with valid duration",
+			envValue:     "10s",
+			setEnv:       true,
+			defaultValue: "5s",
+			expected:     "10s",
+		},
+		{
+			name:         "returns default when env var is empty string",
+			envValue:     "",
+			setEnv:       true,
+			defaultValue: "5s",
+			expected:     "5s",
+		},
+		{
+			name:         "returns default when env var is only spaces",
+			envValue:     "   ",
+			setEnv:       true,
+			defaultValue: "5s",
+			expected:     "5s",
+		},
+		{
+			name:         "returns env value when trimmed value is valid",
+			envValue:     "  15s  ",
+			setEnv:       true,
+			defaultValue: "5s",
+			expected:     "15s",
+		},
+		{
+			name:         "returns default when env var has invalid format",
+			envValue:     "invalid",
+			setEnv:       true,
+			defaultValue: "5s",
+			expected:     "5s",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.setEnv {
+				t.Setenv("TEST_DURATION", test.envValue)
+			}
+
+			result := getEnvDurationOrDefault("TEST_DURATION", test.defaultValue)
+			assert.Equal(t, test.expected, result,
+				"getEnvDurationOrDefault(key, %q) = %q; want %q", test.defaultValue, result, test.expected)
+		})
+	}
+}
