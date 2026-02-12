@@ -1,0 +1,261 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+# see https://docs.coderabbit.ai/reference/configuration for details
+language: en-US
+early_access: false
+
+tone_instructions: "Principal Staff Engineer: Kubernetes/OpenShift/Windows Containers. Focus: Go operators, Windows/PowerShell, build tags, reconciliation, security (SSH/certs), cross-platform (AWS/Azure/GCP/vSphere), error handling, services, reboots."
+
+chat:
+  # no emoji
+  art: false
+  # do no require mention/tag to reply
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: local
+
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "CONTRIBUTION.md"
+      - "README.md"
+      - "docs/**/*.md"
+
+  issues:
+    scope: local
+
+  jira:
+    usage: enabled
+    project_keys:
+      - "WINC"
+      - "OCPBUGS"
+
+  pull_requests:
+    # use organization-wide
+    scope: global
+
+reviews:
+  # professional settings
+  in_progress_fortune: false
+  poem: false
+  profile: chill
+  request_changes_workflow: false
+
+  # summary and status settings
+  high_level_summary: true
+  review_status: true
+  commit_status: true
+  fail_commit_status: false
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+
+  # use linked issues for context
+  assess_linked_issues: true
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+
+  auto_review:
+    enabled: true
+    # also review drafts
+    drafts: true
+    # prevent spam on every commit
+    auto_incremental_review: false
+    ignore_title_keywords:
+      - WIP
+      - '[WIP]'
+      - DO NOT MERGE
+      - do-not-merge
+      - work-in-progress
+    labels:
+      - '!do-not-merge/work-in-progress'
+      - '!do-not-merge/hold'
+
+  path_instructions:
+    - path: "pkg/**/*.go"
+      instructions: |
+        Review Go code following WMCO operator patterns from AGENTS.md:
+        - Verify correct build tags (//go:build windows or !windows)
+        - Check controller reconciliation logic and error handling
+        - Validate SSH connection handling and cleanup
+        - Ensure proper secret handling (never log credentials)
+        - Check for goroutine leaks and proper context usage
+        - Verify Windows service definitions and priorities
+        - Validate CSR approval logic and security checks
+
+    - path: "pkg/daemon/**/*.go"
+      instructions: |
+        Review Windows daemon (WICD) code:
+        - Must have //go:build windows tag
+        - Check Windows-specific APIs (Service Control Manager, Registry)
+        - Validate certificate management and rotation
+        - Check reboot handling and state persistence
+        - Verify environment variable management
+        - Ensure proper cleanup on errors
+
+    - path: "controllers/**/*.go"
+      instructions: |
+        Review Kubernetes controllers:
+        - Must have //go:build !windows tag
+        - Check reconciliation loop logic and idempotency
+        - Validate watch predicates and event filtering
+        - Check for proper status updates and conditions
+        - Verify error handling and requeue logic
+        - Ensure proper RBAC markers for kubebuilder
+
+    - path: "**/*.ps1"
+      instructions: |
+        Review PowerShell scripts:
+        - Check error handling ($ErrorActionPreference)
+        - Validate path handling (backslashes vs forward slashes)
+        - Check for proper escaping in commands
+        - Verify service management commands
+        - Check for idempotency
+        - Validate Windows-specific commands
+
+    - path: "**/*.sh"
+      instructions: |
+        Review bash scripts:
+        - Check for proper error handling (set -e, set -u)
+        - Validate shellcheck compliance
+        - Check for proper quoting
+        - Verify platform-specific logic
+        - Check for proper cleanup on errors
+
+    - path: "test/**/*.go"
+      instructions: |
+        Review test code:
+        - Check test coverage for edge cases
+        - Validate mock usage and interfaces
+        - Check for proper cleanup in tests
+        - Verify test isolation and parallelization
+        - Check for flaky test patterns
+
+    - path: "hack/**/*"
+      instructions: |
+        Review development and build scripts:
+        - Check for proper error handling
+        - Validate platform-specific logic
+        - Check for proper documentation
+        - Verify MachineSet generation logic
+
+    - path: "manifests/**/*.yaml"
+      instructions: |
+        Review OLM manifests:
+        - Validate CSV (ClusterServiceVersion) correctness
+        - Check RBAC permissions (ClusterRole, Role)
+        - Verify CRD definitions and OpenAPI validation
+        - Check deployment specifications
+        - Validate upgrade paths and version constraints
+
+    - path: "pkg/servicescm/**/*.go"
+      instructions: |
+        Review services ConfigMap handling:
+        - Validate schema parsing and validation
+        - Check service priority ordering
+        - Verify dependency management
+        - Check for proper error messages
+
+  # exclude generated, vendor, and submodules
+  path_filters:
+    - "!vendor/**"
+    - "!**/vendor/**"
+    - "!go.sum"
+    - "!**/zz_generated.*.go"
+    - "!**/zz_generated.*/**"
+    - "!cloud-provider-aws/**"
+    - "!cloud-provider-azure/**"
+    - "!containerd/**"
+    - "!windows_exporter/**"
+    - "!promu/**"
+    - "!ovn-kubernetes/**"
+    - "!kubelet/**"
+    - "!hcsshim/**"
+    - "!csi-proxy/**"
+    - "!containernetworking-plugins/**"
+
+  tools:
+    golangci-lint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+
+  pre_merge_checks:
+    # max 5 custom checks
+    custom_checks:
+      - name: "Go Best Practices & Build Tags"
+        mode: warning
+        instructions: |
+          Go error handling:
+          - Never ignore errors with `_` without justification
+          - Wrap errors with context using fmt.Errorf with %w
+          - Avoid panic() except in init() or fatal conditions
+          - Check for nil before dereferencing pointers
+          
+          Build tags (critical for cross-platform):
+          - Windows-only code MUST have //go:build windows
+          - Linux-only code (operator) MUST have //go:build !windows
+          - Platform-agnostic code should not have build tags
+          - Daemon code must be Windows-only
+          - Controller code must be Linux-only
+
+      - name: "Security: Secrets, SSH & CSR"
+        mode: warning
+        instructions: |
+          Credential handling:
+          - NEVER log secret content or private keys
+          - Use PGP encryption for username annotations
+          - Validate cloud-private-key Secret access
+          - Verify certificate handling and storage
+          - Ensure credentials are not in error messages
+          
+          SSH connections:
+          - Ensure SSH sessions are properly closed
+          - Check for connection leaks
+          - Verify timeout handling
+          - Validate SFTP file transfer cleanup
+          
+          CSR approval security:
+          - Check node identity validation
+          - Verify certificate type and key usages
+          - Validate against windows-instances ConfigMap or Machine
+          - Verify no unauthorized CSR approvals
+
+      - name: "Kubernetes Controller Patterns"
+        mode: warning
+        instructions: |
+          Validate controller best practices:
+          - Check for proper requeue on errors
+          - Verify idempotent reconciliation logic
+          - Check for proper status condition updates
+          - Verify watch predicates filter correctly
+          - Check for proper finalizer handling
+          - Validate owner references
+
+      - name: "Windows Service Management"
+        mode: warning
+        instructions: |
+          Validate Windows service handling:
+          - Check service priority ordering
+          - Verify service dependencies
+          - Validate service descriptions
+          - Check for proper service cleanup
+          - Verify reboot requirements are documented
+          - Check Service Control Manager interactions
+
+      - name: "Platform-Specific Requirements"
+        mode: warning
+        instructions: |
+          Review platform-specific considerations:
+          - vSphere: Machine name max 15 chars, MachineSet max 9
+          - AWS: Check EC2LaunchV2 version requirements
+          - Azure: Verify cloud-node-manager service
+          - GCP: Check custom hostname script usage
+          - Document platform-specific limitations
