@@ -186,6 +186,8 @@ reviews:
       enabled: true
     markdownlint:
       enabled: true
+    yamllint:
+      enabled: true
 
   pre_merge_checks:
     # max 5 custom checks
