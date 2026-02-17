@@ -153,9 +153,8 @@ func hybridOverlayConfiguration(apiServerEndpoint, vxlanPort string, debug bool)
 
 // kubeProxyConfiguration returns the Service definition for kube-proxy
 func kubeProxyConfiguration(debug bool) servicescm.Service {
-	cmd := fmt.Sprintf("%s -log-file=%s %s --config %s --windows-service", windows.KubeLogRunnerPath, windows.KubeProxyLog,
-		windows.KubeProxyPath, windows.KubeProxyConfigPath)
-
+	cmd := getLogRunnerForCmd(windows.KubeProxyPath, windows.KubeProxyLog)
+	cmd = fmt.Sprintf("%s --config %s --windows-service", cmd, windows.KubeProxyConfigPath)
 	verbosity := "0"
 	if debug {
 		verbosity = "4"
