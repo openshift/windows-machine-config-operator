@@ -246,6 +246,31 @@ in a healthy state with no disruptions.
 
 ## Enabled features
 
+### Automatic log rotation for managed Windows services
+
+Automatic rotation of the log files for the managed Windows services is available to prevent disk space 
+exhaustion. Uses [kube-log-runner](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/component-base/logs/kube-log-runner)
+as a wrapper binary that executes the service while capturing stdout/stderr, rotates logs based on size
+and automatically cleaning up old files based on age. 
+
+For details on the log rotation naming convention, please refer to the [kube-log-runner documentation](https://github.com/kubernetes/kubernetes/tree/master/staging/src/k8s.io/component-base/logs/kube-log-runner)
+
+The log rotation functionality is disabled by default, causing log files to grow indefinitely.
+
+Managed Windows services with log rotation capabilities:
+- kubelet
+- kube-proxy
+
+Not yet supported:
+- containerd
+- csi-proxy
+- windows_exporter
+- hybrid-overlay-node
+- azure-cloud-node-manager
+
+For instructions to enable, customize or disable log rotation refer to
+[log rotation for managed Windows services documentation](docs/log-rotation-managed-services.md).
+
 ### Autoscaling Windows nodes
 Cluster autoscaling is supported for Windows instances. 
 
@@ -257,7 +282,7 @@ Cluster autoscaling is supported for Windows instances.
 Windows instances brought up with WMCO are set up with the containerd container runtime. As WMCO installs and manages the container runtime,
 it is recommended not to preinstall containerd in MachineSet or BYOH Windows instances.
 
-### Cluster-wide proxy 
+### Cluster-wide proxy
 WMCO supports using a [cluster-wide proxy](https://docs.openshift.com/container-platform/latest/networking/enable-cluster-wide-proxy.html)
 to route egress traffic from Windows nodes on OpenShift Container Platform.
 
@@ -297,7 +322,7 @@ Some valid values could be: `$mirrorRegistry/oss/kubernetes/pause:3.9`, `$mirror
 
 ### Horizontal Pod Autoscaling
 Horizontal Pod autoscaling is available for Windows workloads.
-Please follow the [Horizontal Pod autoscaling docs](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html) 
+Please follow the [Horizontal Pod autoscaling docs](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html)
 to create a horizontal pod autoscaler object for CPU and memory utilization of Windows workloads.
 
 ## Limitations
