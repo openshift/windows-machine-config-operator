@@ -1293,7 +1293,7 @@ k8s.io/kubelet/config/v1beta1
 # k8s.io/kubernetes v1.31.6
 ## explicit; go 1.22.0
 k8s.io/kubernetes/pkg/credentialprovider
-# k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
+# k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 => k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 ## explicit; go 1.18
 k8s.io/utils/buffer
 k8s.io/utils/clock
@@ -1470,5 +1470,6 @@ sigs.k8s.io/yaml/goyaml.v3
 # golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
 # google.golang.org/protobuf => google.golang.org/protobuf v1.36.6
 # k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff
+# k8s.io/utils => k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 # sigs.k8s.io/json => sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd
 # sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
