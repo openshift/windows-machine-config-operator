@@ -3,6 +3,9 @@ module github.com/openshift/windows-machine-config-operator
 go 1.22.9
 
 replace (
+	// Fix the latest working version for go1.22
+	github.com/go-openapi/jsonpointer => github.com/go-openapi/jsonpointer v0.21.1
+	github.com/go-openapi/jsonreference => github.com/go-openapi/jsonreference v0.21.1
 	// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
 	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	// Fix the latest working version for go1.22
@@ -39,7 +42,7 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.58.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.6
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.32.0
@@ -81,7 +84,7 @@ require (
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
-	github.com/go-openapi/jsonpointer v0.21.1 // indirect
+	github.com/go-openapi/jsonpointer v0.22.0 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
