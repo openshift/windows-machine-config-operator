@@ -332,7 +332,7 @@ github.com/openshift/api/machineconfiguration/v1
 github.com/openshift/api/operator/v1
 github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/route/v1
-# github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
+# github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a => github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
 ## explicit; go 1.22.0
 github.com/openshift/client-go/config/applyconfigurations
 github.com/openshift/client-go/config/applyconfigurations/config/v1
@@ -1467,6 +1467,7 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/go-openapi/jsonpointer => github.com/go-openapi/jsonpointer v0.21.1
 # github.com/go-openapi/jsonreference => github.com/go-openapi/jsonreference v0.21.1
 # github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
+# github.com/openshift/client-go => github.com/openshift/client-go v0.0.0-20241107164952-923091dd2b1a
 # golang.org/x/exp => golang.org/x/exp v0.0.0-20250128182459-e0ece0dbea4c
 # golang.org/x/oauth2 => github.com/openshift/golang-oauth2 v0.26.1-0.20250310184649-06a918c6239d
 # golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
