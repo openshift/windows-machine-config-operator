@@ -34,7 +34,7 @@ spec:
         windows_memory_available_bytes
       record: node_memory_MemAvailable_bytes
     - expr: |
-        windows_cs_physical_memory_bytes
+        windows_memory_physical_total_bytes
       record: node_memory_MemTotal_bytes
     - expr: |
         windows_cpu_info
