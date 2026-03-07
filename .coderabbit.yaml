@@ -37,6 +37,8 @@ knowledge_base:
     # use organization-wide
     scope: global
 
+inheritance: true
+
 reviews:
   # professional settings
   in_progress_fortune: false
