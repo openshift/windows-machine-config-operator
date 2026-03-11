@@ -1302,8 +1302,8 @@ k8s.io/kubectl/pkg/util/openapi
 k8s.io/kubectl/pkg/util/templates
 k8s.io/kubectl/pkg/util/term
 k8s.io/kubectl/pkg/validation
-# k8s.io/kubelet v0.34.5
-## explicit; go 1.24.0
+# k8s.io/kubelet v0.35.2
+## explicit; go 1.25.0
 k8s.io/kubelet/config/v1
 k8s.io/kubelet/config/v1beta1
 # k8s.io/kubernetes v1.34.2
