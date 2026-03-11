@@ -1482,5 +1482,4 @@ sigs.k8s.io/structured-merge-diff/v6/value
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/kyaml
-# github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 # github.com/golang-jwt/jwt/v5 => github.com/golang-jwt/jwt/v5 v5.2.2

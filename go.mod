@@ -2,11 +2,8 @@ module github.com/openshift/windows-machine-config-operator
 
 go 1.25.7
 
-replace (
-	// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
-	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
-	github.com/golang-jwt/jwt/v5 => github.com/golang-jwt/jwt/v5 v5.2.2
-)
+// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
+replace github.com/golang-jwt/jwt/v5 => github.com/golang-jwt/jwt/v5 v5.2.2
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
