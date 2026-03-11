@@ -3,7 +3,7 @@
 # building the operator from the PR source without using the operator-sdk.
 
 # build stage for building binaries
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.24-openshift-4.21 as build
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.25-openshift-4.22 as build
 LABEL stage=build
 
 # Silence go compliance shim output
@@ -192,7 +192,7 @@ mkdir /payload/generated && \
 chmod 0777 /payload/generated
 
 
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.24-openshift-4.21
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.25-openshift-4.22
 LABEL stage=operator
 
 WORKDIR /
