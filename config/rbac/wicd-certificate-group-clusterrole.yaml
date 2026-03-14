@@ -9,7 +9,7 @@ rules:
   # Allow reading ConfigMaps for bootstrap phase and cleanup
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   # Allow listing nodes for node discovery (no resourceNames restriction needed)
   - apiGroups: [""]
     resources: ["nodes"]
