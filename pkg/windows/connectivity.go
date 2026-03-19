@@ -92,6 +92,12 @@ func (c *sshConnectivity) init() error {
 	}
 	var err error
 	var sshClient *ssh.Client
+	// startTime is time when we started attempting connection during user-data execution
+	startTime := time.Now()
+	// authRetryTimeout is the duration to retry authentication errors, allowing time for
+	// user-data scripts to complete SSH configuration on newly provisioned VMs
+	authRetryTimeout := 5 * time.Minute
+
 	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data
 	err = wait.PollImmediate(time.Minute, retry.Timeout, func() (bool, error) {
 		sshClient, err = ssh.Dial("tcp", c.ipAddress+":"+sshPort, config)
@@ -100,7 +106,13 @@ func (c *sshConnectivity) init() error {
 		}
 		c.log.V(1).Info("SSH dial", "IP Address", c.ipAddress, "error", err)
 		if strings.Contains(err.Error(), "unable to authenticate") {
-			// Authentication failure is a special case that must be handled differently
+			// Retry authentication failure as the VM's user-data script may still be configuring SSH.
+			elapsed := time.Since(startTime)
+			if elapsed < authRetryTimeout {
+				c.log.V(1).Info("authentication failed, retrying as VM may still be executing user-data script",
+					"elapsed", elapsed, "timeout", authRetryTimeout)
+				return false, nil
+			}
 			return false, newAuthErr(err)
 		}
 		return false, nil
