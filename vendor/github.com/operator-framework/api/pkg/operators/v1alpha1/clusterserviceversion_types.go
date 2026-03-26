@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	"github.com/operator-framework/api/pkg/lib/release"
 	"github.com/operator-framework/api/pkg/lib/version"
 )
 
@@ -145,11 +146,14 @@ type APIServiceDescription struct {
 	ActionDescriptor  []ActionDescriptor     `json:"actionDescriptors,omitempty"`
 }
 
-// APIResourceReference is a Kubernetes resource type used by a custom resource
+// APIResourceReference is a reference to a Kubernetes resource type that the referrer utilizes.
 // +k8s:openapi-gen=true
 type APIResourceReference struct {
-	Name    string `json:"name"`
-	Kind    string `json:"kind"`
+	// Plural name of the referenced resource type (CustomResourceDefinition.Spec.Names[].Plural). Empty string if the referenced resource type is not a custom resource.
+	Name string `json:"name"`
+	// Kind of the referenced resource type.
+	Kind string `json:"kind"`
+	// API Version of the referenced resource type.
 	Version string `json:"version"`
 }
 
@@ -271,21 +275,59 @@ type APIServiceDefinitions struct {
 // that can manage apps for a given version.
 // +k8s:openapi-gen=true
 type ClusterServiceVersionSpec struct {
-	InstallStrategy           NamedInstallStrategy      `json:"install"`
-	Version                   version.OperatorVersion   `json:"version,omitempty"`
+	InstallStrategy NamedInstallStrategy    `json:"install"`
+	Version         version.OperatorVersion `json:"version,omitempty"`
+	// release specifies the packaging version of the operator, defaulting to empty
+	// release is optional
+	//
+	// A ClusterServiceVersion's release field is used to distinguish between different builds of the same operator version
+	// This is useful for operators that need to make changes to the CSV which don't affect their functionality,
+	// for example:
+	// - to fix a typo in their description
+	// - to add/amend annotations or labels
+	// - to amend examples or documentation
+	// - to produce different builds for different environments
+	//
+	// It is up to operator authors to determine the semantics of release versions they use
+	// for their operator.  All release versions must conform to the semver prerelease format
+	// (dot-separated identifiers containing only alphanumerics and hyphens) and are limited
+	// to a maximum length of 20 characters.
+	// +optional
+	Release                   release.OperatorRelease   `json:"release,omitzero"`
 	Maturity                  string                    `json:"maturity,omitempty"`
 	CustomResourceDefinitions CustomResourceDefinitions `json:"customresourcedefinitions,omitempty"`
 	APIServiceDefinitions     APIServiceDefinitions     `json:"apiservicedefinitions,omitempty"`
 	WebhookDefinitions        []WebhookDescription      `json:"webhookdefinitions,omitempty"`
 	NativeAPIs                []metav1.GroupVersionKind `json:"nativeAPIs,omitempty"`
 	MinKubeVersion            string                    `json:"minKubeVersion,omitempty"`
-	DisplayName               string                    `json:"displayName"`
-	Description               string                    `json:"description,omitempty"`
-	Keywords                  []string                  `json:"keywords,omitempty"`
-	Maintainers               []Maintainer              `json:"maintainers,omitempty"`
-	Provider                  AppLink                   `json:"provider,omitempty"`
-	Links                     []AppLink                 `json:"links,omitempty"`
-	Icon                      []Icon                    `json:"icon,omitempty"`
+
+	// The name of the operator in display format.
+	DisplayName string `json:"displayName"`
+
+	// Description of the operator. Can include the features, limitations or use-cases of the
+	// operator.
+	// +optional
+	Description string `json:"description,omitempty"`
+
+	// A list of keywords describing the operator.
+	// +optional
+	Keywords []string `json:"keywords,omitempty"`
+
+	// A list of organizational entities maintaining the operator.
+	// +optional
+	Maintainers []Maintainer `json:"maintainers,omitempty"`
+
+	// The publishing entity behind the operator.
+	// +optional
+	Provider AppLink `json:"provider,omitempty"`
+
+	// A list of links related to the operator.
+	// +optional
+	Links []AppLink `json:"links,omitempty"`
+
+	// The icon for this operator.
+	// +optional
+	Icon []Icon `json:"icon,omitempty"`
 
 	// InstallModes specify supported installation types
 	// +optional
@@ -571,6 +613,7 @@ type ResourceInstance struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Display",type=string,JSONPath=`.spec.displayName`,description="The name of the CSV"
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.spec.version`,description="The version of the CSV"
+// +kubebuilder:printcolumn:name="Release",type=string,JSONPath=`.spec.release`,description="The release of this version of the CSV"
 // +kubebuilder:printcolumn:name="Replaces",type=string,JSONPath=`.spec.replaces`,description="The name of a CSV that this one replaces"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 
