@@ -92,6 +92,7 @@ COPY bundle bundle
 COPY hack hack
 COPY pkg pkg
 COPY test test
+COPY ote ote
 COPY vendor vendor
 COPY version version
 COPY go.mod go.mod
@@ -100,6 +101,7 @@ COPY tools.go tools.go
 COPY .gitignore .gitignore
 RUN make build
 RUN make build-daemon
+RUN make build-tests-ext && gzip -9 build/_output/bin/wmco-tests-ext
 
 # Build the operator image with following payload structure
 # /payload/
@@ -208,6 +210,8 @@ COPY --from=build /build/windows-machine-config-operator .
 
 # install operator binary
 COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-machine-config-operator ${OPERATOR}
+# install OTE test extension binary (gzip compressed for openshift-tests extraction)
+COPY --from=build /build/windows-machine-config-operator/build/_output/bin/wmco-tests-ext.gz /usr/bin/wmco-tests-ext.gz
 COPY --from=build /build/windows-machine-config-operator/build/bin /usr/local/bin
 RUN  /usr/local/bin/user_setup
 

@@ -103,6 +103,13 @@ build: fmt vet
 build-daemon:
 	env GOOS=windows GOARCH=amd64 go build -o ${OUTPUT_DIR}/bin/windows-instance-config-daemon.exe ./cmd/daemon
 
+# Build the OTE (OpenShift Tests Extension) binary for Windows Containers tests.
+# GO_COMPLIANCE_POLICY=exempt_all is required for test binaries per ART compliance policy.
+# The OTE binary lives in the ote/ nested module, isolated from the operator's go.mod.
+.PHONY: build-tests-ext
+build-tests-ext:
+	cd ote && GOFLAGS="" go mod download && GOFLAGS="" GO_COMPLIANCE_POLICY="exempt_all" go build -o ../${OUTPUT_DIR}/bin/wmco-tests-ext ./cmd/wmco-tests-ext
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run cmd/operator/main.go
