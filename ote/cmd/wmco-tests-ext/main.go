@@ -64,6 +64,33 @@ func main() {
 				return &et.ExtensionTestResult{Result: et.ResultPassed}
 			},
 		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Low-32554-[wmco] wmco run in a pod with HostNetwork [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckWmcoHostNetwork(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Critical-32615-[wmco] Generate userData secret [Serial] [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckGenerateUserDataSecret(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Critical-33612-[wmco] Windows node basic check [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckWindowsNodeBasic(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
 	}
 
 	ext.AddSpecs(specs)
