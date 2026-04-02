@@ -66,6 +66,38 @@ func main() {
 		},
 	}
 
+	// Batch 3: Logging & Monitoring
+	batch3 := et.ExtensionTestSpecs{
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Critical-33779-[wmco] Retrieving Windows node logs [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckWindowsNodeLogs(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Critical-33783-[wmco] Enable must gather on Windows node [Slow][Disruptive] [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckMustGather(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:weinliu-Smokerun-Medium-73595-[wmco] Verify Display of Filesystem Graphs (metrics) for Windows Nodes [Serial] [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckWindowsNodeFilesystemGraphs(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+	}
+	specs = append(specs, batch3...)
+
 	ext.AddSpecs(specs)
 	registry.Register(ext)
 
