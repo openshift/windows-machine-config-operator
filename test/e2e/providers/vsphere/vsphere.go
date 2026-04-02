@@ -45,7 +45,7 @@ func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureSta
 }
 
 // newVSphereMachineProviderSpec returns a vSphereMachineProviderSpec generated from the inputs, or an error
-func (p *Provider) newVSphereMachineProviderSpec() (*mapi.VSphereMachineProviderSpec, error) {
+func (p *Provider) newVSphereMachineProviderSpec(windowsServerVersion windows.ServerVersion) (*mapi.VSphereMachineProviderSpec, error) {
 	existingProviderSpec, err := p.getProviderSpecFromExistingMachineSet()
 	if err != nil {
 		return nil, err
@@ -54,13 +54,20 @@ func (p *Provider) newVSphereMachineProviderSpec() (*mapi.VSphereMachineProvider
 		existingProviderSpec.Workspace.Server, existingProviderSpec.Network)
 
 	// The template is an image which has been properly sysprepped.  The image is derived from an environment variable
-	// defined in the job spec.
+	// defined in the job spec. If not set, default based on Windows Server version.
 	vmTemplate := os.Getenv("VM_TEMPLATE")
 	if vmTemplate == "" {
-		vmTemplate = "windows-golden-images/windows-server-2022-template-ipv6-disabled"
+		switch windowsServerVersion {
+		case windows.Server2022:
+			vmTemplate = "windows-golden-images/windows-server-2022-template-ipv6-disabled"
+		case windows.Server2025:
+			vmTemplate = "windows-golden-images/windows-server-2025-template-ipv6-disabled"
+		default:
+			return nil, fmt.Errorf("unsupported Windows Server version: %s", windowsServerVersion)
+		}
 	}
 
-	log.Printf("creating machineset based on template %s\n", vmTemplate)
+	log.Printf("creating machineset based on template %s for Windows Server %s\n", vmTemplate, windowsServerVersion)
 
 	return &mapi.VSphereMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
@@ -109,13 +116,12 @@ func (p *Provider) getProviderSpecFromExistingMachineSet() (*mapi.VSphereMachine
 
 // GenerateMachineSet generates the MachineSet object which is vSphere provider specific
 func (p *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*mapi.MachineSet, error) {
-	// TODO: (vsphere) add support for Windows Server 2025 when golden image is available for 2025
-	if windowsServerVersion != windows.Server2022 {
+	if windowsServerVersion != windows.Server2022 && windowsServerVersion != windows.Server2025 {
 		return nil, fmt.Errorf("vSphere does not support Windows Server %s", windowsServerVersion)
 	}
 
 	// create new machine provider spec for deploying Windows node
-	providerSpec, err := p.newVSphereMachineProviderSpec()
+	providerSpec, err := p.newVSphereMachineProviderSpec(windowsServerVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new vSphere machine provider spec: %w", err)
 	}
