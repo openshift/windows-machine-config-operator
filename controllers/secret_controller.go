@@ -34,6 +34,7 @@ import (
 
 //+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;patch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=create;get;list;watch;update
+//+kubebuilder:rbac:groups="",resources=namespaces,verbs=get
 
 const (
 	// SecretController is the name of this controller in logs and other outputs.
@@ -113,9 +114,14 @@ func (r *SecretReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manage
 		Complete(r)
 }
 
-// isUserDataSecret returns true if the provided object is the userData Secret
+// isUserDataSecret returns true if the provided object is the userData Secret in either the
+// Machine API or Cluster API namespace.
 func isUserDataSecret(obj client.Object) bool {
-	return obj.GetName() == secrets.UserDataSecret && obj.GetNamespace() == cluster.MachineAPINamespace
+	if obj.GetName() != secrets.UserDataSecret {
+		return false
+	}
+	return obj.GetNamespace() == cluster.MachineAPINamespace ||
+		obj.GetNamespace() == cluster.ClusterAPINamespace
 }
 
 // isPrivateKeySecret returns true if the provided object is the private key secret
@@ -192,25 +198,80 @@ func (r *SecretReconciler) reconcileUserDataSecret(ctx context.Context) error {
 	// Fetch UserData instance
 	err = r.client.Get(ctx,
 		kubeTypes.NamespacedName{Name: secrets.UserDataSecret, Namespace: cluster.MachineAPINamespace}, userData)
-	if err != nil && k8sapierrors.IsNotFound(err) {
+	if err != nil {
+		if !k8sapierrors.IsNotFound(err) {
+			r.log.Error(err, "error retrieving the secret", "name", secrets.UserDataSecret)
+			return err
+		}
 		// Secret is deleted
 		r.log.Info("secret not found, creating the secret", "name", secrets.UserDataSecret)
 		err = r.client.Create(ctx, validUserData)
 		if err != nil {
 			return err
 		}
-		// Secret created successfully - don't requeue
-		return nil
-	} else if err != nil {
-		r.log.Error(err, "error retrieving the secret", "name", secrets.UserDataSecret)
-		return err
-	} else if string(userData.Data["userData"][:]) == string(validUserData.Data["userData"][:]) {
-		// valid userData secret already exists
-		return nil
 	} else {
-		// userdata secret data does not match what is expected
-		return r.updateUserData(ctx, keySigner, validUserData)
+		if string(userData.Data["userData"][:]) != string(validUserData.Data["userData"][:]) {
+			// userdata secret data does not match what is expected
+			if err = r.updateUserData(ctx, keySigner, validUserData); err != nil {
+				return err
+			}
+		}
 	}
+
+	// If the ClusterAPIMachineManagement feature gate is enabled, mirror the userData secret
+	// to the openshift-cluster-api namespace for CAPI-provisioned Windows machines
+	capiEnabled, err := r.isClusterAPIEnabled(ctx)
+	if err != nil {
+		return fmt.Errorf("error checking for Cluster API namespace: %w", err)
+	}
+	if capiEnabled {
+		return r.ensureCAPIUserDataSecret(ctx, validUserData)
+	}
+
+	// reconciliation successful, no need to requeue
+	return nil
+}
+
+// isClusterAPIEnabled returns true when the openshift-cluster-api namespace exist which indicate that the
+// ClusterAPIMachineManagement feature gate is active
+func (r *SecretReconciler) isClusterAPIEnabled(ctx context.Context) (bool, error) {
+	ns := &core.Namespace{}
+	err := r.client.Get(ctx, kubeTypes.NamespacedName{Name: cluster.ClusterAPINamespace}, ns)
+	if err != nil {
+		if k8sapierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting namespace %s: %w", cluster.ClusterAPINamespace, err)
+	}
+	return true, nil
+}
+
+// ensureCAPIUserDataSecret creates or updates a copy of the windows userData secret in the
+// openshift-cluster-api namespace so that CAPI-based MachineSets can reference it.
+func (r *SecretReconciler) ensureCAPIUserDataSecret(ctx context.Context, mapiExpectedSecret *core.Secret) error {
+	capiSecret := mapiExpectedSecret.DeepCopy()
+	capiSecret.Namespace = cluster.ClusterAPINamespace
+	// ensure fields are clear
+	capiSecret.ResourceVersion = ""
+	capiSecret.UID = ""
+
+	existing := &core.Secret{}
+	err := r.client.Get(ctx,
+		kubeTypes.NamespacedName{Name: secrets.UserDataSecret, Namespace: cluster.ClusterAPINamespace}, existing)
+	if err != nil {
+		if k8sapierrors.IsNotFound(err) {
+			r.log.Info("creating user data secret in Cluster API namespace", "name", secrets.UserDataSecret)
+			return r.client.Create(ctx, capiSecret)
+		}
+		return fmt.Errorf("error getting user data secret in Cluster API namespace: %w", err)
+	}
+	if string(existing.Data["userData"]) == string(capiSecret.Data["userData"]) {
+		// secrets match, nothing to do.
+		return nil
+	}
+	r.log.Info("updating user data secret in Cluster API namespace", "name", secrets.UserDataSecret)
+	capiSecret.ResourceVersion = existing.ResourceVersion
+	return r.client.Update(ctx, capiSecret)
 }
 
 func (r *SecretReconciler) reconcileTLSSecret(ctx context.Context) error {

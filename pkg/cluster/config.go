@@ -27,6 +27,9 @@ const (
 	baseK8sVersion = "v1.35"
 	// MachineAPINamespace is the name of the namespace in which machine objects and userData secret is created.
 	MachineAPINamespace = "openshift-machine-api"
+	// ClusterAPINamespace is the namespace used by the Cluster API components when the
+	// ClusterAPIMachineManagement feature gate is enabled.
+	ClusterAPINamespace = "openshift-cluster-api"
 )
 
 var (
