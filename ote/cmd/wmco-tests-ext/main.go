@@ -66,6 +66,56 @@ func main() {
 		},
 	}
 
+	// Batch 4: WICD, Workloads & Misc (no SSH)
+	batch4 := et.ExtensionTestSpecs{
+		{
+			Name: "[sig-windows] Windows_Containers Author:jfrancoa-Smokerun-Medium-50403-[wmco] wmco creates and maintains Windows services ConfigMap [Disruptive] [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckWicdConfigMap(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:rrasouli-Smokerun-Medium-60814-[wmco] Check containerd version is properly reported [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckContainerdVersion(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Critical-25593-[wmco] Prevent scheduling non Windows workloads on Windows nodes [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckPreventNonWindowsWorkloads(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:rrasouli-Smokerun-Medium-42204-[wmco] Create Windows pod with a Projected Volume [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckWindowsPodProjectedVolume(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:rrasouli-Smokerun-High-38186-[wmco] Windows LB service [Slow] [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckWindowsLBService(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+	}
+	specs = append(specs, batch4...)
+
 	ext.AddSpecs(specs)
 	registry.Register(ext)
 
