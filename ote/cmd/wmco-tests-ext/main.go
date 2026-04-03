@@ -66,6 +66,38 @@ func main() {
 		},
 	}
 
+	// Batch 2: Networking
+	batch2 := et.ExtensionTestSpecs{
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Critical-28632-[wmco] Windows and Linux east west network [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckEastWestNetwork(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Critical-32273-[wmco] Configure kube proxy and external networking check [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckExternalNetworking(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+		{
+			Name: "[sig-windows] Windows_Containers Author:sgao-Smokerun-Critical-31276-[wmco] Configure CNI and internal networking check [OTP]",
+			Run: func(ctx context.Context) *et.ExtensionTestResult {
+				if err := extended.CheckCNIAndInternalNetworking(ctx, cli.NewCLIWithoutNamespace()); err != nil {
+					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
+				}
+				return &et.ExtensionTestResult{Result: et.ResultPassed}
+			},
+		},
+	}
+	specs = append(specs, batch2...)
+
 	ext.AddSpecs(specs)
 	registry.Register(ext)
 
