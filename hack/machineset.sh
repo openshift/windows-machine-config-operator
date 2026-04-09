@@ -304,11 +304,19 @@ get_vsphere_ms() {
   local winver=$2
   local byoh=$3
 
-  # set golden image template name
-  template="windows-golden-images/windows-server-2022-template-ipv6-disabled"
-  if [ "$winver" == "2019" ]; then
-     error-exit "No template available for Windows Server 2019 in DevQE vCenter"
-  fi
+  # set golden image template name based on Windows Server version
+  case "$winver" in
+    "2019")
+      error-exit "No template available for Windows Server 2019 in DevQE vCenter"
+      ;;
+    "2025")
+      template="windows-golden-images/windows-server-2025-template-ipv6-disabled"
+      ;;
+    *)
+      # default to 2022
+      template="windows-golden-images/windows-server-2022-template-ipv6-disabled"
+      ;;
+  esac
 
   # TODO: Reduce the number of API calls, make just one call
   #       to `oc get machines` and pass the data around. This is the
