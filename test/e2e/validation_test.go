@@ -175,22 +175,6 @@ func (tc *testContext) testNodeMetadata(t *testing.T) {
 	})
 }
 
-// getKubeletServiceBinPath returns the binpath of the kubelet service. This includes the kubelet executable path and
-// arguments.
-func (tc *testContext) getKubeletServiceBinPath(node *core.Node) (string, error) {
-	command := "Get-WmiObject win32_service | Where-Object {$_.Name -eq \\\"kubelet\\\"}| select PathName | " +
-		"ConvertTo-Csv"
-	addr, err := controllers.GetAddress(node.Status.Addresses)
-	if err != nil {
-		return "", fmt.Errorf("error getting node address: %w", err)
-	}
-	out, err := tc.runPowerShellSSHJob("kubelet-query", command, addr)
-	if err != nil {
-		return "", fmt.Errorf("error querying kubelet service: %w", err)
-	}
-	return out, nil
-}
-
 // getWMCOVersion returns the version that the operator reports
 func getWMCOVersion() (string, error) {
 	cmd := exec.Command("oc", "exec", "deploy/windows-machine-config-operator", "-n", wmcoNamespace, "--",
