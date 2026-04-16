@@ -169,8 +169,6 @@ get_azure_ms() {
   case "$winver" in
     "2019")
       sku="2019-datacenter-smalldisk"
-      # TODO: remove when VM SSH issue is patched in Azure cloud
-      release="17763.6293.240905"
       ;;
     "2025")
       sku="2025-datacenter-smalldisk"
