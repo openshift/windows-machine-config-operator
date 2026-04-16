@@ -5,7 +5,7 @@ create-release-tag.py — Create an annotated release tag for WMCO.
 The commit SHA is resolved from the bundle image in the Red Hat Container
 Catalog, preferring the org.opencontainers.image.revision label (full SHA)
 and falling back to the short-SHA image tag.  The tag date is set to the
-operator image's push_date so the timestamp reflects the actual release date.
+bundle image's push_date so the timestamp reflects the actual release date.
 
 Usage:
     python3 hack/create-release-tag.py <version>
@@ -17,10 +17,28 @@ Usage:
     --commit is required when the version has no entry in the bundle catalog
     (e.g. backport releases that were never shipped as a container image).
 
-Note:
-    Pushing tags to the upstream openshift/windows-machine-config-operator
-    repository requires write access granted by the repository administrators.
-    Contact the WMCO team to have your GitHub account added before pushing.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PREREQUISITES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Runtime
+    Python 3.9 or later
+    git in PATH
+
+  Python packages
+    requests  (pip install requests)
+
+  Environment
+    Must be run from within a clone of the WMCO git repository so that
+    commit SHAs from the catalog can be verified against local history.
+    Network access to catalog.redhat.com is required; the Red Hat Container
+    Catalog API is publicly accessible and does not require authentication.
+
+  Permissions
+    Creating the tag locally requires no special permissions beyond a
+    working git clone.  Pushing the tag to the upstream repository requires
+    write access granted by the repository administrators — contact the
+    WMCO team to have your GitHub account added before pushing.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DATA SOURCES
@@ -28,15 +46,12 @@ DATA SOURCES
 
   Red Hat Container Catalog  (catalog.redhat.com)
     Bundle image:    openshift4-wincw/windows-machine-config-operator-bundle
-    Provides: build commit SHA.  Newer images carry the full 40-character SHA
-    in the org.opencontainers.image.revision OCI label.  Older images that
-    predate the label are handled by falling back to the short (7-character)
-    hex SHA that Konflux publishes as an image tag alongside the version tag.
-
-    Operator image:  openshift4-wincw/windows-machine-config-rhel9-operator
-    Provides: push_date — the UTC timestamp when the image was published to
-    the catalog.  This is used as the tag date so the annotated tag timestamp
-    reflects the actual release date rather than the date the tag was created.
+    Provides: build commit SHA and publish date.  Newer images carry the full
+    40-character SHA in the org.opencontainers.image.revision OCI label.
+    Older images that predate the label are handled by falling back to the
+    short (7-character) hex SHA that Konflux publishes as an image tag
+    alongside the version tag.  The bundle's push_date provides the release
+    date used for the tag timestamp.
 
   Local git repository
     Provides: existing tag detection (prevents accidental overwrites), full
@@ -52,10 +67,15 @@ LOGIC
    Source:   Bundle image catalog
    Data:     org.opencontainers.image.revision label (preferred) or short hex
              image tag (fallback for images that predate the OCI label).
+   Why bundle image: The bundle is built directly from a specific repo commit
+     and represents the last commit that was actually shipped in a release.
+     Tagging that commit creates a clear boundary — everything up to and
+     including the tag has been released, everything after has not.
    Logic:
      • Scans the bundle catalog for the image whose tags include vX.Y.Z.
-     • Prefers the full SHA from the OCI label; falls back to the short SHA
-       tag.
+     • Prefers the full SHA from the OCI label over the short SHA image tag.
+       A full 40-character SHA is unambiguous; a 7-character short SHA carries
+       collision risk as the repository grows.
      • Any SHA (full or short) is expanded to a full 40-character commit via
        git rev-parse and verified to exist locally.  This catches catalog/repo
        mismatches (e.g. if the local clone is stale) before writing anything.
@@ -64,20 +84,26 @@ LOGIC
        image and therefore have no bundle catalog entry.
 
 2. TAG DATE RESOLUTION
-   Source:   Operator image catalog
+   Source:   Bundle image catalog
    Data:     push_date field from the repository entry for the matching
              version.
+   Why bundle image: Since the tag points to the commit the bundle was built
+     from, the bundle's publish date is the authoritative timestamp for when
+     that code was released — it is consistent with the commit source.
    Logic:
-     • The push_date is the UTC timestamp when the operator image was
-       published.
+     • The push_date is the UTC timestamp when the bundle image was published.
      • Only the date portion (YYYY-MM-DD) is used; the time is fixed to noon
-       UTC (12:00:00+0000) to produce an unambiguous, timezone-neutral
-       timestamp.
+       UTC (12:00:00+0000) for consistency across all release tags — only the
+       calendar date is meaningful.
      • The fixed noon time is set via GIT_COMMITTER_DATE when git tag is
        invoked, so it appears as the tag's creation date in git log and GitHub.
      • --date skips the catalog lookup and uses the provided date instead.
 
 3. TAG CREATION
+   Why annotated tag: Annotated tags are immutable git objects that carry
+     tagger identity, date, and message, creating a verifiable audit trail in
+     the repository history.  Lightweight tags are just pointers and carry
+     none of this metadata.
    Logic:
      • Tag name:    vX.Y.Z
      • Tag message: "Windows Machine Config Operator vX.Y.Z"
@@ -88,6 +114,10 @@ LOGIC
        become permanent.
 
 4. PUSH INSTRUCTION
+   Why show command rather than push: This script runs interactively in a
+     developer's local environment.  Any action that modifies public,
+     shared content is shown as a command for the developer to review and
+     execute deliberately, rather than performed automatically.
    Logic:
      • After creation, scans git remote -v for a remote whose URL contains
        "openshift/windows-machine-config-operator" and uses its configured
@@ -108,11 +138,6 @@ import sys
 
 import requests
 
-OPERATOR_CATALOG_API = (
-    "https://catalog.redhat.com/api/containers/v1/repositories/"
-    "registry/registry.access.redhat.com/repository/"
-    "openshift4-wincw/windows-machine-config-rhel9-operator/images"
-)
 BUNDLE_CATALOG_API = (
     "https://catalog.redhat.com/api/containers/v1/repositories/"
     "registry/registry.access.redhat.com/repository/"
@@ -124,7 +149,7 @@ _HEX_RE = re.compile(r"^[0-9a-f]{7,40}$")
 
 
 # ---------------------------------------------------------------------------
-# Catalog helpers (shared pattern with verify-release.py)
+# Catalog helpers
 # ---------------------------------------------------------------------------
 
 def _fetch_pages(api_url: str) -> list:
@@ -194,12 +219,12 @@ def fetch_bundle_info(version: str) -> tuple[str, str]:
     return "", ""
 
 
-def fetch_operator_push_date(version: str) -> str:
+def fetch_bundle_push_date(version: str) -> str:
     """
     Return the push_date (YYYY-MM-DD) for the given version from the
-    operator catalog, or '' if not found.
+    bundle catalog, or '' if not found.
     """
-    for img in _fetch_pages(OPERATOR_CATALOG_API):
+    for img in _fetch_pages(BUNDLE_CATALOG_API):
         for repo in img.get("repositories", []):
             for tag in repo.get("tags", []):
                 m = _VERSION_TAG_RE.match(tag.get("name", ""))
@@ -277,7 +302,84 @@ def _find_upstream_remote() -> str:
     return ""
 
 
-# pylint: disable=too-many-locals,too-many-branches,too-many-statements
+def resolve_commit_sha(tag: str, version: str,
+                       override: str) -> tuple[str, str]:
+    """
+    Return (commit_sha, source_description) for the given version.
+
+    Uses the manually provided *override* SHA when supplied; otherwise
+    queries the bundle catalog.  Calls sys.exit(1) on any failure.
+    """
+    if override:
+        return override, "provided manually"
+
+    try:
+        commit_sha, commit_source = fetch_bundle_info(version)
+    except Exception as err:  # pylint: disable=broad-except
+        print(
+            f"\nERROR: fetch_bundle_info failed: {err}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if not commit_sha:
+        print(
+            f"\nERROR: Could not resolve commit SHA for {tag}.",
+            file=sys.stderr,
+        )
+        print(
+            "       The bundle image for this version "
+            "may not be in the catalog.",
+            file=sys.stderr,
+        )
+        print(
+            "       Provide the commit manually: --commit <SHA>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return commit_sha, commit_source
+
+
+def resolve_date(tag: str, version: str, override: str) -> tuple[str, str]:
+    """
+    Return (published_date, source_description) for the given version.
+
+    Uses the manually provided *override* date when supplied; otherwise
+    queries the bundle catalog.  Calls sys.exit(1) on any failure.
+    """
+    if override:
+        return override, "provided manually"
+
+    try:
+        published_date = fetch_bundle_push_date(version)
+    except Exception as err:  # pylint: disable=broad-except
+        print(
+            f"\nERROR: fetch_bundle_push_date failed: {err}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if not published_date:
+        print(
+            f"\nERROR: Could not resolve published date for {tag}.",
+            file=sys.stderr,
+        )
+        print(
+            "       The bundle image for this version "
+            "may not be in the catalog.",
+            file=sys.stderr,
+        )
+        print(
+            "       Provide the date manually: --date YYYY-MM-DD",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return published_date, "bundle image push date"
+
+
+# pylint: disable=too-many-locals,too-many-statements
 def main():
     """Parse args, resolve tag details, confirm with user, create the tag."""
     parser = argparse.ArgumentParser(
@@ -308,6 +410,11 @@ Note:
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
         parser.error(f"version must be X.Y.Z, got: {args.version!r}")
 
+    if args.commit and not _HEX_RE.match(args.commit):
+        parser.error(
+            f"--commit must be a hex SHA (7-40 characters), got: {args.commit!r}"
+        )
+
     if args.date:
         try:
             date.fromisoformat(args.date)
@@ -336,62 +443,8 @@ Note:
             flush=True,
         )
 
-    if args.commit:
-        commit_sha = args.commit
-        commit_source = "provided manually"
-    else:
-        try:
-            commit_sha, commit_source = fetch_bundle_info(version)
-        except Exception as err:  # pylint: disable=broad-except
-            print(
-                f"\nERROR: fetch_bundle_info failed: {err}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        if not commit_sha:
-            print(
-                f"\nERROR: Could not resolve commit SHA for {tag}.",
-                file=sys.stderr,
-            )
-            print(
-                "       The bundle image for this version "
-                "may not be in the catalog.",
-                file=sys.stderr,
-            )
-            print(
-                "       Provide the commit manually: --commit <SHA>",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-    if args.date:
-        published_date = args.date
-        date_source = "provided manually"
-    else:
-        try:
-            published_date = fetch_operator_push_date(version)
-        except Exception as err:  # pylint: disable=broad-except
-            print(
-                f"\nERROR: fetch_operator_push_date failed: {err}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        date_source = "operator image push date"
-        if not published_date:
-            print(
-                f"\nERROR: Could not resolve published date for {tag}.",
-                file=sys.stderr,
-            )
-            print(
-                "       The operator image for this version "
-                "may not be in the catalog.",
-                file=sys.stderr,
-            )
-            print(
-                "       Provide the date manually: --date YYYY-MM-DD",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+    commit_sha, commit_source = resolve_commit_sha(tag, version, args.commit)
+    published_date, date_source = resolve_date(tag, version, args.date)
 
     # Expand to full commit SHA and verify it exists locally
     try:
