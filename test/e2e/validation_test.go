@@ -175,22 +175,6 @@ func (tc *testContext) testNodeMetadata(t *testing.T) {
 	})
 }
 
-// getKubeletServiceBinPath returns the binpath of the kubelet service. This includes the kubelet executable path and
-// arguments.
-func (tc *testContext) getKubeletServiceBinPath(node *core.Node) (string, error) {
-	command := "Get-WmiObject win32_service | Where-Object {$_.Name -eq \\\"kubelet\\\"}| select PathName | " +
-		"ConvertTo-Csv"
-	addr, err := controllers.GetAddress(node.Status.Addresses)
-	if err != nil {
-		return "", fmt.Errorf("error getting node address: %w", err)
-	}
-	out, err := tc.runPowerShellSSHJob("kubelet-query", command, addr)
-	if err != nil {
-		return "", fmt.Errorf("error querying kubelet service: %w", err)
-	}
-	return out, nil
-}
-
 // getWMCOVersion returns the version that the operator reports
 func getWMCOVersion() (string, error) {
 	cmd := exec.Command("oc", "exec", "deploy/windows-machine-config-operator", "-n", wmcoNamespace, "--",
@@ -656,26 +640,6 @@ func (tc *testContext) waitForValidWindowsServicesConfigMap(cmName string,
 		return nil, fmt.Errorf("error waiting for ConfigMap %s/%s: %w", wmcoNamespace, cmName, err)
 	}
 	return configMap, nil
-}
-
-// waitForServicesConfigMapDeletion waits for a ConfigMap by the given name to deleted.
-// Returns an error if it is still present in the WMCO namespace at the time limit.
-func (tc *testContext) waitForServicesConfigMapDeletion(cmName string) error {
-	err := wait.PollImmediate(retry.Interval, retry.ResourceChangeTimeout, func() (bool, error) {
-		_, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), cmName, meta.GetOptions{})
-		if err == nil {
-			// Retry if the resource is found
-			return false, nil
-		}
-		if apierrors.IsNotFound(err) {
-			return true, nil
-		}
-		return false, fmt.Errorf("error retrieving ConfigMap: %s: %w", cmName, err)
-	})
-	if err != nil {
-		return fmt.Errorf("error waiting for ConfigMap deletion %s/%s: %w", wmcoNamespace, cmName, err)
-	}
-	return nil
 }
 
 // testCSRApproval tests if the BYOH CSR's have been approved by WMCO CSR approver
