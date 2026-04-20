@@ -23,7 +23,7 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/crypto v0.50.0
-	golang.org/x/mod v0.34.0
+	golang.org/x/mod v0.35.0
 	golang.org/x/sys v0.43.0
 	k8s.io/api v0.35.4
 	k8s.io/apimachinery v0.35.4
