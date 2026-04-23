@@ -369,6 +369,8 @@ spec:
         values:
         - "false"
       params:
+      - name: KFP_GIT_URL
+        value: ""
       - name: image-digest
         value: $(tasks.build-container.results.IMAGE_DIGEST)
       - name: image-url
