@@ -106,8 +106,6 @@ func (p *Provider) CreatePVC(_ client.Interface, _ string, _ *core.PersistentVol
 // getImage returns the image based on the Windows Server version
 func getImage(windowsServerVersion windows.ServerVersion) string {
 	switch windowsServerVersion {
-	case windows.Server2019:
-		return "projects/windows-cloud/global/images/family/windows-2019-core"
 	case windows.Server2025:
 		return "projects/windows-cloud/global/images/family/windows-2025-core"
 	case windows.Server2022:

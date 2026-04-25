@@ -7,7 +7,7 @@
 #    machineset.sh
 # OPTIONS
 #    -b                      Set 'windowsmachineconfig.openshift.io/ignore' label for BYOH use case. Default: false
-#    -w                      Windows Server version (optional) 2019 or 2022. Default: 2022
+#    -w                      Windows Server version (optional) 2022 or 2025. Default: 2022
 #    $1/$2 (if -w is used)   Action                 (optional) apply/delete the MachineSet
 # PREREQUISITES
 #    oc                   to fetch cluster info and apply/delete MachineSets on the cluster(cluster should be logged in)
@@ -87,9 +87,6 @@ get_aws_ms() {
   # check Windows version and set AMI filter
   filter=""
   case "$winver" in
-    "2019")
-      filter="Windows_Server-2019-English-Core-Base-????.??.??"
-      ;;
     "2025")
       filter="Windows_Server-2025-English-Core-Base-????.??.??"
       ;;
@@ -167,11 +164,6 @@ get_azure_ms() {
   local sku=""
   local release="latest"
   case "$winver" in
-    "2019")
-      sku="2019-datacenter-smalldisk"
-      # TODO: remove when VM SSH issue is patched in Azure cloud
-      release="17763.6293.240905"
-      ;;
     "2025")
       sku="2025-datacenter-smalldisk"
       ;;
@@ -239,9 +231,6 @@ get_gcp_ms() {
   # check Windows version and set image family
   local image=""
   case "$winver" in
-    "2019")
-      image="projects/windows-cloud/global/images/family/windows-2019-core"
-      ;;
     "2025")
       image="projects/windows-cloud/global/images/family/windows-2025-core"
       ;;
@@ -306,9 +295,6 @@ get_vsphere_ms() {
 
   # set golden image template name based on Windows Server version
   case "$winver" in
-    "2019")
-      error-exit "No template available for Windows Server 2019 in DevQE vCenter"
-      ;;
     "2025")
       template="windows-golden-images/windows-server-2025-template-ipv6-disabled"
       ;;
@@ -430,10 +416,10 @@ winver="2022"
 byoh=false
 while getopts ":w:b" opt; do
   case ${opt} in
-    w ) # Windows Server version to use in the MachineSet. Defaults to 2022. Other option is 2019.
+    w ) # Windows Server version to use in the MachineSet. Defaults to 2022. Other option is 2025.
       winver="$OPTARG"
-      if [[ ! "$winver" =~ 2019|2022|2025$ ]]; then
-        echo "Invalid -w option $winver. Valid options are 2019, 2022 or 2025"
+      if [[ ! "$winver" =~ 2022|2025$ ]]; then
+        echo "Invalid -w option $winver. Valid options are 2022 or 2025"
         exit 1
       fi
       ;;
@@ -441,7 +427,7 @@ while getopts ":w:b" opt; do
       byoh=true
       ;;
     \? )
-      echo "Usage: $0 -w <2019/2022> -b apply/delete"
+      echo "Usage: $0 -w <2022/2025> -b apply/delete"
       exit 0
       ;;
   esac

@@ -47,10 +47,6 @@ func New(clientset *clusterinfo.OpenShift, infraStatus *config.InfrastructureSta
 // newAzureMachineProviderSpec returns an AzureMachineProviderSpec generated from the inputs, or an error
 func (p *Provider) newAzureMachineProviderSpec(location, zone, vmSize, publicLoadBalancer string, windowsServerVersion windows.ServerVersion) (*mapi.AzureMachineProviderSpec, error) {
 	imageVersion := defaultImageVersion
-	if windowsServerVersion == windows.Server2019 {
-		// TODO: remove when VM SSH issue is patched in Azure cloud
-		imageVersion = "17763.6293.240905"
-	}
 	return &mapi.AzureMachineProviderSpec{
 		TypeMeta: meta.TypeMeta{
 			APIVersion: "azureproviderconfig.openshift.io/v1beta1",
@@ -345,8 +341,6 @@ func (p *Provider) ensureWindowsCSIDaemonSet(client client.Interface) error {
 // getImageSKU returns the SKU based on the Windows Server version
 func getImageSKU(windowsServerVersion windows.ServerVersion) string {
 	switch windowsServerVersion {
-	case windows.Server2019:
-		return "2019-datacenter-smalldisk"
 	case windows.Server2025:
 		return "2025-datacenter-smalldisk"
 	case windows.Server2022:

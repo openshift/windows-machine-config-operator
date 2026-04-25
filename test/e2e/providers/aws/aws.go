@@ -59,8 +59,6 @@ func newEC2Client(region string) (*ec2.EC2, error) {
 // pattern Windows_Server-$version-variant-YYYY.MM.DD and the filter will grab all AMIs that match the filter.
 func getWindowsAMIFilter(windowsServerVersion windows.ServerVersion) string {
 	switch windowsServerVersion {
-	case windows.Server2019:
-		return "Windows_Server-2019-English-Core-Base-????.??.??"
 	case windows.Server2025:
 		return "Windows_Server-2025-English-Core-Base-????.??.??"
 	case windows.Server2022:
