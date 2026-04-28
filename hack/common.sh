@@ -33,6 +33,13 @@ get_OCP_version() {
   # versions behind OCP Y version
   local DIFFERENCE=5
   local OCP_VER_MINOR=$(($DIFFERENCE+$WMCO_VER_MAJOR))
+  # starting on WMCO 11.y.z, the WMCO major version maps to OCP 5.y
+  if [ "$WMCO_VER_MAJOR" -ge 11 ]; then
+    local OCP_VER_MAJOR=5
+    WMCO_VER_MINOR=$(echo $WMCO_VERSION | cut -d. -f2)
+    echo $OCP_VER_MAJOR.$WMCO_VER_MINOR
+    return
+  fi
   # starting on WMCO 10.y.z, the WMCO y-stream follows OCP y-stream
   if [ "$WMCO_VER_MAJOR" -ge 10 ]; then
     WMCO_VER_MINOR=$(echo $WMCO_VERSION | cut -d. -f2)
@@ -48,7 +55,11 @@ get_rhel_version(){
     return 1
   fi
   version=$(echo "$1" | tr -d '.')
-  if [[ $version -ge 413 ]]; then
+  # OCP 5.x versions produce a 2-digit string (e.g. "50") which is less than
+  # 413 but should still map to RHEL 9
+  if [[ $version -ge 50 && $version -lt 100 ]]; then
+    echo "9"
+  elif [[ $version -ge 413 ]]; then
     echo "9"
   else
     echo "8"
