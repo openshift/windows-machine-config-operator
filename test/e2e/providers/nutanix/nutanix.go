@@ -32,8 +32,7 @@ func New(oc *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*
 
 // GenerateMachineSet generates a Windows MachineSet which is Nutanix provider specific
 func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*machinev1beta1.MachineSet, error) {
-	// TODO: (nutanix) add support for Windows Server 2025 when golden image is available for 2025
-	if windowsServerVersion != windows.Server2022 {
+	if windowsServerVersion == windows.Server2019 {
 		return nil, fmt.Errorf("Windows Server %s is not available in Nutanix CI", windowsServerVersion)
 	}
 
@@ -52,8 +51,8 @@ func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, wind
 		return nil, fmt.Errorf("failed to unmarshal raw machine provider spec: %v", err)
 	}
 
-	// The Windows Server 2022 image named "nutanix-windows-server" was pre-uploaded to the Nutanix CI prism-central
-	winImageName := "nutanix-windows-server"
+	// Get the Windows image name based on the server version
+	winImageName := getWindowsImageName(windowsServerVersion)
 	winImageIdentifier := machinev1.NutanixResourceIdentifier{
 		Type: machinev1.NutanixIdentifierName,
 		Name: &winImageName,
@@ -77,6 +76,19 @@ func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, wind
 	}
 
 	return machineset.New(rawBytes, a.InfrastructureName, replicas, withIgnoreLabel, a.InfrastructureName+"-"), nil
+}
+
+// getWindowsImageName returns the Nutanix image name for the given Windows Server version
+func getWindowsImageName(windowsServerVersion windows.ServerVersion) string {
+	switch windowsServerVersion {
+	case windows.Server2025:
+		// Windows Server 2025 image pre-uploaded to Nutanix CI prism-central
+		return "windows-server-2025"
+	case windows.Server2022:
+	default:
+	}
+	// Windows Server 2022 is the default image
+	return "nutanix-windows-server"
 }
 
 func (a *Provider) GetType() config.PlatformType {
