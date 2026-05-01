@@ -12,10 +12,10 @@ metadata:
       && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() || ".tekton/windows-machine-config-operator-bundle-*".pathChanged() )
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: windows-machine-config-operator-release-4-22
-    appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-4-22
+    appstudio.openshift.io/application: windows-machine-config-operator-release-5-0
+    appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-5-0
     pipelines.appstudio.openshift.io/type: build
-  name: windows-machine-config-operator-bundle-release-4-22-on-push
+  name: windows-machine-config-operator-bundle-release-5-0-on-push
   namespace: windows-machine-conf-tenant
 spec:
   params:
@@ -30,7 +30,7 @@ spec:
   - name: git-url
     value: '{{source_url}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-bundle-release-4-22:{{revision}}
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-bundle-release-5-0:{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
@@ -511,7 +511,7 @@ spec:
           memory: 8Gi
       name: use-trusted-artifact
   taskRunTemplate:
-    serviceAccountName: build-pipeline-windows-machine-config-operator-bundle-release-4-22
+    serviceAccountName: build-pipeline-windows-machine-config-operator-bundle-release-5-0
   workspaces:
   - name: git-auth
     secret:
