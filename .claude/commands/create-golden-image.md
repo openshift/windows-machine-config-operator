@@ -48,11 +48,18 @@ If the target already exists, ask the user whether to overwrite or abort.
 
 ### Step 3: Clone template to VM
 
+First, look up the source template's datastore (required when VCenter has multiple datastores):
+```bash
+govc vm.info -json "windows-golden-images/${SOURCE_TEMPLATE}" | python3 -c "import sys,json; data=json.load(sys.stdin); vms=data.get('virtualMachines',data.get('VirtualMachines',[])); print(vms[0]['config']['files']['vmPathName'].split(']')[0].lstrip('['))"
+```
+
+Then clone with the datastore explicitly specified:
 ```bash
 govc vm.clone \
   -vm "windows-golden-images/${SOURCE_TEMPLATE}" \
   -on=false \
   -folder "windows-golden-images" \
+  -ds "${DATASTORE}" \
   "${TARGET_TEMPLATE}"
 ```
 
@@ -62,9 +69,9 @@ govc vm.clone \
 govc vm.power -on "windows-golden-images/${TARGET_TEMPLATE}"
 ```
 
-Poll every 15 seconds until VMware Tools reports ready:
+Poll every 15 seconds until VMware Tools reports ready. Use the full inventory path (required by `object.collect`, which does not resolve relative paths like other govc commands):
 ```bash
-govc object.collect -s "windows-golden-images/${TARGET_TEMPLATE}" guest.toolsStatus
+govc object.collect -s "/${GOVC_DATACENTER}/vm/windows-golden-images/${TARGET_TEMPLATE}" guest.toolsStatus
 ```
 
 Wait until it returns `toolsOk` or `toolsOld`.
@@ -271,6 +278,7 @@ A valid golden image must have:
 ## Troubleshooting
 
 - **govc connection fails**: Verify VPN is active and GOVC_* env vars are set
+- **Clone fails with "default datastore resolves to multiple instances"**: VCenter has multiple datastores -- look up the source template's datastore and pass `-ds` explicitly
 - **Clone fails**: Source template may be locked -- check with `govc vm.info`
 - **Guest operations fail**: VM may not be fully booted -- wait for VMware Tools to report ready
 - **Sysprep auth error on govc**: Expected -- sysprep shuts down the VM, govc loses connection
