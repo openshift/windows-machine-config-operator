@@ -50,8 +50,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1.AWSDNSSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("AWSIngressSpec"):
 		return &configv1.AWSIngressSpecApplyConfiguration{}
-	case v1.SchemeGroupVersion.WithKind("AWSKMSConfig"):
-		return &configv1.AWSKMSConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("AWSPlatformSpec"):
 		return &configv1.AWSPlatformSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("AWSPlatformStatus"):
@@ -266,8 +264,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1.InsightsDataGatherSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KeystoneIdentityProvider"):
 		return &configv1.KeystoneIdentityProviderApplyConfiguration{}
-	case v1.SchemeGroupVersion.WithKind("KMSConfig"):
-		return &configv1.KMSConfigApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("KMSPluginConfig"):
+		return &configv1.KMSPluginConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubevirtPlatformStatus"):
 		return &configv1.KubevirtPlatformStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("LDAPAttributeMapping"):
@@ -452,6 +450,18 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1.UsernameClaimMappingApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("UsernamePrefix"):
 		return &configv1.UsernamePrefixApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("VaultAppRoleAuthentication"):
+		return &configv1.VaultAppRoleAuthenticationApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("VaultAuthentication"):
+		return &configv1.VaultAuthenticationApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("VaultConfigMapReference"):
+		return &configv1.VaultConfigMapReferenceApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("VaultKMSPluginConfig"):
+		return &configv1.VaultKMSPluginConfigApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("VaultSecretReference"):
+		return &configv1.VaultSecretReferenceApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("VaultTLSConfig"):
+		return &configv1.VaultTLSConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("VSphereFailureDomainHostGroup"):
 		return &configv1.VSphereFailureDomainHostGroupApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("VSphereFailureDomainRegionAffinity"):
@@ -564,6 +574,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &configv1alpha1.NodeExporterCollectorNetDevConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("NodeExporterCollectorProcessesConfig"):
 		return &configv1alpha1.NodeExporterCollectorProcessesConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("NodeExporterCollectorSoftirqsConfig"):
+		return &configv1alpha1.NodeExporterCollectorSoftirqsConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("NodeExporterCollectorSystemdCollectConfig"):
 		return &configv1alpha1.NodeExporterCollectorSystemdCollectConfigApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("NodeExporterCollectorSystemdConfig"):
