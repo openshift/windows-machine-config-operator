@@ -277,7 +277,7 @@ Additional flags that can be passed to `hack/run-ci-e2e-test.sh` are
   - `basic` all the tests are run aside from the `upgrade-*` tests
   - `upgrade-setup` sets up an upgrade scenario by running a subset of the creation tests and the storage tests
   - `upgrade-test` upgrade and deletion tests are run
-- `-w` specify the Windows Server version to test against. Defaults to 2022. Other option is 2019.
+- `-w` specify the Windows Server version to test against. Defaults to 2022. Other options are 2019 and 2025.
 
 Example command to run the full test suite with 2 instances configured by the Windows Machine controller, and 1
 configured by the ConfigMap controller, skipping the deletion of all the nodes.

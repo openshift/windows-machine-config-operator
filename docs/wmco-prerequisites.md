@@ -33,13 +33,13 @@ applicable cloud provider.
 Note: Any unlisted Windows Server version are NOT supported, and will cause errors. To prevent 
 these errors, only use the appropriate version according to the cloud provider in use. 
 
-| Cloud Provider | Supported Windows Server version                                                                                                   |
-|----------------|------------------------------------------------------------------------------------------------------------------------------------|
-| AWS            | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC) |
-| Azure          | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC) |
-| GCP            | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                             |
-| VMware vSphere | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                             |
-| Nutanix        | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                             |
+| Cloud Provider | Supported Windows Server version                                                                                                                                                                               |
+|----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| AWS            | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2025 Long-Term Servicing Channel (LTSC)                |
+| Azure          | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2025 Long-Term Servicing Channel (LTSC)                |
+| GCP            | - Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2025 Long-Term Servicing Channel (LTSC)                                                                                           |
+| VMware vSphere | - Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2025 Long-Term Servicing Channel (LTSC)                                                                                           |
+| Nutanix        | - Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2025 Long-Term Servicing Channel (LTSC)                                                                                           |
 
 *Please note that the Windows Server 2022 image must contain the OS-level container networking patch [KB5012637](https://support.microsoft.com/en-us/topic/april-25-2022-kb5012637-os-build-20348-681-preview-2233d69c-d4a5-4be9-8c24-04a450861a8d).*
 
@@ -60,10 +60,10 @@ Note:
 | VMware vSphere | Hybrid OVNKubernetes with a [Custom VXLAN port](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/ovn-kubernetes-network-plugin#configuring-hybrid-networking) |
 | Nutanix        | Hybrid OVNKubernetes                                                                                                                                                                |
 
-| Hybrid OVNKubernetes | Supported Windows Server version                                                                                                   |
-|----------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| Default VXLAN port   | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC) |
-| Custom VXLAN port    | Windows Server 2022 Long-Term Servicing Channel (LTSC)                                                                             |
+| Hybrid OVNKubernetes | Supported Windows Server version                                                                                                                                                                               |
+|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Default VXLAN port   | - Windows Server 2019, version 1809 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2025 Long-Term Servicing Channel (LTSC)                |
+| Custom VXLAN port    | - Windows Server 2022 Long-Term Servicing Channel (LTSC)<br>- Windows Server 2025 Long-Term Servicing Channel (LTSC)                                                                                           |
 
 ## vSphere Specific Requirements
 Please refer to [VMware vSphere pre-requisites](vsphere-prerequisites.md).
