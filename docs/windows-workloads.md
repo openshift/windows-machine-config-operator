@@ -19,6 +19,8 @@ mismatch of Windows versions between the container and the Node.
 
 ### Example Windows Server 2019 RuntimeClass
 
+For Windows Server 2025, use `windows2025` as the name and `10.0.26100` as the windows-build value.
+
 ```yaml
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
@@ -29,7 +31,7 @@ scheduling:
   nodeSelector:
     kubernetes.io/os: 'windows'
     kubernetes.io/arch: 'amd64'
-    # This must match the Windows Server build, for 2022 use 10.0.20348
+    # This must match the Windows Server build, for 2022 use 10.0.20348, for 2025 use 10.0.26100
     node.kubernetes.io/windows-build: '10.0.17763'
   tolerations:
     - effect: NoSchedule
@@ -43,6 +45,8 @@ scheduling:
 ```
 
 ## Example Windows Server 2019 workload
+
+For Windows Server 2025, use `mcr.microsoft.com/windows/servercore:ltsc2025` as the container image and set `runtimeClassName: windows2025`.
 
 ```yaml
 apiVersion: apps/v1
