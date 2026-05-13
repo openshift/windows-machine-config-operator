@@ -1,7 +1,7 @@
 # Creating a Nutanix Windows MachineSet
 
 Replace _\<windows_server_image_name\>_ with the full name of an image of a [supported version](wmco-prerequisites.md#supported-windows-server-versions) of the Windows operating system that is pre-uploaded to the Prism-Central/Prism-Element where the Machine VMs will be created.
-For example, `nutanix-windows-server-2022`
+For example, `nutanix-windows-server-2022` or `nutanix-windows-server-2025`
 
 Replace _\<infrastructure_id\>_ with the output:
 ```shell script
