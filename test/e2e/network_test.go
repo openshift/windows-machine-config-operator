@@ -864,8 +864,6 @@ func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 // getWindowsServerContainerImage gets the appropriate WindowsServer image based on the OS version
 func (tc *testContext) getWindowsServerContainerImage() string {
 	switch tc.windowsServerVersion {
-	case windows.Server2019:
-		return "mcr.microsoft.com/powershell:lts-nanoserver-1809"
 	case windows.Server2022:
 	case windows.Server2025:
 		// 2022-based container images are compatible with Windows Server 2025

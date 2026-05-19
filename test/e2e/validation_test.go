@@ -35,7 +35,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
-	e2e_windows "github.com/openshift/windows-machine-config-operator/test/e2e/windows"
 )
 
 const (
@@ -354,10 +353,7 @@ func (tc *testContext) ensureTestRunnerRBAC() error {
 func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, error) {
 	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022 and
 	// later
-	powershellDefaultCommand := command
-	if tc.windowsServerVersion != e2e_windows.Server2019 {
-		powershellDefaultCommand = strings.ReplaceAll(command, "\\\"", "\"")
-	}
+	powershellDefaultCommand := strings.ReplaceAll(command, "\\\"", "\"")
 
 	keyMountDir := "/private-key"
 	sshOptions := "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"

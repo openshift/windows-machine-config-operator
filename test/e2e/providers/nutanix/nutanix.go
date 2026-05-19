@@ -32,9 +32,6 @@ func New(oc *clusterinfo.OpenShift, infraStatus *config.InfrastructureStatus) (*
 
 // GenerateMachineSet generates a Windows MachineSet which is Nutanix provider specific
 func (a *Provider) GenerateMachineSet(withIgnoreLabel bool, replicas int32, windowsServerVersion windows.ServerVersion) (*machinev1beta1.MachineSet, error) {
-	if windowsServerVersion == windows.Server2019 {
-		return nil, fmt.Errorf("Windows Server %s is not available in Nutanix CI", windowsServerVersion)
-	}
 
 	listOptions := meta.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-machine-role=worker"}
 	machines, err := a.oc.Machine.Machines(clusterinfo.MachineAPINamespace).List(context.TODO(), listOptions)
