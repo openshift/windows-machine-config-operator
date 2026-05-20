@@ -6,8 +6,12 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -991,4 +995,112 @@ func TestSlicesEquivalent(t *testing.T) {
 		})
 	}
 
+}
+
+func TestCleanupOldCertificates(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Helper function to create test certificate files with specific modification times
+	createCertFile := func(t *testing.T, dir, name string, modTime time.Time) string {
+		filePath := filepath.Join(dir, name)
+		file, err := os.Create(filePath)
+		require.NoError(t, err)
+		file.Close()
+		err = os.Chtimes(filePath, modTime, modTime)
+		require.NoError(t, err)
+		return filePath
+	}
+
+	testCases := []struct {
+		name          string
+		numFiles      int
+		expectedKept  int
+		expectedError bool
+	}{
+		{
+			name:          "No files to clean up",
+			numFiles:      0,
+			expectedKept:  0,
+			expectedError: false,
+		},
+		{
+			name:          "2 files, no cleanup needed",
+			numFiles:      2,
+			expectedKept:  2,
+			expectedError: false,
+		},
+		{
+			name:          "3 files, cleanup 1",
+			numFiles:      3,
+			expectedKept:  2,
+			expectedError: false,
+		},
+		{
+			name:          "10 files, cleanup 8",
+			numFiles:      10,
+			expectedKept:  2,
+			expectedError: false,
+		},
+		{
+			name:          "150 files (like production), cleanup 148",
+			numFiles:      150,
+			expectedKept:  2,
+			expectedError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a fresh subdirectory for this test case
+			testDir := filepath.Join(tempDir, tc.name)
+			err := os.MkdirAll(testDir, 0755)
+			require.NoError(t, err)
+
+			// Create certificate files with different timestamps
+			baseTime := time.Date(2026, time.January, 1, 22, 0, 0, 0, time.UTC)
+			for i := 0; i < tc.numFiles; i++ {
+				ts := baseTime.AddDate(0, 0, i).Format("2006-01-02-15-04-05")
+				fileName := fmt.Sprintf("ovnkube-client-%s.pem", ts)
+				// Older files have earlier timestamps
+				modTime := baseTime.Add(-time.Duration(tc.numFiles-i) * time.Hour)
+				createCertFile(t, testDir, fileName, modTime)
+			}
+
+			// Run the cleanup directly on the test directory
+			err = cleanupOldCertificatesInDir(testDir)
+			if tc.expectedError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			// Verify the correct number of files remain
+			matches, err := filepath.Glob(filepath.Join(testDir, "ovnkube-client-*.pem"))
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedKept, len(matches), "unexpected number of files remaining")
+
+			if tc.expectedKept > 0 {
+				// Verify that the most recent files were kept by checking filenames
+				// Sort matches to get them in descending order (newest first)
+				sort.Slice(matches, func(i, j int) bool {
+					return filepath.Base(matches[i]) > filepath.Base(matches[j])
+				})
+
+				// Verify we kept the files with the newest timestamps in their names
+				// Since we create files with dates incrementing from baseTime, the kept files
+				// should be from the end of the range (most recent dates)
+				for i, match := range matches {
+					baseName := filepath.Base(match)
+					// First kept file should be the most recent (highest date)
+					if i == 0 {
+						expectedPattern := fmt.Sprintf("ovnkube-client-%s",
+							baseTime.AddDate(0, 0, tc.numFiles-1).Format("2006-01-02-15-04-05"))
+						assert.Contains(t, baseName, expectedPattern,
+							"first kept file should be the most recent")
+					}
+				}
+			}
+		})
+	}
 }
