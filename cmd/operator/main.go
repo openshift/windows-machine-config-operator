@@ -45,6 +45,9 @@ import (
 // ServiceAccount permissions used to watch operator on secrets.
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=watch
 
+// NetworkPolicy permissions used by WMCO operands.
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=create;delete;update;patch
+
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
