@@ -624,7 +624,7 @@ func LocalInterfaceAddresses() ([]net.Addr, error) {
 	return addresses, nil
 }
 
-// getUsableAddress returns the ipv4 representation of the address, or nil if it is not usable by WICD.
+// getUsableIPv4 returns the ipv4 representation of the address, or nil if it is not usable by WICD.
 func getUsableIPv4(addr net.Addr) net.IP {
 	ipAddr, ok := addr.(*net.IPNet)
 	if !ok {

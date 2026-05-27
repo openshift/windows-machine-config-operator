@@ -141,7 +141,7 @@ func RemoveVersionAnnotation(ctx context.Context, c client.Client, node core.Nod
 	return nil
 }
 
-// RemoveVersionAnnotation clears the reboot annotation from the node, indicating the instance no longer needs a restart
+// RemoveRebootAnnotation clears the reboot annotation from the node, indicating the instance no longer needs a restart
 func RemoveRebootAnnotation(ctx context.Context, c client.Client, node core.Node) error {
 	if _, present := node.GetAnnotations()[RebootAnnotation]; present {
 		patchData, err := GenerateRemovePatch([]string{}, []string{RebootAnnotation})

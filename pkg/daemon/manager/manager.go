@@ -144,7 +144,7 @@ func (m *manager) EnsureServiceState(service winsvc.Service, state svc.State) er
 	return winsvc.WaitForState(service, state)
 }
 
-// Stop the service, and wait for the process associated with the service to stop
+// stopServiceAndProcess stops the service, and wait for the process associated with the service to stop
 func (m *manager) stopServiceAndProcess(winSvc *mgr.Service) error {
 	status, err := winSvc.Query()
 	if err != nil {

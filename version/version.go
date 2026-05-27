@@ -14,13 +14,13 @@ var (
 	GoVersion = fmt.Sprintf("%s %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 )
 
-// Print() logs the operator version and related information
+// Print logs the operator version and related information
 func Print() {
 	log.Info("operator", "version", Version)
 	log.Info("go", "version", GoVersion)
 }
 
-// Get() returns the operator version
+// Get returns the operator version
 func Get() string {
 	return Version
 }

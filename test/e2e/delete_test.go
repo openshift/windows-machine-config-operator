@@ -293,7 +293,7 @@ func (tc *testContext) testWindowsNodeDeletion(t *testing.T) {
 	require.NoError(t, err, "could not delete test namespace")
 }
 
-// Deploy an emptydir volume and wait until its pods have been made ready on each Windows node. emptydir
+// deployEmptyDirVolumeWorkload deploys an emptydir volume and wait until its pods have been made ready on each Windows node. emptydir
 // volumes should be able to be removed from a Node.
 func (tc *testContext) deployEmptyDirVolumeWorkload() (*apps.Deployment, error) {
 	winPodCommand := []string{powerShellExe, "-command", "while ($true) {Start-Sleep -Seconds 1}"}
@@ -312,7 +312,7 @@ func (tc *testContext) deployEmptyDirVolumeWorkload() (*apps.Deployment, error) 
 	return emptyDir, nil
 }
 
-// DeployNOOPDaemonSet deploys a DaemonSet which will deploy pods in a sleep loop across all Windows nodes
+// deployNOOPDaemonSet deploys a DaemonSet which will deploy pods in a sleep loop across all Windows nodes
 func (tc *testContext) deployNOOPDaemonSet() (*apps.DaemonSet, error) {
 	ds := apps.DaemonSet{
 		ObjectMeta: meta.ObjectMeta{
@@ -347,7 +347,7 @@ func (tc *testContext) deployNOOPDaemonSet() (*apps.DaemonSet, error) {
 	return created, nil
 }
 
-// waitUntilDeploymentScaled will return nil if the daemonset is fully deployed across the Windows nodes
+// waitUntilDaemonsetScaled will return nil if the daemonset is fully deployed across the Windows nodes
 func (tc *testContext) waitUntilDaemonsetScaled(name string, desiredReplicas int) error {
 	var ds *apps.DaemonSet
 	err := wait.PollImmediateWithContext(context.TODO(), retry.Interval, retry.Timeout,
@@ -365,7 +365,7 @@ func (tc *testContext) waitUntilDaemonsetScaled(name string, desiredReplicas int
 	return nil
 }
 
-// cleanupWorkloads attempts to delete all deployments that exist within the testContext workload namespace
+// cleanupDeployments attempts to delete all deployments that exist within the testContext workload namespace
 func (tc *testContext) cleanupDeployments() {
 	deployments, err := tc.client.K8s.AppsV1().Deployments(tc.workloadNamespace).List(context.TODO(), meta.ListOptions{})
 	if err != nil {

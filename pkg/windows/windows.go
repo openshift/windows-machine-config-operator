@@ -1057,7 +1057,7 @@ func (vm *windows) reinitialize() error {
 	return nil
 }
 
-// ensureWICDSecretContent ensures the WICD kubeconfig on the instance has the expected contents
+// ensureWICDKubeconfig ensures the WICD kubeconfig on the instance has the expected contents
 func (vm *windows) ensureWICDKubeconfig(contents string) error {
 	kcDir, kc := SplitPath(WICDKubeconfigPath)
 	return vm.EnsureFileContent([]byte(contents), kc, kcDir)
@@ -1091,7 +1091,7 @@ func rmDirCmd(dirName string) string {
 	return fmt.Sprintf("if(Test-Path %s) {Remove-Item -Recurse -Force %s}", dirName, dirName)
 }
 
-// rmK8sFilesCmd() returns the PowerShell command to remove the k8sDir files excluding WICD files
+// rmK8sFilesCmd returns the PowerShell command to remove the k8sDir files excluding WICD files
 func rmK8sFilesCmd() string {
 	return fmt.Sprintf("if(Test-Path %s) {Get-ChildItem %s -Recurse -Exclude %s,%s | Remove-Item -Force -Recurse}",
 		K8sDir, K8sDir, wicdPath, WICDKubeconfigPath)

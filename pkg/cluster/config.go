@@ -231,7 +231,7 @@ func (ovn *ovnKubernetes) GetServiceCIDR() string {
 	return ovn.clusterNetworkConfig.serviceCIDR
 }
 
-// GetVXLANPort gets the VXLAN port to be used for VXLAN tunnel establishment
+// VXLANPort gets the VXLAN port to be used for VXLAN tunnel establishment
 func (ovn *ovnKubernetes) VXLANPort() string {
 	return ovn.clusterNetworkConfig.vxlanPort
 }

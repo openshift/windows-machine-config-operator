@@ -654,7 +654,7 @@ func (r *ConfigMapReconciler) ensureTrustedCABundleInNodes(ctx context.Context) 
 	return nil
 }
 
-// ensureTrustedCABundleInNodes places the trusted CA bundle data into a file on the given node
+// ensureTrustedCABundleInNode places the trusted CA bundle data into a file on the given node
 func (r *ConfigMapReconciler) ensureTrustedCABundleInNode(ctx context.Context, node core.Node) error {
 	winInstance, err := r.instanceFromNode(ctx, &node)
 	if err != nil {
