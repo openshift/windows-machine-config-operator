@@ -72,7 +72,7 @@ func proxyTestSuite(t *testing.T) {
 	t.Run("Environment variables removal validation", tc.testEnvVarRemoval)
 }
 
-// testProxyRequest tests that external requests from each Windows node properly go through the proxy
+// testProxyRequests tests that external requests from each Windows node properly go through the proxy
 // and circumvent the proxy if the target address is specified in the NO_PROXY list
 func (tc *testContext) testProxyRequests(t *testing.T) {
 	clusterProxy, err := tc.client.Config.ConfigV1().Proxies().Get(context.TODO(), "cluster", meta.GetOptions{})
@@ -453,7 +453,7 @@ func (tc *testContext) getSystemEnvVar(addr, variableName string) (map[string]st
 	return tc.getEnvVar(addr, variableName, command)
 }
 
-// getServiceProxyEnvVars returns a map of all environment variables present in a service's config
+// getProxyEnvVarsFromService returns a map of all environment variables present in a service's config
 func (tc *testContext) getProxyEnvVarsFromService(addr, svcName, jobName string) (map[string]string, error) {
 	command := fmt.Sprintf("Get-Process %s | ForEach-Object { $_.StartInfo.EnvironmentVariables.GetEnumerator() "+
 		"| Format-List }",

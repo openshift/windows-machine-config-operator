@@ -91,7 +91,7 @@ func TestNetworkConfigurationValidate(t *testing.T) {
 	}
 }
 
-// CreateFakeClients is a helper function to create fake OpenShift API config and operator clients
+// createFakeClients is a helper function to create fake OpenShift API config and operator clients
 func createFakeClients(networkType string) (configclient.Interface, operatorclient.OperatorV1Interface) {
 	fakeOperatorClient := fakeoperatorclient.NewSimpleClientset().OperatorV1()
 	fakeConfigClient := fakeconfigclient.NewSimpleClientset()
