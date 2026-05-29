@@ -24,7 +24,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -310,6 +312,11 @@ func (sc *ServiceController) Reconcile(_ context.Context, req ctrl.Request) (res
 		return ctrl.Result{}, err
 	}
 
+	// Clean up old certificate files to prevent disk space issues
+	if err = sc.cleanupOldCertificates(); err != nil {
+		klog.Warningf("failed to cleanup old certificates: %v", err)
+	}
+
 	if err = sc.waitUntilNodeReady(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("error waiting for node to become ready")
 	}
@@ -402,6 +409,53 @@ func (sc *ServiceController) reconcileServices(services []servicescm.Service) er
 			return err
 		}
 	}
+	return nil
+}
+
+// cleanupOldCertificates removes old ovnkube-client certificate files from the CNI config directory,
+// keeping only the most recent ones to prevent disk space exhaustion.
+func (sc *ServiceController) cleanupOldCertificates() error {
+	return cleanupOldCertificatesInDir(windows.CniConfDir)
+}
+
+// cleanupOldCertificatesInDir removes old ovnkube-client certificate files from the specified directory,
+// keeping only the most recent ones to prevent disk space exhaustion.
+// Certificates are created by OVN Kubernetes with timestamp-based naming:
+// https://github.com/ovn-kubernetes/ovn-kubernetes/blob/master/go-controller/pkg/util/kube.go#L137
+// This function is separated for testability.
+func cleanupOldCertificatesInDir(certDir string) error {
+	certPattern := filepath.Join(certDir, "ovnkube-client-*.pem")
+
+	// Find all matching certificate files
+	matches, err := filepath.Glob(certPattern)
+	if err != nil {
+		return fmt.Errorf("failed to list certificate files in %s: %w", certDir, err)
+	}
+
+	// If we have 2 or fewer files, no cleanup needed
+	if len(matches) <= 2 {
+		return nil
+	}
+
+	// Sort files by timestamp in filename (newest first)
+	// Filename format: ovnkube-client-YYYY-MM-DD-HH-MM-SS.pem
+	// Lexicographical sorting works because of the ISO-8601-like timestamp format
+	sort.Slice(matches, func(i, j int) bool {
+		return filepath.Base(matches[i]) > filepath.Base(matches[j])
+	})
+
+	// Keep the 2 most recent certificates, delete the rest
+	filesToDelete := matches[2:]
+	klog.V(1).Infof("cleaning up %d old certificate files from %s", len(filesToDelete), certDir)
+
+	for _, file := range filesToDelete {
+		if err := os.Remove(file); err != nil {
+			klog.Warningf("failed to remove old certificate file %s: %v", file, err)
+			continue
+		}
+		klog.V(1).Infof("removed old certificate file: %s", file)
+	}
+
 	return nil
 }
 
