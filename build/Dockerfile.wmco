@@ -1,3 +1,5 @@
+ARG BASE_IMG=localhost/wmco-base:latest
+
 FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.26-openshift-5.0 as build
 LABEL stage=build
 
@@ -32,14 +34,18 @@ COPY .git .git
 RUN make build
 RUN make build-daemon
 
-FROM wmco-base:latest
-LABEL stage=operator
+# Package WICD in the build stage; wmco-base may not include tar/gzip.
+RUN pushd /build/windows-machine-config-operator/build/_output/bin/ && \
+    tar -cf - windows-instance-config-daemon.exe | gzip -9 > /tmp/windows-instance-config-daemon.exe.tar.gz && \
+    popd && \
+    sha256sum /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe > /tmp/wicd.sha256sum
 
-# Copy WICD to payload
-COPY --from=build /build/windows-machine-config-operator/build/_output/bin/windows-instance-config-daemon.exe .
-WORKDIR /payload/
-RUN pushd / && tar -cf - windows-instance-config-daemon.exe | gzip -9 > /payload/windows-instance-config-daemon.exe.tar.gz && popd && \
-sha256sum /windows-instance-config-daemon.exe >> sha256sum
+FROM ${BASE_IMG} AS payload
+LABEL stage=payload
+
+COPY --from=build /tmp/windows-instance-config-daemon.exe.tar.gz /payload/windows-instance-config-daemon.exe.tar.gz
+COPY --from=build /tmp/wicd.sha256sum /tmp/wicd.sha256sum
+RUN cat /tmp/wicd.sha256sum >> /payload/sha256sum
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 LABEL stage=operator
@@ -53,10 +59,17 @@ LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \
     description="Windows Machine Config Operator" \
     summary="Windows Machine Config Operator" \
     maintainer="Team Windows Containers <team-winc@redhat.com>" \
+    distribution-scope="public" \
+    url="https://catalog.redhat.com/en/software/container-stacks/detail/66b6400d1db8d82852703bc1" \
+    vendor="Red Hat, Inc." \
     com.redhat.component="windows-machine-config-operator-container" \
     io.openshift.tags=""
 
-WORKDIR /
+COPY --from=payload /payload /payload
+
+# create licenses directory
+# See https://docs.redhat.com/en/documentation/red_hat_software_certification/2025/html-single/red_hat_openshift_software_certification_policy_guide/index#con-image-content-requirements_openshift-sw-cert-policy-container-images
+COPY LICENSE /licenses/
 
 ENV OPERATOR=/usr/local/bin/windows-machine-config-operator \
     USER_UID=1001 \
@@ -72,5 +85,6 @@ ENTRYPOINT ["/usr/local/bin/entrypoint"]
 
 # Used to tag the released image. Should be a semver.
 LABEL version="v11.0.0"
+LABEL release="v11.0.0"
 
 USER ${USER_UID}
