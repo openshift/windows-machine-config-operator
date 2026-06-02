@@ -23,15 +23,15 @@ const (
 // for log file size, log file age, and flush interval respectively.
 var logFileSize, logFileAge, flushInterval string
 
-// GetLogFileSize returns the configured log file size value
+// GetLogFileSize returns the configured log file size limit as a string.
 func GetLogFileSize() string {
 	return logFileSize
 }
 
-// GenerateKubeLogRunnerCmd returns the command string to run the given commandPath with kube-log-runner
+// GetKubeLogRunnerCmd returns the command string to run the given commandPath with kube-log-runner
 // logging to the given logfilePath. Log rotation parameters logFileSize, logFileAge, and flushInterval
 // are read via environment variables.
-func GenerateKubeLogRunnerCmd(kubeLogRunnerPath, commandPath, logfilePath string) string {
+func GetKubeLogRunnerCmd(kubeLogRunnerPath, commandPath, logfilePath string) string {
 	cmdBuilder := strings.Builder{}
 	cmdBuilder.WriteString(kubeLogRunnerPath)
 

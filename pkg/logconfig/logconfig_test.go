@@ -396,7 +396,7 @@ func TestGetLogRunnerForCmd(t *testing.T) {
 			logFileAge = tc.logFileAge
 			flushInterval = tc.flushInterval
 
-			result := GenerateKubeLogRunnerCmd(testKubeLogRunnerPath, tc.commandPath, tc.logfilePath)
+			result := GetKubeLogRunnerCmd(testKubeLogRunnerPath, tc.commandPath, tc.logfilePath)
 
 			for _, expected := range tc.expectedContains {
 				assert.Contains(t, result, expected,
