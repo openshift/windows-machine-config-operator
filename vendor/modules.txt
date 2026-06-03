@@ -307,7 +307,7 @@ github.com/monochromegane/go-gitignore
 github.com/munnerz/goautoneg
 # github.com/onsi/ginkgo v1.16.5
 ## explicit; go 1.16
-# github.com/openshift/api v0.0.0-20260513233232-73d7ca93df6d
+# github.com/openshift/api v0.0.0-20260528061300-9f553042f9ae
 ## explicit; go 1.25.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/config/v1alpha1
@@ -360,7 +360,7 @@ github.com/openshift/client-go/route/applyconfigurations/internal
 github.com/openshift/client-go/route/applyconfigurations/route/v1
 github.com/openshift/client-go/route/clientset/versioned/scheme
 github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
-# github.com/openshift/library-go v0.0.0-20260514074412-d0c25a085335
+# github.com/openshift/library-go v0.0.0-20260528084301-c7d432293c13
 ## explicit; go 1.25.0
 github.com/openshift/library-go/pkg/image/imageutil
 github.com/openshift/library-go/pkg/image/internal/digest
@@ -638,7 +638,7 @@ google.golang.org/genproto/googleapis/api/httpbody
 ## explicit; go 1.24.0
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.79.1
+# google.golang.org/grpc v1.79.3
 ## explicit; go 1.24.0
 google.golang.org/grpc
 google.golang.org/grpc/attributes
@@ -1247,7 +1247,7 @@ k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/watchlist
 k8s.io/client-go/util/workqueue
-# k8s.io/cloud-provider v0.35.4
+# k8s.io/cloud-provider v0.35.5
 ## explicit; go 1.25.0
 k8s.io/cloud-provider/api
 # k8s.io/component-base v0.35.5
@@ -1281,7 +1281,7 @@ k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
 k8s.io/klog/v2/internal/verbosity
 k8s.io/klog/v2/textlogger
-# k8s.io/kube-openapi v0.0.0-20260512234627-ef417d054102
+# k8s.io/kube-openapi v0.0.0-20260520065146-aa012df4f4af
 ## explicit; go 1.24.0
 k8s.io/kube-openapi/pkg/cached
 k8s.io/kube-openapi/pkg/common
