@@ -259,13 +259,15 @@ upgrade-test:
 clean:
 	rm -rf ${OUTPUT_DIR}
 
+BASE_IMG ?= localhost/wmco-base:latest
+
 .PHONY: base-img
 base-img:
-	podman build . -t wmco-base -f build/Dockerfile.base
+	podman build . -t $(BASE_IMG) -f build/Dockerfile.base
 
 .PHONY: wmco-img
 wmco-img:
-	podman build . -t $(IMG) -f build/Dockerfile.wmco
+	podman build . -t $(IMG) -f build/Dockerfile.wmco --build-arg BASE_IMG=$(BASE_IMG)
 	podman push $(IMG)
 
 .PHONY: kubelet
