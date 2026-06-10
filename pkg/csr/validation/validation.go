@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"reflect"
 	"strings"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
@@ -126,15 +127,12 @@ func (v *CSRValidator) ValidateCSR(ctx context.Context, csr *certificatesv1.Cert
 // validateCertificateContent validates the parsed certificate request content
 func (v *CSRValidator) validateCertificateContent(parsedCSR *x509.CertificateRequest) error {
 	// Validate organization
-	hasRequiredOrg := false
-	for _, org := range parsedCSR.Subject.Organization {
-		if org == v.certType.GroupName {
-			hasRequiredOrg = true
-			break
-		}
+	if len(parsedCSR.Subject.Organization) != 1 {
+		return fmt.Errorf("invalid number of organizations in CSR content %v", parsedCSR.Subject.Organization)
 	}
-	if !hasRequiredOrg {
-		return fmt.Errorf("certificate request missing required organization: %s", v.certType.GroupName)
+	expectedOrgs := []string{v.certType.GroupName}
+	if !reflect.DeepEqual(parsedCSR.Subject.Organization, expectedOrgs) {
+		return fmt.Errorf("invalid subject organization in CSR content %v", parsedCSR.Subject.Organization)
 	}
 
 	// Validate DNS names and IP addresses based on certificate type
