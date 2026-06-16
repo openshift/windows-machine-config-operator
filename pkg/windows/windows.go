@@ -860,6 +860,12 @@ func (vm *windows) ensureServiceIsRemoved(svcName string) error {
 	if err := vm.deleteService(svc); err != nil {
 		return fmt.Errorf("error deleting %s Windows service: %w", svc.name, err)
 	}
+	// On Windows, the SCM entry being removed does not guarantee the process has exited.
+	// The process holds an open file handle to its binary until fully terminated, blocking
+	// replacement. Wait here so callers have a complete "service gone" guarantee.
+	if err := vm.waitForProcessToExit(svcName); err != nil {
+		return fmt.Errorf("timed out waiting for %s process to exit: %w", svcName, err)
+	}
 	vm.log.Info("deconfigured", "service", svc.name)
 	return nil
 }
@@ -1069,6 +1075,27 @@ func (vm *windows) deconfigureWICD() error {
 		return fmt.Errorf("error ensuring %s Windows service is removed: %w", WicdServiceName, err)
 	}
 	return nil
+}
+
+// waitForProcessToExit polls until the named process is no longer present on the Windows instance.
+// This is needed because on Windows, a service can be STOPPED in SCM while the underlying process
+// is still running and holding file handles to its executable.
+func (vm *windows) waitForProcessToExit(processName string) error {
+	return wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
+		// by piping to Where-Object filters all processes by name ensures that when no process matches,
+		// it returns an empty result without throwing an error, keeping $? as $true and
+		// exit code as 0. Get-Process exits 1 when not found even with -ErrorAction
+		// SilentlyContinue, and try/catch leaves $? as $false after a caught terminating
+		// error, both causing exit code 1 which vm.Run treats as an error and makes the
+		// poller retry indefinitely.
+		out, err := vm.Run(fmt.Sprintf("Get-Process | Where-Object Name -eq '%s'", processName), true)
+		if err != nil {
+			// log error as debug
+			vm.log.V(1).Error(err, "unable to check if process is running", "process", processName)
+			return false, nil
+		}
+		return strings.TrimSpace(out) == "", nil
+	})
 }
 
 // Generic helper methods
