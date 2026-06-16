@@ -4,8 +4,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 )
+
+// testLogSink is a minimal logr.LogSink that records whether Info was called.
+type testLogSink struct {
+	infoCalled bool
+	lastMsg    string
+}
+
+func (s *testLogSink) Init(logr.RuntimeInfo)                     {}
+func (s *testLogSink) Enabled(int) bool                          { return true }
+func (s *testLogSink) Info(_ int, msg string, _ ...interface{})  { s.infoCalled = true; s.lastMsg = msg }
+func (s *testLogSink) Error(_ error, _ string, _ ...interface{}) {}
+func (s *testLogSink) WithValues(_ ...interface{}) logr.LogSink  { return s }
+func (s *testLogSink) WithName(_ string) logr.LogSink            { return s }
 
 const (
 	testKubeLogRunnerPath = "C:\\k\\kube-log-runner.exe"
@@ -197,6 +211,68 @@ func TestGetEnvQuantity(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestLogConfig(t *testing.T) {
+	origLogFileSize := logFileSize
+	origLogFileAge := logFileAge
+	origFlushInterval := flushInterval
+	t.Cleanup(func() {
+		logFileSize = origLogFileSize
+		logFileAge = origLogFileAge
+		flushInterval = origFlushInterval
+	})
+
+	tests := []struct {
+		name          string
+		logFileSize   string
+		logFileAge    string
+		flushInterval string
+		expectLogged  bool
+	}{
+		{
+			name:         "nothing configured — silent",
+			expectLogged: false,
+		},
+		{
+			name:         "only log file size set",
+			logFileSize:  "100M",
+			expectLogged: true,
+		},
+		{
+			name:         "only log file age set",
+			logFileAge:   "168h",
+			expectLogged: true,
+		},
+		{
+			name:          "only flush interval set",
+			flushInterval: "5s",
+			expectLogged:  true,
+		},
+		{
+			name:          "all three set",
+			logFileSize:   "100M",
+			logFileAge:    "168h",
+			flushInterval: "5s",
+			expectLogged:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			logFileSize = tc.logFileSize
+			logFileAge = tc.logFileAge
+			flushInterval = tc.flushInterval
+
+			sink := &testLogSink{}
+			LogConfig(logr.New(sink))
+
+			assert.Equal(t, tc.expectLogged, sink.infoCalled)
+			if tc.expectLogged {
+				assert.Equal(t, "log rotation configured", sink.lastMsg)
 			}
 		})
 	}

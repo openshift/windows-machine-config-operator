@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -55,6 +56,50 @@ func GenerateKubeLogRunnerCmd(kubeLogRunnerPath, commandPath, logfilePath string
 	cmdBuilder.WriteString(" " + commandPath)
 
 	return cmdBuilder.String()
+}
+
+// LogConfig logs the effective log rotation configuration when at least one rotation
+// parameter is set. Call this after ValidateLogConfig so the globals reflect the
+// validated env vars. Silent when nothing is configured (the default state).
+func LogConfig(log logr.Logger) {
+	if logFileSize == "" && logFileAge == "" && flushInterval == "" {
+		return
+	}
+	log.Info("log rotation configured",
+		LogFileSizeEnvVar, logFileSize,
+		LogFileAgeEnvVar, logFileAge,
+		LogFlushIntervalEnvVar, flushInterval)
+}
+
+// ValidateLogConfig parses the log rotation environment variables and sets the package-level
+// globals. It returns an error for each variable whose value is present but invalid.
+// The valid (or absent) values are applied and globals for invalid ones remain unchanged at "".
+// This ensures misconfigured rotation flags is not silently omitted.
+func ValidateLogConfig() error {
+	var errs []string
+
+	if val, err := getEnvQuantityString(LogFileSizeEnvVar); err != nil {
+		errs = append(errs, err.Error())
+	} else {
+		logFileSize = val
+	}
+
+	if val, err := getEnvDurationString(LogFileAgeEnvVar); err != nil {
+		errs = append(errs, err.Error())
+	} else {
+		logFileAge = val
+	}
+
+	if val, err := getEnvDurationString(LogFlushIntervalEnvVar); err != nil {
+		errs = append(errs, err.Error())
+	} else {
+		flushInterval = val
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid log configuration: %s", strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // getEnvQuantityString returns the string value of the environment variable for the given key
