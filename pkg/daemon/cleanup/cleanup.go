@@ -234,7 +234,11 @@ func removeServices(svcMgr manager.Manager, services []servicescm.Service, remov
 
 	klog.Infof("removed services: %q", servicesRemoved)
 	if len(failedRemovals) > 0 {
-		return fmt.Errorf("%#v", failedRemovals)
+		var msgs []string
+		for _, e := range failedRemovals {
+			msgs = append(msgs, e.Error())
+		}
+		return fmt.Errorf("failed to remove %d service(s): %s", len(failedRemovals), strings.Join(msgs, "; "))
 	}
 	return nil
 }
