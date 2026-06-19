@@ -48,6 +48,6 @@ func runCleanupCmd(cmd *cobra.Command, args []string) {
 	}
 	ctx := ctrl.SetupSignalHandler()
 	if err := cleanup.Deconfigure(cfg, ctx, namespace); err != nil {
-		klog.Exitf(err.Error())
+		klog.Exitf("error deconfiguring node: %v", err)
 	}
 }
