@@ -10,7 +10,7 @@ spec:
     - name: windows.rules
       rules:
         - expr: |
-            avg without (core, mode)(rate(windows_cpu_time_total{mode="idle"}[1m]))
+            1 - avg without (core, mode)(rate(windows_cpu_time_total{mode="idle"}[1m]))
           record: instance:node_cpu_utilisation:rate1m
         - expr: |
             sum(rate(windows_cpu_time_total{mode="idle",mode!="iowait"}[3m])) BY (instance)
