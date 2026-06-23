@@ -210,28 +210,6 @@ func (v *CSRValidator) GetNodeNameFromCSR(csr *certificatesv1.CertificateSigning
 	return nodeName, nil
 }
 
-// IsCorrectCertificateType checks if a CSR is for this certificate type
-func (v *CSRValidator) IsCorrectCertificateType(csr *certificatesv1.CertificateSigningRequest) bool {
-	parsedCSR, err := ParseCSR(csr.Spec.Request)
-	if err != nil {
-		return false
-	}
-
-	// Check if Common Name starts with the expected prefix
-	if !strings.HasPrefix(parsedCSR.Subject.CommonName, v.certType.UserPrefix+":") {
-		return false
-	}
-
-	// Check if Organization includes the expected group
-	for _, org := range parsedCSR.Subject.Organization {
-		if org == v.certType.GroupName {
-			return true
-		}
-	}
-
-	return false
-}
-
 // hasUsages verifies if the required usages exist in the CSR spec
 func hasUsages(csr *certificatesv1.CertificateSigningRequest, usages []certificatesv1.KeyUsage) bool {
 	if csr == nil || len(csr.Spec.Usages) < 2 {
