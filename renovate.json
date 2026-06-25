@@ -131,13 +131,13 @@
         "groupName": "Go dependencies",
         "matchManagers": ["gomod"],
         "matchBaseBranches": ["master"],
-        "excludePackageNames": [
-          "k8s.io/kubernetes",
-          "github.com/openshift/api",
-          "github.com/openshift/client-go",
-          "github.com/openshift/library-go",
-          "github.com/golang-jwt/jwt/v4",
-          "github.com/golang-jwt/jwt/v5"
+        "matchPackageNames": [
+          "!k8s.io/kubernetes",
+          "!github.com/openshift/api",
+          "!github.com/openshift/client-go",
+          "!github.com/openshift/library-go",
+          "!github.com/golang-jwt/jwt/v4",
+          "!github.com/golang-jwt/jwt/v5"
         ]
       }
     ]
