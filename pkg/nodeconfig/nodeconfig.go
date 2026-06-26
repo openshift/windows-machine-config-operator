@@ -117,7 +117,7 @@ func (ow OutWriter) Write(p []byte) (n int, err error) {
 
 // NewNodeConfig creates a new instance of NodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
-func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, wmcoNamespace string,
+func NewNodeConfig(ctx context.Context, c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, wmcoNamespace string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*NodeConfig, error) {
 
@@ -132,7 +132,8 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
-	win, err := windows.New(clusterDNS, instanceInfo, signer, &platformType)
+	// Use NewWithClient to enable SSH host key validation
+	win, err := windows.NewWithClient(ctx, c, clusterDNS, instanceInfo, signer, &platformType, wmcoNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("error instantiating Windows instance from VM: %w", err)
 	}
@@ -575,8 +576,14 @@ func (nc *NodeConfig) Deconfigure(ctx context.Context) error {
 	if err := nc.cleanupWithWICD(ctx); err != nil {
 		return err
 	}
-	if err := nc.Windows.RemoveFilesAndNetworks(); err != nil {
+	if err := nc.Windows.RemoveFilesAndNetworks(ctx); err != nil {
 		return fmt.Errorf("error deconfiguring instance: %w", err)
+	}
+
+	// Remove stored SSH host key to prevent stale keys blocking IP reuse (best-effort)
+	if err := nc.Windows.RemoveHostKey(ctx); err != nil {
+		nc.log.Error(err, "failed to remove SSH host key, IP reuse may be affected",
+			"address", nc.Windows.GetIPv4Address())
 	}
 
 	nc.log.Info("instance has been deconfigured", "node", nc.node.GetName())

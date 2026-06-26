@@ -72,7 +72,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(ctx context.Context, insta
 		return nil
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+	nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		instanceInfo, r.signer, labelsToApply, annotationsToApply, r.platform)
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
@@ -128,7 +128,7 @@ func (r *instanceReconciler) updateKubeletCA(ctx context.Context, node core.Node
 	if err != nil {
 		return fmt.Errorf("error creating instance for node %s: %w", node.Name, err)
 	}
-	nodeConfig, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR,
+	nodeConfig, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR,
 		r.watchNamespace, winInstance, r.signer, nil, nil, r.platform)
 	if err != nil {
 		return fmt.Errorf("error creating nodeConfig for instance %s: %w", winInstance.Address, err)
@@ -160,7 +160,7 @@ func (r *instanceReconciler) deconfigureInstance(ctx context.Context, node *core
 		return fmt.Errorf("unable to create instance object from node: %w", err)
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+	nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		instance, r.signer, nil, nil, r.platform)
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
