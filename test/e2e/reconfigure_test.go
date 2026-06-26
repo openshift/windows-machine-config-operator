@@ -9,7 +9,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 	"github.com/openshift/windows-machine-config-operator/pkg/wiparser"
 )
 
@@ -35,6 +37,18 @@ func (tc *testContext) testReAddInstance(t *testing.T) {
 	var addr, data string
 	for addr, data = range windowsInstances.Data {
 		break
+	}
+
+	// Capture the host key annotation before removal to verify TOFU persistence
+	var originalHostKey string
+	for _, node := range gc.allNodes() {
+		nodeAddr, err := controllers.GetAddress(node.Status.Addresses)
+		require.NoError(t, err, "error getting node address")
+		if nodeAddr == addr {
+			originalHostKey = node.Annotations[windows.SSHHostKeyAnnotation]
+			require.NotEmpty(t, originalHostKey, "node should have ssh-host-key annotation before removal")
+			break
+		}
 	}
 
 	// remove the entry that was found and then update the ConfigMap
@@ -72,4 +86,17 @@ func (tc *testContext) testReAddInstance(t *testing.T) {
 	err = tc.waitForConfiguredWindowsNodes(gc.numberOfBYOHNodes, true, true)
 	require.NoError(t, err, "error waiting for the Windows node to be re-added")
 	tc.testNodesBecomeReadyAndSchedulable(t)
+
+	// Verify the host key persists across the re-add (same VM should have same key - TOFU)
+	for _, node := range gc.allNodes() {
+		nodeAddr, err := controllers.GetAddress(node.Status.Addresses)
+		require.NoError(t, err, "error getting node address")
+		if nodeAddr == addr {
+			readdedHostKey := node.Annotations[windows.SSHHostKeyAnnotation]
+			require.NotEmpty(t, readdedHostKey, "re-added node should have ssh-host-key annotation")
+			require.Equal(t, originalHostKey, readdedHostKey,
+				"host key should persist across re-add for the same instance")
+			break
+		}
+	}
 }
