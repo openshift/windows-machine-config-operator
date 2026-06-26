@@ -221,8 +221,7 @@ func (a *Approver) validateWithHostName(ctx context.Context, nodeName string, wi
 	if err != nil {
 		return false, fmt.Errorf("unable to create signer from private key secret: %w", err)
 	}
-	// check if the node name matches any of the instances host names
-	hasEntry, err := matchesHostname(nodeName, windowsInstances, instanceSigner)
+	hasEntry, err := matchesHostname(ctx, a.client, nodeName, windowsInstances, instanceSigner)
 	if err != nil {
 		return false, fmt.Errorf("unable to map node name to the host names of Windows instances: %w", err)
 	}
@@ -244,10 +243,10 @@ func (a *Approver) validateWithHostName(ctx context.Context, nodeName string, wi
 
 // matchesHostname returns true if given node name matches with host name of any of the instances present
 // in the given instance list
-func matchesHostname(nodeName string, windowsInstances []*instance.Info,
+func matchesHostname(ctx context.Context, c client.Client, nodeName string, windowsInstances []*instance.Info,
 	instanceSigner ssh.Signer) (bool, error) {
 	for _, instanceInfo := range windowsInstances {
-		hostName, err := findHostName(instanceInfo, instanceSigner)
+		hostName, err := findHostName(ctx, c, instanceInfo, instanceSigner)
 		if err != nil {
 			return false, fmt.Errorf("unable to find host name for instance with address %s: %w",
 				instanceInfo.Address, err)
@@ -261,9 +260,8 @@ func matchesHostname(nodeName string, windowsInstances []*instance.Info,
 }
 
 // findHostName returns the actual host name of the instance by running the 'hostname' command
-func findHostName(instanceInfo *instance.Info, instanceSigner ssh.Signer) (string, error) {
-	// We don't need to pass most args here as we just need to be able to run commands on the instance.
-	win, err := windows.New("", instanceInfo, instanceSigner, nil)
+func findHostName(ctx context.Context, c client.Client, instanceInfo *instance.Info, instanceSigner ssh.Signer) (string, error) {
+	win, err := windows.NewWithClient(ctx, c, "", instanceInfo, instanceSigner, nil, "")
 	if err != nil {
 		return "", fmt.Errorf("error instantiating Windows instance: %w", err)
 	}
