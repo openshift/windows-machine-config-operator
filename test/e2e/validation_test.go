@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -16,6 +17,7 @@ import (
 	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/ssh"
 	batch "k8s.io/api/batch/v1"
 	certificates "k8s.io/api/certificates/v1"
 	core "k8s.io/api/core/v1"
@@ -799,6 +801,87 @@ func (tc *testContext) testNodeAnnotations(t *testing.T) {
 			assert.True(t, pubKey)
 		})
 	}
+}
+
+// testSSHHostKeyAnnotations verifies that SSH host key annotations are present and valid on all Windows nodes
+func (tc *testContext) testSSHHostKeyAnnotations(t *testing.T) {
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			// Verify ssh-host-key annotation exists and is valid
+			keyB64, exists := node.Annotations[windows.SSHHostKeyAnnotation]
+			require.True(t, exists, "missing %s annotation", windows.SSHHostKeyAnnotation)
+
+			keyBytes, err := base64.StdEncoding.DecodeString(keyB64)
+			require.NoError(t, err, "invalid base64 in host key annotation")
+
+			_, err = ssh.ParsePublicKey(keyBytes)
+			require.NoError(t, err, "host key annotation is not a valid SSH public key")
+
+			// Verify ssh-host-key-type annotation exists
+			keyType, exists := node.Annotations[windows.SSHHostKeyTypeAnnotation]
+			require.True(t, exists, "missing %s annotation", windows.SSHHostKeyTypeAnnotation)
+			assert.NotEmpty(t, keyType, "ssh-host-key-type should not be empty")
+
+			// Re-fetch the node to verify key stability (not regenerated on every reconcile)
+			refetchedNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(), node.GetName(), meta.GetOptions{})
+			require.NoError(t, err, "failed to re-fetch node")
+			refetchedKey := refetchedNode.Annotations[windows.SSHHostKeyAnnotation]
+			require.Equal(t, keyB64, refetchedKey, "host key should be stable across re-reads")
+		})
+	}
+}
+
+// testSSHHostKeysConfigMapCleanup verifies that the windows-ssh-host-keys ConfigMap has no stale entries
+// for fully-configured nodes (keys should migrate to Node annotations)
+func (tc *testContext) testSSHHostKeysConfigMapCleanup(t *testing.T) {
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(
+		context.TODO(), windows.SSHHostKeysConfigMap, meta.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		// ConfigMap not created or already fully cleaned up
+		return
+	}
+	require.NoError(t, err, "failed to get %s ConfigMap", windows.SSHHostKeysConfigMap)
+
+	// Verify no entries remain for nodes that have the host key annotation
+	for _, node := range gc.allNodes() {
+		addr, err := controllers.GetAddress(node.Status.Addresses)
+		require.NoError(t, err, "failed to get address for node %s", node.Name)
+		assert.NotContains(t, cm.Data, addr,
+			"ConfigMap should not have entry for node %s (address %s) that already has annotation", node.Name, addr)
+	}
+}
+
+// testNodeCloudManagerFields tests that all expected labels and fields are on each Windows node configured by
+// the cloud node manager
+func (tc *testContext) testNodeCloudManagerFields(t *testing.T) {
+	if tc.CloudProvider.GetType() == config.NonePlatformType {
+		t.Skip("skipping test as cloud provider is not set")
+	}
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			// check labels
+			for _, label := range tc.getExpectedCloudProviderLabels() {
+				assert.Contains(t, node.Labels, label, "node missing expected label from cloud provider: %s", label)
+			}
+			// check providerID field
+			assert.Greater(t, len(node.Spec.ProviderID), 0, "node missing expected providerID field")
+		})
+	}
+}
+
+// getExpectedCloudProviderLabels returns a slice of strings containing common and platform-specific cloud provider labels
+func (tc *testContext) getExpectedCloudProviderLabels() []string {
+	// common labels
+	cloudProviderLabels := []string{core.LabelInstanceTypeStable}
+	// platform-specific labels
+	switch tc.CloudProvider.GetType() {
+	case config.VSpherePlatformType:
+		// vSphere is a special case where the topology labels are not set
+	default:
+		// all other supported platforms must have the topology labels
+		cloudProviderLabels = append(cloudProviderLabels, core.LabelTopologyRegion, core.LabelTopologyZone)
+	}
+	return cloudProviderLabels
 }
 
 // checkUsernameAnnotation checks that the username annotation value is decipherable and correct

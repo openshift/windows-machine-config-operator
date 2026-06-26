@@ -72,7 +72,7 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(instanceInfo *instance.Inf
 		return nil
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+	nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		instanceInfo, r.signer, labelsToApply, annotationsToApply, r.platform)
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
@@ -127,7 +127,7 @@ func (r *instanceReconciler) updateKubeletCA(node core.Node, contents []byte) er
 	if err != nil {
 		return fmt.Errorf("error creating instance for node %s: %w", node.Name, err)
 	}
-	nodeConfig, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR,
+	nodeConfig, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR,
 		r.watchNamespace, winInstance, r.signer, nil, nil, r.platform)
 	if err != nil {
 		return fmt.Errorf("error creating nodeConfig for instance %s: %w", winInstance.Address, err)
@@ -158,7 +158,7 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 		return fmt.Errorf("unable to create instance object from node: %w", err)
 	}
 
-	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+	nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		instance, r.signer, nil, nil, r.platform)
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)
@@ -167,6 +167,14 @@ func (r *instanceReconciler) deconfigureInstance(node *core.Node) error {
 	if err = nc.Deconfigure(); err != nil {
 		return err
 	}
+
+	// Remove stored SSH host key to prevent stale keys blocking IP reuse (best-effort)
+	// Only done during permanent removal, not during upgrade/reconfiguration
+	if err := nc.Windows.RemoveHostKey(context.TODO()); err != nil {
+		r.log.Error(err, "failed to remove SSH host key, IP reuse may be affected",
+			"node", instance.Node.GetName())
+	}
+
 	if err = r.client.Delete(context.TODO(), instance.Node); err != nil {
 		return fmt.Errorf("error deleting node %s: %w", instance.Node.GetName(), err)
 	}

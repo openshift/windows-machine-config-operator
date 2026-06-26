@@ -2,6 +2,7 @@ package windows
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
@@ -35,7 +37,7 @@ func newAuthErr(err error) *AuthErr {
 
 type connectivity interface {
 	// init initialises the connectivity medium
-	init() error
+	init(context.Context) error
 	// run executes the given command on the remote system
 	run(cmd string) (string, error)
 	// createSFTPClient initializes an SFTP client from the existing SSH client. Caller should close the connection.
@@ -44,6 +46,10 @@ type connectivity interface {
 	transfer(*sftp.Client, io.Reader, string, string) error
 	// transferFiles transfers the given files to a given remote directory
 	transferFiles(*sftp.Client, map[string][]byte, string) error
+	// close closes all network connections
+	close() error
+	// removeHostKey removes the stored SSH host key
+	removeHostKey(context.Context) error
 }
 
 // sshConnectivity encapsulates the information needed to connect to the Windows VM over ssh
@@ -56,27 +62,45 @@ type sshConnectivity struct {
 	signer ssh.Signer
 	// sshClient is the client used to access the Windows VM via ssh
 	sshClient *ssh.Client
-	log       logr.Logger
+	// hostKeyValidator validates SSH host keys using TOFU pinning
+	hostKeyValidator *HostKeyValidator
+	log              logr.Logger
 }
 
-// newSshConnectivity returns an instance of sshConnectivity
-func newSshConnectivity(username, ipAddress string, signer ssh.Signer, logger logr.Logger) (connectivity, error) {
-	c := &sshConnectivity{
-		username:  username,
-		ipAddress: ipAddress,
-		signer:    signer,
-		log:       logger,
+// newSshConnectivity returns an instance of sshConnectivity with host key validation
+func newSshConnectivity(ctx context.Context, c client.Client, nodeName, username, ipAddress string, signer ssh.Signer, namespace string, logger logr.Logger) (connectivity, error) {
+	conn := &sshConnectivity{
+		username:         username,
+		ipAddress:        ipAddress,
+		signer:           signer,
+		hostKeyValidator: NewHostKeyValidator(c, namespace, nodeName, ipAddress),
+		log:              logger,
 	}
-	if err := c.init(); err != nil {
+	if err := conn.init(ctx); err != nil {
 		return nil, fmt.Errorf("error instantiating SSH client: %w", err)
 	}
-	return c, nil
+	return conn, nil
 }
 
 // init initialises the key based SSH client
-func (c *sshConnectivity) init() error {
-	if c.username == "" || c.ipAddress == "" || c.signer == nil {
-		return fmt.Errorf("incomplete sshConnectivity information: %v", c)
+func (c *sshConnectivity) init(ctx context.Context) error {
+	var missingFields []string
+	if c.username == "" {
+		missingFields = append(missingFields, "username")
+	}
+	if c.ipAddress == "" {
+		missingFields = append(missingFields, "ipAddress")
+	}
+	if c.signer == nil {
+		missingFields = append(missingFields, "signer")
+	}
+	if len(missingFields) > 0 {
+		return fmt.Errorf("incomplete sshConnectivity: missing %v", missingFields)
+	}
+
+	hostKeyCallback, err := c.hostKeyValidator.GetHostKeyCallback(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get host key callback: %w", err)
 	}
 
 	config := &ssh.ClientConfig{
@@ -84,9 +108,8 @@ func (c *sshConnectivity) init() error {
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(c.signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 	}
-	var err error
 	var sshClient *ssh.Client
 	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data
 	err = wait.PollImmediate(time.Minute, retry.Timeout, func() (bool, error) {
@@ -105,6 +128,14 @@ func (c *sshConnectivity) init() error {
 		return fmt.Errorf("unable to connect to Windows VM %s: %w", c.ipAddress, err)
 	}
 	c.sshClient = sshClient
+
+	if err := c.hostKeyValidator.PersistSeenKey(ctx); err != nil {
+		if closeErr := c.sshClient.Close(); closeErr != nil {
+			return fmt.Errorf("failed to persist SSH host key: %w (SSH close error: %v)", err, closeErr)
+		}
+		return fmt.Errorf("failed to persist SSH host key: %w", err)
+	}
+
 	return nil
 }
 
@@ -188,4 +219,20 @@ func (c *sshConnectivity) transferFiles(sftpClient *sftp.Client, files map[strin
 		}
 	}
 	return nil
+}
+
+func (c *sshConnectivity) close() error {
+	err := c.sshClient.Close()
+	// If the error is due to the underlying connection being already closed, don't return an error
+	if errors.Is(err, syscall.EINVAL) || errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
+}
+
+func (c *sshConnectivity) removeHostKey(ctx context.Context) error {
+	if c.hostKeyValidator == nil {
+		return nil
+	}
+	return c.hostKeyValidator.RemoveHostKey(ctx)
 }

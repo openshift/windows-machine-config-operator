@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
@@ -240,6 +241,8 @@ func GetK8sDir() string {
 
 // Windows contains all the methods needed to configure a Windows VM to become a worker node
 type Windows interface {
+	// GetAddress returns the network address of the instance (may be IPv4 or DNS name)
+	GetAddress() string
 	// GetIPv4Address returns the IPv4 address of the associated instance.
 	GetIPv4Address() string
 	// GetHostname returns the FQDN of the associated instance including the domain name, if any
@@ -270,10 +273,13 @@ type Windows interface {
 	// ConfigureWICD ensures that the Windows Instance Config Daemon is running on the node
 	ConfigureWICD(string, string) error
 	// RemoveFilesAndNetworks removes all files and networks created by WMCO
-	RemoveFilesAndNetworks() error
+	RemoveFilesAndNetworks(context.Context) error
 	// RunWICDCleanup ensures the WICD service is stopped and runs the cleanup command that ensures all WICD-managed
 	// services are also stopped
 	RunWICDCleanup(string, string) error
+	// RemoveHostKey removes the stored SSH host key to prevent stale keys blocking IP reuse
+	RemoveHostKey(context.Context) error
+	Close() error
 }
 
 // windows implements the Windows interface
@@ -291,16 +297,41 @@ type windows struct {
 	// defaultShellPowerShell indicates if the default SSH shell is PowerShell
 	defaultShellPowerShell bool
 	// filesToTransfer is the map of files needed for the windows VM
-	filesToTransfer map[*payload.FileInfo]string
+	filesToTransfer map[*payload.CompressedFileInfo]string
+}
+
+func (vm *windows) RemoveHostKey(ctx context.Context) error {
+	return vm.interact.removeHostKey(ctx)
+}
+
+func (vm *windows) Close() error {
+	return vm.interact.close()
 }
 
 // New returns a new Windows instance constructed from the given WindowsVM
 func New(clusterDNS string, instanceInfo *instance.Info, signer ssh.Signer, platform *config.PlatformType) (Windows, error) {
+	// For backward compatibility, use the new function with nil client
+	return NewWithClient(context.Background(), nil, clusterDNS, instanceInfo, signer, platform, "")
+}
+
+// NewWithClient creates a new Windows instance with SSH host key validation support
+func NewWithClient(ctx context.Context, c client.Client, clusterDNS string, instanceInfo *instance.Info, signer ssh.Signer, platform *config.PlatformType, namespace string) (Windows, error) {
 	log := ctrl.Log.WithName(fmt.Sprintf("wc %s", instanceInfo.Address))
 	log.V(1).Info("initializing SSH connection")
-	conn, err := newSshConnectivity(instanceInfo.Username, instanceInfo.Address, signer, log)
+
+	nodeName := ""
+	if c != nil && instanceInfo.Node != nil {
+		nodeName = instanceInfo.Node.Name
+	}
+
+	conn, err := newSshConnectivity(ctx, c, nodeName, instanceInfo.Username, instanceInfo.Address, signer, namespace, log)
 	if err != nil {
 		return nil, fmt.Errorf("unable to setup VM %s sshConnectivity: %w", instanceInfo.Address, err)
+	}
+	if nodeName != "" {
+		log.V(1).Info("SSH connection established with host key validation", "node", nodeName)
+	} else {
+		log.V(1).Info("SSH connection established with TOFU (node not yet available)")
 	}
 
 	files, err := createPayload(platform)
@@ -333,6 +364,10 @@ func defaultShellPowershell(conn connectivity) bool {
 }
 
 // Interface methods
+
+func (vm *windows) GetAddress() string {
+	return vm.instance.Address
+}
 
 func (vm *windows) GetIPv4Address() string {
 	return vm.instance.IPv4Address
@@ -494,7 +529,7 @@ func (vm *windows) RebootAndReinitialize() error {
 		return fmt.Errorf("instance reboot failed to start: %w", err)
 	}
 	// Wait for instance to come back online and reinitialize the SSH connection after the reboot
-	if err := vm.reinitialize(); err != nil {
+	if err := vm.reinitialize(ctx); err != nil {
 		return fmt.Errorf("error reinitializing SSH connection after VM reboot: %w", err)
 	}
 	vm.log.V(1).Info("successful reboot")
@@ -520,8 +555,8 @@ func (vm *windows) RunWICDCleanup(watchNamespace, wicdKubeconfig string) error {
 	return nil
 }
 
-func (vm *windows) RemoveFilesAndNetworks() error {
-	if err := vm.ensureHNSNetworksAreRemoved(); err != nil {
+func (vm *windows) RemoveFilesAndNetworks(ctx context.Context) error {
+	if err := vm.ensureHNSNetworksAreRemoved(ctx); err != nil {
 		return fmt.Errorf("unable to ensure HNS networks are removed: %w", err)
 	}
 	if err := vm.removeDirectories(); err != nil {
@@ -959,7 +994,7 @@ func (vm *windows) newFileInfo(path string) (*payload.FileInfo, error) {
 
 // ensureHNSNetworksAreRemoved ensures the HNS networks created by the hybrid-overlay configuration process are removed
 // by repeatedly checking and retrying the removal of each network.
-func (vm *windows) ensureHNSNetworksAreRemoved() error {
+func (vm *windows) ensureHNSNetworksAreRemoved(ctx context.Context) error {
 	vm.log.Info("removing HNS networks")
 	var err error
 	// VIP HNS endpoint created by the operator is also deleted when the HNS networks are deleted.
@@ -967,13 +1002,13 @@ func (vm *windows) ensureHNSNetworksAreRemoved() error {
 		err = wait.PollImmediate(retry.Interval, retry.Timeout, func() (bool, error) {
 			// reinitialize and retry on failure to avoid connection reset SSH errors
 			if err := vm.removeHNSNetwork(network); err != nil {
-				vm.log.V(1).Error(err, "error removing %s HNS network", "network", network)
-				if err := vm.reinitialize(); err != nil {
+				vm.log.V(1).Info("error removing HNS network", "network", network, "err", err.Error())
+				if err := vm.reinitialize(ctx); err != nil {
 					return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
 				}
 				return false, nil
 			}
-			if err := vm.reinitialize(); err != nil {
+			if err := vm.reinitialize(ctx); err != nil {
 				return false, fmt.Errorf("error reinitializing VM after removing %s HNS network: %w", network, err)
 			}
 			out, err := vm.Run(getHNSNetworkCmd(network), true)
@@ -1030,9 +1065,9 @@ func (vm *windows) waitUntilUnreachable() error {
 		})
 }
 
-func (vm *windows) reinitialize() error {
-	if err := vm.interact.init(); err != nil {
-		return fmt.Errorf("failed to reinitialize ssh client: %v", err)
+func (vm *windows) reinitialize(ctx context.Context) error {
+	if err := vm.interact.init(ctx); err != nil {
+		return fmt.Errorf("failed to reinitialize ssh client: %w", err)
 	}
 	return nil
 }
