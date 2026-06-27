@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"golang.org/x/crypto/ssh"
@@ -355,8 +356,24 @@ func (r *SecretReconciler) updateUserData(ctx context.Context, keySigner ssh.Sig
 				nodeconfig.PubKeyHashAnnotation: expectedPubKeyAnno,
 			}
 		} else {
-			// For Nodes associated with Machines, clear the public key annotation, as the clearing of the
-			// annotation is used solely to kick off the deletion and recreation of Machines, causing them to be
+			// For Nodes associated with Machines, check cluster-wide upgrade limit before clearing annotation
+
+			// Check if we can mark this node as upgrading
+			if err := markNodeAsUpgrading(ctx, r.client, &node); err != nil {
+				var upgradeErr *UpgradeLimitExceededError
+				if errors.As(err, &upgradeErr) {
+					// Upgrade limit reached - defer this node
+					r.log.Info("deferring userData update due to upgrade limit",
+						"node", node.GetName(), "reason", upgradeErr.Error())
+					// Skip clearing annotation for this node - will retry on next reconcile
+					continue
+				}
+				return err
+			}
+
+			// Safe to clear annotation now (cluster-wide lock acquired)
+			// The clearing of the annotation is used solely to kick off the deletion and recreation
+			// of Machines, causing them to be
 			// provisioned with the new userdata
 			annotationsToApply = map[string]string{nodeconfig.PubKeyHashAnnotation: ""}
 		}

@@ -78,10 +78,22 @@ func (tc *testContext) testUserData(t *testing.T) {
 }
 
 // testUserDataTamper tests if userdata reverts to previous value if updated
+// AND verifies MaxParallelUpgrades=1 during userData-triggered deletions
 func (tc *testContext) testUserDataTamper(t *testing.T) {
 	validUserDataSecret, err := tc.client.K8s.CoreV1().Secrets(clusterinfo.MachineAPINamespace).Get(context.TODO(),
 		secrets.UserDataSecret, meta.GetOptions{})
 	require.NoError(t, err, "could not find Windows userData secret in required namespace")
+
+	// Requires at least 2 Machine nodes to test parallel behavior
+	require.NoError(t, tc.loadExistingNodes(), "error loading existing nodes")
+	if len(gc.machineNodes) < 2 {
+		t.Skip("Test requires at least 2 Machine nodes to verify MaxParallelUpgrades enforcement")
+	}
+
+	// Deploy parallel upgrades checker before triggering userData change
+	err = tc.deployParallelUpgradesChecker()
+	require.NoError(t, err, "could not deploy parallel upgrades checker")
+	defer tc.cleanupParallelUpgradesChecker()
 
 	updatedSecret := validUserDataSecret.DeepCopy()
 	updatedSecret.Data["userData"] = []byte("invalid data")
@@ -93,6 +105,10 @@ func (tc *testContext) testUserDataTamper(t *testing.T) {
 	// until the Machine is back up.
 	assert.NoError(t, tc.waitForNewMachineNodes(), "error waiting for Machine nodes to be reconfigured")
 	assert.NoError(t, tc.waitForValidUserData(validUserDataSecret), "error waiting for valid userdata")
+
+	// Verify that MaxParallelUpgrades=1 was enforced throughout the process
+	err = tc.verifyParallelUpgradesChecker()
+	assert.NoError(t, err, "MaxParallelUpgrades was violated during userData change")
 }
 
 // waitForNewMachineNodes returns an error if waitForConfiguredWindowsNodes returns the same Machine backed nodes
