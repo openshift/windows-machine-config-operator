@@ -61,3 +61,42 @@ rotated files will follow the updated rotation rules going forward.
 restarting, the operator will reconfigure each Windows node one at a time to apply the new log rotation settings,
 minimizing disruption. Note that service continuity during reconfiguration is not guaranteed; brief interruptions
 to managed services (such as kubelet or kube-proxy) may occur on each node as it is reconfigured.
+
+## Logging architecture
+
+WMCO-managed services use two different approaches for log handling depending on their role.
+
+### Managed services (kubelet, kube-proxy, containerd, etc.)
+
+These services are launched as child processes of `kube-log-runner`, which intercepts their
+standard output and writes it to a log file on disk. Log rotation (size and age thresholds) is
+handled entirely by `kube-log-runner`. When inspecting the Windows process tree, `kube-log-runner`
+appears as the parent process with the actual service binary (e.g. `kubelet.exe`) as its child.
+
+```
+kube-log-runner.exe  is the parent process that manages log file rotation
+  └── kubelet.exe    is the child, the actual service
+```
+
+Log files are written to the paths listed in the [Windows Node Paths](../README.md) table,
+for example `C:\var\log\kubelet\kubelet.log`.
+
+### WICD
+
+WICD writes logs directly using [klog](https://github.com/kubernetes/klog), with log rotation
+configured via klog's built-in `--log-file-max-size` flag. There is no `kube-log-runner` wrapper
+in the process tree and  `windows-instance-config-daemon.exe` is the top-level process for the service.
+
+WICD logs are written to `C:\var\log\wicd\` and follows the configuration specified in the `SERVICES_LOG_FILE_SIZE`
+environment variables for log rotation, where:
+- use log file size configuration if provided,
+- fallback to klog default (1800 MB) if not set
+- set to `0` to disable rotation entirely, not recommended as may cause disk exhaustion
+
+#### Why WICD does not use kube-log-runner
+
+WICD is responsible for decompressing and replacing the binaries of other managed services
+(kubelet, kube-proxy, etc.) during node reconfiguration and upgrades. On Windows, a process holds
+an open file handle to its own executable. If `kube-log-runner` were used to wrap
+`windows-instance-config-daemon.exe`, it would keep that file handle open, blocking WMCO from
+replacing the binary during an upgrade. Using klog's native rotation avoids this constraint entirely.
