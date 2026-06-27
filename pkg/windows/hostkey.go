@@ -117,6 +117,11 @@ func (v *HostKeyValidator) PersistSeenKey(ctx context.Context) error {
 	return v.store.StoreHostKey(ctx, "", v.seenKey)
 }
 
+// GetStore returns the underlying hostKeyStore for direct access
+func (v *HostKeyValidator) GetStore() hostKeyStore {
+	return v.store
+}
+
 // RemoveHostKey removes the stored host key to prevent stale keys blocking IP reuse
 func (v *HostKeyValidator) RemoveHostKey(ctx context.Context) error {
 	if v.store == nil {

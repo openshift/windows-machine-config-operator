@@ -3,6 +3,7 @@ package nodeconfig
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -198,6 +199,13 @@ func (nc *NodeConfig) Configure(ctx context.Context) error {
 		for key, value := range nc.additionalAnnotations {
 			annotationsToApply[key] = value
 		}
+
+		// Migrate SSH host key from ConfigMap to Node annotation if not present
+		// This handles Machine API/BYOH where initial SSH happened before Node existed
+		if err := nc.addSSHHostKeyAnnotation(ctx, annotationsToApply); err != nil {
+			return fmt.Errorf("failed to prepare SSH host key annotation: %w", err)
+		}
+
 		if err := metadata.ApplyLabelsAndAnnotations(ctx, nc.client, *nc.node, nc.additionalLabels,
 			annotationsToApply); err != nil {
 			return fmt.Errorf("error updating public key hash and additional annotations on node %s: %w",
@@ -865,6 +873,45 @@ func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
 // existing CA bundle string
 func appendToCABundle(bundle mcfg.ImageRegistryBundle) string {
 	return fmt.Sprintf("# %s\n%s\n\n", strings.ReplaceAll(bundle.File, "..", ":"), bundle.Data)
+}
+
+// addSSHHostKeyAnnotation reads SSH host key from ConfigMap and adds to annotations map
+// This handles Machine API/BYOH where initial SSH happened before Node existed
+func (nc *NodeConfig) addSSHHostKeyAnnotation(ctx context.Context, annotations map[string]string) error {
+	// Check if annotation already exists on node
+	if _, exists := nc.node.Annotations[windows.SSHHostKeyAnnotation]; exists {
+		return nil
+	}
+
+	// Get node address to lookup in ConfigMap
+	addr := nc.Windows.GetIPv4Address()
+	if addr == "" {
+		return fmt.Errorf("unable to get node address")
+	}
+
+	// Create validator to access storage
+	validator := windows.NewHostKeyValidator(nc.client, nc.wmcoNamespace, nc.node.Name, addr)
+	store := validator.GetStore()
+	if store == nil {
+		return nil
+	}
+
+	// Read key from ConfigMap (GetHostKey reads from ConfigMap when nodeName is set but annotation doesn't exist)
+	key, err := store.GetHostKey(ctx, addr)
+	if err != nil {
+		return fmt.Errorf("failed to read host key from ConfigMap: %w", err)
+	}
+	if key == nil {
+		// No key in ConfigMap, nothing to migrate
+		return nil
+	}
+
+	// Add to annotations map (will be applied by ApplyLabelsAndAnnotations)
+	annotations[windows.SSHHostKeyAnnotation] = base64.StdEncoding.EncodeToString(key.Marshal())
+	annotations[windows.SSHHostKeyTypeAnnotation] = key.Type()
+
+	nc.log.V(1).Info("migrating SSH host key from ConfigMap to Node annotation", "address", addr)
+	return nil
 }
 
 // validWICDServiceAccountTokenSecret returns true if the given secret provides a token for the WICD SA

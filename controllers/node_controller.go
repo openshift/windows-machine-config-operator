@@ -37,7 +37,6 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
-	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 const (
@@ -94,14 +93,6 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 	}
 
 	r.log.V(1).Info("reconciling", "name", req.NamespacedName.String())
-
-	// Migrate SSH host key from ConfigMap to Node annotation if not present
-	// This handles Machine API nodes where initial SSH happened before Node existed
-	if err := r.migrateSSHHostKey(ctx, node); err != nil {
-		r.log.Error(err, "failed to migrate SSH host key from ConfigMap to Node annotation")
-		// Don't fail reconciliation, just log the error
-	}
-
 	if _, ok := node.GetAnnotations()[metadata.RebootAnnotation]; ok {
 		// Create a new signer using the private key that the instances will be reconciled with
 		signer, err := signer.Create(ctx, types.NamespacedName{Namespace: r.watchNamespace,
@@ -151,30 +142,6 @@ func (r *nodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&core.Node{}, builder.WithPredicates(windowsNodePredicate)).
 		Complete(r)
-}
-
-// migrateSSHHostKey migrates SSH host key from ConfigMap to Node annotation
-// This is needed for Machine API nodes where initial SSH happened before Node existed
-func (r *nodeReconciler) migrateSSHHostKey(ctx context.Context, node *core.Node) error {
-	// Skip if annotation already exists
-	if _, exists := node.Annotations[windows.SSHHostKeyAnnotation]; exists {
-		return nil
-	}
-
-	// Get node address to lookup in ConfigMap
-	addr, err := GetAddress(node.Status.Addresses)
-	if err != nil {
-		return fmt.Errorf("unable to get node address: %w", err)
-	}
-
-	// Use host key validator to perform migration
-	// It will read from ConfigMap, write to Node annotation, and cleanup ConfigMap entry
-	validator := windows.NewHostKeyValidator(r.client, r.watchNamespace, node.Name, addr)
-	if err := validator.MigrateFromConfigMap(ctx); err != nil {
-		return fmt.Errorf("failed to migrate host key: %w", err)
-	}
-
-	return nil
 }
 
 // isWindowsNode returns true if the given object is a Windows node
