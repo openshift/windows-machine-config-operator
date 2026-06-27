@@ -32,7 +32,7 @@ not yet supported for Windows. Instead, a Windows node can be accessed using SSH
 [SSH bastion](https://github.com/eparis/ssh-bastion) needs to be setup for both methods. The following information is
 common across both methods:
 * The key used in the *cloud-private-key* [secret](../README.md#Usage) and the key used when creating the cluster should
-  be added to the [ssh-agent](https://docs.redhat.com/en/documentation/openshift_container_platform/4.15/html/installing_on_azure/installing-azure-default#ssh-agent-using_installing-azure-default).
+  be added to the [ssh-agent](https://docs.redhat.com/en/documentation/openshift_container_platform/4.16/html/installing_on_azure/installing-azure-default#ssh-agent-using_installing-azure-default).
   For [security reasons](https://manpages.debian.org/buster/openssh-client/ssh.1.en.html#A) we suggest removing the keys
   from the ssh-agent after use.
 * *\<username\>* is *Administrator* (AWS) or *capi* (Azure)
