@@ -12,10 +12,12 @@ import (
 	"github.com/go-logr/logr"
 	config "github.com/openshift/api/config/v1"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
+	"github.com/openshift/windows-machine-config-operator/pkg/logconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
 )
@@ -586,6 +588,17 @@ func (vm *windows) ConfigureWICD(watchNamespace, wicdKubeconfigContents string) 
 	}
 	wicdServiceArgs := fmt.Sprintf("controller --windows-service --log-dir %s --namespace %s --kubeconfig %s --cert-dir %s --cert-duration %s --ca-bundle %s",
 		wicdLogDir, watchNamespace, WICDKubeconfigPath, WICDCertDir, WICDCertDuration, TrustedCABundlePath)
+
+	// look for configured user-defined log file size
+	if logconfig.GetLogFileSize() != "" {
+		wicdLogFileSizeMB, err := getLogFileSizeMB(logconfig.GetLogFileSize())
+		if err != nil {
+			return err
+		}
+		// append the provided log file size to the WICD command arg
+		wicdServiceArgs = fmt.Sprintf("%s --log-file-max-size %d", wicdServiceArgs, wicdLogFileSizeMB)
+	}
+
 	// if WICD crashes, attempt to restart WICD after 10, 30, and 60 seconds, and then every 2 minutes after that.
 	// reset this counter 5 min after a period with no crashes
 	recoveryActions := []recoveryAction{
@@ -1134,4 +1147,22 @@ func getHNSNetworkCmd(networkName string) string {
 func SplitPath(filepath string) (dir string, fileName string) {
 	splitIndex := strings.LastIndexByte(filepath, '\\') + 1
 	return filepath[:splitIndex], filepath[splitIndex:]
+}
+
+// getLogFileSizeMB returns the log file size in MB for a given log file size string.
+// If the input string is empty, an error is returned.
+func getLogFileSizeMB(logFileSize string) (uint64, error) {
+	if logFileSize == "" {
+		return 0, fmt.Errorf("%s cannot be empty", "logFileSize")
+	}
+	q, err := resource.ParseQuantity(logFileSize)
+	if err != nil {
+		return 0, fmt.Errorf("error parsing logFileSize quantity: %w", err)
+	}
+	mb := q.ScaledValue(resource.Mega)
+	// check overflow
+	if mb < 0 {
+		return 0, fmt.Errorf("%s cannot be less than 0", "logFileSize")
+	}
+	return uint64(mb), nil
 }

@@ -20,6 +20,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -38,9 +39,10 @@ var (
 			"present within the cluster",
 		Run: runControllerCmd,
 	}
-	windowsService bool
-	logDir         string
-	caBundle       string
+	windowsService   bool
+	logDir           string
+	logFileMaxSizeMb string
+	caBundle         string
 	// Certificate-based authentication options
 	certDir      string
 	certDuration string
@@ -50,6 +52,10 @@ func init() {
 	rootCmd.AddCommand(controllerCmd)
 	controllerCmd.PersistentFlags().StringVar(&logDir, "log-dir", "", "Directory to write logs to, "+
 		"if not provided, the command will log to stdout/stderr")
+	controllerCmd.PersistentFlags().StringVar(&logFileMaxSizeMb, "log-file-max-size", "",
+		"Maximum size in megabytes log file can grow to before being rotated. "+
+			"Only effective when --log-dir is set. If unset (empty) uses klog default 1800 MB. "+
+			" Set 0 to disable rotation (not recommended, may cause disk exhaustion). ")
 	controllerCmd.PersistentFlags().BoolVar(&windowsService, "windows-service", false,
 		"Enables running as a Windows service")
 	controllerCmd.PersistentFlags().StringVar(&caBundle, "ca-bundle", "",
@@ -67,6 +73,13 @@ func runControllerCmd(cmd *cobra.Command, args []string) {
 		// When the logtostderr flag is set to true, which is the default, the log_dir arg is ignored
 		fs.Set("logtostderr", "false")
 		fs.Set("log_dir", logDir)
+
+		logMsg := fmt.Sprintf("service controller starting with log dir %s", logDir)
+		if logFileMaxSizeMb != "" {
+			fs.Set("log_file_max_size", logFileMaxSizeMb)
+			logMsg = fmt.Sprintf("%s and max file size %s MB", logMsg, logFileMaxSizeMb)
+		}
+		klog.Info(logMsg)
 	}
 	duration, err := time.ParseDuration(certDuration)
 	if err != nil {
