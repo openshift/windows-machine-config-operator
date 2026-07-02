@@ -27,6 +27,7 @@ import (
 
 	"github.com/openshift/windows-machine-config-operator/controllers"
 	"github.com/openshift/windows-machine-config-operator/pkg/cluster"
+	"github.com/openshift/windows-machine-config-operator/pkg/logconfig"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -127,6 +128,12 @@ func main() {
 	}
 
 	setupLog.Info("platform", "type", clusterConfig.Platform())
+
+	if err := logconfig.ValidateLogConfig(); err != nil {
+		setupLog.Error(err, "invalid log rotation configuration")
+		os.Exit(1)
+	}
+	logconfig.LogConfig(setupLog)
 
 	// Checking if required files exist before starting the operator
 	requiredFiles := []string{

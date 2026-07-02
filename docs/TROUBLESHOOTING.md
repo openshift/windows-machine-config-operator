@@ -87,6 +87,31 @@ and can be found by running the following command:
   ipconfig | findstr /C:"Default Gateway"
 ``` 
 
+## How to collect Windows service logs
+
+### Understanding the Windows service process tree
+
+Not all WMCO-managed services log in the same way. This is important to keep in mind when
+tracing processes during troubleshooting:
+
+- WMCO-managed services like kubelet, kube-proxy, containerd, etc. run as child
+  processes of `kube-log-runner.exe`, which manages their log files. When inspecting
+  running processes, `kube-log-runner.exe` is the visible parent, and the actual
+  service binary is its child. Log files are under `C:\var\log\<service>\`.
+
+- WICD service (`windows-instance-config-daemon`) however, runs as a standalone process with no
+  `kube-log-runner` wrapper. It writes and rotates its own log files directly under `C:\var\log\wicd\`.
+
+See [Logging architecture: WICD vs managed services](log-rotation-managed-services.md#logging-architecture-wicd-vs-managed-services)
+for the full explanation of why this difference exists.
+
+### WICD logs
+
+To view WICD logs on a Windows node via SSH (following the klog symlink for INFO severity):
+```powershell
+Get-Content "C:\var\log\wicd\windows-instance-config-daemon.exe.INFO" -Tail 50 -Wait
+```
+
 ## How to collect Kubernetes node logs
 Kubernetes node log files are in *C:\var\logs*. To view all the directories under *C:\var\logs*, execute:
 ```shell script

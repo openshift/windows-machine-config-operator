@@ -89,3 +89,98 @@ func TestSplitPath(t *testing.T) {
 		})
 	}
 }
+
+func TestGetLogFileSizeMB(t *testing.T) {
+	tests := []struct {
+		name        string
+		logFileSize string
+		expected    uint64
+		expectError bool
+	}{
+		{
+			name:        "empty string returns error",
+			logFileSize: "",
+			expected:    0,
+			expectError: true,
+		},
+		{
+			name:        "value in megabytes returns correct value",
+			logFileSize: "1M",
+			expected:    1,
+			expectError: false,
+		},
+		{
+			name:        "value in mebibytes returns correct megabyte equivalent rounded up",
+			logFileSize: "100Mi",
+			expected:    105,
+			expectError: false,
+		},
+		{
+			name:        "value in gigabytes returns correct megabyte equivalent",
+			logFileSize: "1G",
+			expected:    1000,
+			expectError: false,
+		},
+		{
+			name:        "value in gibibytes returns correct megabyte equivalent rounded up",
+			logFileSize: "1Gi",
+			expected:    1074,
+			expectError: false,
+		},
+		{
+			name:        "zero value returns zero",
+			logFileSize: "0",
+			expected:    0,
+			expectError: false,
+		},
+		{
+			name:        "invalid quantity returns error",
+			logFileSize: "notaquantity",
+			expected:    0,
+			expectError: true,
+		},
+		{
+			name:        "plain integer bytes rounds up to one megabyte",
+			logFileSize: "500",
+			expected:    1,
+			expectError: false,
+		},
+		{
+			name:        "value in kilobytes below one megabyte rounds up to one megabyte",
+			logFileSize: "500k",
+			expected:    1,
+			expectError: false,
+		},
+		{
+			name:        "value in kilobytes above one megabyte returns correct value",
+			logFileSize: "2000k",
+			expected:    2,
+			expectError: false,
+		},
+		{
+			name:        "extremely large value in exabytes is valid and returns large megabyte value",
+			logFileSize: "1E",
+			expected:    1000000000000,
+			expectError: false,
+		},
+		{
+			name:        "negative value returns error",
+			logFileSize: "-1M",
+			expected:    0,
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := getLogFileSizeMB(tc.logFileSize)
+			if tc.expectError {
+				assert.Error(t, err)
+				assert.Equal(t, tc.expected, result)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expected, result)
+			}
+		})
+	}
+}
