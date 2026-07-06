@@ -1,8 +1,6 @@
 module github.com/openshift/windows-machine-config-operator
 
-go 1.24.8
-
-toolchain go1.24.12
+go 1.24.13
 
 replace (
 	// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
