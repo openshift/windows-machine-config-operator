@@ -1,83 +1,129 @@
-// windows-machine-config-operator-tests-ext is the OTE (OpenShift Tests Extension)
-// binary for Windows Containers tests. Tests are registered as plain Go functions
-// using upstream Ginkgo, without the OpenShift Ginkgo fork.
+// wmco-tests-ext is the OTE (OpenShift Tests Extension) binary for WMCO.
+// Tests are standard Ginkgo g.Describe/g.It blocks under ote/test/e2e/.
+// BuildExtensionTestSpecsFromOpenShiftGinkgoSuite() discovers them automatically,
+// so adding a new test only requires a new g.It block -- no registration code needed.
 //
 // References:
-//   - OTE Integration Guide: https://github.com/openshift-eng/openshift-tests-extension
+//   - OTE framework: https://github.com/openshift-eng/openshift-tests-extension
+//   - Migration epic: https://issues.redhat.com/browse/WINC-1536
 package main
 
 import (
-	"context"
+	"fmt"
 	"os"
+	"regexp"
+	"strings"
 
-	otecmd "github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
+	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	e "github.com/openshift-eng/openshift-tests-extension/pkg/extension"
 	et "github.com/openshift-eng/openshift-tests-extension/pkg/extension/extensiontests"
+	g "github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
+	"github.com/openshift/origin/test/extended/util"
+	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	"github.com/spf13/cobra"
+	"k8s.io/component-base/logs"
+	framework "k8s.io/kubernetes/test/e2e/framework"
 
-	"github.com/openshift/windows-machine-config-operator/ote/test/extended"
-	"github.com/openshift/windows-machine-config-operator/ote/test/extended/cli"
+	_ "github.com/openshift/windows-machine-config-operator/ote/test/e2e"
 )
 
 func main() {
+	util.InitStandardFlags()
+	framework.AfterReadingAllFlags(&framework.TestContext)
+
+	logs.InitLogs()
+	defer logs.FlushLogs()
+
 	registry := e.NewRegistry()
 	ext := e.NewExtension("openshift", "payload", "windows-machine-config-operator")
 
-	// All WINC tests - used for full runs and informing jobs.
-	// No qualifier needed: all tests in this binary are WINC tests.
-	ext.AddSuite(e.Suite{
-		Name: "windows/all",
-	})
+	registerSuites(ext)
 
-	// Parallel subset: non-Serial, non-Slow, non-Disruptive tests.
-	ext.AddSuite(e.Suite{
-		Name: "windows/parallel",
-		Qualifiers: []string{
-			`!name.contains("[Serial]") && !name.contains("[Slow]") && !name.contains("[Disruptive]")`,
-		},
-	})
-
-	// Serial subset: tests that must run in isolation.
-	ext.AddSuite(e.Suite{
-		Name: "windows/serial",
-		Qualifiers: []string{
-			`name.contains("[Serial]")`,
-		},
-	})
-
-	// Storage-specific tests.
-	ext.AddSuite(e.Suite{
-		Name: "windows/storage",
-		Qualifiers: []string{
-			`name.contains("storage")`,
-		},
-	})
-
-	// Register test specs manually — no OpenShift Ginkgo fork required.
-	specs := et.ExtensionTestSpecs{
-		{
-			Name: "[sig-windows] Windows_Containers Author:rrasouli-Smokerun-Medium-37362-[wmco] wmco using correct golang version [OTP]",
-			Run: func(ctx context.Context) *et.ExtensionTestResult {
-				if err := extended.CheckWmcoGolangVersion(ctx, cli.NewCLIWithoutNamespace()); err != nil {
-					return &et.ExtensionTestResult{Result: et.ResultFailed, Output: err.Error()}
-				}
-				return &et.ExtensionTestResult{Result: et.ResultPassed}
-			},
-		},
+	allSpecs, err := g.BuildExtensionTestSpecsFromOpenShiftGinkgoSuite()
+	if err != nil {
+		panic(fmt.Errorf("couldn't build extension test specs from ginkgo: %w", err))
 	}
 
-	ext.AddSpecs(specs)
+	componentSpecs := allSpecs.Select(func(spec *et.ExtensionTestSpec) bool {
+		for _, loc := range spec.CodeLocations {
+			if strings.Contains(loc, "/test/e2e/") &&
+				!strings.Contains(loc, "/go/pkg/mod/") &&
+				!strings.Contains(loc, "/vendor/") {
+				return true
+			}
+		}
+		return false
+	})
+
+	componentSpecs.AddBeforeAll(func() {
+		if err := compat_otp.InitTest(false); err != nil {
+			panic(err)
+		}
+		util.WithCleanup(func() {})
+	})
+
+	componentSpecs.Walk(func(spec *et.ExtensionTestSpec) {
+		for label := range spec.Labels {
+			if strings.HasPrefix(label, "Platform:") {
+				platformName := strings.TrimPrefix(label, "Platform:")
+				spec.Include(et.PlatformEquals(platformName))
+			}
+		}
+		re := regexp.MustCompile(`\[platform:([a-z]+)\]`)
+		if match := re.FindStringSubmatch(spec.Name); match != nil {
+			spec.Include(et.PlatformEquals(match[1]))
+		}
+		spec.Lifecycle = et.LifecycleInforming
+	})
+
+	ext.AddSpecs(componentSpecs)
 	registry.Register(ext)
 
 	root := &cobra.Command{
-		Use:   "windows-machine-config-operator-tests-ext",
-		Short: "OpenShift Windows Containers test extension (OTE)",
-		Long:  "Runs the WINC test suite as an OpenShift Tests Extension binary.",
+		Use:   "wmco-tests-ext",
+		Short: "WMCO OpenShift Tests Extension (OTE) binary",
+		Long:  "Windows Machine Config Operator Tests",
 	}
+	root.AddCommand(cmd.DefaultExtensionCommands(registry)...)
 
-	root.AddCommand(otecmd.DefaultExtensionCommands(registry)...)
-
-	if err := root.Execute(); err != nil {
+	if err := func() error {
+		return root.Execute()
+	}(); err != nil {
+		logs.FlushLogs()
 		os.Exit(1)
+	}
+}
+
+func registerSuites(ext *e.Extension) {
+	suites := []e.Suite{
+		{
+			Name:    "windows-machine-config-operator/conformance/parallel",
+			Parents: []string{"openshift/conformance/parallel"},
+			Qualifiers: []string{
+				`name.contains("[Level0]") && !(name.contains("[Serial]") || name.contains("[Disruptive]"))`,
+			},
+		},
+		{
+			Name:    "windows-machine-config-operator/conformance/serial",
+			Parents: []string{"openshift/conformance/serial"},
+			Qualifiers: []string{
+				`name.contains("[Level0]") && name.contains("[Serial]") && !name.contains("[Disruptive]")`,
+			},
+		},
+		{
+			Name:       "windows-machine-config-operator/disruptive",
+			Parents:    []string{"openshift/disruptive"},
+			Qualifiers: []string{`name.contains("[Disruptive]")`},
+		},
+		{
+			Name:       "windows-machine-config-operator/non-disruptive",
+			Qualifiers: []string{`!name.contains("[Disruptive]")`},
+		},
+		{
+			Name: "windows-machine-config-operator/all",
+		},
+	}
+	for _, suite := range suites {
+		ext.AddSuite(suite)
 	}
 }
