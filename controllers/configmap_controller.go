@@ -660,7 +660,7 @@ func (r *ConfigMapReconciler) ensureTrustedCABundleInNode(ctx context.Context, n
 	if err != nil {
 		return err
 	}
-	nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+	nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 		winInstance, r.signer, nil, nil, r.platform)
 	if err != nil {
 		return fmt.Errorf("failed to create new nodeconfig: %w", err)

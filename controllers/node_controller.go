@@ -104,7 +104,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resul
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+		nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 			instanceInfo, signer, nil, nil, r.platform)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)

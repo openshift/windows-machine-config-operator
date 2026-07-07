@@ -171,6 +171,56 @@ Alternatively, any service event logs can be viewed using SSH with the following
   packet_trace.sh -i $SSH_KEY stop $WIN_NODE_NAME
   ```
 
+## SSH host key validation
+
+WMCO uses Trust On First Use (TOFU) pinning to validate SSH host keys and prevent man-in-the-middle attacks. Host keys are automatically managed and stored in the cluster.
+
+### Storage locations
+- **Node annotation** (preferred): Keys are stored as `windowsmachineconfig.openshift.io/ssh-host-key` annotation on the Node object after the node joins the cluster
+- **ConfigMap** (fallback): For BYOH instances before the Node exists, keys are temporarily stored in the `windows-ssh-host-keys` ConfigMap by instance address (IP or hostname)
+
+### Inspecting stored host keys
+
+To view the host key for a specific node:
+```shell script
+oc get node <node-name> -o jsonpath='{.metadata.annotations.windowsmachineconfig\.openshift\.io/ssh-host-key}'
+```
+
+To view all host keys in the ConfigMap (BYOH pre-Node bootstrap):
+```shell script
+oc get configmap windows-ssh-host-keys -n openshift-windows-machine-config-operator -o yaml
+```
+
+### Troubleshooting SSH connection failures
+
+If SSH connections fail with "host key mismatch" errors:
+
+1. **Check if a stale key exists**: 
+   ```shell script
+   # For nodes that exist:
+   oc get node <node-name> -o jsonpath='{.metadata.annotations}'
+   
+   # For BYOH instances before Node creation:
+   oc get configmap windows-ssh-host-keys -n openshift-windows-machine-config-operator -o yaml
+   ```
+
+2. **Remove stale keys** (only if you're certain the instance has been recreated or the IP reused):
+   ```shell script
+   # Remove from Node annotation (if Node exists):
+   oc annotate node <node-name> windowsmachineconfig.openshift.io/ssh-host-key-
+   oc annotate node <node-name> windowsmachineconfig.openshift.io/ssh-host-key-type-
+   ```
+
+   To remove from ConfigMap (BYOH instances):
+   ```shell script
+   # Edit the ConfigMap and manually delete the entry under .data for the instance address
+   oc edit configmap windows-ssh-host-keys -n openshift-windows-machine-config-operator
+   ```
+
+3. **WMCO will re-establish trust** on the next connection attempt using TOFU
+
+**Note**: The `windows-ssh-host-keys` ConfigMap is automatically created and managed by WMCO. Do not delete or modify it unless troubleshooting a specific issue. It is labeled with `app.kubernetes.io/managed-by: windows-machine-config-operator` for identification.
+
 ## External troubleshooting references
 * [Containers on Windows troubleshooting](https://docs.microsoft.com/en-us/virtualization/windowscontainers/troubleshooting)
 * [Troubleshoot host and container image mismatches](https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/update-containers#troubleshoot-host-and-container-image-mismatches)
