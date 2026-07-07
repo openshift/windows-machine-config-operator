@@ -508,7 +508,9 @@ func (vm *windows) Run(cmd string, psCmd bool) (string, error) {
 // RebootAndReinitialize restarts the Windows instance and re-initializes the SSH connection for further configuration
 func (vm *windows) RebootAndReinitialize(ctx context.Context) error {
 	vm.log.Info("rebooting instance")
-	if _, err := vm.Run("Restart-Computer -Force", true); err != nil {
+	// SSH connection may terminate during reboot before returning exit status - this is expected
+	// The real validation is waitUntilUnreachable() and reinitialize(), so we only fail on unexpected errors
+	if _, err := vm.Run("Restart-Computer -Force", true); err != nil && !strings.Contains(err.Error(), cmdExitNoStatus) {
 		return fmt.Errorf("error rebooting the Windows VM: %w", err)
 	}
 	// Wait for instance to be unreachable via SSH, implies reboot is underway
