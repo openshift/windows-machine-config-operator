@@ -5,6 +5,8 @@ go 1.24.0
 toolchain go1.24.6
 
 replace (
+	// pin to latest version compatiblw with go 1.24.0
+	github.com/go-openapi/jsonreference => github.com/go-openapi/jsonreference v0.21.5
 	// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
 	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/golang-jwt/jwt/v5 => github.com/golang-jwt/jwt/v5 v5.2.2
