@@ -13,6 +13,7 @@ replace (
 
 	// pin kube-openapi to pre structured-merge-diff/v6 to resolve apimachinery type mismatch
 	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250628140032-d90c4fd18f59
+	k8s.io/utils => k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
 )
 
 require (
