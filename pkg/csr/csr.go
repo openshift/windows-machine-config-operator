@@ -251,14 +251,9 @@ func (a *Approver) validateKubeletServingCSR(parsedCsr *x509.CertificateRequest)
 		return fmt.Errorf("CSR %s does not contain required usages", a.csr.Name)
 	}
 
-	var hasOrg bool
-	for i := range parsedCsr.Subject.Organization {
-		if parsedCsr.Subject.Organization[i] == nodeGroup {
-			hasOrg = true
-			break
-		}
-	}
-	if !hasOrg {
+	// ensure org match in validation: require an exact single-org match, mirroring the
+	// kubelet client path in isNodeClientCert().
+	if !reflect.DeepEqual([]string{nodeGroup}, parsedCsr.Subject.Organization) {
 		return fmt.Errorf("CSR %s does not contain required subject organization", a.csr.Name)
 	}
 	return nil
