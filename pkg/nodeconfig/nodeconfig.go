@@ -3,6 +3,7 @@ package nodeconfig
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -116,7 +117,7 @@ func (ow OutWriter) Write(p []byte) (n int, err error) {
 
 // NewNodeConfig creates a new instance of NodeConfig to be used by the caller.
 // hostName having a value will result in the VM's hostname being changed to the given value.
-func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, wmcoNamespace string,
+func NewNodeConfig(ctx context.Context, c client.Client, clientset *kubernetes.Clientset, clusterServiceCIDR, wmcoNamespace string,
 	instanceInfo *instance.Info, signer ssh.Signer, additionalLabels,
 	additionalAnnotations map[string]string, platformType configv1.PlatformType) (*NodeConfig, error) {
 
@@ -131,7 +132,8 @@ func NewNodeConfig(c client.Client, clientset *kubernetes.Clientset, clusterServ
 	}
 
 	log := ctrl.Log.WithName(fmt.Sprintf("nc %s", instanceInfo.Address))
-	win, err := windows.New(clusterDNS, instanceInfo, signer, &platformType)
+	// Use NewWithClient to enable SSH host key validation
+	win, err := windows.NewWithClient(ctx, c, clusterDNS, instanceInfo, signer, &platformType, wmcoNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("error instantiating Windows instance from VM: %w", err)
 	}
@@ -196,10 +198,26 @@ func (nc *NodeConfig) Configure(ctx context.Context) error {
 		for key, value := range nc.additionalAnnotations {
 			annotationsToApply[key] = value
 		}
+
+		// Migrate SSH host key from ConfigMap to Node annotation if not present
+		// This handles Machine API/BYOH where initial SSH happened before Node existed
+		migratedAddr, err := nc.addSSHHostKeyAnnotation(ctx, annotationsToApply)
+		if err != nil {
+			return fmt.Errorf("failed to prepare SSH host key annotation: %w", err)
+		}
+
 		if err := metadata.ApplyLabelsAndAnnotations(ctx, nc.client, *nc.node, nc.additionalLabels,
 			annotationsToApply); err != nil {
 			return fmt.Errorf("error updating public key hash and additional annotations on node %s: %w",
 				nc.node.GetName(), err)
+		}
+
+		// Cleanup ConfigMap entry after successful migration to Node annotation
+		if migratedAddr != "" {
+			validator := windows.NewHostKeyValidator(nc.client, nc.wmcoNamespace, nc.node.Name, migratedAddr)
+			if err := validator.RemoveHostKey(ctx); err != nil {
+				nc.log.Error(err, "failed to cleanup ConfigMap entry after migration", "address", migratedAddr)
+			}
 		}
 
 		if err := nc.Windows.ConfigureWICD(nc.wmcoNamespace, wicdKC); err != nil {
@@ -574,7 +592,7 @@ func (nc *NodeConfig) Deconfigure(ctx context.Context) error {
 	if err := nc.cleanupWithWICD(ctx); err != nil {
 		return err
 	}
-	if err := nc.Windows.RemoveFilesAndNetworks(); err != nil {
+	if err := nc.Windows.RemoveFilesAndNetworks(ctx); err != nil {
 		return fmt.Errorf("error deconfiguring instance: %w", err)
 	}
 
@@ -851,6 +869,39 @@ func CreatePubKeyHashAnnotation(key ssh.PublicKey) string {
 // existing CA bundle string
 func appendToCABundle(bundle mcfg.ImageRegistryBundle) string {
 	return fmt.Sprintf("# %s\n%s\n\n", strings.ReplaceAll(bundle.File, "..", ":"), bundle.Data)
+}
+
+// addSSHHostKeyAnnotation reads SSH host key from ConfigMap and adds to annotations map
+// Returns the address if a key was migrated (for cleanup after successful apply)
+func (nc *NodeConfig) addSSHHostKeyAnnotation(ctx context.Context, annotations map[string]string) (string, error) {
+	if _, exists := nc.node.Annotations[windows.SSHHostKeyAnnotation]; exists {
+		return "", nil
+	}
+
+	addr := nc.Windows.GetAddress()
+	if addr == "" {
+		return "", fmt.Errorf("unable to get node address")
+	}
+
+	validator := windows.NewHostKeyValidator(nc.client, nc.wmcoNamespace, nc.node.Name, addr)
+	store := validator.GetStore()
+	if store == nil {
+		return "", nil
+	}
+
+	key, err := store.GetHostKey(ctx, addr)
+	if err != nil {
+		return "", fmt.Errorf("failed to read host key from ConfigMap: %w", err)
+	}
+	if key == nil {
+		return "", nil
+	}
+
+	annotations[windows.SSHHostKeyAnnotation] = base64.StdEncoding.EncodeToString(key.Marshal())
+	annotations[windows.SSHHostKeyTypeAnnotation] = key.Type()
+
+	nc.log.V(1).Info("migrating SSH host key from ConfigMap to Node annotation", "address", addr)
+	return addr, nil
 }
 
 // validWICDServiceAccountTokenSecret returns true if the given secret provides a token for the WICD SA
