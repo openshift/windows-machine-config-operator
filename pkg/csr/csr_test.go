@@ -1,10 +1,14 @@
 package csr
 
 import (
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	certificates "k8s.io/api/certificates/v1"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 )
@@ -112,6 +116,78 @@ func TestParseCSR(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.NotNil(t, out)
+		})
+	}
+}
+
+// newTestKubeletServingCSR returns a CertificateSigningRequest with the groups and usages required
+// to pass the checks in validateKubeletServingCSR that precede the subject organization validation.
+func newTestKubeletServingCSR() *certificates.CertificateSigningRequest {
+	return &certificates.CertificateSigningRequest{
+		ObjectMeta: meta.ObjectMeta{Name: "test-csr"},
+		Spec: certificates.CertificateSigningRequestSpec{
+			Groups: []string{nodeGroup, systemPrefix},
+			Usages: kubeletServerUsages,
+		},
+	}
+}
+
+// TestValidateKubeletServingCSROrganizationMatch ensures validateKubeletServingCSR requires an
+// exact single-org match, mirroring the kubelet client path in isNodeClientCert().
+func TestValidateKubeletServingCSROrganizationMatch(t *testing.T) {
+	testCases := []struct {
+		name        string
+		orgs        []string
+		expectedErr bool
+	}{
+		{
+			name:        "exact match passes",
+			orgs:        []string{nodeGroup},
+			expectedErr: false,
+		},
+		{
+			name:        "extra org system:masters rejected",
+			orgs:        []string{nodeGroup, "system:masters"},
+			expectedErr: true,
+		},
+		{
+			name:        "single org cluster-admin rejected",
+			orgs:        []string{"cluster-admin"},
+			expectedErr: true,
+		},
+		{
+			name:        "reversed org order rejected",
+			orgs:        []string{"system:masters", nodeGroup},
+			expectedErr: true,
+		},
+		{
+			name:        "empty org rejected",
+			orgs:        []string{},
+			expectedErr: true,
+		},
+		{
+			name:        "nil org rejected",
+			orgs:        nil,
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &Approver{csr: newTestKubeletServingCSR()}
+			parsedCSR := &x509.CertificateRequest{
+				Subject: pkix.Name{
+					CommonName:   nodeUserName + ":test-node",
+					Organization: tc.orgs,
+				},
+			}
+			err := a.validateKubeletServingCSR(parsedCSR)
+			if tc.expectedErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "does not contain required subject organization")
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }
