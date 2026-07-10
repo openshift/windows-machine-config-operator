@@ -1,8 +1,6 @@
 module github.com/openshift/windows-machine-config-operator
 
-go 1.24.8
-
-toolchain go1.24.12
+go 1.24.13
 
 replace (
 	// pin latest version compatible with go1.24
