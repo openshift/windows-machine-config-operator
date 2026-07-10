@@ -52,6 +52,8 @@ const (
 	wicdLogDir = logDir + "\\wicd"
 	// cniDir is the directory for storing CNI binaries
 	cniDir = K8sDir + "\\cni"
+	// CniStateDir is the directory for storing CNI state/IPAM information
+	CniStateDir = "C:\\var\\lib\\cni"
 	// CniConfDir is the directory for storing CNI configuration
 	CniConfDir = cniDir + "\\config"
 	// ContainerdDir is the directory for storing Containerd binary
@@ -594,6 +596,11 @@ func (vm *windows) Bootstrap(ctx context.Context, desiredVer, watchNamespace, wi
 		return fmt.Errorf("unable to cleanup the Windows instance: %w", err)
 	}
 
+	// Remove stale CNI state from a previous configuration on a best-effort basis
+	if out, err := vm.Run(rmDirCmd(CniStateDir), true); err != nil {
+		vm.log.V(1).Error(err, "unable to remove directory", "dir", CniStateDir, "out", out)
+	}
+
 	if err := vm.ensureHostNameAndContainersFeature(ctx); err != nil {
 		return err
 	}
@@ -771,6 +778,10 @@ func (vm *windows) removeDirectories() error {
 	// At this point, we don't want to retry reconciliation again as the WICD files could have been deleted.
 	if out, err := vm.Run(rmDirCmd(K8sDir), true); err != nil {
 		vm.log.V(1).Error(err, "unable to remove directory", "dir", K8sDir, "out", out)
+	}
+	// Clean up CNI state directory on a best-effort basis
+	if out, err := vm.Run(rmDirCmd(CniStateDir), true); err != nil {
+		vm.log.V(1).Error(err, "unable to remove directory", "dir", CniStateDir, "out", out)
 	}
 	return nil
 }
