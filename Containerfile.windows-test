@@ -1,0 +1,31 @@
+# Test Containerfile to validate Windows container build in Konflux
+# Based on azurefile-csi-driver example
+
+# Stage 1: LINUX - Cross-compile a simple Windows binary
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.26 as build
+LABEL stage=build
+
+WORKDIR /src
+
+# Create a minimal Windows test binary
+RUN echo 'package main\n\
+import "fmt"\n\
+func main() {\n\
+    fmt.Println("Windows container test from Konflux")\n\
+}' > main.go
+
+# Cross-compile for Windows
+RUN GOOS=windows GOARCH=amd64 go build -o test.exe main.go
+
+# Stage 2: WINDOWS - Use Windows host process base image
+FROM --platform=windows/amd64 mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image:v1.0.0
+LABEL description="Konflux Windows container build test"
+
+# Copy the Windows binary from Linux build stage
+COPY --from=build /src/test.exe /test.exe
+
+# Windows environment setup
+ENV PATH="C:\Windows\system32;C:\Windows;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;"
+
+USER ContainerAdministrator
+ENTRYPOINT ["/test.exe"]
