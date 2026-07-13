@@ -8,11 +8,7 @@ LABEL stage=build
 WORKDIR /src
 
 # Create a minimal Windows test binary
-RUN echo 'package main\n\
-import "fmt"\n\
-func main() {\n\
-    fmt.Println("Windows container test from Konflux")\n\
-}' > main.go
+RUN printf 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("Windows container test from Konflux")\n}\n' > main.go
 
 # Cross-compile for Windows
 RUN GOOS=windows GOARCH=amd64 go build -o test.exe main.go
