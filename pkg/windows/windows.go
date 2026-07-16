@@ -81,6 +81,10 @@ const (
 	wicdPath = K8sDir + "\\windows-instance-config-daemon.exe"
 	// WindowsExporterPath is the location of the windows_exporter.exe
 	WindowsExporterPath = K8sDir + "\\windows_exporter.exe"
+	// windowsExporterLogDir is the remote windows_exporter log directory
+	windowsExporterLogDir = logDir + "\\windows_exporter"
+	// WindowsExporterLogPath is the location of the windows_exporter log file
+	WindowsExporterLogPath = windowsExporterLogDir + "\\windows_exporter.log"
 	// NetworkConfScriptPath is the location of the network configuration script
 	NetworkConfScriptPath = remoteDir + "\\network-conf.ps1"
 	// AzureCloudNodeManagerPath is the location of the azure-cloud-node-manager.exe
@@ -188,6 +192,7 @@ var (
 		HybridOverlayLogDir,
 		ContainerdDir,
 		containerdLogDir,
+		windowsExporterLogDir,
 		ContainerdConfigDir,
 		podManifestDirectory,
 		K8sDir,
