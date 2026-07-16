@@ -27,6 +27,7 @@ func (tc *testContext) testNodeLogs(t *testing.T) {
 		"containerd/containerd.log",
 		"wicd/windows-instance-config-daemon.exe.INFO",
 		"csi-proxy/csi-proxy.log",
+		"windows_exporter/windows_exporter.log",
 	}
 	nodeArtifacts := filepath.Join(tc.artifactDir, "nodes")
 	for _, node := range gc.allNodes() {
