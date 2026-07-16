@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
@@ -41,6 +42,79 @@ func TestGetHostnameCmd(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			actual := getHostnameCmd(test.platformType)
 			assert.Equal(t, test.expected, actual)
+		})
+	}
+}
+
+func TestWindowsExporterConfiguration(t *testing.T) {
+	tests := []struct {
+		name                   string
+		debug                  bool
+		expectedCmdContains    []string
+		expectedCmdNotContains []string
+	}{
+		{
+			name:  "default log level with kube-log-runner wrapping",
+			debug: false,
+			expectedCmdContains: []string{
+				windows.KubeLogRunnerPath,
+				"-log-file=" + windows.WindowsExporterLogPath,
+				windows.WindowsExporterPath,
+				"--collectors.enabled",
+				"--web.config.file " + windows.TLSConfPath,
+				"--log.level info",
+				"--log.file stdout",
+			},
+			expectedCmdNotContains: []string{
+				"--log.level debug",
+			},
+		},
+		{
+			name:  "debug log level with kube-log-runner wrapping",
+			debug: true,
+			expectedCmdContains: []string{
+				windows.KubeLogRunnerPath,
+				"-log-file=" + windows.WindowsExporterLogPath,
+				windows.WindowsExporterPath,
+				"--collectors.enabled",
+				"--web.config.file " + windows.TLSConfPath,
+				"--log.level debug",
+				"--log.file stdout",
+			},
+			expectedCmdNotContains: []string{
+				"--log.level info",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := GenerateManifest(map[string]string{}, "https://api:6443", "", "", test.debug)
+			require.NoError(t, err)
+
+			var windowsExporterSvc *servicescm.Service
+			for i := range result.Services {
+				if result.Services[i].Name == windows.WindowsExporterServiceName {
+					windowsExporterSvc = &result.Services[i]
+					break
+				}
+			}
+			require.NotNil(t, windowsExporterSvc, "windows_exporter service not found in manifest")
+
+			assert.Equal(t, uint(2), windowsExporterSvc.Priority)
+			assert.False(t, windowsExporterSvc.Bootstrap)
+			assert.Nil(t, windowsExporterSvc.Dependencies)
+			assert.Nil(t, windowsExporterSvc.NodeVariablesInCommand)
+			assert.Nil(t, windowsExporterSvc.PowershellPreScripts)
+
+			for _, expected := range test.expectedCmdContains {
+				assert.Contains(t, windowsExporterSvc.Command, expected,
+					"Command should contain: %s\nActual command: %s", expected, windowsExporterSvc.Command)
+			}
+			for _, unexpected := range test.expectedCmdNotContains {
+				assert.NotContains(t, windowsExporterSvc.Command, unexpected,
+					"Command should not contain: %s\nActual command: %s", unexpected, windowsExporterSvc.Command)
+			}
 		})
 	}
 }

@@ -32,9 +32,15 @@ const (
 // will be enabled for services that support it.
 func GenerateManifest(kubeletArgsFromIgnition map[string]string, apiServerEndpoint string, vxlanPort string,
 	platform config.PlatformType, debug bool) (*servicescm.Data, error) {
-	windowsExporterServiceCommand := fmt.Sprintf("%s --collectors.enabled "+
-		"cpu,logical_disk,net,os,service,system,container,memory,cpu_info --web.config.file %s",
-		windows.WindowsExporterPath, windows.TLSConfPath)
+	windowsExporterLogLevel := "info"
+	if debug {
+		windowsExporterLogLevel = "debug"
+	}
+	windowsExporterServiceCommand := logconfig.GetKubeLogRunnerCmd(windows.KubeLogRunnerPath,
+		windows.WindowsExporterPath, windows.WindowsExporterLogPath)
+	windowsExporterServiceCommand = fmt.Sprintf("%s --collectors.enabled "+
+		"cpu,logical_disk,net,os,service,system,container,memory,cpu_info --web.config.file %s --log.level %s --log.file stdout",
+		windowsExporterServiceCommand, windows.TLSConfPath, windowsExporterLogLevel)
 	kubeletConfiguration, err := getKubeletServiceConfiguration(kubeletArgsFromIgnition, debug, platform)
 	if err != nil {
 		return nil, fmt.Errorf("could not determine kubelet service configuration spec: %w", err)

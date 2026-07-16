@@ -260,11 +260,11 @@ The log rotation functionality is disabled by default, causing log files to grow
 Managed Windows services with log rotation capabilities:
 - kubelet
 - kube-proxy
+- windows_exporter
 
 Not yet supported:
 - containerd
 - csi-proxy
-- windows_exporter
 - hybrid-overlay-node
 - azure-cloud-node-manager
 
