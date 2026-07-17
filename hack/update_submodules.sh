@@ -32,6 +32,7 @@ function update_libraries() {
   go get github.com/openshift/api@$base_branch
   go get github.com/openshift/client-go@$base_branch
   go get github.com/openshift/library-go@$base_branch
+  go get github.com/openshift/controller-runtime-common@$base_branch
   # react to main branch change in machine-config-operator
   if [ "$base_branch" == "master" ]; then
     go get github.com/openshift/machine-config-operator@main

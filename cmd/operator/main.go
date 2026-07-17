@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
 
+	configv1 "github.com/openshift/api/config/v1"
 	openshiftconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
 	mcfg "github.com/openshift/api/machineconfiguration/v1"
+	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	operators "github.com/operator-framework/api/pkg/operators/v2"
 	"github.com/operator-framework/operator-lib/leader"
 	monv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -45,6 +50,9 @@ import (
 
 // ServiceAccount permissions used to watch operator on secrets.
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=watch
+
+// RBAC for reading APIServer configuration to fetch TLS security profile
+//+kubebuilder:rbac:groups=config.openshift.io,resources=apiservers,verbs=get;list;watch
 
 var (
 	scheme   = runtime.NewScheme()
@@ -113,8 +121,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// get cluster configuration
-	ctx := ctrl.SetupSignalHandler()
+	ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
+	defer cancel()
+
 	clusterConfig, err := cluster.NewConfig(ctx, cfg)
 	if err != nil {
 		setupLog.Error(err, "failed to get cluster configuration")
@@ -125,6 +134,27 @@ func main() {
 	if err := clusterConfig.Validate(ctx); err != nil {
 		setupLog.Error(err, "failed to validate required cluster configuration")
 		os.Exit(1)
+	}
+
+	// Get TLS configuration from cluster config (fetched from APIServer during NewConfig)
+	tlsProfile := clusterConfig.TLSProfileSpec()
+	tlsAdherence := clusterConfig.TLSAdherencePolicy()
+
+	// Gate TLS profile enforcement on the adherence policy. WMCO was not previously honoring the
+	// cluster TLS profile, so per the centralized TLS config enhancement (StrictAllComponents mode)
+	// it should only enforce when ShouldHonorClusterTLSProfile returns true.
+	var metricsServerTLSOpts []func(*tls.Config)
+	if libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence) {
+		tlsConfigFn, unsupportedCiphers := tlspkg.NewTLSConfigFromProfile(tlsProfile)
+		if len(unsupportedCiphers) > 0 {
+			setupLog.Info("some cipher suites are not supported by Go and will be ignored",
+				"unsupportedCiphers", unsupportedCiphers)
+		}
+		metricsServerTLSOpts = []func(*tls.Config){tlsConfigFn}
+		setupLog.Info("TLS configuration loaded",
+			"minVersion", tlsProfile.MinTLSVersion,
+			"cipherSuites", len(tlsProfile.Ciphers)-len(unsupportedCiphers),
+			"adherencePolicy", tlsAdherence)
 	}
 
 	setupLog.Info("platform", "type", clusterConfig.Platform())
@@ -184,6 +214,7 @@ func main() {
 			BindAddress:    metricsAddr,
 			SecureServing:  true,
 			FilterProvider: filters.WithAuthenticationAndAuthorization,
+			TLSOpts:        metricsServerTLSOpts,
 		},
 	})
 	if err != nil {
@@ -304,6 +335,30 @@ func main() {
 	}
 	if err = mReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Metrics")
+		os.Exit(1)
+	}
+
+	// Setup TLS security profile watcher
+	// Watches for TLS profile or adherence policy changes and restarts pod to reload config
+	tlsWatcher := &tlspkg.SecurityProfileWatcher{
+		Client:                    mgr.GetClient(),
+		InitialTLSProfileSpec:     tlsProfile,
+		InitialTLSAdherencePolicy: tlsAdherence,
+		OnProfileChange: func(ctx context.Context, oldProfile, newProfile configv1.TLSProfileSpec) {
+			setupLog.Info("TLS security profile changed, initiating shutdown to reload configuration",
+				"oldProfile", oldProfile,
+				"newProfile", newProfile)
+			cancel()
+		},
+		OnAdherencePolicyChange: func(ctx context.Context, oldPolicy, newPolicy configv1.TLSAdherencePolicy) {
+			setupLog.Info("TLS adherence policy changed, initiating shutdown to reload configuration",
+				"oldPolicy", oldPolicy,
+				"newPolicy", newPolicy)
+			cancel()
+		},
+	}
+	if err := tlsWatcher.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to setup TLS security profile watcher")
 		os.Exit(1)
 	}
 

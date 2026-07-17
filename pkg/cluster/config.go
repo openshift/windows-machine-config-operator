@@ -12,6 +12,7 @@ import (
 	oconfig "github.com/openshift/api/config/v1"
 	configclient "github.com/openshift/client-go/config/clientset/versioned"
 	operatorv1 "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
+	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	"golang.org/x/mod/semver"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -54,6 +55,10 @@ type Config interface {
 	Platform() oconfig.PlatformType
 	// Network returns network configuration for the OpenShift cluster
 	Network() Network
+	// TLSProfileSpec returns the TLS profile spec fetched from the APIServer
+	TLSProfileSpec() oconfig.TLSProfileSpec
+	// TLSAdherencePolicy returns the TLS adherence policy fetched from the APIServer
+	TLSAdherencePolicy() oconfig.TLSAdherencePolicy
 }
 
 // networkType holds information for a required network type
@@ -75,6 +80,10 @@ type config struct {
 	// platform indicates the cloud on which OpenShift cluster is running
 	// TODO: Remove this once we figure out how to be provider agnostic
 	platform oconfig.PlatformType
+	// tlsProfileSpec is the TLS profile spec fetched from the APIServer during startup
+	tlsProfileSpec oconfig.TLSProfileSpec
+	// tlsAdherencePolicy is the TLS adherence policy fetched from the APIServer during startup
+	tlsAdherencePolicy oconfig.TLSAdherencePolicy
 }
 
 func (c *config) Platform() oconfig.PlatformType {
@@ -83,6 +92,14 @@ func (c *config) Platform() oconfig.PlatformType {
 
 func (c *config) Network() Network {
 	return c.network
+}
+
+func (c *config) TLSProfileSpec() oconfig.TLSProfileSpec {
+	return c.tlsProfileSpec
+}
+
+func (c *config) TLSAdherencePolicy() oconfig.TLSAdherencePolicy {
+	return c.tlsAdherencePolicy
 }
 
 // NewConfig returns a Config struct pertaining to the cluster configuration
@@ -117,11 +134,24 @@ func NewConfig(ctx context.Context, restConfig *rest.Config) (Config, error) {
 	if len(platformStatus.Type) == 0 {
 		return nil, fmt.Errorf("error getting platform type")
 	}
+
+	// Fetch TLS configuration from APIServer
+	apiServer, err := oclient.ConfigV1().APIServers().Get(ctx, "cluster", meta.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("error getting APIServer configuration: %w", err)
+	}
+	tlsProfileSpec, err := tlspkg.GetTLSProfileSpec(apiServer.Spec.TLSSecurityProfile)
+	if err != nil {
+		return nil, fmt.Errorf("error getting TLS profile from APIServer: %w", err)
+	}
+
 	return &config{
-		oclient:        oclient,
-		operatorClient: operatorClient,
-		network:        network,
-		platform:       platformStatus.Type,
+		oclient:            oclient,
+		operatorClient:     operatorClient,
+		network:            network,
+		platform:           platformStatus.Type,
+		tlsProfileSpec:     tlsProfileSpec,
+		tlsAdherencePolicy: apiServer.Spec.TLSAdherence,
 	}, nil
 }
 

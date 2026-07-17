@@ -10,6 +10,7 @@ import (
 	fakeconfigclient "github.com/openshift/client-go/config/clientset/versioned/fake"
 	fakeoperatorclient "github.com/openshift/client-go/operator/clientset/versioned/fake"
 	operatorclient "github.com/openshift/client-go/operator/clientset/versioned/typed/operator/v1"
+	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -232,6 +233,88 @@ func TestGetDNS(t *testing.T) {
 				assert.Errorf(t, err, "error = %v, wantErr %v", err, tt.wantErr)
 			}
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestTLSProfileFromAPIServer tests that TLS profile and adherence policy are correctly fetched from the APIServer
+func TestTLSProfileFromAPIServer(t *testing.T) {
+	tests := []struct {
+		name              string
+		tlsProfile        *oconfig.TLSSecurityProfile
+		tlsAdherence      oconfig.TLSAdherencePolicy
+		wantMinTLSVersion oconfig.TLSProtocolVersion
+		wantAdherence     oconfig.TLSAdherencePolicy
+		wantErr           bool
+	}{
+		{
+			name:              "nil profile returns intermediate defaults",
+			tlsProfile:        nil,
+			tlsAdherence:      "",
+			wantMinTLSVersion: oconfig.TLSProfiles[oconfig.TLSProfileIntermediateType].MinTLSVersion,
+			wantAdherence:     "",
+		},
+		{
+			name: "old profile type",
+			tlsProfile: &oconfig.TLSSecurityProfile{
+				Type: oconfig.TLSProfileOldType,
+			},
+			tlsAdherence:      oconfig.TLSAdherencePolicyStrictAllComponents,
+			wantMinTLSVersion: oconfig.TLSProfiles[oconfig.TLSProfileOldType].MinTLSVersion,
+			wantAdherence:     oconfig.TLSAdherencePolicyStrictAllComponents,
+		},
+		{
+			name: "modern profile type",
+			tlsProfile: &oconfig.TLSSecurityProfile{
+				Type: oconfig.TLSProfileModernType,
+			},
+			tlsAdherence:      oconfig.TLSAdherencePolicyLegacyAdheringComponentsOnly,
+			wantMinTLSVersion: oconfig.TLSProfiles[oconfig.TLSProfileModernType].MinTLSVersion,
+			wantAdherence:     oconfig.TLSAdherencePolicyLegacyAdheringComponentsOnly,
+		},
+		{
+			name: "custom profile with nil Custom field returns error",
+			tlsProfile: &oconfig.TLSSecurityProfile{
+				Type: oconfig.TLSProfileCustomType,
+			},
+			wantErr: true,
+		},
+		{
+			name: "custom profile with valid spec",
+			tlsProfile: &oconfig.TLSSecurityProfile{
+				Type: oconfig.TLSProfileCustomType,
+				Custom: &oconfig.CustomTLSProfile{
+					TLSProfileSpec: oconfig.TLSProfileSpec{
+						MinTLSVersion: oconfig.VersionTLS13,
+					},
+				},
+			},
+			wantMinTLSVersion: oconfig.VersionTLS13,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiServer := &oconfig.APIServer{
+				ObjectMeta: meta.ObjectMeta{Name: "cluster"},
+				Spec: oconfig.APIServerSpec{
+					TLSSecurityProfile: tt.tlsProfile,
+					TLSAdherence:       tt.tlsAdherence,
+				},
+			}
+			fakeClient := fakeconfigclient.NewSimpleClientset(apiServer)
+
+			got, err := fakeClient.ConfigV1().APIServers().Get(context.Background(), "cluster", meta.GetOptions{})
+			require.NoError(t, err)
+
+			profileSpec, err := tlspkg.GetTLSProfileSpec(got.Spec.TLSSecurityProfile)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantMinTLSVersion, profileSpec.MinTLSVersion)
+			assert.Equal(t, tt.wantAdherence, got.Spec.TLSAdherence)
 		})
 	}
 }
