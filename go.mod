@@ -10,6 +10,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/openshift/api v0.0.0-20260703175546-02e2c3de12fb
 	github.com/openshift/client-go v0.0.0-20260703082747-24d059aea27a
+	github.com/openshift/controller-runtime-common v0.0.0-20260428152732-64ee174f5e2e
 	github.com/openshift/library-go v0.0.0-20260703081820-c6cd1a243d2d
 	github.com/operator-framework/api v0.41.0
 	github.com/operator-framework/operator-lib v0.4.0
