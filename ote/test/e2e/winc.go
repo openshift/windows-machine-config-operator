@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,10 +26,6 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("infrastructure", "cluster", "-o=jsonpath={.status.platformStatus.type}").Output()
 		o.Expect(err).NotTo(o.HaveOccurred())
 		iaasPlatform = strings.ToLower(output)
-		privateKey, err = compat_otp.GetPrivateKey()
-		o.Expect(err).NotTo(o.HaveOccurred())
-		publicKey, err = compat_otp.GetPublicKey()
-		o.Expect(err).NotTo(o.HaveOccurred())
 	})
 
 	// --- Migrated tests go below this line (added via Mode 2) ---
@@ -113,12 +110,10 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Critical-32615-Generate userData secret [Serial]", func() {
+		g.By("Derive public key from cloud-private-key cluster secret")
+		publicKeyContent := derivePublicKeyFromSecret(oc)
+
 		g.By("Check secret windows-user-data generated and contain correct public key")
-		output, err := os.ReadFile(publicKey)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		keyParts := strings.Split(string(output), " ")
-		o.Expect(len(keyParts)).To(o.BeNumerically(">=", 2), "unexpected public key format")
-		publicKeyContent := keyParts[1]
 		msg, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("secret", "windows-user-data", "-n", mcoNamespace, "-o=jsonpath={.data.userData}").Output()
 		o.Expect(err).NotTo(o.HaveOccurred())
 		decodedUserData, err := base64.StdEncoding.DecodeString(msg)
@@ -367,6 +362,56 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		if validatedCount == 0 {
 			g.Skip("All Windows nodes are BYOH - no MachineSet nodes to validate")
 		}
+	})
+
+	// author: weinliu@redhat.com
+	g.It("Author:weinliu-Smokerun-Medium-70922-Monitor CPU, Memory, and Filesystem graphs for Windows Pods managed by wmco", func() {
+		mon, err := compat_otp.NewPrometheusMonitor(oc.AsAdmin())
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating Prometheus monitor")
+
+		g.By("Checking WMCO deployment is ready")
+		readyReplicas, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"deployment", "windows-machine-config-operator", "-n", wmcoNamespace,
+			"-o=jsonpath={.status.readyReplicas}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(readyReplicas).NotTo(o.BeEmpty(), "WMCO deployment has no ready replicas")
+
+		g.By("Getting WMCO pods")
+		podList, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pods", "-n", wmcoNamespace,
+			"-l", "name=windows-machine-config-operator",
+			"-o=jsonpath={.items[*].metadata.name}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		podNames := strings.Fields(podList)
+		o.Expect(podNames).NotTo(o.BeEmpty(), "No WMCO pods found")
+
+		podMetrics := []string{
+			"pod:container_cpu_usage:sum",
+			"pod:container_memory_usage_bytes:sum",
+			"pod:container_fs_usage_bytes:sum",
+		}
+
+		for _, podName := range podNames {
+			for _, metric := range podMetrics {
+				g.By(fmt.Sprintf("Verifying %s for pod %s", metric, podName))
+				queryResult, err := mon.SimpleQuery(fmt.Sprintf("%s{pod=\"%s\"}", metric, podName))
+				o.Expect(err).NotTo(o.HaveOccurred(), "Error querying %s for pod %s", metric, podName)
+				metricValue := extractMetricValue(queryResult)
+				e2e.Logf("Pod %s metric %s = %s", podName, metric, metricValue)
+			}
+		}
+
+		g.By("Verifying CPU utilisation recording rule reports utilization not idle (OCPBUGS-85061)")
+		queryResult, err := mon.SimpleQuery("instance:node_cpu_utilisation:rate1m{job=\"windows-exporter\"}")
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error querying instance:node_cpu_utilisation:rate1m")
+		metricValue := extractMetricValue(queryResult)
+		o.Expect(metricValue).NotTo(o.BeEmpty(), "No result for instance:node_cpu_utilisation:rate1m recording rule")
+
+		cpuUtil, convErr := strconv.ParseFloat(metricValue, 64)
+		o.Expect(convErr).NotTo(o.HaveOccurred(), "Failed to parse CPU utilisation value: %s", metricValue)
+		e2e.Logf("instance:node_cpu_utilisation:rate1m = %f (should be utilization, not idle)", cpuUtil)
+		o.Expect(cpuUtil).To(o.BeNumerically("<", 0.5),
+			"CPU utilisation recording rule value %f suggests it is recording idle rate instead of utilization (OCPBUGS-85061)", cpuUtil)
 	})
 
 })

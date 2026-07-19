@@ -1,6 +1,7 @@
 package winc
 
 import (
+	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	exutil "github.com/openshift/origin/test/extended/util"
 	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	"github.com/tidwall/gjson"
+	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/wait"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
@@ -20,8 +22,6 @@ var (
 	capiNamespace    = "openshift-cluster-api"
 	wmcoNamespace    = "openshift-windows-machine-config-operator"
 	wmcoDeployment   = "deployment.apps/windows-machine-config-operator"
-	privateKey       = ""
-	publicKey        = ""
 	iaasPlatform     string
 	windowsNodeLabel = "kubernetes.io/os=windows"
 	linuxNodeLabel   = "kubernetes.io/os=linux"
@@ -280,6 +280,25 @@ func waitUntilWMCOStatusChanged(oc *exutil.CLI, message string, sinceTime string
 	})
 
 	compat_otp.AssertWaitPollNoErr(waitLogErr, fmt.Sprintf("Failed to find '%v' in WMCO logs after %v", message, timeout))
+}
+
+// derivePublicKeyFromSecret reads the cloud-private-key secret and derives the SSH public key.
+func derivePublicKeyFromSecret(oc *exutil.CLI) string {
+	encodedKey, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"secret", "cloud-private-key", "-n", wmcoNamespace,
+		"-o=jsonpath={.data.private-key\\.pem}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to get cloud-private-key secret")
+	o.Expect(encodedKey).NotTo(o.BeEmpty(), "cloud-private-key secret has no private-key.pem data")
+
+	privateKeyBytes, err := base64.StdEncoding.DecodeString(encodedKey)
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to decode private key from secret")
+
+	signer, err := ssh.ParsePrivateKey(privateKeyBytes)
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to parse private key")
+
+	pubKey := base64.StdEncoding.EncodeToString(signer.PublicKey().Marshal())
+	e2e.Logf("Derived public key from cloud-private-key secret")
+	return pubKey
 }
 
 // isBYOH returns true if the node has the BYOH label set to "true".
