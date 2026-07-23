@@ -25,7 +25,7 @@ var (
 	iaasPlatform     string
 	windowsNodeLabel = "kubernetes.io/os=windows"
 	linuxNodeLabel   = "kubernetes.io/os=linux"
-	defaultWindowsMS = "windows"
+
 	machineLabel     = "machine.openshift.io/os-id=Windows"
 )
 
@@ -168,7 +168,6 @@ func getContainerdVersion(oc *exutil.CLI, nodeIP string) string {
 	return "v" + parts[1]
 }
 
-// getValueFromText finds a line containing searchVal and returns the text after the delimiter.
 func getValueFromText(body []byte, searchVal string) string {
 	lines := strings.Split(string(body), "\n")
 	for _, field := range lines {
@@ -187,19 +186,17 @@ func isNone(oc *exutil.CLI) bool {
 		return true
 	}
 
-	machineSets, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("machinesets", "-n", "openshift-machine-api", "-o=jsonpath={.items[*].metadata.name}").Output()
+	machineSets, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("machinesets", "-l", machineLabel, "-n", "openshift-machine-api", "-o=jsonpath={.items[*].metadata.name}").Output()
 	if err != nil {
-		e2e.Logf("Unable to query machinesets, assuming platform none: %v", err)
+		e2e.Logf("Unable to query Windows machinesets: %v", err)
 		return true
 	}
 
-	for _, ms := range strings.Split(machineSets, " ") {
-		if strings.Contains(ms, "winworker") || strings.Contains(ms, defaultWindowsMS) {
-			return false
-		}
+	if strings.TrimSpace(machineSets) != "" {
+		return false
 	}
 
-	e2e.Logf("No Windows MachineSets found (checked for 'winworker' or '%s'), treating as platform none", defaultWindowsMS)
+	e2e.Logf("No Windows MachineSets found (label %s), treating as platform none", machineLabel)
 	return true
 }
 
