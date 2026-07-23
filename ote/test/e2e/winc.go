@@ -3,8 +3,9 @@ package winc
 import (
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
-	"os"
+	"net/http"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -262,8 +263,22 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: rrasouli@redhat.com
 	g.It("Smokerun-Author:rrasouli-Medium-60814-Check containerd version is properly reported", func() {
-		body, err := os.ReadFile("Makefile")
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to read local Makefile")
+		wmcoVersion, err := getWMCOVersionFromLogs(oc)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		if strings.HasSuffix(wmcoVersion, "-dirty") {
+			g.Skip("WMCO PR build detected, commit hash not available on upstream GitHub")
+		}
+
+		parts := strings.Split(wmcoVersion, "-")
+		o.Expect(len(parts)).Should(o.BeNumerically(">", 1), "unexpected WMCO version format")
+		versionHash := parts[1]
+		resp, err := http.Get("https://raw.githubusercontent.com/openshift/windows-machine-config-operator/" + versionHash + "/Makefile")
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to fetch Makefile from GitHub")
+		defer resp.Body.Close()
+		o.Expect(resp.StatusCode).To(o.Equal(http.StatusOK), "failed to fetch Makefile from GitHub (HTTP %d)", resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to read Makefile response body")
 
 		submoduleContainerdVersion := getValueFromText(body, "CONTAINERD_GIT_VERSION=")
 		o.Expect(submoduleContainerdVersion).NotTo(o.BeEmpty(), "CONTAINERD_GIT_VERSION not found in Makefile")
