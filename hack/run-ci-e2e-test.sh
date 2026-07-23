@@ -27,7 +27,7 @@ source $WMCO_ROOT/hack/common.sh
 
 MACHINE_NODE_COUNT_OPTION=""
 BYOH_NODE_COUNT_OPTION=""
-SKIP_NODE_DELETION=""
+SKIP_NODE_DELETION=${SKIP_NODE_DELETION:-""}
 
 export CGO_ENABLED=0
 
@@ -56,10 +56,10 @@ while getopts ":m:c:b:st:w:" opt; do
     s ) # process option for skipping deleting Windows VMs created by test suite
       SKIP_NODE_DELETION="true"
       ;;
-    t ) # test to run. Defaults to basic. Other options are basic, upgrade-setup, and upgrade-test.
+    t ) # test to run. Defaults to basic. Other options are basic, upgrade-setup, upgrade-test, and setup-only.
       TEST=$OPTARG
-      if [[ "$TEST" != "basic" && "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
-        echo "Invalid -t option $TEST. Valid options are basic, upgrade-setup, and upgrade-test"
+      if [[ "$TEST" != "basic" && "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" && "$TEST" != "setup-only" ]]; then
+        echo "Invalid -t option $TEST. Valid options are basic, upgrade-setup, upgrade-test, and setup-only"
         exit 1
       fi
       ;;
@@ -137,6 +137,11 @@ if [[ -n "$WINDOWS_INSTANCES_DATA" ]]; then
 fi
 
 echo "Testing against Windows Server $WIN_VER"
+
+if [[ "$TEST" == "setup-only" ]]; then
+  echo "Setup complete. Skipping e2e tests (-t setup-only)."
+  exit 0
+fi
 
 # MIRROR_REGISTRY_HOST holds the container mirror registry URL, its value will be set in CI
 MIRROR_REGISTRY_HOST=${MIRROR_REGISTRY_HOST:-}
