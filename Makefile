@@ -108,7 +108,7 @@ build-daemon:
 # The OTE binary lives in the ote/ nested module, isolated from the operator's go.mod.
 .PHONY: build-tests-ext
 build-tests-ext:
-	cd ote && GOFLAGS="" go mod download && GOFLAGS="" GO_COMPLIANCE_POLICY="exempt_all" go build -o ../${OUTPUT_DIR}/bin/wmco-tests-ext ./cmd/wmco-tests-ext
+	cd ote && GOFLAGS="" GOWORK=off go mod download && GOFLAGS="" GOWORK=off GO_COMPLIANCE_POLICY="exempt_all" go build -o ../${OUTPUT_DIR}/bin/wmco-tests-ext ./cmd/wmco-tests-ext
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
