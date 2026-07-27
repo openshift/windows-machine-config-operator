@@ -217,6 +217,78 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		}
 	})
 
+	// author: rrasouli@redhat.com
+	g.It("Smokerun-Author:rrasouli-High-89616-Verify log rotation for kubelet and kube-proxy services [Slow][Disruptive]", func() {
+		winNodeCount, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", windowsNodeLabel, "--no-headers").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		expectedNodes := len(strings.Split(strings.TrimSpace(winNodeCount), "\n"))
+
+		g.By("Set log rotation env vars on WMCO deployment")
+		err = oc.AsAdmin().WithoutNamespace().Run("set").Args(
+			"env", wmcoDeployment, "-n", wmcoNamespace,
+			"SERVICES_LOG_FILE_SIZE=1M",
+			"SERVICES_LOG_FILE_AGE=168h",
+			"SERVICES_LOG_FLUSH_INTERVAL=5s").Execute()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		defer func() {
+			g.By("Cleanup: remove log rotation env vars from WMCO deployment")
+			cleanupErr := oc.AsAdmin().WithoutNamespace().Run("set").Args(
+				"env", wmcoDeployment, "-n", wmcoNamespace,
+				"SERVICES_LOG_FILE_SIZE-",
+				"SERVICES_LOG_FILE_AGE-",
+				"SERVICES_LOG_FLUSH_INTERVAL-").Execute()
+			o.Expect(cleanupErr).NotTo(o.HaveOccurred(), "failed to restore WMCO deployment configuration")
+			waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
+		}()
+
+		g.By("Wait for WMCO to reconcile and Windows nodes to be reconfigured")
+		waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
+
+		winInternalIPs := getWindowsInternalIPs(oc)
+		for _, winIP := range winInternalIPs {
+			nodeName := getNodeNameFromIP(oc, winIP)
+
+			g.By(fmt.Sprintf("Verify kubelet on %s is wrapped with kube-log-runner", nodeName))
+			kubeletPath, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				"Get-CimInstance -ClassName Win32_Service | Where-Object {$_.Name -eq 'kubelet'} | Select-Object -ExpandProperty PathName")
+			o.Expect(err).NotTo(o.HaveOccurred())
+			o.Expect(kubeletPath).Should(o.ContainSubstring("kube-log-runner"),
+				"kubelet on %s should be wrapped with kube-log-runner", nodeName)
+			o.Expect(kubeletPath).Should(o.ContainSubstring("-log-file="),
+				"kubelet on %s should have -log-file flag", nodeName)
+			o.Expect(kubeletPath).Should(o.ContainSubstring("-log-file-size="),
+				"kubelet on %s should have -log-file-size flag", nodeName)
+
+			g.By(fmt.Sprintf("Verify kube-proxy on %s is wrapped with kube-log-runner", nodeName))
+			kubeProxyPath, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				"Get-CimInstance -ClassName Win32_Service | Where-Object {$_.Name -eq 'kube-proxy'} | Select-Object -ExpandProperty PathName")
+			o.Expect(err).NotTo(o.HaveOccurred())
+			o.Expect(kubeProxyPath).Should(o.ContainSubstring("kube-log-runner"),
+				"kube-proxy on %s should be wrapped with kube-log-runner", nodeName)
+			o.Expect(kubeProxyPath).Should(o.ContainSubstring("-log-file="),
+				"kube-proxy on %s should have -log-file flag", nodeName)
+
+			g.By(fmt.Sprintf("Verify kubelet log file exists at expected path on %s", nodeName))
+			logExists, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				"Test-Path C:\\var\\log\\kubelet\\kubelet.log")
+			o.Expect(err).NotTo(o.HaveOccurred())
+			o.Expect(strings.TrimSpace(logExists)).Should(o.ContainSubstring("True"),
+				"kubelet.log should exist on %s", nodeName)
+
+			g.By(fmt.Sprintf("Check for rotated kubelet log files on %s", nodeName))
+			rotatedLogs, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				"Get-ChildItem C:\\var\\log\\kubelet\\ -Filter kubelet-*.log -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name")
+			o.Expect(err).NotTo(o.HaveOccurred())
+			if strings.TrimSpace(rotatedLogs) != "" {
+				e2e.Logf("Found rotated kubelet log files on %s: %s", nodeName, strings.TrimSpace(rotatedLogs))
+			} else {
+				e2e.Logf("No rotated kubelet log files found yet on %s (log size may not have reached threshold)", nodeName)
+			}
+		}
+	})
+
 	// author: jfrancoa@redhat.com
 	g.It("Smokerun-Author:jfrancoa-Medium-38188-Get Windows instance/core number and CPU arch", func() {
 		winMetrics := []string{"cluster:node_instance_type_count:sum", "cluster:capacity_cpu_cores:sum"}

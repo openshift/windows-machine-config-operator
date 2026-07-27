@@ -18,13 +18,14 @@ import (
 )
 
 var (
-	mcoNamespace     = "openshift-machine-api"
-	capiNamespace    = "openshift-cluster-api"
-	wmcoNamespace    = "openshift-windows-machine-config-operator"
-	wmcoDeployment   = "deployment.apps/windows-machine-config-operator"
-	iaasPlatform     string
-	windowsNodeLabel = "kubernetes.io/os=windows"
-	linuxNodeLabel   = "kubernetes.io/os=linux"
+	mcoNamespace         = "openshift-machine-api"
+	capiNamespace        = "openshift-cluster-api"
+	wmcoNamespace        = "openshift-windows-machine-config-operator"
+	wmcoDeployment       = "deployment.apps/windows-machine-config-operator"
+	iaasPlatform         string
+	windowsNodeLabel     = "kubernetes.io/os=windows"
+	linuxNodeLabel       = "kubernetes.io/os=linux"
+	windowsDebugImage    = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 
 	machineLabel = "machine.openshift.io/os-id=Windows"
 )
@@ -306,4 +307,61 @@ func isBYOH(oc *exutil.CLI, nodeName string) bool {
 	byohLabel, err := oc.AsAdmin().WithoutNamespace().Run("get").
 		Args("node", nodeName, "-o=jsonpath={.metadata.labels.windowsmachineconfig\\.openshift\\.io/byoh}").Output()
 	return err == nil && strings.TrimSpace(byohLabel) == "true"
+}
+
+func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
+	goTpl := fmt.Sprintf(
+		`{{range .items}}{{$name := .metadata.name}}{{range .status.addresses}}`+
+			`{{if and (eq .type "InternalIP") (eq .address "%s")}}{{$name}}{{end}}`+
+			`{{end}}{{end}}`, nodeIP)
+	nodeName, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"nodes", "-o=go-template="+goTpl).Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to resolve node name for IP %s", nodeIP)
+	nodeName = strings.TrimSpace(nodeName)
+	o.Expect(nodeName).NotTo(o.BeEmpty(), "no node found with InternalIP %s", nodeIP)
+	return nodeName
+}
+
+func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
+	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
+		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", windowsNodeLabel,
+			"-o=jsonpath={.items[*].status.conditions[?(@.type==\"Ready\")].status}").Output()
+		if err != nil {
+			e2e.Logf("Error querying Windows nodes: %v", err)
+			return false, nil
+		}
+		statuses := strings.Fields(output)
+		readyCount := 0
+		for _, s := range statuses {
+			if s == "True" {
+				readyCount++
+			}
+		}
+		e2e.Logf("Windows nodes ready: %d/%d", readyCount, expectedCount)
+		return readyCount >= expectedCount, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("timed out waiting for %d Windows nodes to be Ready after %v", expectedCount, timeout))
+}
+
+func runDebugNodePS(oc *exutil.CLI, nodeName, image, psCommand string) (string, error) {
+	output, err := oc.AsAdmin().WithoutNamespace().Run("debug").Args(
+		"node/"+nodeName,
+		"-n", wmcoNamespace,
+		"--image="+image,
+		"--", "pwsh", "-Command", psCommand).Output()
+	if err != nil {
+		return "", fmt.Errorf("oc debug node/%s failed: %w\noutput: %s", nodeName, err, output)
+	}
+	var cleaned []string
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Starting pod") ||
+			strings.HasPrefix(trimmed, "Removing debug pod") ||
+			trimmed == "" {
+			continue
+		}
+		cleaned = append(cleaned, line)
+	}
+	return strings.Join(cleaned, "\n"), nil
 }
