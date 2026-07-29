@@ -1297,8 +1297,8 @@ k8s.io/kubectl/pkg/validation
 ## explicit; go 1.26.0
 k8s.io/kubelet/config/v1
 k8s.io/kubelet/config/v1beta1
-# k8s.io/kubernetes v1.35.6
-## explicit; go 1.25.0
+# k8s.io/kubernetes v1.36.3
+## explicit; go 1.26.0
 k8s.io/kubernetes/pkg/credentialprovider
 k8s.io/kubernetes/pkg/features
 # k8s.io/streaming v0.36.3
