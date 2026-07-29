@@ -291,7 +291,7 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	r.log.Info("processing", "instances in", wiparser.InstanceConfigMap)
 	// For each instance, ensure that it is configured into a node
 	if err := r.ensureInstancesAreUpToDate(ctx, instances); err != nil {
-		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", err.Error())
+		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", "%s", err.Error())
 		return err
 	}
 
