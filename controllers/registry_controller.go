@@ -109,7 +109,7 @@ func (r *registryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to create instance object from node: %w", err)
 		}
-		nc, err := nodeconfig.NewNodeConfig(r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
+		nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR, r.watchNamespace,
 			winInstance, r.signer, nil, nil, r.platform)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to create new nodeconfig: %w", err)

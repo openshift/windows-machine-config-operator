@@ -60,6 +60,8 @@ func creationTestSuite(t *testing.T) {
 	}
 	t.Run("Nodes ready and schedulable", tc.testNodesBecomeReadyAndSchedulable)
 	t.Run("Node annotations", tc.testNodeAnnotations)
+	t.Run("SSH host key annotations", tc.testSSHHostKeyAnnotations)
+	t.Run("SSH host keys ConfigMap cleanup", tc.testSSHHostKeysConfigMapCleanup)
 	t.Run("Node Cloud Manager fields", tc.testNodeCloudManagerFields)
 	t.Run("Node Metadata", tc.testNodeMetadata)
 	t.Run("Services ConfigMap validation", tc.testServicesConfigMap)
