@@ -28,6 +28,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.AddPageApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("Authentication"):
 		return &operatorv1.AuthenticationApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("AuthenticationConfigMapReference"):
+		return &operatorv1.AuthenticationConfigMapReferenceApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("AuthenticationProxyConfig"):
+		return &operatorv1.AuthenticationProxyConfigApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("AuthenticationSpec"):
 		return &operatorv1.AuthenticationSpecApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("AuthenticationStatus"):
@@ -242,6 +246,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &operatorv1.KMSEncryptionStatusApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KMSPluginHealthReport"):
 		return &operatorv1.KMSPluginHealthReportApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("KMSPreflightCheck"):
+		return &operatorv1.KMSPreflightCheckApplyConfiguration{}
+	case v1.SchemeGroupVersion.WithKind("KMSPreflightResult"):
+		return &operatorv1.KMSPreflightResultApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeAPIServer"):
 		return &operatorv1.KubeAPIServerApplyConfiguration{}
 	case v1.SchemeGroupVersion.WithKind("KubeAPIServerSpec"):
