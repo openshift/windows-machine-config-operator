@@ -138,11 +138,6 @@ fi
 
 echo "Testing against Windows Server $WIN_VER"
 
-if [[ "$TEST" == "setup-only" ]]; then
-  echo "Setup complete. Skipping e2e tests (-t setup-only)."
-  exit 0
-fi
-
 # MIRROR_REGISTRY_HOST holds the container mirror registry URL, its value will be set in CI
 MIRROR_REGISTRY_HOST=${MIRROR_REGISTRY_HOST:-}
 
@@ -163,6 +158,11 @@ if [[ "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
   # Get logs for the creation tests
   printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
   get_WMCO_logs
+fi
+
+if [[ "$TEST" == "setup-only" ]]; then
+  echo "Setup complete with Windows nodes provisioned. Skipping remaining e2e tests (-t setup-only)."
+  exit 0
 fi
 
 if [[ "$TEST" = "basic" ]]; then
