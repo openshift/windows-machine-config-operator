@@ -129,7 +129,7 @@ update_WMCO_version() {
   
   echo "Updating Containerfile and Containerfile.bundle to $updated_version"
   sed -i "s/LABEL version=\"v$version\"/LABEL version=\"v$updated_version\"/g" Containerfile Containerfile.bundle
-  sed -i "s/LABEL release=\"$version\"/LABEL release=\"$updated_version\"/g" Containerfile.bundle    
+  sed -i "s/LABEL release=\"v$version\"/LABEL release=\"v$updated_version\"/g" Containerfile Containerfile.bundle
 }
 
 # This function updates the OCP version in all relevant files 
