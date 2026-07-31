@@ -129,7 +129,7 @@ update_WMCO_version() {
   
   echo "Updating Containerfile and Containerfile.bundle to $updated_version"
   sed -i "s/LABEL version=\"v$version\"/LABEL version=\"v$updated_version\"/g" Containerfile Containerfile.bundle
-  sed -i "s/LABEL release=\"$version\"/LABEL release=\"$updated_version\"/g" Containerfile.bundle    
+  sed -i "s/LABEL release=\"v$version\"/LABEL release=\"v$updated_version\"/g" Containerfile Containerfile.bundle
 }
 
 # This function updates the OCP version in all relevant files 
@@ -230,6 +230,7 @@ github_update() {
   # remove make bundle artifacts
   sed -i 's/REPLACE_IMAGE:latest/REPLACE_IMAGE/' bundle/manifests/windows-machine-config-operator.clusterserviceversion.yaml
   sed -i "s/operator-sdk-v1.14.0+git/operator-sdk-$OPERATOR_SDK_VERSION+git/" bundle/manifests/windows-machine-config-operator.clusterserviceversion.yaml
+  sed -i 's/createdAt: ".*"/createdAt: REPLACE_DATE/' bundle/manifests/windows-machine-config-operator.clusterserviceversion.yaml
 
   commit_message="[$base_branch] Update version to $updated_version
 
