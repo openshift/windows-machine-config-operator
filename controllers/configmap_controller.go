@@ -67,6 +67,9 @@ import (
 //+kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
 //+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=rolebindings,verbs=get;create;delete
 //+kubebuilder:rbac:groups="rbac.authorization.k8s.io",resources=clusterrolebindings,verbs=get;create;delete
+// create on CSRs is never called directly here, however it is required so the RBAC
+// escalation check permits granting that same permission to WICD's ClusterRole in EnsureWICDRBAC
+//+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests,verbs=create
 //+kubebuilder:rbac:groups="config.openshift.io",resources=infrastructures,verbs=get;list;watch
 
 const (
