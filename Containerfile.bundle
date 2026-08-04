@@ -16,7 +16,7 @@ LABEL name="openshift4-wincw/windows-machine-config-operator-bundle" \
     io.openshift.tags=""
 
 # Used to tag the released image. Should be a semver.
-LABEL version="v10.22.1"
+LABEL version="v10.22.2"
 # Component to file bugs against
 LABEL com.redhat.component="Windows Containers"
 LABEL cpe="cpe:/a:redhat:windows_machine_config:10.22::el9"
