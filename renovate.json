@@ -117,6 +117,24 @@
         "matchUpdateTypes": [
           "digest"
         ]
+      },
+      {
+        "matchFileNames": [
+          "Containerfile",
+          "Containerfile.bundle"
+        ],
+        "matchPackageNames": [
+          "registry.access.redhat.com/ubi9/ubi-minimal"
+        ],
+        "matchUpdateTypes": [
+          "digest"
+        ],
+        "autoApprove": true,
+        "automerge": true,
+        "addLabels": [
+          "approved",
+          "lgtm"
+        ]
       }
     ]
   },
