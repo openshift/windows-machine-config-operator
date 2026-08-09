@@ -18,13 +18,13 @@ import (
 )
 
 var (
-	mcoNamespace     = "openshift-machine-api"
-	capiNamespace    = "openshift-cluster-api"
-	wmcoNamespace    = "openshift-windows-machine-config-operator"
-	wmcoDeployment   = "deployment.apps/windows-machine-config-operator"
-	iaasPlatform     string
-	windowsNodeLabel = "kubernetes.io/os=windows"
-	linuxNodeLabel   = "kubernetes.io/os=linux"
+	mcoNamespace         = "openshift-machine-api"
+	capiNamespace        = "openshift-cluster-api"
+	wmcoNamespace        = "openshift-windows-machine-config-operator"
+	wmcoDeployment       = "deployment.apps/windows-machine-config-operator"
+	iaasPlatform         string
+	windowsNodeLabel     = "kubernetes.io/os=windows"
+	linuxNodeLabel       = "kubernetes.io/os=linux"
 
 	machineLabel = "machine.openshift.io/os-id=Windows"
 )
@@ -306,4 +306,63 @@ func isBYOH(oc *exutil.CLI, nodeName string) bool {
 	byohLabel, err := oc.AsAdmin().WithoutNamespace().Run("get").
 		Args("node", nodeName, "-o=jsonpath={.metadata.labels.windowsmachineconfig\\.openshift\\.io/byoh}").Output()
 	return err == nil && strings.TrimSpace(byohLabel) == "true"
+}
+
+func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
+	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
+		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", windowsNodeLabel,
+			"-o=jsonpath={.items[*].status.conditions[?(@.type==\"Ready\")].status}").Output()
+		if err != nil {
+			e2e.Logf("Error querying Windows nodes: %v", err)
+			return false, nil
+		}
+		statuses := strings.Fields(output)
+		readyCount := 0
+		for _, s := range statuses {
+			if s == "True" {
+				readyCount++
+			}
+		}
+		e2e.Logf("Windows nodes ready: %d/%d", readyCount, expectedCount)
+		return readyCount >= expectedCount, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("timed out waiting for %d Windows nodes to be Ready after %v", expectedCount, timeout))
+}
+
+// getLatestServicesCMData returns the services JSON data from the most recently created windows-services ConfigMap
+func getLatestServicesCMData(oc *exutil.CLI) (string, error) {
+	cmNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"configmap", "-n", wmcoNamespace,
+		"-o=jsonpath={.items[*].metadata.name}").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to list ConfigMaps: %w", err)
+	}
+	var latestCM string
+	for _, name := range strings.Fields(cmNames) {
+		if strings.HasPrefix(name, "windows-services-") {
+			latestCM = name
+		}
+	}
+	if latestCM == "" {
+		return "", fmt.Errorf("no windows-services ConfigMap found in %s", wmcoNamespace)
+	}
+	servicesData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"configmap", latestCM, "-n", wmcoNamespace,
+		"-o=jsonpath={.data.services}").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get services data from ConfigMap %s: %w", latestCM, err)
+	}
+	return servicesData, nil
+}
+
+// getServiceCommand returns the command for the named service from the services ConfigMap JSON data
+func getServiceCommand(servicesJSON, serviceName string) string {
+	result := gjson.Parse(servicesJSON)
+	for _, svc := range result.Array() {
+		if svc.Get("name").String() == serviceName {
+			return svc.Get("path").String()
+		}
+	}
+	return ""
 }

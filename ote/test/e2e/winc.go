@@ -217,6 +217,51 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		}
 	})
 
+	// author: rrasouli@redhat.com
+	g.It("Smokerun-Author:rrasouli-High-89616-Verify log rotation for kubelet and kube-proxy services [Slow][Disruptive]", func() {
+		winNodeCount, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-l", windowsNodeLabel, "--no-headers").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		expectedNodes := len(strings.Split(strings.TrimSpace(winNodeCount), "\n"))
+
+		g.By("Set log rotation env vars on WMCO deployment")
+		err = oc.AsAdmin().WithoutNamespace().Run("set").Args(
+			"env", wmcoDeployment, "-n", wmcoNamespace,
+			"SERVICES_LOG_FILE_SIZE=1M",
+			"SERVICES_LOG_FILE_AGE=168h",
+			"SERVICES_LOG_FLUSH_INTERVAL=5s").Execute()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		defer func() {
+			g.By("Cleanup: remove log rotation env vars from WMCO deployment")
+			cleanupErr := oc.AsAdmin().WithoutNamespace().Run("set").Args(
+				"env", wmcoDeployment, "-n", wmcoNamespace,
+				"SERVICES_LOG_FILE_SIZE-",
+				"SERVICES_LOG_FILE_AGE-",
+				"SERVICES_LOG_FLUSH_INTERVAL-").Execute()
+			o.Expect(cleanupErr).NotTo(o.HaveOccurred(), "failed to restore WMCO deployment configuration")
+			waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
+		}()
+
+		g.By("Wait for WMCO to reconcile and Windows nodes to be reconfigured")
+		waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
+
+		g.By("Get the services ConfigMap to verify log rotation configuration")
+		servicesCMData, err := getLatestServicesCMData(oc)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		for _, svcName := range []string{"kubelet", "kube-proxy"} {
+			g.By(fmt.Sprintf("Verify %s service command includes kube-log-runner", svcName))
+			svcCmd := getServiceCommand(servicesCMData, svcName)
+			o.Expect(svcCmd).NotTo(o.BeEmpty(), "%s service not found in services ConfigMap", svcName)
+			o.Expect(svcCmd).Should(o.ContainSubstring("kube-log-runner"),
+				"%s should be wrapped with kube-log-runner", svcName)
+			o.Expect(svcCmd).Should(o.ContainSubstring("-log-file="),
+				"%s should have -log-file flag", svcName)
+			e2e.Logf("%s service command: %s", svcName, svcCmd)
+		}
+	})
+
 	// author: jfrancoa@redhat.com
 	g.It("Smokerun-Author:jfrancoa-Medium-38188-Get Windows instance/core number and CPU arch", func() {
 		winMetrics := []string{"cluster:node_instance_type_count:sum", "cluster:capacity_cpu_cores:sum"}
