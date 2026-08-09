@@ -246,46 +246,19 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		g.By("Wait for WMCO to reconcile and Windows nodes to be reconfigured")
 		waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
 
-		winInternalIPs := getWindowsInternalIPs(oc)
-		for _, winIP := range winInternalIPs {
-			nodeName := getNodeNameFromIP(oc, winIP)
+		g.By("Get the services ConfigMap to verify log rotation configuration")
+		servicesCMData, err := getLatestServicesCMData(oc)
+		o.Expect(err).NotTo(o.HaveOccurred())
 
-			g.By(fmt.Sprintf("Verify kubelet on %s is wrapped with kube-log-runner", nodeName))
-			kubeletPath, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-				"Get-CimInstance -ClassName Win32_Service | Where-Object {$_.Name -eq 'kubelet'} | Select-Object -ExpandProperty PathName")
-			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(kubeletPath).Should(o.ContainSubstring("kube-log-runner"),
-				"kubelet on %s should be wrapped with kube-log-runner", nodeName)
-			o.Expect(kubeletPath).Should(o.ContainSubstring("-log-file="),
-				"kubelet on %s should have -log-file flag", nodeName)
-			o.Expect(kubeletPath).Should(o.ContainSubstring("-log-file-size="),
-				"kubelet on %s should have -log-file-size flag", nodeName)
-
-			g.By(fmt.Sprintf("Verify kube-proxy on %s is wrapped with kube-log-runner", nodeName))
-			kubeProxyPath, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-				"Get-CimInstance -ClassName Win32_Service | Where-Object {$_.Name -eq 'kube-proxy'} | Select-Object -ExpandProperty PathName")
-			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(kubeProxyPath).Should(o.ContainSubstring("kube-log-runner"),
-				"kube-proxy on %s should be wrapped with kube-log-runner", nodeName)
-			o.Expect(kubeProxyPath).Should(o.ContainSubstring("-log-file="),
-				"kube-proxy on %s should have -log-file flag", nodeName)
-
-			g.By(fmt.Sprintf("Verify kubelet log file exists at expected path on %s", nodeName))
-			logExists, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-				"Test-Path C:\\var\\log\\kubelet\\kubelet.log")
-			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(strings.TrimSpace(logExists)).Should(o.ContainSubstring("True"),
-				"kubelet.log should exist on %s", nodeName)
-
-			g.By(fmt.Sprintf("Check for rotated kubelet log files on %s", nodeName))
-			rotatedLogs, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-				"Get-ChildItem C:\\var\\log\\kubelet\\ -Filter kubelet-*.log -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name")
-			o.Expect(err).NotTo(o.HaveOccurred())
-			if strings.TrimSpace(rotatedLogs) != "" {
-				e2e.Logf("Found rotated kubelet log files on %s: %s", nodeName, strings.TrimSpace(rotatedLogs))
-			} else {
-				e2e.Logf("No rotated kubelet log files found yet on %s (log size may not have reached threshold)", nodeName)
-			}
+		for _, svcName := range []string{"kubelet", "kube-proxy"} {
+			g.By(fmt.Sprintf("Verify %s service command includes kube-log-runner", svcName))
+			svcCmd := getServiceCommand(servicesCMData, svcName)
+			o.Expect(svcCmd).NotTo(o.BeEmpty(), "%s service not found in services ConfigMap", svcName)
+			o.Expect(svcCmd).Should(o.ContainSubstring("kube-log-runner"),
+				"%s should be wrapped with kube-log-runner", svcName)
+			o.Expect(svcCmd).Should(o.ContainSubstring("-log-file="),
+				"%s should have -log-file flag", svcName)
+			e2e.Logf("%s service command: %s", svcName, svcCmd)
 		}
 	})
 

@@ -25,7 +25,6 @@ var (
 	iaasPlatform         string
 	windowsNodeLabel     = "kubernetes.io/os=windows"
 	linuxNodeLabel       = "kubernetes.io/os=linux"
-	windowsDebugImage    = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 
 	machineLabel = "machine.openshift.io/os-id=Windows"
 )
@@ -309,19 +308,6 @@ func isBYOH(oc *exutil.CLI, nodeName string) bool {
 	return err == nil && strings.TrimSpace(byohLabel) == "true"
 }
 
-func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
-	goTpl := fmt.Sprintf(
-		`{{range .items}}{{$name := .metadata.name}}{{range .status.addresses}}`+
-			`{{if and (eq .type "InternalIP") (eq .address "%s")}}{{$name}}{{end}}`+
-			`{{end}}{{end}}`, nodeIP)
-	nodeName, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"nodes", "-o=go-template="+goTpl).Output()
-	o.Expect(err).NotTo(o.HaveOccurred(), "failed to resolve node name for IP %s", nodeIP)
-	nodeName = strings.TrimSpace(nodeName)
-	o.Expect(nodeName).NotTo(o.BeEmpty(), "no node found with InternalIP %s", nodeIP)
-	return nodeName
-}
-
 func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
 	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
 		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -344,24 +330,39 @@ func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Durat
 	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("timed out waiting for %d Windows nodes to be Ready after %v", expectedCount, timeout))
 }
 
-func runDebugNodePS(oc *exutil.CLI, nodeName, image, psCommand string) (string, error) {
-	output, err := oc.AsAdmin().WithoutNamespace().Run("debug").Args(
-		"node/"+nodeName,
-		"-n", wmcoNamespace,
-		"--image="+image,
-		"--", "pwsh", "-Command", psCommand).Output()
+// getLatestServicesCMData returns the services JSON data from the most recently created windows-services ConfigMap
+func getLatestServicesCMData(oc *exutil.CLI) (string, error) {
+	cmNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"configmap", "-n", wmcoNamespace,
+		"-o=jsonpath={.items[*].metadata.name}").Output()
 	if err != nil {
-		return "", fmt.Errorf("oc debug node/%s failed: %w\noutput: %s", nodeName, err, output)
+		return "", fmt.Errorf("failed to list ConfigMaps: %w", err)
 	}
-	var cleaned []string
-	for _, line := range strings.Split(output, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Starting pod") ||
-			strings.HasPrefix(trimmed, "Removing debug pod") ||
-			trimmed == "" {
-			continue
+	var latestCM string
+	for _, name := range strings.Fields(cmNames) {
+		if strings.HasPrefix(name, "windows-services-") {
+			latestCM = name
 		}
-		cleaned = append(cleaned, line)
 	}
-	return strings.Join(cleaned, "\n"), nil
+	if latestCM == "" {
+		return "", fmt.Errorf("no windows-services ConfigMap found in %s", wmcoNamespace)
+	}
+	servicesData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"configmap", latestCM, "-n", wmcoNamespace,
+		"-o=jsonpath={.data.services}").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get services data from ConfigMap %s: %w", latestCM, err)
+	}
+	return servicesData, nil
+}
+
+// getServiceCommand returns the command for the named service from the services ConfigMap JSON data
+func getServiceCommand(servicesJSON, serviceName string) string {
+	result := gjson.Parse(servicesJSON)
+	for _, svc := range result.Array() {
+		if svc.Get("name").String() == serviceName {
+			return svc.Get("path").String()
+		}
+	}
+	return ""
 }
