@@ -1,8 +1,10 @@
 package winc
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,15 +20,16 @@ import (
 )
 
 var (
-	mcoNamespace         = "openshift-machine-api"
-	capiNamespace        = "openshift-cluster-api"
-	wmcoNamespace        = "openshift-windows-machine-config-operator"
-	wmcoDeployment       = "deployment.apps/windows-machine-config-operator"
-	iaasPlatform         string
-	windowsNodeLabel     = "kubernetes.io/os=windows"
-	linuxNodeLabel       = "kubernetes.io/os=linux"
+	mcoNamespace     = "openshift-machine-api"
+	capiNamespace    = "openshift-cluster-api"
+	wmcoNamespace    = "openshift-windows-machine-config-operator"
+	wmcoDeployment   = "deployment.apps/windows-machine-config-operator"
+	iaasPlatform     string
+	windowsNodeLabel = "kubernetes.io/os=windows"
+	linuxNodeLabel   = "kubernetes.io/os=linux"
 
-	machineLabel = "machine.openshift.io/os-id=Windows"
+	machineLabel      = "machine.openshift.io/os-id=Windows"
+	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 )
 
 // checkVersionAnnotationReady returns true if the WMCO version annotation is set on the node.
@@ -308,6 +311,19 @@ func isBYOH(oc *exutil.CLI, nodeName string) bool {
 	return err == nil && strings.TrimSpace(byohLabel) == "true"
 }
 
+func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
+	goTpl := fmt.Sprintf(
+		`{{range .items}}{{$name := .metadata.name}}{{range .status.addresses}}`+
+			`{{if and (eq .type "InternalIP") (eq .address "%s")}}{{$name}}{{end}}`+
+			`{{end}}{{end}}`, nodeIP)
+	nodeName, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"nodes", "-o=go-template="+goTpl).Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to resolve node name for IP %s", nodeIP)
+	nodeName = strings.TrimSpace(nodeName)
+	o.Expect(nodeName).NotTo(o.BeEmpty(), "no node found with InternalIP %s", nodeIP)
+	return nodeName
+}
+
 func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
 	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
 		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -365,4 +381,90 @@ func getServiceCommand(servicesJSON, serviceName string) string {
 		}
 	}
 	return ""
+}
+
+func waitWindowsNodeReady(oc *exutil.CLI, nodeName string, timeout time.Duration) {
+	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
+		status, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"node", nodeName,
+			"-o=jsonpath={.status.conditions[?(@.type==\"Ready\")].status}").Output()
+		if err != nil {
+			e2e.Logf("Node %s not found yet: %v", nodeName, err)
+			return false, nil
+		}
+		return strings.TrimSpace(status) == "True", nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("timed out waiting for node %s to be Ready after %v", nodeName, timeout))
+}
+
+func runDebugNodePS(oc *exutil.CLI, nodeName, image, psCommand string) (string, error) {
+	output, err := oc.AsAdmin().WithoutNamespace().Run("debug").Args(
+		"node/"+nodeName,
+		"-n", wmcoNamespace,
+		"--image="+image,
+		"--", "pwsh", "-Command", psCommand).Output()
+	if err != nil {
+		return "", fmt.Errorf("oc debug node/%s failed: %w\noutput: %s", nodeName, err, output)
+	}
+	var cleaned []string
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Starting pod") ||
+			strings.HasPrefix(trimmed, "Removing debug pod") ||
+			trimmed == "" {
+			continue
+		}
+		cleaned = append(cleaned, line)
+	}
+	return strings.Join(cleaned, "\n"), nil
+}
+
+func createResourceFromString(oc *exutil.CLI, namespace, manifest string) error {
+	tempFile, err := os.CreateTemp("", "manifest-*.yaml")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tempFileName := tempFile.Name()
+	defer os.Remove(tempFileName)
+
+	if _, err := tempFile.WriteString(manifest); err != nil {
+		tempFile.Close()
+		return fmt.Errorf("failed to write manifest to temp file: %w", err)
+	}
+	tempFile.Close()
+
+	var applyErr error
+	if namespace != "" {
+		_, applyErr = oc.AsAdmin().WithoutNamespace().Run("apply").Args("-f", tempFileName, "-n", namespace).Output()
+	} else {
+		_, applyErr = oc.AsAdmin().WithoutNamespace().Run("apply").Args("-f", tempFileName).Output()
+	}
+	if applyErr != nil {
+		return fmt.Errorf("failed to apply manifest: %w", applyErr)
+	}
+	return nil
+}
+
+func getRandomString(length int) string {
+	o.Expect(length).To(o.BeNumerically(">", 0), "getRandomString requires a positive length")
+	buff := make([]byte, length)
+	_, err := rand.Read(buff)
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate random bytes")
+	str := base64.StdEncoding.EncodeToString(buff)
+	return str[:length]
+}
+
+func createProject(oc *exutil.CLI, namespace string) {
+	exists := oc.AsAdmin().WithoutNamespace().Run("get").Args("namespace", namespace).Execute()
+	if exists == nil {
+		e2e.Logf("Namespace %s already exists, skipping creation", namespace)
+		return
+	}
+	oc.CreateSpecifiedNamespaceAsAdmin(namespace)
+	err := compat_otp.SetNamespacePrivileged(oc, namespace)
+	o.Expect(err).NotTo(o.HaveOccurred())
+}
+
+func deleteProject(oc *exutil.CLI, namespace string) {
+	oc.DeleteSpecifiedNamespaceAsAdmin(namespace)
 }

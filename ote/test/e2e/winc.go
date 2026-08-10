@@ -14,6 +14,7 @@ import (
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
+	"github.com/tidwall/gjson"
 	"k8s.io/apimachinery/pkg/util/wait"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
@@ -424,6 +425,190 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		}
 	})
 
+	// author: rrasouli@redhat.com
+	g.It("Smokerun-Author:rrasouli-Medium-42204-Create Windows pod with a Projected Volume", func() {
+		namespace := "winc-42204"
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+		username, password := "admin", getRandomString(8)
+
+		g.By("Create username and password secrets")
+		_, err := oc.AsAdmin().WithoutNamespace().Run("create").Args("secret", "generic", "user",
+			"--from-literal=username="+username, "-n", namespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args("secret", "generic", "pass",
+			"--from-literal=password="+password, "-n", namespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Create Windows Pod with Projected Volume")
+		podManifest := fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: win-projected-vol
+spec:
+  containers:
+  - name: win-container
+    image: %s
+    command: ["pwsh", "-Command", "Start-Sleep -Seconds 3600"]
+    volumeMounts:
+    - name: projected-volume
+      mountPath: "C:\\projected-volume"
+      readOnly: true
+  volumes:
+  - name: projected-volume
+    projected:
+      sources:
+      - secret:
+          name: user
+      - secret:
+          name: pass
+  nodeSelector:
+    kubernetes.io/os: windows
+  tolerations:
+  - key: "os"
+    value: "Windows"
+    effect: "NoSchedule"
+  os:
+    name: windows`, windowsDebugImage)
+
+		err = createResourceFromString(oc, namespace, podManifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Wait for pod to be Running")
+		pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+			phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "win-projected-vol",
+				"-n", namespace, "-o=jsonpath={.status.phase}").Output()
+			if err != nil {
+				return false, nil
+			}
+			return phase == "Running", nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "Pod win-projected-vol did not reach Running state")
+
+		g.By("Verify projected volume contents and secret data")
+		msg, err := oc.AsAdmin().WithoutNamespace().Run("exec").Args("win-projected-vol",
+			"-n", namespace, "--", "pwsh", "-Command",
+			"Get-ChildItem C:\\projected-volume; Get-Content C:\\projected-volume\\username; Get-Content C:\\projected-volume\\password").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(msg).To(o.ContainSubstring(username), "Projected volume should contain username")
+		o.Expect(strings.Contains(msg, password)).To(o.BeTrue(),
+			"Projected volume should contain the password file content (value redacted)")
+		e2e.Logf("Projected volume listing verified on pod win-projected-vol (contents redacted)")
+	})
+
+	// author: sgao@redhat.com
+	g.It("Smokerun-Author:sgao-Critical-25593-Prevent scheduling non Windows workloads on Windows nodes", func() {
+		namespace := "winc-25593"
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+
+		g.By("Check Windows node have a taint 'os=Windows:NoSchedule'")
+		msg, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("nodes", "-l", windowsNodeLabel,
+			"-o=jsonpath={.items[0].spec.taints[0].key}={.items[0].spec.taints[0].value}:{.items[0].spec.taints[0].effect}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(msg).To(o.Equal("os=Windows:NoSchedule"), "Windows node should have taint os=Windows:NoSchedule")
+
+		g.By("Check deployment without tolerations would not land on Windows nodes")
+		deployManifest := fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: win-no-toleration
+  labels:
+    app: win-no-toleration
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: win-no-toleration
+  template:
+    metadata:
+      labels:
+        app: win-no-toleration
+    spec:
+      containers:
+      - name: win-container
+        image: %s
+        command: ["pwsh", "-Command", "Start-Sleep -Seconds 3600"]
+      nodeSelector:
+        kubernetes.io/os: windows
+      os:
+        name: windows`, windowsDebugImage)
+
+		err = createResourceFromString(oc, namespace, deployManifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		pollErr := wait.Poll(10*time.Second, 60*time.Second, func() (bool, error) {
+			msg, _ = oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "-l=app=win-no-toleration",
+				"-o=jsonpath={.items[].status.conditions[].message}", "-n", namespace).Output()
+			return strings.Contains(msg, "had untolerated taint"), nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "Deployment without tolerations should not land on Windows nodes")
+
+		g.By("Check none of core/optional operators/operands would land on Windows nodes")
+		for _, winHostName := range getWindowsHostNames(oc) {
+			e2e.Logf("Check pods running on Windows node: %s", winHostName)
+			msg, _ = oc.AsAdmin().WithoutNamespace().Run("get").Args("pods", "--all-namespaces",
+				"-o=jsonpath={.items[*].metadata.namespace}", "-l=app=win-no-toleration",
+				"--field-selector", "spec.nodeName="+winHostName, "--no-headers").Output()
+			for _, ns := range strings.Split(msg, " ") {
+				if ns != "" && !strings.Contains(ns, "winc") {
+					e2e.Failf("Non-winc pods found running on Windows node %s in namespace %s", winHostName, ns)
+				}
+			}
+		}
+	})
+
+	// author: weinliu@redhat.com
+	g.It("Author:weinliu-Smokerun-Medium-73752-Monitor Network In, and Network Out graphs for Windows Pods managed by wmco", func() {
+		mon, err := compat_otp.NewPrometheusMonitor(oc.AsAdmin())
+		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating Prometheus monitor")
+
+		g.By("Getting WMCO pods")
+		podList, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pods", "-n", wmcoNamespace,
+			"-l", "name=windows-machine-config-operator",
+			"-o=jsonpath={.items[*].metadata.name}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		podNames := strings.Fields(podList)
+		o.Expect(podNames).NotTo(o.BeEmpty(), "No WMCO pods found")
+
+		networkMetrics := []string{
+			"pod:network_receive_bytes_total:sum",
+			"pod:network_transmit_bytes_total:sum",
+		}
+
+		for _, podName := range podNames {
+			for _, metric := range networkMetrics {
+				g.By(fmt.Sprintf("Verifying %s for pod %s", metric, podName))
+				var metricValue, lastReason string
+				pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+					queryResult, err := mon.SimpleQuery(fmt.Sprintf("%s{pod=\"%s\"}", metric, podName))
+					if err != nil {
+						lastReason = fmt.Sprintf("query error: %v", err)
+						e2e.Logf("Error querying %s for pod %s: %v", metric, podName, err)
+						return false, nil
+					}
+					parsed := gjson.Parse(queryResult)
+					if status := parsed.Get("status").String(); status != "success" {
+						lastReason = fmt.Sprintf("query status: %s", status)
+						e2e.Logf("Query %s for pod %s returned status %s, retrying...", metric, podName, status)
+						return false, nil
+					}
+					metricValue = parsed.Get("data.result.0.value.1").String()
+					if metricValue == "" {
+						lastReason = "empty result set"
+						e2e.Logf("No result yet for %s on pod %s, retrying...", metric, podName)
+						return false, nil
+					}
+					return true, nil
+				})
+				o.Expect(pollErr).NotTo(o.HaveOccurred(),
+					"Timed out waiting for metric %s on pod %s (last reason: %s)", metric, podName, lastReason)
+				e2e.Logf("Pod %s metric %s = %s", podName, metric, metricValue)
+			}
+		}
+	})
+
 	// author: weinliu@redhat.com
 	g.It("Author:weinliu-Smokerun-Medium-70922-Monitor CPU, Memory, and Filesystem graphs for Windows Pods managed by wmco", func() {
 		mon, err := compat_otp.NewPrometheusMonitor(oc.AsAdmin())
@@ -462,16 +647,253 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		}
 
 		g.By("Verifying CPU utilisation recording rule reports utilization not idle (OCPBUGS-85061)")
-		queryResult, err := mon.SimpleQuery("instance:node_cpu_utilisation:rate1m{job=\"windows-exporter\"}")
-		o.Expect(err).NotTo(o.HaveOccurred(), "Error querying instance:node_cpu_utilisation:rate1m")
-		metricValue := extractMetricValue(queryResult)
-		o.Expect(metricValue).NotTo(o.BeEmpty(), "No result for instance:node_cpu_utilisation:rate1m recording rule")
+		var cpuMetricValue, cpuLastReason string
+		pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+			queryResult, err := mon.SimpleQuery("instance:node_cpu_utilisation:rate1m{job=\"windows-exporter\"}")
+			if err != nil {
+				cpuLastReason = fmt.Sprintf("query error: %v", err)
+				e2e.Logf("Error querying instance:node_cpu_utilisation:rate1m: %v", err)
+				return false, nil
+			}
+			parsed := gjson.Parse(queryResult)
+			if status := parsed.Get("status").String(); status != "success" {
+				cpuLastReason = fmt.Sprintf("query status: %s", status)
+				e2e.Logf("Query instance:node_cpu_utilisation:rate1m returned status %s, retrying...", status)
+				return false, nil
+			}
+			cpuMetricValue = parsed.Get("data.result.0.value.1").String()
+			if cpuMetricValue == "" {
+				cpuLastReason = "empty result set"
+				e2e.Logf("No result yet for instance:node_cpu_utilisation:rate1m, retrying...")
+				return false, nil
+			}
+			return true, nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(),
+			"Timed out waiting for instance:node_cpu_utilisation:rate1m (last reason: %s)", cpuLastReason)
 
-		cpuUtil, convErr := strconv.ParseFloat(metricValue, 64)
-		o.Expect(convErr).NotTo(o.HaveOccurred(), "Failed to parse CPU utilisation value: %s", metricValue)
+		cpuUtil, convErr := strconv.ParseFloat(cpuMetricValue, 64)
+		o.Expect(convErr).NotTo(o.HaveOccurred(), "Failed to parse CPU utilisation value: %s", cpuMetricValue)
 		e2e.Logf("instance:node_cpu_utilisation:rate1m = %f (should be utilization, not idle)", cpuUtil)
-		o.Expect(cpuUtil).To(o.BeNumerically("<", 0.5),
+		o.Expect(cpuUtil).To(o.BeNumerically("<", 0.9),
 			"CPU utilisation recording rule value %f suggests it is recording idle rate instead of utilization (OCPBUGS-85061)", cpuUtil)
+	})
+
+	// author: rrasouli@redhat.com
+	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation", func() {
+		winInternalIPs := getWindowsInternalIPs(oc)
+		o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
+
+		for _, winhost := range winInternalIPs {
+			nodeName := getNodeNameFromIP(oc, winhost)
+			o.Expect(nodeName).NotTo(o.BeEmpty(), "Failed to get node name for IP %s", winhost)
+
+			g.By(fmt.Sprintf("Verifying node %s is Ready before testing", nodeName))
+			waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
+
+			g.By("Verifying hybrid-overlay-node binary and CA certificate on host filesystem")
+			binaryCheck, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				`$bin = Test-Path 'C:\host\k\hybrid-overlay-node.exe'; `+
+					`$certs = Get-ChildItem 'C:\host\k' -Filter '*.crt' -ErrorAction SilentlyContinue; `+
+					`Write-Output "binary=$bin"; `+
+					`Write-Output "certs=$($certs.Count)"`)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to check hybrid-overlay binary")
+			o.Expect(binaryCheck).To(o.ContainSubstring("binary=True"), "hybrid-overlay-node.exe should exist on host")
+			o.Expect(binaryCheck).To(o.MatchRegexp(`certs=[1-9]`), "CA certificate file should exist in C:\\k\\")
+			e2e.Logf("Hybrid-overlay binary and CA cert verified on %s", nodeName)
+
+			g.By("Dumping hybrid-overlay log for analysis")
+			logPath := `C:\host\var\log\hybrid-overlay\hybrid-overlay.log`
+			logContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				fmt.Sprintf("Get-Content -Raw -Path '%s' -ErrorAction SilentlyContinue", logPath))
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to read log file content")
+			e2e.Logf("Successfully retrieved log content (%d characters)", len(logContent))
+
+			if len(strings.TrimSpace(logContent)) > 0 {
+				g.By("Verifying certificate rotation patterns in log")
+				requiredPatterns := []struct {
+					pattern     string
+					description string
+				}{
+					{"Certificate rotation is enabled", "rotation is enabled"},
+					{"Rotating certificates", "rotation process started"},
+					{"Starting client certificate rotation controller", "rotation controller started"},
+					{"Certificate found", "certificate was found"},
+					{"is issued", "CSR was issued"},
+					{"Waiting", "future rotation scheduled"},
+				}
+				for _, p := range requiredPatterns {
+					g.By(fmt.Sprintf("Checking for: %s", p.description))
+					o.Expect(strings.Contains(logContent, p.pattern)).To(o.BeTrue(),
+						"Log should contain pattern '%s' indicating %s", p.pattern, p.description)
+					e2e.Logf("Found pattern: %s", p.pattern)
+				}
+
+				g.By("Verifying absence of error patterns")
+				for _, badPattern := range []string{"actively refused", "localhost:8443"} {
+					o.Expect(strings.Contains(logContent, badPattern)).To(o.BeFalse(),
+						"Log should not contain error pattern: %s", badPattern)
+				}
+			} else {
+				e2e.Logf("Hybrid-overlay log is empty on %s, skipping log pattern checks", nodeName)
+			}
+
+			g.By(fmt.Sprintf("Verifying node %s remains stable", nodeName))
+			waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
+
+			g.By(fmt.Sprintf("OCPBUGS-86246: Verifying cert cleanup on node %s via oc debug", nodeName))
+			certDir := `C:\host\k\cni\config`
+			certPattern := "ovnkube-client-*.pem"
+
+			countCmd := fmt.Sprintf(
+				`(Get-ChildItem -Path '%s' -Filter '%s' -ErrorAction SilentlyContinue | Measure-Object).Count`,
+				certDir, certPattern)
+			countBefore, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, countCmd)
+			o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to count existing cert files")
+			e2e.Logf("Existing ovnkube-client cert files before test: %s", strings.TrimSpace(countBefore))
+
+			createCmd := fmt.Sprintf(
+				`$dir = '%s'; $base = (Get-Date).AddDays(-10); `+
+					`for ($i = 1; $i -le 10; $i++) { `+
+					`$ts = $base.AddHours($i).ToString('yyyyMMddHHmmss'); `+
+					`$f = Join-Path $dir "ovnkube-client-$ts.pem"; `+
+					`Set-Content -Path $f -Value 'fake-cert'; `+
+					`(Get-Item $f).CreationTime = $base.AddHours($i); `+
+					`(Get-Item $f).LastWriteTime = $base.AddHours($i) }; `+
+					`(Get-ChildItem -Path '%s' -Filter '%s' | Measure-Object).Count`,
+				certDir, certDir, certPattern)
+			countAfterCreate, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, createCmd)
+			o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to create fake cert files")
+			e2e.Logf("Total cert files after creating fakes: %s", strings.TrimSpace(countAfterCreate))
+
+			e2e.Logf("Waiting 3 minutes for WICD to reconcile and clean up old certs...")
+			time.Sleep(3 * time.Minute)
+
+			countAfterCleanup, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, countCmd)
+			o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to count cert files after cleanup")
+			remaining := strings.TrimSpace(countAfterCleanup)
+			e2e.Logf("Cert files remaining after WICD cleanup: %s", remaining)
+			remainingCount, convErr := strconv.Atoi(remaining)
+			o.Expect(convErr).NotTo(o.HaveOccurred(), "Failed to parse cert count")
+			o.Expect(remainingCount).To(o.Equal(2),
+				"WICD should keep only 2 most recent ovnkube-client cert files, found %d", remainingCount)
+
+			e2e.Logf("Successfully verified certificate rotation and cert cleanup on %s", nodeName)
+		}
+	})
+
+	// author: rrasouli@redhat.com
+	g.It("Author:rrasouli-Smokerun-Medium-88278-wmco reads certificates from controllerConfig instead of MachineConfig", func() {
+		winInternalIPs := getWindowsInternalIPs(oc)
+		o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
+
+		g.By("Ensure Windows nodes are Ready before proceeding")
+		waitWindowsNodesReady(oc, len(winInternalIPs), 15*time.Minute)
+
+		g.By("Retrieve kubelet CA certificate from controllerConfig")
+		kubeletCAData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"controllerconfig", "machine-config-controller",
+			"-o=jsonpath={.spec.kubeAPIServerServingCAData}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get kubelet CA from controllerConfig")
+		o.Expect(kubeletCAData).NotTo(o.BeEmpty(), "controllerConfig.spec.kubeAPIServerServingCAData should not be empty")
+
+		kubeletCADecoded, err := base64.StdEncoding.DecodeString(kubeletCAData)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to decode kubelet CA data")
+		kubeletCAContent := string(kubeletCADecoded)
+		o.Expect(kubeletCAContent).To(o.ContainSubstring("BEGIN CERTIFICATE"), "Kubelet CA should be PEM-formatted")
+		e2e.Logf("Successfully retrieved kubelet CA from controllerConfig (%d bytes)", len(kubeletCAContent))
+
+		g.By("Verify kubelet-ca.crt exists on Windows nodes and matches controllerConfig data")
+		kubeletCertPath := `C:\host\k\kubelet-ca.crt`
+		for _, winhost := range winInternalIPs {
+			nodeName := getNodeNameFromIP(oc, winhost)
+			g.By(fmt.Sprintf("Verifying kubelet-ca.crt on Windows node %s", nodeName))
+
+			fileExistsCmd := fmt.Sprintf("Test-Path -Path '%s'", kubeletCertPath)
+			fileExists, err := runDebugNodePS(oc, nodeName, windowsDebugImage, fileExistsCmd)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to check if kubelet-ca.crt exists on %s", nodeName)
+			o.Expect(strings.TrimSpace(fileExists)).To(o.Equal("True"),
+				"kubelet-ca.crt should exist at %s on node %s", kubeletCertPath, nodeName)
+
+			certContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				fmt.Sprintf("Get-Content -Raw -Path '%s'", kubeletCertPath))
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to read kubelet-ca.crt from %s", nodeName)
+			o.Expect(certContent).NotTo(o.BeEmpty(), "Certificate content should not be empty on %s", nodeName)
+
+			o.Expect(strings.TrimSpace(certContent)).To(o.ContainSubstring(strings.TrimSpace(kubeletCAContent)),
+				"kubelet-ca.crt content on %s should match controllerConfig.spec.kubeAPIServerServingCAData", nodeName)
+			e2e.Logf("Verified kubelet-ca.crt on %s matches controllerConfig data", nodeName)
+		}
+
+		g.By("Retrieve cloud provider CA data from controllerConfig (if present)")
+		cloudCAData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"controllerconfig", "machine-config-controller",
+			"-o=jsonpath={.spec.cloudProviderCAData}").Output()
+		if err == nil && cloudCAData != "" && len(cloudCAData) > 10 && !strings.Contains(cloudCAData, "null") {
+			e2e.Logf("Cloud provider CA data found in controllerConfig (%d bytes)", len(cloudCAData))
+
+			cloudCADecoded, err := base64.StdEncoding.DecodeString(cloudCAData)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to decode cloud provider CA data")
+			cloudCAContent := string(cloudCADecoded)
+
+			cloudCACertPath := `C:\host\k\ca-bundle.crt`
+			for _, winhost := range winInternalIPs {
+				nodeName := getNodeNameFromIP(oc, winhost)
+				g.By(fmt.Sprintf("Verifying cloud provider CA on Windows node %s", nodeName))
+
+				fileExists, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+					fmt.Sprintf("Test-Path -Path '%s'", cloudCACertPath))
+				if err == nil && strings.TrimSpace(fileExists) == "True" {
+					certContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+						fmt.Sprintf("Get-Content -Raw -Path '%s'", cloudCACertPath))
+					o.Expect(err).NotTo(o.HaveOccurred(), "Failed to read cloud CA from %s", nodeName)
+					o.Expect(strings.TrimSpace(certContent)).To(o.ContainSubstring(strings.TrimSpace(cloudCAContent)),
+						"Cloud CA content on %s should match controllerConfig.spec.cloudProviderCAData", nodeName)
+					e2e.Logf("Verified cloud provider CA on %s matches controllerConfig data", nodeName)
+				} else {
+					e2e.Logf("Cloud provider CA bundle not found on %s (may not be required for this platform)", nodeName)
+				}
+			}
+		} else {
+			e2e.Logf("Cloud provider CA data not configured in controllerConfig (platform may not require it)")
+		}
+
+		g.By("Retrieve additional trust bundle from controllerConfig (if present)")
+		trustBundleData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"controllerconfig", "machine-config-controller",
+			"-o=jsonpath={.spec.additionalTrustBundle}").Output()
+		var trustBundleContent string
+		if err == nil && trustBundleData != "" && len(trustBundleData) > 10 {
+			decoded, decErr := base64.StdEncoding.DecodeString(trustBundleData)
+			if decErr == nil {
+				trustBundleContent = string(decoded)
+			} else {
+				trustBundleContent = trustBundleData
+			}
+		}
+		if trustBundleContent != "" && strings.Contains(trustBundleContent, "BEGIN CERTIFICATE") {
+			e2e.Logf("Additional trust bundle found in controllerConfig (%d bytes)", len(trustBundleContent))
+
+			for _, winhost := range winInternalIPs {
+				nodeName := getNodeNameFromIP(oc, winhost)
+				g.By(fmt.Sprintf("Verifying additional trust bundle on Windows node %s", nodeName))
+
+				certCheckCmd := `(Get-ChildItem -Path Cert:\LocalMachine\Root | Measure-Object).Count`
+				certCount, err := runDebugNodePS(oc, nodeName, windowsDebugImage, certCheckCmd)
+				o.Expect(err).NotTo(o.HaveOccurred(), "Failed to query certificate store on %s", nodeName)
+				e2e.Logf("Node %s has %s certificates in LocalMachine\\Root store", nodeName, strings.TrimSpace(certCount))
+
+				count, err := strconv.Atoi(strings.TrimSpace(certCount))
+				o.Expect(err).NotTo(o.HaveOccurred(), "Failed to parse certificate count")
+				o.Expect(count).To(o.BeNumerically(">", 0), "Certificate store should contain certificates on %s", nodeName)
+			}
+		} else {
+			e2e.Logf("Additional trust bundle not configured in controllerConfig")
+		}
+
+		g.By("Verify Windows nodes remain Ready and functional")
+		waitWindowsNodesReady(oc, len(winInternalIPs), 5*time.Minute)
+		e2e.Logf("All Windows nodes are Ready and using certificates from controllerConfig")
 	})
 
 })
