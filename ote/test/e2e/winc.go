@@ -580,30 +580,9 @@ spec:
 		for _, podName := range podNames {
 			for _, metric := range networkMetrics {
 				g.By(fmt.Sprintf("Verifying %s for pod %s", metric, podName))
-				var metricValue, lastReason string
-				pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
-					queryResult, err := mon.SimpleQuery(fmt.Sprintf("%s{pod=\"%s\"}", metric, podName))
-					if err != nil {
-						lastReason = fmt.Sprintf("query error: %v", err)
-						e2e.Logf("Error querying %s for pod %s: %v", metric, podName, err)
-						return false, nil
-					}
-					parsed := gjson.Parse(queryResult)
-					if status := parsed.Get("status").String(); status != "success" {
-						lastReason = fmt.Sprintf("query status: %s", status)
-						e2e.Logf("Query %s for pod %s returned status %s, retrying...", metric, podName, status)
-						return false, nil
-					}
-					metricValue = parsed.Get("data.result.0.value.1").String()
-					if metricValue == "" {
-						lastReason = "empty result set"
-						e2e.Logf("No result yet for %s on pod %s, retrying...", metric, podName)
-						return false, nil
-					}
-					return true, nil
-				})
-				o.Expect(pollErr).NotTo(o.HaveOccurred(),
-					"Timed out waiting for metric %s on pod %s (last reason: %s)", metric, podName, lastReason)
+				queryResult, err := mon.SimpleQuery(fmt.Sprintf("%s{pod=\"%s\"}", metric, podName))
+				o.Expect(err).NotTo(o.HaveOccurred(), "Error querying %s for pod %s", metric, podName)
+				metricValue := extractMetricValue(queryResult)
 				e2e.Logf("Pod %s metric %s = %s", podName, metric, metricValue)
 			}
 		}
