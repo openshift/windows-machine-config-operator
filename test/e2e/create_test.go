@@ -154,13 +154,8 @@ func (tc *testContext) createWindowsInstanceConfigMap(machines *mapi.MachineList
 	return nil
 }
 
-// validateWindowsInstanceConfigMap validates the windows-instance ConfigMap
-func (tc *testContext) validateWindowsInstanceConfigMap(expectedCount int) error {
-	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(),
-		wiparser.InstanceConfigMap, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("error retrieving ConfigMap: %s: %w", wiparser.InstanceConfigMap, err)
-	}
+// validateWindowsInstanceConfigMap validates the given windows-instance ConfigMap
+func (tc *testContext) validateWindowsInstanceConfigMap(windowsInstances *v1.ConfigMap, expectedCount int) error {
 	// check instance count
 	actualCount := len(windowsInstances.Data)
 	if actualCount != expectedCount {
@@ -368,18 +363,22 @@ func (tc *testContext) testBYOHConfiguration(t *testing.T) {
 		t.Skip("BYOH testing disabled")
 	}
 
-	// For platform-agnostic infrastructure just validate the BYOH ConfigMap
-	// TODO: See https://github.com/openshift/windows-machine-config-operator/pull/858#discussion_r780316359
-	if tc.CloudProvider.GetType() == config.NonePlatformType {
-		err := tc.validateWindowsInstanceConfigMap(int(gc.numberOfBYOHNodes))
+	// If the windows-instances ConfigMap already exists, instances were provisioned externally ahead of time, so
+	// just validate it. Otherwise, provision BYOH instances with MachineSet ourselves.
+	windowsInstances, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(),
+		wiparser.InstanceConfigMap, metav1.GetOptions{})
+	switch {
+	case err == nil:
+		err = tc.validateWindowsInstanceConfigMap(windowsInstances, int(gc.numberOfBYOHNodes))
 		require.NoError(t, err, "error validating windows-instances ConfigMap")
 		log.Printf("using %v BYOH instance(s) already provisioned", gc.numberOfBYOHNodes)
-	} else {
-		// Otherwise, provision BYOH instances with MachineSet
-		err := tc.disableClusterMachineApprover()
+	case apierrors.IsNotFound(err):
+		err = tc.disableClusterMachineApprover()
 		require.NoError(t, err, "failed to scale down Machine Approver pods")
 		err = tc.provisionBYOHConfigMapWithMachineSet()
 		require.NoError(t, err, "error provisioning BYOH ConfigMap with MachineSets")
+	default:
+		require.NoError(t, err, "failed to get windows-instances ConfigMap")
 	}
 	configMapCreatedTime := time.Now()
 	// Wait for Windows worker node to become available
