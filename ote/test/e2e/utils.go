@@ -26,18 +26,27 @@ import (
 )
 
 var (
-	mcoNamespace     = "openshift-machine-api"
-	capiNamespace    = "openshift-cluster-api"
-	wmcoNamespace    = "openshift-windows-machine-config-operator"
-	wmcoDeployment   = "deployment.apps/windows-machine-config-operator"
-	iaasPlatform     string
-	windowsNodeLabel = "kubernetes.io/os=windows"
-	linuxNodeLabel   = "kubernetes.io/os=linux"
+	mcoNamespace       = "openshift-machine-api"
+	capiNamespace      = "openshift-cluster-api"
+	wmcoNamespace      = "openshift-windows-machine-config-operator"
+	wmcoDeployment     = "deployment.apps/windows-machine-config-operator"
+	wmcoDeploymentName = "windows-machine-config-operator"
+	iaasPlatform       string
+	windowsNodeLabel   = "kubernetes.io/os=windows"
+	linuxNodeLabel     = "kubernetes.io/os=linux"
 
 	machineLabel      = "machine.openshift.io/os-id=Windows"
 	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 	linuxDebugImage   = "registry.access.redhat.com/ubi9/ubi:latest"
 )
+
+type Service struct {
+	Name         string   `json:"name"`
+	Path         string   `json:"path"`
+	Bootstrap    bool     `json:"bootstrap"`
+	Priority     int      `json:"priority"`
+	Dependencies []string `json:"dependencies,omitempty"`
+}
 
 // checkVersionAnnotationReady returns true if the WMCO version annotation is set on the node.
 func checkVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string) (bool, error) {
@@ -865,4 +874,88 @@ func runInBackground(ctx context.Context, cancel context.CancelFunc, check func(
 		errCh <- err
 	}()
 	return errCh
+}
+
+func getLatestServicesCMName(oc *exutil.CLI) (string, error) {
+	cmNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"configmap", "-n", wmcoNamespace,
+		"-o=jsonpath={.items[*].metadata.name}").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to list ConfigMaps: %w", err)
+	}
+	var latestCM string
+	for _, name := range strings.Fields(cmNames) {
+		if strings.HasPrefix(name, "windows-services-") {
+			latestCM = name
+		}
+	}
+	if latestCM == "" {
+		return "", fmt.Errorf("no windows-services ConfigMap found in %s", wmcoNamespace)
+	}
+	return latestCM, nil
+}
+
+func waitForServicesCM(oc *exutil.CLI, expectedCMName string, timeout time.Duration) {
+	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
+		cmName, err := getLatestServicesCMName(oc)
+		if err != nil || cmName == "" {
+			return false, nil
+		}
+		if cmName == expectedCMName {
+			return true, nil
+		}
+		e2e.Logf("ConfigMap %v does not match expected %v", cmName, expectedCMName)
+		return false, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("Expected windows-services ConfigMap %s not found after %v", expectedCMName, timeout))
+}
+
+func generateWICDConfigMapYAML(name, servicesJSON string) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: %s
+  namespace: openshift-windows-machine-config-operator
+data:
+  services: '%s'
+`, name, servicesJSON)
+}
+
+func checkWindowsServiceRunning(oc *exutil.CLI, nodeName, image, serviceName string) (bool, error) {
+	cmd := fmt.Sprintf("Get-Service '%s' | Select-Object -ExpandProperty Status", serviceName)
+	output, err := runDebugNodePS(oc, nodeName, image, cmd)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(output) == "Running", nil
+}
+
+func getServiceBinPath(oc *exutil.CLI, nodeName, image, serviceName string) (string, error) {
+	cmd := fmt.Sprintf("Get-CimInstance -ClassName Win32_Service | Where-Object { $_.Name -eq '%s' } | Select-Object -ExpandProperty PathName", serviceName)
+	output, err := runDebugNodePS(oc, nodeName, image, cmd)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output), nil
+}
+
+func setServiceBinPath(oc *exutil.CLI, nodeName, image, serviceName, binPath string) error {
+	cmd := fmt.Sprintf(`sc.exe config %s binPath= "%s"`, serviceName, binPath)
+	output, err := runDebugNodePS(oc, nodeName, image, cmd)
+	if err != nil {
+		return fmt.Errorf("sc.exe config failed: %w (output: %s)", err, output)
+	}
+	if !strings.Contains(output, "SUCCESS") {
+		return fmt.Errorf("sc.exe config did not report SUCCESS: %s", output)
+	}
+	return nil
+}
+
+func stopWindowsService(oc *exutil.CLI, nodeName, image, serviceName string) (string, error) {
+	cmd := fmt.Sprintf("Stop-Service '%s' -Force -ErrorAction SilentlyContinue; (Get-Service '%s').Status", serviceName, serviceName)
+	output, err := runDebugNodePS(oc, nodeName, image, cmd)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output), nil
 }
