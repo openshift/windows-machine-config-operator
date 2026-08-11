@@ -1,15 +1,21 @@
 package winc
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
+	"reflect"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/origin/test/extended/util"
 	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
@@ -30,6 +36,7 @@ var (
 
 	machineLabel      = "machine.openshift.io/os-id=Windows"
 	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
+	linuxDebugImage   = "registry.access.redhat.com/ubi9/ubi:latest"
 )
 
 // checkVersionAnnotationReady returns true if the WMCO version annotation is set on the node.
@@ -467,4 +474,395 @@ func createProject(oc *exutil.CLI, namespace string) {
 
 func deleteProject(oc *exutil.CLI, namespace string) {
 	oc.DeleteSpecifiedNamespaceAsAdmin(namespace)
+}
+
+func generateWindowsWebServerYAML(name, namespace, image string, replicas int, includeService bool, resourceLimits, runtimeClassName string) string {
+	var sb strings.Builder
+	if includeService {
+		sb.WriteString(fmt.Sprintf(`apiVersion: v1
+kind: Service
+metadata:
+  name: %s
+  labels:
+    app: %s
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: %s
+  type: LoadBalancer
+---
+`, name, name, name))
+	}
+	sb.WriteString(fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: %s
+  name: %s
+spec:
+  selector:
+    matchLabels:
+      app: %s
+  replicas: %d
+  template:
+    metadata:
+      labels:
+        app: %s
+      name: %s
+    spec:
+`, name, name, name, replicas, name, name))
+	if runtimeClassName != "" {
+		sb.WriteString(fmt.Sprintf("      runtimeClassName: %s\n", runtimeClassName))
+	}
+	sb.WriteString(`      tolerations:
+      - key: "os"
+        value: "Windows"
+        operator: Equal
+        effect: "NoSchedule"
+      - key: "os"
+        value: "windows"
+        operator: Equal
+        effect: "NoSchedule"
+      containers:
+      - name: windowswebserver
+        image: ` + image + `
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsNonRoot: false
+          windowsOptions:
+            runAsUserName: "ContainerAdministrator"
+`)
+	if resourceLimits != "" {
+		sb.WriteString(fmt.Sprintf(`        resources:
+          limits:
+            cpu: %s
+            memory: 1Gi
+          requests:
+            cpu: %s
+            memory: 512Mi
+`, resourceLimits, resourceLimits))
+	}
+	sb.WriteString(`        command:
+        - pwsh.exe
+        - -command
+        - $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start();Write-Host('Listening at http://*:80/'); while ($listener.IsListening) { $context = $listener.GetContext(); $response = $context.Response; $content='<html><body><H1>Windows Container Web Server</H1></body></html>'; $buffer = [System.Text.Encoding]::UTF8.GetBytes($content); $response.ContentLength64 = $buffer.Length; $response.OutputStream.Write($buffer, 0, $buffer.Length); $response.Close(); };
+      nodeSelector:
+        kubernetes.io/os: windows
+`)
+	return sb.String()
+}
+
+func generateHPAYAML(name, namespace, deploymentName string, minReplicas, maxReplicas, stabilizationWindow int, metricName, averageValue string) string {
+	yaml := fmt.Sprintf(`apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: %s
+  minReplicas: %d
+  maxReplicas: %d
+  metrics:
+  - type: Resource
+    resource:
+      name: %s
+      target:
+        type: AverageValue
+        averageValue: %s
+`, name, namespace, deploymentName, minReplicas, maxReplicas, metricName, averageValue)
+	if stabilizationWindow > 0 {
+		yaml += fmt.Sprintf(`  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: %d
+`, stabilizationWindow)
+	}
+	return yaml
+}
+
+func generateRuntimeClassYAML(name, buildID string) string {
+	return fmt.Sprintf(`apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: %s
+handler: runhcs-wcow-process
+scheduling:
+  nodeSelector:
+    kubernetes.io/os: windows
+    node.kubernetes.io/windows-build: "%s"
+  tolerations:
+  - key: os
+    value: Windows
+    effect: NoSchedule
+`, name, buildID)
+}
+
+func waitForDeploymentReady(oc *exutil.CLI, deploymentName, namespace string, timeout time.Duration) error {
+	var lastPodStatus string
+	imagePullBackOffCount := 0
+
+	err := wait.Poll(10*time.Second, timeout, func() (bool, error) {
+		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("deployment", deploymentName,
+			"-n", namespace,
+			"-o", "jsonpath={.status.replicas},{.status.readyReplicas}").Output()
+		if err != nil {
+			return false, nil
+		}
+
+		parts := strings.Split(strings.TrimSpace(output), ",")
+		if len(parts) != 2 {
+			return false, nil
+		}
+
+		replicas, _ := strconv.Atoi(parts[0])
+		readyReplicas, _ := strconv.Atoi(parts[1])
+
+		if replicas > 0 && replicas == readyReplicas {
+			return true, nil
+		}
+
+		podStatus, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods",
+			"-n", namespace,
+			"-l", "app="+deploymentName,
+			"-o", "jsonpath={.items[*].status.containerStatuses[*].state}").Output()
+
+		if err == nil && podStatus != "" {
+			lastPodStatus = podStatus
+
+			if strings.Contains(podStatus, "ImagePullBackOff") || strings.Contains(podStatus, "ErrImagePull") {
+				imagePullBackOffCount++
+				if imagePullBackOffCount >= 3 {
+					return false, fmt.Errorf("ImagePullBackOff detected - image cannot be pulled")
+				}
+			} else {
+				imagePullBackOffCount = 0
+			}
+
+			if strings.Contains(podStatus, "CrashLoopBackOff") {
+				return false, fmt.Errorf("CrashLoopBackOff detected - container crashing on start")
+			}
+		}
+
+		return false, nil
+	})
+
+	if err != nil {
+		e2e.Logf("Deployment %s failed to become ready in namespace %s", deploymentName, namespace)
+		e2e.Logf("Last pod status: %s", lastPodStatus)
+
+		podList, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods",
+			"-n", namespace,
+			"-l", "app="+deploymentName,
+			"-o", "wide").Output()
+		e2e.Logf("Pod list:\n%s", podList)
+
+		events, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args("events",
+			"-n", namespace,
+			"--field-selector", "involvedObject.kind=Pod",
+			"--sort-by", ".lastTimestamp").Output()
+		e2e.Logf("Pod events:\n%s", events)
+
+		deployStatus, _ := oc.AsAdmin().WithoutNamespace().Run("describe").Args("deployment", deploymentName,
+			"-n", namespace).Output()
+		e2e.Logf("Deployment status:\n%s", deployStatus)
+	}
+
+	if err != nil {
+		return fmt.Errorf("deployment %s in namespace %s did not become ready within %v: %w", deploymentName, namespace, timeout, err)
+	}
+	return nil
+}
+
+func checkWorkloadCreated(oc *exutil.CLI, name, namespace string, replicaCount int) bool {
+	readyReplicas, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"deployment", name, "-n", namespace, "-o=jsonpath={.status.readyReplicas}",
+	).Output()
+
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return replicaCount == 0
+		}
+		e2e.Logf("Failed to get deployment %s, retrying: %v", name, err)
+		return false
+	}
+
+	if readyReplicas == "" {
+		return replicaCount == 0
+	}
+
+	numberOfWorkloads, err := strconv.Atoi(readyReplicas)
+	if err != nil {
+		e2e.Logf("Could not parse readyReplicas count '%s' for deployment %s: %v", readyReplicas, name, err)
+		return false
+	}
+
+	return numberOfWorkloads == replicaCount
+}
+
+func scaleDeployment(oc *exutil.CLI, deploymentName string, replicas int, namespace string) error {
+	_, err := oc.AsAdmin().WithoutNamespace().Run("scale").
+		Args("--replicas="+strconv.Itoa(replicas), "deployment", deploymentName, "-n", namespace).Output()
+	if err != nil {
+		return fmt.Errorf("failed to scale deployment %s to %d replicas: %w", deploymentName, replicas, err)
+	}
+
+	pollErr := wait.Poll(20*time.Second, 30*time.Minute, func() (bool, error) {
+		return checkWorkloadCreated(oc, deploymentName, namespace, replicas), nil
+	})
+	if pollErr != nil {
+		return fmt.Errorf("deployment %s did not reach %d replicas within 30 minutes: %w", deploymentName, replicas, pollErr)
+	}
+
+	return nil
+}
+
+func getExternalIP(iaasPlatform string, oc *exutil.CLI, deploymentName string, namespace string) (string, error) {
+	var cmdArgs []string
+	if iaasPlatform == "azure" || iaasPlatform == "gcp" {
+		cmdArgs = []string{"get", "service", deploymentName, "-o=jsonpath={.status.loadBalancer.ingress[0].ip}", "-n", namespace}
+	} else {
+		cmdArgs = []string{"get", "service", deploymentName, "-o=jsonpath={.status.loadBalancer.ingress[0].hostname}", "-n", namespace}
+	}
+
+	lbTimeout := 5 * time.Minute
+	var extIP string
+	pollErr := wait.Poll(2*time.Second, lbTimeout, func() (bool, error) {
+		output, err := oc.AsAdmin().WithoutNamespace().Run(cmdArgs[0]).Args(cmdArgs[1:]...).Output()
+		if err != nil {
+			e2e.Logf("Error retrieving external IP, retrying: %v", err)
+			return false, nil
+		}
+		extIP = output
+		e2e.Logf("%v ExternalIP is %v", iaasPlatform, extIP)
+		if extIP == "" {
+			e2e.Logf("External IP is empty, trying next round")
+			return false, nil
+		}
+		return true, nil
+	})
+
+	if pollErr != nil {
+		return "", fmt.Errorf("failed to get LoadBalancer IP after %v: %w", lbTimeout, pollErr)
+	}
+	return extIP, nil
+}
+
+func haveMetricsServer(oc *exutil.CLI) bool {
+	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("apiservice", "v1beta1.metrics.k8s.io").Output()
+	return err == nil && strings.Contains(output, "True")
+}
+
+func getWindowsBuildID(oc *exutil.CLI, nodeID string) (string, error) {
+	build, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("node", nodeID, "-o=jsonpath={.metadata.labels.node\\.kubernetes\\.io\\/windows-build}").Output()
+	return build, err
+}
+
+func checkConnectivity(ctx context.Context, IP string, delay int) error {
+	url := "http://" + net.JoinHostPort(IP, "80")
+	timeout := strconv.Itoa(delay)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+		time.Sleep(time.Duration(delay) * time.Second)
+		curl := exec.CommandContext(ctx, "curl", "--connect-timeout", timeout, "-s", url)
+		out, err := curl.Output()
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("curl to %s failed: %v (output: %s)", url, err, string(out))
+		}
+		if !strings.Contains(string(out), "Windows Container Web Server") {
+			return fmt.Errorf("unexpected response from LB %s: %s", url, string(out))
+		}
+		e2e.Logf("Checked LB connectivity of %s", url)
+	}
+}
+
+func generateLinuxWebServerYAML(name, namespace, image string, replicas int) string {
+	return fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: %s
+  name: %s
+spec:
+  selector:
+    matchLabels:
+      app: %s
+  replicas: %d
+  template:
+    metadata:
+      labels:
+        app: %s
+      name: %s
+    spec:
+      containers:
+      - name: linux-webserver
+        image: %s
+        ports:
+        - containerPort: 8080
+        command:
+        - /bin/bash
+        - -c
+        - |
+          cat > /tmp/index.html <<'HTMLEOF'
+          <html><body><H1>Linux Container Web Server</H1></body></html>
+          HTMLEOF
+          cd /tmp && /usr/libexec/platform-python -m http.server 8080
+      nodeSelector:
+        kubernetes.io/os: linux
+`, name, name, name, replicas, name, name, image)
+}
+
+func getWorkloadsNames(oc *exutil.CLI, deploymentName string, namespace string) ([]string, error) {
+	workloads, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "--selector", "app="+deploymentName, "--sort-by=.status.hostIP", "-o=jsonpath={.items[*].metadata.name}", "-n", namespace).Output()
+	if err != nil {
+		return nil, err
+	}
+	pods := strings.Fields(workloads)
+	if len(pods) == 0 {
+		return nil, fmt.Errorf("no pods found for deployment %s in namespace %s", deploymentName, namespace)
+	}
+	return pods, nil
+}
+
+func getWorkloadsIP(oc *exutil.CLI, deploymentName string, namespace string) ([]string, error) {
+	workloads, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "--selector", "app="+deploymentName, "--sort-by=.status.hostIP", "-o=jsonpath={.items[*].status.podIP}", "-n", namespace).Output()
+	if err != nil {
+		return nil, err
+	}
+	ips := strings.Fields(workloads)
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no pod IPs found for deployment %s in namespace %s", deploymentName, namespace)
+	}
+	return ips, nil
+}
+
+func buildInvokeWebRequestCommand(url string) string {
+	return fmt.Sprintf(
+		"$r = Invoke-WebRequest -Uri %s -UseBasicParsing -ErrorAction SilentlyContinue; "+
+			"if ($r.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($r.Content) } else { $r.Content }",
+		url)
+}
+
+func runInBackground(ctx context.Context, cancel context.CancelFunc, check func(context.Context, string, int) error, val string, delay int) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		defer g.GinkgoRecover()
+		err := check(ctx, val, delay)
+		if err != nil {
+			cancel()
+			e2e.Logf("Error during invocation of %v(%v,%v): %v", runtime.FuncForPC(reflect.ValueOf(check).Pointer()).Name(), val, delay, err.Error())
+		}
+		errCh <- err
+	}()
+	return errCh
 }

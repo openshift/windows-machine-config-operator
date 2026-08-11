@@ -1,6 +1,7 @@
 package winc
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -873,6 +874,312 @@ spec:
 		g.By("Verify Windows nodes remain Ready and functional")
 		waitWindowsNodesReady(oc, len(winInternalIPs), 5*time.Minute)
 		e2e.Logf("All Windows nodes are Ready and using certificates from controllerConfig")
+	})
+
+	g.It("Author:rrasouli-Smokerun-Medium-79100-Horizontal Pod Autoscaling with Windows containers", func() {
+		if !haveMetricsServer(oc) {
+			g.Skip("metrics-server is required for HPA testing")
+		}
+
+		namespace := "winc-79100"
+		deploymentName := "win-webserver"
+		defer deleteProject(oc, namespace)
+
+		g.By("Creating test namespace")
+		createProject(oc, namespace)
+
+		g.By("Creating Windows deployment")
+		manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, false, "200m", "")
+		err := createResourceFromString(oc, namespace, manifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Creating memory-based HPA")
+		memoryManifest := generateHPAYAML("hpa-resource-metrics-memory", namespace, deploymentName, 1, 5, 20, "memory", "40Mi")
+		err = createResourceFromString(oc, namespace, memoryManifest)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create memory HPA")
+		defer func() {
+			if delErr := oc.AsAdmin().WithoutNamespace().Run("delete").Args("hpa", "hpa-resource-metrics-memory", "-n", namespace, "--ignore-not-found").Execute(); delErr != nil {
+				e2e.Logf("Warning: failed to cleanup memory HPA: %v", delErr)
+			}
+		}()
+
+		g.By("Verifying HPA scales up deployment")
+		err = wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+			msg, _ := oc.AsAdmin().WithoutNamespace().Run("get").
+				Args("deployment", deploymentName, "-o=jsonpath={.status.readyReplicas}", "-n", namespace).Output()
+			numberOfWorkloads, _ := strconv.Atoi(msg)
+			return numberOfWorkloads > 1, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "Deployment did not scale up")
+
+		g.By("Patching memory HPA to trigger scale down")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"hpa", "hpa-resource-metrics-memory",
+			"-n", namespace,
+			"--type=merge",
+			"--patch", `{"spec":{"metrics":[{"resource":{"target":{"type":"AverageValue","averageValue":"150Mi"},"name":"memory"},"type":"Resource"}]}}`,
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to patch memory HPA")
+
+		g.By("Removing memory HPA and scaling deployment back to 1")
+		err = oc.AsAdmin().WithoutNamespace().Run("delete").Args("hpa", "hpa-resource-metrics-memory", "-n", namespace, "--ignore-not-found").Execute()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to delete memory HPA")
+		err = scaleDeployment(oc, deploymentName, 1, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to scale deployment back to 1 after removing memory HPA")
+
+		g.By("Creating CPU-based HPA")
+		cpuManifest := generateHPAYAML("hpa-resource-metrics-cpu", namespace, deploymentName, 1, 5, 20, "cpu", "10m")
+		err = createResourceFromString(oc, namespace, cpuManifest)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create CPU HPA")
+		defer func() {
+			if delErr := oc.AsAdmin().WithoutNamespace().Run("delete").Args("hpa", "hpa-resource-metrics-cpu", "-n", namespace, "--ignore-not-found").Execute(); delErr != nil {
+				e2e.Logf("Warning: failed to cleanup CPU HPA: %v", delErr)
+			}
+		}()
+
+		g.By("Verifying HPA scales up deployment")
+		err = wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+			msg, _ := oc.AsAdmin().WithoutNamespace().Run("get").
+				Args("deployment", deploymentName, "-o=jsonpath={.status.readyReplicas}", "-n", namespace).Output()
+			numberOfWorkloads, _ := strconv.Atoi(msg)
+			return numberOfWorkloads > 1, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Patching CPU HPA to trigger scale down")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"hpa", "hpa-resource-metrics-cpu",
+			"-n", namespace,
+			"--type=merge",
+			"--patch", `{"spec":{"metrics":[{"resource":{"target":{"type":"AverageValue","averageValue":"500m"},"name":"cpu"},"type":"Resource"}]}}`,
+		).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Removing CPU HPA and scaling deployment back to 1")
+		err = oc.AsAdmin().WithoutNamespace().Run("delete").Args("hpa", "hpa-resource-metrics-cpu", "-n", namespace, "--ignore-not-found").Execute()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to delete CPU HPA")
+		err = scaleDeployment(oc, deploymentName, 1, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to scale deployment back to 1 after removing CPU HPA")
+	})
+
+	g.It("Author:rrasouli-Smokerun-Medium-87711-Windows workload with RuntimeClass [Serial]", func() {
+		namespace := "winc-87711"
+		deploymentName := "win-webserver"
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+
+		g.By("Step 1: Get Windows node and its build version")
+		windowsNode, err := oc.AsAdmin().WithoutNamespace().Run("get").
+			Args("nodes", "-l", windowsNodeLabel, "-o=jsonpath={.items[0].metadata.name}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(windowsNode).NotTo(o.BeEmpty(), "At least one Windows node should exist")
+
+		buildID, err := getWindowsBuildID(oc, windowsNode)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		e2e.Logf("Windows node %s has build ID: %s", windowsNode, buildID)
+
+		g.By("Step 2: Create RuntimeClass for Windows build")
+		runtimeClass := namespace + "-runtimeclass"
+		runtimeClassYaml := generateRuntimeClassYAML(runtimeClass, buildID)
+		err = createResourceFromString(oc, "", runtimeClassYaml)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		e2e.Logf("Created RuntimeClass: %s for build ID: %s", runtimeClass, buildID)
+
+		defer func() {
+			_, err := oc.AsAdmin().WithoutNamespace().Run("delete").Args("runtimeclass", runtimeClass).Output()
+			if err != nil {
+				e2e.Logf("Warning: Failed to delete RuntimeClass %s: %v", runtimeClass, err)
+			} else {
+				e2e.Logf("Deleted RuntimeClass: %s", runtimeClass)
+			}
+		}()
+
+		g.By("Step 3: Verify RuntimeClass was created successfully")
+		runtimeClassOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").
+			Args("runtimeclass", runtimeClass, "-o", "yaml").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(runtimeClassOutput).To(o.ContainSubstring("runhcs-wcow-process"), "RuntimeClass should have handler: runhcs-wcow-process")
+		o.Expect(runtimeClassOutput).To(o.ContainSubstring(buildID), "RuntimeClass should have build ID in nodeSelector")
+		e2e.Logf("RuntimeClass %s is properly configured with handler runhcs-wcow-process", runtimeClass)
+
+		g.By("Step 4: Create Windows deployment with RuntimeClass")
+		manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, true, "", runtimeClass)
+		err = createResourceFromString(oc, namespace, manifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = waitForDeploymentReady(oc, deploymentName, namespace, 10*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Step 5: Verify pod spec contains correct RuntimeClass")
+		podName, err := oc.AsAdmin().WithoutNamespace().Run("get").
+			Args("pods", "-n", namespace, "-l=app="+deploymentName, "-o=jsonpath={.items[0].metadata.name}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(podName).NotTo(o.BeEmpty(), "Pod should exist")
+
+		podRuntimeClass, err := oc.AsAdmin().WithoutNamespace().Run("get").
+			Args("pod", podName, "-n", namespace, "-o=jsonpath={.spec.runtimeClassName}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(podRuntimeClass).To(o.Equal(runtimeClass), "Pod should have runtimeClassName: %s", runtimeClass)
+		e2e.Logf("Pod %s has correct runtimeClassName: %s", podName, podRuntimeClass)
+
+		g.By("Step 6: Verify pod is scheduled on Windows node")
+		nodeName, err := oc.AsAdmin().WithoutNamespace().Run("get").
+			Args("pod", podName, "-n", namespace, "-o=jsonpath={.spec.nodeName}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(nodeName).NotTo(o.BeEmpty(), "Pod should be scheduled on a node")
+
+		nodeOS, err := oc.AsAdmin().WithoutNamespace().Run("get").
+			Args("node", nodeName, "-o=jsonpath={.metadata.labels.kubernetes\\.io/os}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(nodeOS).To(o.Equal("windows"), "Pod should be scheduled on Windows node")
+		e2e.Logf("Pod is scheduled on Windows node: %s", nodeName)
+
+		g.By("Step 7: Validate workload functionality via HTTP")
+		if iaasPlatform != "vsphere" && iaasPlatform != "nutanix" && !isNone(oc) {
+			externalIP, err := getExternalIP(iaasPlatform, oc, deploymentName, namespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+
+			url := "http://" + net.JoinHostPort(externalIP, "80")
+			var lastErr error
+			success := false
+			maxRetries := 20
+			retryInterval := 15 * time.Second
+
+			httpClient := &http.Client{Timeout: 15 * time.Second}
+			e2e.Logf("Testing HTTP connectivity to %s (max %d retries)", url, maxRetries)
+			for i := 0; i < maxRetries; i++ {
+				resp, err := httpClient.Get(url)
+				if err == nil && resp.StatusCode == 200 {
+					resp.Body.Close()
+					e2e.Logf("Windows workload with RuntimeClass is functional and accessible via HTTP")
+					success = true
+					break
+				}
+				if err != nil {
+					lastErr = err
+					e2e.Logf("Retry %d/%d: HTTP GET failed: %v", i+1, maxRetries, err)
+				} else {
+					lastErr = fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+					resp.Body.Close()
+					e2e.Logf("Retry %d/%d: Got status %d, expected 200", i+1, maxRetries, resp.StatusCode)
+				}
+				if i < maxRetries-1 {
+					time.Sleep(retryInterval)
+				}
+			}
+			o.Expect(success).To(o.BeTrue(), "Should be able to connect to Windows web server after %d retries. Last error: %v", maxRetries, lastErr)
+		} else {
+			e2e.Logf("Skipping HTTP connectivity test on platform %s (LoadBalancer not supported)", iaasPlatform)
+		}
+
+		g.By("Step 8: Verify pod events show no RuntimeClass errors")
+		podEvents, err := oc.AsAdmin().WithoutNamespace().Run("get").
+			Args("events", "-n", namespace, "--field-selector", fmt.Sprintf("involvedObject.name=%s", podName), "-o=jsonpath={.items[*].message}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(podEvents).NotTo(o.ContainSubstring("RuntimeClass not found"), "Pod events should not contain RuntimeClass not found errors")
+		o.Expect(podEvents).NotTo(o.ContainSubstring("forbidden RuntimeClass"), "Pod events should not contain forbidden RuntimeClass errors")
+		e2e.Logf("No RuntimeClass-related errors found in pod events")
+	})
+
+	g.It("Smokerun-Author:sgao-Critical-28632-Windows and Linux east west network during a long time", func() {
+		namespace := "winc-28632"
+		winDeployment := "win-webserver"
+		linuxDeployment := "linux-webserver"
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+
+		g.By("Deploy Windows and Linux web servers")
+		winManifest := generateWindowsWebServerYAML(winDeployment, namespace, windowsDebugImage, 1, false, "", "")
+		err := createResourceFromString(oc, namespace, winManifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		linuxManifest := generateLinuxWebServerYAML(linuxDeployment, namespace, linuxDebugImage, 1)
+		err = createResourceFromString(oc, namespace, linuxManifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		err = waitForDeploymentReady(oc, winDeployment, namespace, 5*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = waitForDeploymentReady(oc, linuxDeployment, namespace, 5*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Check communication: Windows pod <--> Linux pod")
+		winPodNames, err := getWorkloadsNames(oc, winDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(winPodNames).NotTo(o.BeEmpty(), "Windows pod names should not be empty")
+		winPodIPs, err := getWorkloadsIP(oc, winDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(winPodIPs).NotTo(o.BeEmpty(), "Windows pod IPs should not be empty")
+		linuxPodNames, err := getWorkloadsNames(oc, linuxDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(linuxPodNames).NotTo(o.BeEmpty(), "Linux pod names should not be empty")
+		linuxPodIPs, err := getWorkloadsIP(oc, linuxDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(linuxPodIPs).NotTo(o.BeEmpty(), "Linux pod IPs should not be empty")
+
+		g.By("Windows pod -> Linux pod")
+		psCmd := buildInvokeWebRequestCommand("http://" + net.JoinHostPort(linuxPodIPs[0], "8080"))
+		msg, err := oc.AsAdmin().WithoutNamespace().Run("exec").Args("-n", namespace, winPodNames[0], "--", "pwsh.exe", "-Command", psCmd).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(msg).To(o.ContainSubstring("Linux Container Web Server"), "Failed to access Linux web server from Windows pod")
+
+		g.By("Linux pod -> Windows pod")
+		msg, err = oc.AsAdmin().WithoutNamespace().Run("exec").Args("-n", namespace, linuxPodNames[0], "--", "curl", "-s", net.JoinHostPort(winPodIPs[0], "80")).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(msg).To(o.ContainSubstring("Windows Container Web Server"), "Failed to curl Windows web server from Linux pod")
+	})
+
+	g.It("Smokerun-Author:rrasouli-High-38186-[wmco] Windows LB service [Slow]", func() {
+		if iaasPlatform == "vsphere" || iaasPlatform == "nutanix" {
+			g.Skip(fmt.Sprintf("Platform %s does not support Load balancer, skipping", iaasPlatform))
+		}
+		if isNone(oc) {
+			g.Skip("Platform none does not support Load balancer, skipping")
+		}
+		namespace := "winc-38186"
+		deploymentName := "win-webserver"
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+
+		g.By("Creating Windows web server deployment with LB service")
+		manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, true, "", "")
+		err := createResourceFromString(oc, namespace, manifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		externalIP, err := getExternalIP(iaasPlatform, oc, deploymentName, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		lbURL := "http://" + net.JoinHostPort(externalIP, "80")
+		g.By("Waiting for LB endpoint to become reachable")
+		err = wait.Poll(10*time.Second, 3*time.Minute, func() (bool, error) {
+			curl := exec.CommandContext(ctx, "curl", "--connect-timeout", "5", "-s", lbURL)
+			out, curlErr := curl.Output()
+			if curlErr != nil {
+				e2e.Logf("LB not yet reachable: %v", curlErr)
+				return false, nil
+			}
+			if strings.Contains(string(out), "Windows Container Web Server") {
+				return true, nil
+			}
+			return false, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "LB endpoint did not become reachable")
+
+		g.By("Test LB " + externalIP + " connectivity")
+		bgErr := runInBackground(ctx, cancel, checkConnectivity, externalIP, 5)
+
+		g.By("Scale to 6 Windows workloads across nodes")
+		err = scaleDeployment(oc, deploymentName, 6, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to scale deployment to 6 replicas")
+
+		cancel()
+		err = <-bgErr
+		o.Expect(err).NotTo(o.HaveOccurred(), "Connectivity check failed during scaling")
 	})
 
 })
