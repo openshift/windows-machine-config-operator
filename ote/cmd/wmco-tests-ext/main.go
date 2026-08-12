@@ -73,7 +73,7 @@ func main() {
 		if match := re.FindStringSubmatch(spec.Name); match != nil {
 			spec.Include(et.PlatformEquals(match[1]))
 		}
-		spec.Lifecycle = et.LifecycleInforming
+		spec.Lifecycle = et.LifecycleBlocking
 	})
 
 	ext.AddSpecs(componentSpecs)
