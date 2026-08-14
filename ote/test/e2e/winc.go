@@ -249,7 +249,16 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		}()
 
 		g.By("Wait for WMCO to reconcile and Windows nodes to be reconfigured")
+		err = waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred(), "WMCO deployment did not become ready after env var update")
 		waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
+
+		g.By("Wait for services ConfigMap to be updated with log rotation configuration")
+		err = wait.Poll(5*time.Second, 3*time.Minute, func() (bool, error) {
+			_, pollErr := getLatestServicesCMData(oc)
+			return pollErr == nil, nil
+		})
+		o.Expect(err).NotTo(o.HaveOccurred(), "services ConfigMap was not updated after setting log rotation env vars")
 
 		g.By("Get the services ConfigMap to verify log rotation configuration")
 		servicesCMData, err := getLatestServicesCMData(oc)
@@ -933,7 +942,7 @@ spec:
 		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to scale deployment back to 1 after removing memory HPA")
 
 		g.By("Creating CPU-based HPA")
-		cpuManifest := generateHPAYAML("hpa-resource-metrics-cpu", namespace, deploymentName, 1, 5, 20, "cpu", "10m")
+		cpuManifest := generateHPAYAML("hpa-resource-metrics-cpu", namespace, deploymentName, 1, 5, 20, "cpu", "1m")
 		err = createResourceFromString(oc, namespace, cpuManifest)
 		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create CPU HPA")
 		defer func() {
@@ -1325,7 +1334,7 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Smokerun-Medium-76765-WICD-Remove-Services [Disruptive]", func() {
+	g.It("Author:rrasouli-Longduration-Smokerun-Medium-76765-WICD-Remove-Services [Slow][Disruptive]", func() {
 		wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -1466,47 +1475,94 @@ spec:
 		retryInterval := 30 * time.Second
 		defer waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
 
+		// Stop-Service -Force handles the dependency chain that sc.exe stop
+		// cannot (error 1051). Kubelet and containerd are stopped together in
+		// a single HostProcess pod at the end: kubelet must still be running
+		// to schedule the pod, and stopping containerd is self-destructive
+		// (kills the pod's own runtime), so the pod will report as failed.
 		for _, nodeName := range winHostNames {
 			e2e.Logf("Stopping services on Windows host: %s", nodeName)
+
 			for _, serviceName := range removedServices {
+				if serviceName == "kubelet" || serviceName == "containerd" {
+					continue
+				}
 				var lastErr error
+				lastStatus := ""
 				for i := 0; i < maxRetries; i++ {
 					e2e.Logf("Attempt %d to stop service %s on %s", i+1, serviceName, nodeName)
-					status, err := stopWindowsService(oc, nodeName, windowsDebugImage, serviceName)
+					cmd := fmt.Sprintf(
+						"Stop-Service '%s' -Force -ErrorAction SilentlyContinue; "+
+							"(Get-Service '%s').Status",
+						serviceName, serviceName)
+					status, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
 					if err != nil {
 						e2e.Logf("Error stopping service %s on %s: %v", serviceName, nodeName, err)
 						lastErr = err
+						if i < maxRetries-1 {
+							time.Sleep(retryInterval)
+						}
 						continue
 					}
 					lastErr = nil
+					status = strings.TrimSpace(status)
+					lastStatus = status
 					e2e.Logf("Service %s status on %s: %s", serviceName, nodeName, status)
 					if status != "Running" {
 						break
 					}
-					e2e.Logf("Service %s is still running on %s, retrying in %v...", serviceName, nodeName, retryInterval)
+					e2e.Logf("Service %s still running on %s, retrying in %v...",
+						serviceName, nodeName, retryInterval)
 					time.Sleep(retryInterval)
 				}
 				o.Expect(lastErr).NotTo(o.HaveOccurred(),
 					"Failed to stop service %s on host %s after retries", serviceName, nodeName)
+				o.Expect(lastStatus).NotTo(o.Equal("Running"),
+					"Service %s is still Running on host %s after %d stop attempts", serviceName, nodeName, maxRetries)
+			}
+
+			e2e.Logf("Stopping kubelet and containerd on %s (fire-and-forget)", nodeName)
+			cmd := "Stop-Service 'kubelet' -Force -ErrorAction SilentlyContinue; " +
+				"Stop-Service 'containerd' -Force -ErrorAction SilentlyContinue"
+			_, err = runHostProcessPS(oc, nodeName, windowsDebugImage, cmd, false)
+			o.Expect(err).NotTo(o.HaveOccurred(),
+				"Failed to launch kubelet/containerd stop on %s", nodeName)
+		}
+
+		g.By("Step 12: Wait for nodes to recover and verify critical services")
+		waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
+		for _, nodeName := range winHostNames {
+			for _, svcName := range []string{"kubelet", "containerd"} {
+				ok, err := checkWindowsServiceRunning(oc, nodeName, windowsDebugImage, svcName)
+				o.Expect(err).NotTo(o.HaveOccurred(),
+					"Failed to check %s on %s", svcName, nodeName)
+				o.Expect(ok).To(o.BeTrue(),
+					"Service %s should be running on %s after node recovery", svcName, nodeName)
 			}
 		}
 
-		g.By("Step 12: Verify no unexpected services are running")
+		g.By("Step 13: Verify no unexpected services are running")
 		unexpectedServices := []string{"unwanted-service-1", "unwanted-service-2"}
 		for _, nodeName := range winHostNames {
 			for _, service := range unexpectedServices {
 				checkCmd := fmt.Sprintf("Get-Service '%s' -ErrorAction SilentlyContinue", service)
-				output, err := runDebugNodePS(oc, nodeName, windowsDebugImage, checkCmd)
-				if err != nil || strings.Contains(output, "Cannot find") {
+				output, err := runHostProcessPS(oc, nodeName, windowsDebugImage, checkCmd)
+				if err != nil {
+					e2e.Logf("Error checking service %s on %s: %v", service, nodeName, err)
+					continue
+				}
+				if strings.TrimSpace(output) == "" || strings.Contains(output, "Cannot find") {
 					continue
 				}
 				statusCmd := fmt.Sprintf("Get-Service '%s' | Select-Object -ExpandProperty Status", service)
-				statusOutput, err := runDebugNodePS(oc, nodeName, windowsDebugImage, statusCmd)
-				if err == nil {
-					status := strings.TrimSpace(statusOutput)
-					if status != "" && status != "Stopped" {
-						e2e.Failf("Service %s is still running on host %s", service, nodeName)
-					}
+				statusOutput, err := runHostProcessPS(oc, nodeName, windowsDebugImage, statusCmd)
+				if err != nil {
+					e2e.Logf("Error checking status for %s on %s: %v", service, nodeName, err)
+					continue
+				}
+				status := strings.TrimSpace(statusOutput)
+				if status != "" && status != "Stopped" {
+					e2e.Failf("Service %s is still running on host %s", service, nodeName)
 				}
 			}
 			e2e.Logf("Finished checking for unexpected services on %s", nodeName)
@@ -1605,7 +1661,7 @@ spec:
 
 		g.By("Ensure Windows workers were not restarted after CA rotation")
 		for _, nodeName := range winHostNames {
-			uptimeOutput, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+			uptimeOutput, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
 				`(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")`)
 			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get uptime from %s", nodeName)
 
