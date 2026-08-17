@@ -1334,7 +1334,9 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Longduration-Smokerun-Medium-76765-WICD-Remove-Services [Slow][Disruptive]", func() {
+	g.It("Author:rrasouli-Longduration-Smokerun-Medium-76765-WICD-Remove-Services [Slow][Disruptive]",
+		g.SpecTimeout(30*time.Minute),
+		func(ctx g.SpecContext) {
 		wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -1672,6 +1674,394 @@ spec:
 			if rotatedCertNotBeforeParsed.Before(lastBootTime) {
 				e2e.Failf("Windows worker %v got restarted after CA rotation", nodeName)
 			}
+		}
+	})
+
+	// author: rrasouli@redhat.com
+	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Slow][Disruptive]",
+		g.SpecTimeout(30*time.Minute),
+		func(ctx g.SpecContext) {
+		if isNone(oc) {
+			g.Skip("platform none does not support changing namespace and scaling up machines")
+		}
+		if iaasPlatform == "vsphere" {
+			g.Skip("vsphere does not support key replacement, skipping")
+		}
+
+		g.By("Step 1: Extract private key and clone MachineSet")
+		privateKeyFile := extractPrivateKeyToFile(oc)
+		defer os.Remove(privateKeyFile)
+
+		zone := getAvailabilityZone(oc)
+		sourceMSName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+		cloneMSName := strings.ReplaceAll(sourceMSName, "winworker", "winc-worker")
+		cloneWindowsMachineSet(oc, sourceMSName, cloneMSName)
+		defer func() {
+			oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+				"machinesets.machine.openshift.io", cloneMSName, "-n", mcoNamespace,
+				"--ignore-not-found").Execute()
+		}()
+
+		g.By("Step 2: Scale WMCO to 0 and delete secrets")
+		defer scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+		err := scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		defer func() {
+			oc.AsAdmin().WithoutNamespace().Run("create").Args(
+				"secret", "generic", "cloud-private-key",
+				"--from-file=private-key.pem="+privateKeyFile,
+				"-n", wmcoNamespace).Execute()
+		}()
+		_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+			"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+			"secret", "windows-user-data", "-n", mcoNamespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Step 3: Scale WMCO to 1 and verify machine stuck without secrets")
+		err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		scaleWindowsMachineSet(oc, cloneMSName, 2, 1, true)
+
+		pollErr := wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
+			events, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"events", "-n", mcoNamespace).Output()
+			status, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"machines.machine.openshift.io",
+				"-o=jsonpath={.items[?(@.metadata.labels.machine\\.openshift\\.io\\/cluster-api-machineset==\""+cloneMSName+"\")].status.phase}",
+				"-n", mcoNamespace).Output()
+			o.Expect(err).NotTo(o.HaveOccurred())
+			if strings.Contains(events, "Secret \"windows-user-data\" not found") &&
+				strings.EqualFold(status, "Provisioning") {
+				return true, nil
+			}
+			return false, nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(),
+			"Machine should be stuck in Provisioning without cloud-private-key")
+
+		g.By("Step 4: Recreate private key and verify machine gets reconciled")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args(
+			"secret", "generic", "cloud-private-key",
+			"--from-file=private-key.pem="+privateKeyFile,
+			"-n", wmcoNamespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		waitForMachinesetReady(oc, cloneMSName, 25, 1)
+
+		g.By("Step 5: Scale down clone and test wrong key name")
+		scaleWindowsMachineSet(oc, cloneMSName, 5, 0, false)
+
+		_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+			"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args(
+			"secret", "generic", "cloud-private-key",
+			"--from-file=wrong-key.pem="+privateKeyFile,
+			"-n", wmcoNamespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Step 6: Scale up clone and verify WMCO detects missing key")
+		scaleWindowsMachineSet(oc, cloneMSName, 2, 1, true)
+		waitUntilWMCOStatusChanged(oc, "cloud-private-key missing", "1m")
+
+		g.By("Step 7: Replace with correct key and verify reconciliation")
+		_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+			"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args(
+			"secret", "generic", "cloud-private-key",
+			"--from-file=private-key.pem="+privateKeyFile,
+			"-n", wmcoNamespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		waitForMachinesetReady(oc, cloneMSName, 25, 1)
+	})
+
+	// author: rrasouli@redhat.com
+	g.It("Smokerun-Author:rrasouli-Longduration-High-39451-Access Windows workload through clusterIP [Slow][Disruptive]",
+		g.SpecTimeout(30*time.Minute),
+		func(ctx g.SpecContext) {
+		if isNone(oc) {
+			g.Skip("platform none does not support scaling up machineset tests")
+		}
+
+		namespace := "winc-39451"
+		winDeployment := "win-webserver"
+		linuxDeployment := "linux-webserver"
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+
+		g.By("Step 1: Deploy Windows and Linux web server workloads with ClusterIP services")
+		winManifest := generateWindowsWebServerYAML(winDeployment, namespace, windowsDebugImage, 1, false, "", "")
+		err := createResourceFromString(oc, namespace, winManifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		winSvcManifest := generateClusterIPServiceYAML(winDeployment, namespace, winDeployment, 80)
+		err = createResourceFromString(oc, namespace, winSvcManifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = waitForDeploymentReady(oc, winDeployment, namespace, 5*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		linuxManifest := generateLinuxWebServerYAML(linuxDeployment, namespace, linuxDebugImage, 1)
+		err = createResourceFromString(oc, namespace, linuxManifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		linuxSvcManifest := generateClusterIPServiceYAML(linuxDeployment, namespace, linuxDeployment, 8080)
+		err = createResourceFromString(oc, namespace, linuxSvcManifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = waitForDeploymentReady(oc, linuxDeployment, namespace, 5*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Step 2: Verify cross-platform ClusterIP connectivity")
+		windowsClusterIP, err := getServiceClusterIP(oc, winDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		linuxClusterIP, err := getServiceClusterIP(oc, linuxDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		winPods, err := getWorkloadsNames(oc, winDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		linuxPods, err := getWorkloadsNames(oc, linuxDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		e2e.Logf("Windows ClusterIP: %s, Linux ClusterIP: %s", windowsClusterIP, linuxClusterIP)
+
+		// Windows Pod -> Linux Service
+		psCmd := buildInvokeWebRequestCommand("http://" + linuxClusterIP + ":8080")
+		msg, err := oc.AsAdmin().WithoutNamespace().Run("exec").Args(
+			"-n", namespace, winPods[0], "--", "pwsh.exe", "-Command", psCmd).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(msg).To(o.ContainSubstring("Linux Container Web Server"),
+			"Failed to access Linux ClusterIP from Windows pod")
+
+		// Linux Pod -> Windows Service
+		msg, err = oc.AsAdmin().WithoutNamespace().Run("exec").Args(
+			"-n", namespace, linuxPods[0], "--", "curl", "-s", windowsClusterIP).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(msg).To(o.ContainSubstring("Windows Container Web Server"),
+			"Failed to access Windows ClusterIP from Linux pod")
+
+		g.By("Step 3: Scale Windows deployment and verify new pod connectivity")
+		err = scaleDeployment(oc, winDeployment, 2, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		winPods, err = getWorkloadsNames(oc, winDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		// New Windows Pod -> Linux Service
+		psCmd = buildInvokeWebRequestCommand("http://" + linuxClusterIP + ":8080")
+		msg, err = oc.AsAdmin().WithoutNamespace().Run("exec").Args(
+			"-n", namespace, winPods[1], "--", "pwsh.exe", "-Command", psCmd).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(msg).To(o.ContainSubstring("Linux Container Web Server"),
+			"Failed to access Linux ClusterIP from scaled Windows pod")
+
+		g.By("Step 4: Scale Windows MachineSet and verify cross-node connectivity")
+		if iaasPlatform == "azure" {
+			zone := getAvailabilityZone(oc)
+			windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			publicIPValue, azErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"machineset", windowsMachineSetName, "-n", mcoNamespace,
+				"-o", "jsonpath={.spec.template.spec.publicIP}").Output()
+			if azErr == nil && strings.ToLower(strings.TrimSpace(publicIPValue)) == "false" {
+				e2e.Logf("Skipping Step 4: Azure machineset has publicIP: false (OCPBUGS-9292)")
+				return
+			}
+		}
+
+		zone := getAvailabilityZone(oc)
+		windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+		defer scaleWindowsMachineSet(oc, windowsMachineSetName, 10, 2, false)
+		scaleWindowsMachineSet(oc, windowsMachineSetName, 15, 3, false)
+		waitWindowsNodesReady(oc, 3, 1200*time.Second)
+
+		winPods, err = getWorkloadsNames(oc, winDeployment, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		psCmd = buildInvokeWebRequestCommand("http://" + linuxClusterIP + ":8080")
+		msg, err = oc.AsAdmin().WithoutNamespace().Run("exec").Args(
+			"-n", namespace, winPods[1], "--", "pwsh.exe", "-Command", psCmd).Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(msg).To(o.ContainSubstring("Linux Container Web Server"),
+			"Failed to access Linux ClusterIP from Windows pod after MachineSet scale up")
+	})
+
+	// author: sgao@redhat.com
+	g.It("Author:sgao-Longduration-Smokerun-Medium-39030-Re queue on Windows machines edge cases [Slow][Disruptive]",
+		g.SpecTimeout(30*time.Minute),
+		func(ctx g.SpecContext) {
+		if isNone(oc) {
+			g.Skip("platform none does not support scaling up Windows machines")
+		}
+
+		g.By("Step 1: Scale down WMCO")
+		defer scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+		err := scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Step 2: Scale up the Windows MachineSet while WMCO is down")
+		zone := getAvailabilityZone(oc)
+		windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+		defer waitWindowsNodesReady(oc, 2, 1000*time.Second)
+		defer scaleWindowsMachineSet(oc, windowsMachineSetName, 10, 2, false)
+		scaleWindowsMachineSet(oc, windowsMachineSetName, 10, 3, true)
+
+		g.By("Step 3: Scale up WMCO")
+		err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		waitForMachinesetReady(oc, windowsMachineSetName, 15, 3)
+
+		g.By("Step 4: Verify machines created before WMCO starts are reconciled")
+		waitWindowsNodesReady(oc, 3, 1200*time.Second)
+	})
+
+	// author: rrasouli@redhat.com
+	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Disruptive]", func() {
+		if isNone(oc) {
+			g.Skip("platform none does not support Windows node reconciliation")
+		}
+
+		namespace := "winc-87809"
+		daemonSetName := "test-windows-daemonset"
+		appLabel := "test-windows-daemon"
+
+		createProject(oc, namespace)
+		defer waitWindowsNodesReady(oc, 2, 15*time.Minute)
+		defer func() {
+			oc.AsAdmin().WithoutNamespace().Run("delete").Args("daemonset", daemonSetName, "-n", namespace, "--ignore-not-found").Execute()
+		}()
+		defer deleteProject(oc, namespace)
+
+		g.By("Step 1: Deploy DaemonSet targeting Windows nodes")
+		manifest := generateWindowsDaemonSetYAML(daemonSetName, namespace, appLabel, windowsDebugImage)
+		err := createResourceFromString(oc, namespace, manifest)
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create DaemonSet")
+
+		g.By("Step 2: Wait for DaemonSet to be ready on all Windows nodes")
+		windowsNodes := getWindowsHostNames(oc)
+		expectedCount := len(windowsNodes)
+		o.Expect(expectedCount).To(o.BeNumerically(">", 0), "No Windows nodes found")
+
+		pollErr := wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
+			output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
+			if err != nil {
+				e2e.Logf("Error getting DaemonSet status: %v", err)
+				return false, nil
+			}
+			numberReady, err := strconv.Atoi(output)
+			if err != nil {
+				return false, nil
+			}
+			e2e.Logf("DaemonSet ready: %d/%d pods", numberReady, expectedCount)
+			return numberReady == expectedCount, nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not become ready in time")
+
+		windowsNode := windowsNodes[0]
+
+		g.By(fmt.Sprintf("Step 3: Manually drain node %s with --ignore-daemonsets", windowsNode))
+		_, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args(
+			"drain", windowsNode, "--ignore-daemonsets", "--force", "--delete-emptydir-data").Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Manual drain should succeed with --ignore-daemonsets")
+
+		g.By("Step 4: Verify DaemonSet pods remain on drained node")
+		pollErr = wait.Poll(10*time.Second, 2*time.Minute, func() (bool, error) {
+			pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"pods", "-n", namespace, "-l", "app="+appLabel,
+				"-o=jsonpath={.items[*].spec.nodeName}").Output()
+			if err != nil {
+				return false, nil
+			}
+			return strings.Contains(pods, windowsNode), nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet pods should remain on drained node")
+
+		g.By(fmt.Sprintf("Step 5: Uncordon node %s", windowsNode))
+		_, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args("uncordon", windowsNode).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to uncordon node")
+
+		g.By("Step 6: Verify DaemonSet recovers after manual drain")
+		pollErr = wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+			output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
+			if err != nil {
+				return false, nil
+			}
+			numberReady, err := strconv.Atoi(output)
+			if err != nil {
+				return false, nil
+			}
+			e2e.Logf("DaemonSet recovery after manual drain: %d/%d pods ready", numberReady, expectedCount)
+			return numberReady == expectedCount, nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after manual drain")
+
+		g.By(fmt.Sprintf("Step 7: Trigger WMCO reconciliation by setting invalidVersion on %s", windowsNode))
+		_, err = oc.AsAdmin().WithoutNamespace().Run("annotate").Args(
+			"node", windowsNode, "--overwrite",
+			"windowsmachineconfig.openshift.io/version=invalidVersion").Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to set invalidVersion annotation")
+
+		g.By("Step 8: Wait for WMCO to reconcile the node")
+		waitVersionAnnotationReady(oc, windowsNode, 30*time.Second, 600*time.Second)
+
+		g.By("Step 9: Verify DaemonSet recovers after WMCO reconciliation")
+		pollErr = wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
+			output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
+			if err != nil {
+				return false, nil
+			}
+			numberReady, err := strconv.Atoi(output)
+			if err != nil {
+				return false, nil
+			}
+			e2e.Logf("DaemonSet recovery after WMCO reconciliation: %d/%d pods ready", numberReady, expectedCount)
+			return numberReady == expectedCount, nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after WMCO reconciliation")
+	})
+
+	// author: sgao@redhat.com
+	g.It("Smokerun-Author:sgao-Medium-37472-Idempotent check of service running in Windows node [Disruptive]", func() {
+		if isNone(oc) {
+			g.Skip("platform none does not support load balancer nor external IP tests")
+		}
+
+		namespace := "winc-37472"
+		deploymentName := "win-webserver"
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+
+		g.By("Step 1: Deploy Windows web server workload")
+		manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, true, "", "")
+		err := createResourceFromString(oc, namespace, manifest)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Step 2: Remove version annotation to trigger reconciliation")
+		windowsHostName := getWindowsHostNames(oc)[0]
+		_, err = oc.AsAdmin().WithoutNamespace().Run("annotate").Args("node", windowsHostName, "windowsmachineconfig.openshift.io/version-").Output()
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		g.By("Step 3: Wait for WMCO to re-apply version annotation")
+		waitVersionAnnotationReady(oc, windowsHostName, 60*time.Second, 1200*time.Second)
+
+		g.By("Step 4: Verify LB service connectivity after reconciliation")
+		if iaasPlatform != "vsphere" && iaasPlatform != "nutanix" {
+			externalIP, err := getExternalIP(iaasPlatform, oc, deploymentName, namespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			pollErr := wait.Poll(20*time.Second, 5*time.Minute, func() (bool, error) {
+				msg, _ := exec.Command("bash", "-c", "curl "+externalIP).Output()
+				if !strings.Contains(string(msg), "Windows Container Web Server") {
+					e2e.Logf("Load balancer is not ready yet, waiting up to 5 minutes ...")
+					return false, nil
+				}
+				e2e.Logf("Load balancer is ready")
+				return true, nil
+			})
+			o.Expect(pollErr).NotTo(o.HaveOccurred(), "Load balancer not ready after 5 minutes")
+		} else {
+			e2e.Logf("Platform %s does not support Load balancer, skipping LB check", iaasPlatform)
 		}
 	})
 
