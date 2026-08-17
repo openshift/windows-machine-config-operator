@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/patch"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
+	"github.com/openshift/windows-machine-config-operator/pkg/servicescm"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
@@ -355,34 +356,190 @@ func (tc *testContext) testEnvVars(t *testing.T) {
 			}
 		})
 	}
+
+	// The windows-services ConfigMap must reflect the cluster-wide proxy state (OCPBUGS-111093). Only non-empty
+	// values are expected, as empty proxy fields are not written to the ConfigMap.
+	t.Run("services ConfigMap", func(t *testing.T) {
+		expectedCMEnvVars := expectedProxyVars(clusterProxy.Status.HTTPProxy, clusterProxy.Status.HTTPSProxy,
+			clusterProxy.Status.NoProxy)
+		require.NoError(t, tc.waitForConfigMapProxyVars(expectedCMEnvVars),
+			"windows-services ConfigMap proxy vars do not match cluster proxy status")
+	})
 }
 
-// testEnvVarRemoval tests that on each node the system-level and the process-level environment variables
-// are unset when the cluster-wide proxy is disabled by patching the proxy variables in the cluster proxy object.
+// testEnvVarRemoval removes the cluster-wide proxy fields one at a time and, after each removal, verifies that
+// the windows-services ConfigMap and the nodes reflect only the remaining proxy variables. This guards against
+// OCPBUGS-111093, where removing a single proxy field (e.g. httpsProxy) left the corresponding variable behind
+// in the ConfigMap.
 func (tc *testContext) testEnvVarRemoval(t *testing.T) {
-	var patches []*patch.JSONPatch
-	patches = append(patches, patch.NewJSONPatch("remove", "/spec/httpProxy", nil),
-		patch.NewJSONPatch("remove", "/spec/httpsProxy", nil),
-		patch.NewJSONPatch("remove", "/spec/noProxy", nil))
-	patchData, err := json.Marshal(patches)
-	require.NoErrorf(t, err, "%v", patches)
-	_, err = tc.client.Config.ConfigV1().Proxies().Patch(
-		context.TODO(),
-		"cluster",
-		types.JSONPatchType,
-		patchData,
-		meta.PatchOptions{},
-	)
-	patchString := string(patchData)
-	require.NoErrorf(t, err, "unable to patch %s", patchString)
-	require.NoError(t, tc.waitForAllNodesToReboot())
-	for _, node := range gc.allNodes() {
-		addr, err := controllers.GetAddress(node.Status.Addresses)
-		require.NoError(t, err, "unable to get node address")
-		envVarsRemoved, err := tc.checkEnvVarsRemoved(addr)
-		require.NoError(t, err, "error determining if ENV vars are removed")
-		assert.True(t, envVarsRemoved, "ENV vars not removed")
+	stages := []struct {
+		name  string
+		field string
+	}{
+		{name: "NO_PROXY", field: "/spec/noProxy"},
+		{name: "HTTPS_PROXY", field: "/spec/httpsProxy"},
+		{name: "HTTP_PROXY", field: "/spec/httpProxy"},
 	}
+	for _, stage := range stages {
+		t.Run(stage.name, func(t *testing.T) {
+			// Capture the current Proxy status so we can detect when the cluster network operator has
+			// processed the upcoming removal; the status is updated asynchronously from the spec patch.
+			prePatchProxy, err := tc.client.Config.ConfigV1().Proxies().Get(context.TODO(), "cluster",
+				meta.GetOptions{})
+			require.NoError(t, err, "unable to get cluster proxy")
+
+			// Remove a single proxy field from the cluster Proxy spec
+			patches := []*patch.JSONPatch{patch.NewJSONPatch("remove", stage.field, nil)}
+			patchData, err := json.Marshal(patches)
+			require.NoErrorf(t, err, "%v", patches)
+			_, err = tc.client.Config.ConfigV1().Proxies().Patch(context.TODO(), "cluster", types.JSONPatchType,
+				patchData, meta.PatchOptions{})
+			require.NoErrorf(t, err, "unable to patch %s", string(patchData))
+
+			// Wait for the Proxy status to reflect the removal before deriving expectations, otherwise we
+			// may compute expected variables from stale status. Convergence is any change from the pre-patch
+			// status; note status.noProxy retains operator-generated entries while a proxy is still active,
+			// so it does not necessarily become empty when spec.noProxy is removed.
+			var expectedEnvVars map[string]string
+			err = wait.PollUntilContextTimeout(context.TODO(), retry.Interval, retry.ResourceChangeTimeout, true,
+				func(context.Context) (bool, error) {
+					clusterProxy, err := tc.client.Config.ConfigV1().Proxies().Get(context.TODO(), "cluster",
+						meta.GetOptions{})
+					if err != nil {
+						return false, nil
+					}
+					if reflect.DeepEqual(clusterProxy.Status, prePatchProxy.Status) {
+						return false, nil
+					}
+					expectedEnvVars = expectedProxyVars(clusterProxy.Status.HTTPProxy,
+						clusterProxy.Status.HTTPSProxy, clusterProxy.Status.NoProxy)
+					return true, nil
+				})
+			require.NoErrorf(t, err, "cluster proxy status did not converge after removing %s", stage.name)
+
+			// Primary assertion: the ConfigMap must drop the removed key while keeping the rest (OCPBUGS-111093)
+			require.NoError(t, tc.waitForConfigMapProxyVars(expectedEnvVars),
+				"windows-services ConfigMap proxy vars not updated after removing %s", stage.name)
+
+			// The env var change triggers a node reboot; wait for it before checking node-level state
+			require.NoError(t, tc.waitForAllNodesToReboot())
+			for _, node := range gc.allNodes() {
+				addr, err := controllers.GetAddress(node.Status.Addresses)
+				require.NoError(t, err, "unable to get node address")
+				require.NoErrorf(t, tc.checkNodeProxyVars(addr, expectedEnvVars),
+					"node %s proxy vars do not match expected state after removing %s", node.GetName(), stage.name)
+			}
+		})
+	}
+}
+
+// expectedProxyVars builds the set of proxy environment variables that should appear in the windows-services
+// ConfigMap given the cluster Proxy status values. Only non-empty values are included, mirroring the operator's
+// cluster.GetProxyVars behavior.
+func expectedProxyVars(httpProxy, httpsProxy, noProxy string) map[string]string {
+	expected := map[string]string{}
+	if httpProxy != "" {
+		expected["HTTP_PROXY"] = httpProxy
+	}
+	if httpsProxy != "" {
+		expected["HTTPS_PROXY"] = httpsProxy
+	}
+	if noProxy != "" {
+		expected["NO_PROXY"] = noProxy
+	}
+	return expected
+}
+
+// getCurrentServicesConfigMapName returns the name of the windows-services ConfigMap for the running WMCO version
+func (tc *testContext) getCurrentServicesConfigMapName() (string, error) {
+	operatorVersion, err := getWMCOVersion()
+	if err != nil {
+		return "", err
+	}
+	return servicescm.NamePrefix + operatorVersion, nil
+}
+
+// getProxyEnvVarsFromConfigMap returns the proxy environment variables stored in the current windows-services
+// ConfigMap. Returns an empty map when no proxy variables are set.
+func (tc *testContext) getProxyEnvVarsFromConfigMap() (map[string]string, error) {
+	cmName, err := tc.getCurrentServicesConfigMapName()
+	if err != nil {
+		return nil, err
+	}
+	cm, err := tc.client.K8s.CoreV1().ConfigMaps(wmcoNamespace).Get(context.TODO(), cmName, meta.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("error getting ConfigMap %s: %w", cmName, err)
+	}
+	cmData, err := servicescm.Parse(cm.Data)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse ConfigMap %s data: %w", cmName, err)
+	}
+	return cmData.EnvironmentVars, nil
+}
+
+// waitForConfigMapProxyVars waits until the windows-services ConfigMap's proxy environment variables match the
+// expected map. Nil and empty maps are treated as equal, since the field is omitted when no proxy is set. This
+// absorbs the delay between patching the Proxy spec, the status settling, and WMCO regenerating the ConfigMap.
+func (tc *testContext) waitForConfigMapProxyVars(expected map[string]string) error {
+	var lastSeen map[string]string
+	var lastErr error
+	err := wait.PollUntilContextTimeout(context.TODO(), retry.Interval, retry.ResourceChangeTimeout, true,
+		func(context.Context) (bool, error) {
+			actual, err := tc.getProxyEnvVarsFromConfigMap()
+			if err != nil {
+				lastErr = err
+				return false, nil
+			}
+			lastSeen = actual
+			if len(actual) == 0 && len(expected) == 0 {
+				return true, nil
+			}
+			return reflect.DeepEqual(actual, expected), nil
+		})
+	if err != nil {
+		return fmt.Errorf("timed out waiting for ConfigMap proxy vars to equal %v (last seen %v, last error %v): %w",
+			expected, lastSeen, lastErr, err)
+	}
+	return nil
+}
+
+// checkNodeProxyVars verifies that the system-level and service-level proxy environment variables on the instance
+// at the given address match the expected set: variables present in the set must have the expected value, and
+// variables absent from the set must not be set on the instance.
+func (tc *testContext) checkNodeProxyVars(address string, expected map[string]string) error {
+	watchedEnvVars := []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
+	for _, proxyVar := range watchedEnvVars {
+		expectedVal, shouldExist := expected[proxyVar]
+
+		systemEnvVars, err := tc.getSystemEnvVar(address, proxyVar)
+		if err != nil {
+			return fmt.Errorf("error retrieving system level ENV var %s: %w", proxyVar, err)
+		}
+		actualVal, exists := systemEnvVars[proxyVar]
+		if shouldExist && (!exists || actualVal != expectedVal) {
+			return fmt.Errorf("system ENV var %s = %q, expected %q", proxyVar, actualVal, expectedVal)
+		}
+		if !shouldExist && exists {
+			return fmt.Errorf("system ENV var %s should be removed but is set to %q", proxyVar, actualVal)
+		}
+
+		for _, svcName := range windows.RequiredServices {
+			svcEnvVars, err := tc.getProxyEnvVarsFromService(address, svcName,
+				fmt.Sprintf("%s-%s", svcName, "staged"))
+			if err != nil {
+				return fmt.Errorf("error retrieving service %s ENV vars: %w", svcName, err)
+			}
+			svcVal, svcExists := svcEnvVars[proxyVar]
+			if shouldExist && (!svcExists || svcVal != expectedVal) {
+				return fmt.Errorf("service %s ENV var %s = %q, expected %q", svcName, proxyVar, svcVal, expectedVal)
+			}
+			if !shouldExist && svcExists {
+				return fmt.Errorf("service %s ENV var %s should be removed but is set to %q", svcName, proxyVar,
+					svcVal)
+			}
+		}
+	}
+	return nil
 }
 
 // testTrustedCAConfigMap tests multiple aspects of expected functionality for the trusted-ca ConfigMap
