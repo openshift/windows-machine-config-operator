@@ -31,7 +31,7 @@ const (
 // GenerateManifest returns the expected state of the Windows service configmap. If debug is true, debug logging
 // will be enabled for services that support it.
 func GenerateManifest(kubeletArgsFromIgnition map[string]string, apiServerEndpoint string, vxlanPort string,
-	platform config.PlatformType, debug bool) (*servicescm.Data, error) {
+	platform config.PlatformType, proxyVars map[string]string, debug bool) (*servicescm.Data, error) {
 	windowsExporterServiceCommand := fmt.Sprintf("%s --collectors.enabled "+
 		"cpu,logical_disk,net,os,service,system,container,memory,cpu_info --web.config.file %s",
 		windows.WindowsExporterPath, windows.TLSConfPath)
@@ -59,11 +59,7 @@ func GenerateManifest(kubeletArgsFromIgnition map[string]string, apiServerEndpoi
 	}
 	// TODO: All payload filenames and checksums must be added here https://issues.redhat.com/browse/WINC-847
 	files := &[]servicescm.FileInfo{}
-	var watchedEnvVars []string
-	for _, envVar := range cluster.WatchedEnvironmentVars {
-		watchedEnvVars = append(watchedEnvVars, envVar)
-	}
-	return servicescm.NewData(services, files, cluster.GetProxyVars(), watchedEnvVars)
+	return servicescm.NewData(services, files, proxyVars, cluster.WatchedEnvironmentVars())
 }
 
 // containerdConfiguration returns the service specification for the Windows containerd service

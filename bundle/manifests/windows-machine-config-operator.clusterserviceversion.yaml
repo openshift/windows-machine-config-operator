@@ -348,6 +348,14 @@ spec:
           - watch
         - apiGroups:
           - config.openshift.io
+          resources:
+          - proxies
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - config.openshift.io
           - operator.openshift.io
           resources:
           - networks
