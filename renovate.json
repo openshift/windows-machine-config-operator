@@ -106,7 +106,19 @@
   "dockerfile": {
     "enabled": true,
     "additionalBranchPrefix": "{{baseBranch}}/",
-    "branchPrefix": "konflux/mintmaker/"
+    "branchPrefix": "konflux/mintmaker/",
+    "packageRules": [
+      {
+        "matchFileNames": [
+          "Containerfile",
+          "Containerfile.bundle"
+        ],
+        "pinDigests": true,
+        "matchUpdateTypes": [
+          "digest"
+        ]
+      }
+    ]
   },
   "lockFileMaintenance": {
     "enabled": true,
