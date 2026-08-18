@@ -114,6 +114,10 @@
           "Containerfile.bundle"
         ],
         "pinDigests": true,
+        "addLabels": [
+          "approved",
+          "lgtm"
+        ],
         "matchUpdateTypes": [
           "digest"
         ]
