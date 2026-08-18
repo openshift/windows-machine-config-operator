@@ -1229,69 +1229,69 @@ spec:
 	g.It("Smokerun-Author:jfrancoa-Medium-50403-wmco creates and maintains Windows services ConfigMap [Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
-		g.By("Check service configmap exists")
-		wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		expectedCMName := "windows-services-" + wmcoLogVersion
-
-		cmName, err := getLatestServicesCMName(oc)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(cmName).To(o.Equal(expectedCMName), "ConfigMap name should match WMCO version from logs")
-
-		g.By("Check windowsmachineconfig/desired-version annotation")
-		for _, winHostName := range getWindowsHostNames(oc) {
-			desiredVersion, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("nodes", winHostName,
-				"-o=jsonpath={.metadata.annotations.windowsmachineconfig\\.openshift\\.io\\/desired-version}").Output()
+			g.By("Check service configmap exists")
+			wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(strings.TrimSpace(desiredVersion)).To(o.Equal(wmcoLogVersion),
-				"desired-version annotation mismatch on host %v", winHostName)
-		}
+			expectedCMName := "windows-services-" + wmcoLogVersion
 
-		g.By("Check that windows-instance-config-daemon serviceaccount exists")
-		_, err = oc.AsAdmin().WithoutNamespace().Run("get").Args("serviceaccount", "windows-instance-config-daemon", "-n", wmcoNamespace).Output()
-		o.Expect(err).NotTo(o.HaveOccurred())
+			cmName, err := getLatestServicesCMName(oc)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			o.Expect(cmName).To(o.Equal(expectedCMName), "ConfigMap name should match WMCO version from logs")
 
-		g.By("Delete windows-services configmap and wait for its recreation")
-		_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args("configmap", cmName, "-n", wmcoNamespace).Output()
-		o.Expect(err).NotTo(o.HaveOccurred())
-		waitForServicesCM(oc, expectedCMName, 10*time.Minute)
-
-		g.By("Attempt to modify the windows-services configmap data")
-		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("configmap", cmName, "-p", `{"data":{"services":"[]"}}`, "-n", wmcoNamespace).Output()
-		if err == nil {
-			e2e.Failf("It should not be possible to modify configmap %v", cmName)
-		}
-
-		g.By("Attempt to modify the immutable field")
-		_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("configmap", cmName, "-p", `{"inmutable":false}`, "-n", wmcoNamespace).Output()
-		o.Expect(err).NotTo(o.HaveOccurred())
-		cmImmutable, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("configmap", cmName, "-n", wmcoNamespace, "-o=jsonpath={.immutable}").Output()
-		o.Expect(err).NotTo(o.HaveOccurred())
-		o.Expect(strings.TrimSpace(cmImmutable)).To(o.Equal("true"),
-			"Immutable field inside %v configmap should not be modifiable", cmName)
-
-		g.By("Stop WMCO, delete existing windows-services configmap and create new dummy ones")
-		defer func() {
-			if scaleErr := scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace); scaleErr != nil {
-				e2e.Logf("Warning: failed to scale WMCO back to 1: %v", scaleErr)
+			g.By("Check windowsmachineconfig/desired-version annotation")
+			for _, winHostName := range getWindowsHostNames(oc) {
+				desiredVersion, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("nodes", winHostName,
+					"-o=jsonpath={.metadata.annotations.windowsmachineconfig\\.openshift\\.io\\/desired-version}").Output()
+				o.Expect(err).NotTo(o.HaveOccurred())
+				o.Expect(strings.TrimSpace(desiredVersion)).To(o.Equal(wmcoLogVersion),
+					"desired-version annotation mismatch on host %v", winHostName)
 			}
-		}()
-		err = scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args("configmap", cmName, "-n", wmcoNamespace).Output()
-		o.Expect(err).NotTo(o.HaveOccurred())
 
-		for _, version := range []string{"8.8.8-55657c8", "0.0.1-55657c8", wmcoLogVersion} {
-			manifest := generateWICDConfigMapYAML("windows-services-"+version, "[]")
-			defer oc.AsAdmin().WithoutNamespace().Run("delete").Args("configmap", "windows-services-"+version, "-n", wmcoNamespace, "--ignore-not-found").Execute()
-			err = createResourceFromString(oc, wmcoNamespace, manifest)
+			g.By("Check that windows-instance-config-daemon serviceaccount exists")
+			_, err = oc.AsAdmin().WithoutNamespace().Run("get").Args("serviceaccount", "windows-instance-config-daemon", "-n", wmcoNamespace).Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
-		}
 
-		err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		waitForServicesCM(oc, expectedCMName, 10*time.Minute)
-	})
+			g.By("Delete windows-services configmap and wait for its recreation")
+			_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args("configmap", cmName, "-n", wmcoNamespace).Output()
+			o.Expect(err).NotTo(o.HaveOccurred())
+			waitForServicesCM(oc, expectedCMName, 10*time.Minute)
+
+			g.By("Attempt to modify the windows-services configmap data")
+			_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("configmap", cmName, "-p", `{"data":{"services":"[]"}}`, "-n", wmcoNamespace).Output()
+			if err == nil {
+				e2e.Failf("It should not be possible to modify configmap %v", cmName)
+			}
+
+			g.By("Attempt to modify the immutable field")
+			_, err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("configmap", cmName, "-p", `{"inmutable":false}`, "-n", wmcoNamespace).Output()
+			o.Expect(err).NotTo(o.HaveOccurred())
+			cmImmutable, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("configmap", cmName, "-n", wmcoNamespace, "-o=jsonpath={.immutable}").Output()
+			o.Expect(err).NotTo(o.HaveOccurred())
+			o.Expect(strings.TrimSpace(cmImmutable)).To(o.Equal("true"),
+				"Immutable field inside %v configmap should not be modifiable", cmName)
+
+			g.By("Stop WMCO, delete existing windows-services configmap and create new dummy ones")
+			defer func() {
+				if scaleErr := scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace); scaleErr != nil {
+					e2e.Logf("Warning: failed to scale WMCO back to 1: %v", scaleErr)
+				}
+			}()
+			err = scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args("configmap", cmName, "-n", wmcoNamespace).Output()
+			o.Expect(err).NotTo(o.HaveOccurred())
+
+			for _, version := range []string{"8.8.8-55657c8", "0.0.1-55657c8", wmcoLogVersion} {
+				manifest := generateWICDConfigMapYAML("windows-services-"+version, "[]")
+				defer oc.AsAdmin().WithoutNamespace().Run("delete").Args("configmap", "windows-services-"+version, "-n", wmcoNamespace, "--ignore-not-found").Execute()
+				err = createResourceFromString(oc, wmcoNamespace, manifest)
+				o.Expect(err).NotTo(o.HaveOccurred())
+			}
+
+			err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			waitForServicesCM(oc, expectedCMName, 10*time.Minute)
+		})
 
 	// author: jfrancoa@redhat.com
 	g.It("Author:jfrancoa-Smokerun-Medium-56354-Stop dependent services before stopping a service in WICD [Disruptive][Serial]", func() {
@@ -1577,109 +1577,109 @@ spec:
 	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Disruptive][Serial]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
-		const (
-			caNamespace = "openshift-kube-apiserver-operator"
-			caConfigMap = "kube-apiserver-to-kubelet-client-ca"
-		)
+			const (
+				caNamespace = "openshift-kube-apiserver-operator"
+				caConfigMap = "kube-apiserver-to-kubelet-client-ca"
+			)
 
-		winHostNames := getWindowsHostNames(oc)
-		expectedWindowsNodes := len(winHostNames)
-		if expectedWindowsNodes == 0 {
-			e2e.Failf("No Windows nodes detected in the cluster")
-		}
+			winHostNames := getWindowsHostNames(oc)
+			expectedWindowsNodes := len(winHostNames)
+			if expectedWindowsNodes == 0 {
+				e2e.Failf("No Windows nodes detected in the cluster")
+			}
 
-		g.By("Ensure Windows nodes are Ready before proceeding")
-		waitWindowsNodesReady(oc, expectedWindowsNodes, 15*time.Minute)
+			g.By("Ensure Windows nodes are Ready before proceeding")
+			waitWindowsNodesReady(oc, expectedWindowsNodes, 15*time.Minute)
 
-		initialCertNotBefore, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			"secrets", "kube-apiserver-to-kubelet-signer", "-n", caNamespace,
-			"-o=jsonpath={.metadata.annotations.auth\\.openshift\\.io\\/certificate-not-before}").Output()
-		o.Expect(err).NotTo(o.HaveOccurred())
-		initialCertNotBeforeParsed, err := time.Parse(time.RFC3339, strings.TrimSpace(initialCertNotBefore))
-		o.Expect(err).NotTo(o.HaveOccurred())
-		e2e.Logf("Initial kubelet CA certificate-not-before timestamp: %v", initialCertNotBeforeParsed)
-
-		g.By("Trigger CA rotation")
-		err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("secret", "-p",
-			`{"metadata": {"annotations": {"auth.openshift.io/certificate-not-after": null}}}`,
-			"kube-apiserver-to-kubelet-signer", "-n", caNamespace).Execute()
-		o.Expect(err).NotTo(o.HaveOccurred())
-		e2e.Logf("Triggered CA rotation for kubelet")
-
-		waitUntilWMCOStatusChanged(oc, "updating kubelet CA client certificates in", "1m")
-
-		var rotatedCertNotBeforeParsed time.Time
-
-		g.By("Poll to confirm CA rotation")
-		err = wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
-			rotatedCertNotBefore, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			initialCertNotBefore, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"secrets", "kube-apiserver-to-kubelet-signer", "-n", caNamespace,
 				"-o=jsonpath={.metadata.annotations.auth\\.openshift\\.io\\/certificate-not-before}").Output()
-			if err != nil {
-				return false, nil
-			}
-			rotatedCertNotBeforeParsed, err = time.Parse(time.RFC3339, strings.TrimSpace(rotatedCertNotBefore))
-			if err != nil {
-				return false, nil
-			}
-			e2e.Logf("Polled kubelet CA certificate-not-before timestamp: %v", rotatedCertNotBeforeParsed)
-			return !initialCertNotBeforeParsed.Equal(rotatedCertNotBeforeParsed), nil
-		})
-		o.Expect(err).NotTo(o.HaveOccurred(), "Kubelet CA rotation did not happen")
+			o.Expect(err).NotTo(o.HaveOccurred())
+			initialCertNotBeforeParsed, err := time.Parse(time.RFC3339, strings.TrimSpace(initialCertNotBefore))
+			o.Expect(err).NotTo(o.HaveOccurred())
+			e2e.Logf("Initial kubelet CA certificate-not-before timestamp: %v", initialCertNotBeforeParsed)
 
-		g.By("Waiting for Windows nodes to stabilize after CA rotation")
-		waitWindowsNodesReady(oc, expectedWindowsNodes, 10*time.Minute)
-		time.Sleep(3 * time.Minute)
+			g.By("Trigger CA rotation")
+			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("secret", "-p",
+				`{"metadata": {"annotations": {"auth.openshift.io/certificate-not-after": null}}}`,
+				"kube-apiserver-to-kubelet-signer", "-n", caNamespace).Execute()
+			o.Expect(err).NotTo(o.HaveOccurred())
+			e2e.Logf("Triggered CA rotation for kubelet")
 
-		g.By("Verify kubelet client CA is updated in Windows workers")
-		caBundlePath := `C:\host\k\kubelet-ca.crt`
+			waitUntilWMCOStatusChanged(oc, "updating kubelet CA client certificates in", "1m")
 
-		for _, nodeName := range winHostNames {
-			g.By(fmt.Sprintf("Verify kubelet client CA content on Windows worker %v", nodeName))
+			var rotatedCertNotBeforeParsed time.Time
 
-			pollErr := wait.Poll(30*time.Second, 20*time.Minute, func() (bool, error) {
-				kubeletCA, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-					"configmap", caConfigMap, "-n", caNamespace,
-					"-o=jsonpath={.data.ca-bundle\\.crt}").Output()
-				if err != nil || kubeletCA == "" {
-					e2e.Logf("Error or empty kubelet client CA from ConfigMap: %v", err)
+			g.By("Poll to confirm CA rotation")
+			err = wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
+				rotatedCertNotBefore, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"secrets", "kube-apiserver-to-kubelet-signer", "-n", caNamespace,
+					"-o=jsonpath={.metadata.annotations.auth\\.openshift\\.io\\/certificate-not-before}").Output()
+				if err != nil {
 					return false, nil
 				}
-
-				bundleContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-					fmt.Sprintf("Get-Content -Raw -Path '%s'", caBundlePath))
-				if err != nil || bundleContent == "" {
-					e2e.Logf("Failed fetching or empty CA bundle from Windows node %v: %v", nodeName, err)
+				rotatedCertNotBeforeParsed, err = time.Parse(time.RFC3339, strings.TrimSpace(rotatedCertNotBefore))
+				if err != nil {
 					return false, nil
 				}
-
-				if strings.Contains(bundleContent, strings.TrimSpace(kubeletCA)) {
-					e2e.Logf("Kubelet CA found in Windows worker node %v bundle", nodeName)
-					return true, nil
-				}
-				e2e.Logf("Kubelet CA not found in Windows worker node %v bundle, retrying...", nodeName)
-				return false, nil
+				e2e.Logf("Polled kubelet CA certificate-not-before timestamp: %v", rotatedCertNotBeforeParsed)
+				return !initialCertNotBeforeParsed.Equal(rotatedCertNotBeforeParsed), nil
 			})
+			o.Expect(err).NotTo(o.HaveOccurred(), "Kubelet CA rotation did not happen")
 
-			o.Expect(pollErr).NotTo(o.HaveOccurred(),
-				"Failed to verify kubelet client CA in Windows worker %v bundle", nodeName)
-		}
+			g.By("Waiting for Windows nodes to stabilize after CA rotation")
+			waitWindowsNodesReady(oc, expectedWindowsNodes, 10*time.Minute)
+			time.Sleep(3 * time.Minute)
 
-		g.By("Ensure Windows workers were not restarted after CA rotation")
-		for _, nodeName := range winHostNames {
-			uptimeOutput, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
-				`(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")`)
-			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get uptime from %s", nodeName)
+			g.By("Verify kubelet client CA is updated in Windows workers")
+			caBundlePath := `C:\host\k\kubelet-ca.crt`
 
-			lastBootTime, err := time.Parse(time.RFC3339, strings.TrimSpace(uptimeOutput))
-			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to parse boot time from %s: %s", nodeName, uptimeOutput)
+			for _, nodeName := range winHostNames {
+				g.By(fmt.Sprintf("Verify kubelet client CA content on Windows worker %v", nodeName))
 
-			e2e.Logf("Node %s last boot time: %v", nodeName, lastBootTime)
-			if rotatedCertNotBeforeParsed.Before(lastBootTime) {
-				e2e.Failf("Windows worker %v got restarted after CA rotation", nodeName)
+				pollErr := wait.Poll(30*time.Second, 20*time.Minute, func() (bool, error) {
+					kubeletCA, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+						"configmap", caConfigMap, "-n", caNamespace,
+						"-o=jsonpath={.data.ca-bundle\\.crt}").Output()
+					if err != nil || kubeletCA == "" {
+						e2e.Logf("Error or empty kubelet client CA from ConfigMap: %v", err)
+						return false, nil
+					}
+
+					bundleContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+						fmt.Sprintf("Get-Content -Raw -Path '%s'", caBundlePath))
+					if err != nil || bundleContent == "" {
+						e2e.Logf("Failed fetching or empty CA bundle from Windows node %v: %v", nodeName, err)
+						return false, nil
+					}
+
+					if strings.Contains(bundleContent, strings.TrimSpace(kubeletCA)) {
+						e2e.Logf("Kubelet CA found in Windows worker node %v bundle", nodeName)
+						return true, nil
+					}
+					e2e.Logf("Kubelet CA not found in Windows worker node %v bundle, retrying...", nodeName)
+					return false, nil
+				})
+
+				o.Expect(pollErr).NotTo(o.HaveOccurred(),
+					"Failed to verify kubelet client CA in Windows worker %v bundle", nodeName)
 			}
-		}
-	})
+
+			g.By("Ensure Windows workers were not restarted after CA rotation")
+			for _, nodeName := range winHostNames {
+				uptimeOutput, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
+					`(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")`)
+				o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get uptime from %s", nodeName)
+
+				lastBootTime, err := time.Parse(time.RFC3339, strings.TrimSpace(uptimeOutput))
+				o.Expect(err).NotTo(o.HaveOccurred(), "Failed to parse boot time from %s: %s", nodeName, uptimeOutput)
+
+				e2e.Logf("Node %s last boot time: %v", nodeName, lastBootTime)
+				if rotatedCertNotBeforeParsed.Before(lastBootTime) {
+					e2e.Failf("Windows worker %v got restarted after CA rotation", nodeName)
+				}
+			}
+		})
 
 	// author: rrasouli@redhat.com
 	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Slow][Disruptive][Serial]",
@@ -1920,111 +1920,111 @@ spec:
 	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
-		if isNone(oc) {
-			g.Skip("platform none does not support Windows node reconciliation")
-		}
-
-		namespace := "winc-87809"
-		daemonSetName := "test-windows-daemonset"
-		appLabel := "test-windows-daemon"
-
-		createProject(oc, namespace)
-		defer waitWindowsNodesReady(oc, 2, 15*time.Minute)
-		defer func() {
-			oc.AsAdmin().WithoutNamespace().Run("delete").Args("daemonset", daemonSetName, "-n", namespace, "--ignore-not-found").Execute()
-		}()
-		defer deleteProject(oc, namespace)
-
-		g.By("Step 1: Deploy DaemonSet targeting Windows nodes")
-		manifest := generateWindowsDaemonSetYAML(daemonSetName, namespace, appLabel, windowsDebugImage)
-		err := createResourceFromString(oc, namespace, manifest)
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create DaemonSet")
-
-		g.By("Step 2: Wait for DaemonSet to be ready on all Windows nodes")
-		windowsNodes := getWindowsHostNames(oc)
-		expectedCount := len(windowsNodes)
-		o.Expect(expectedCount).To(o.BeNumerically(">", 0), "No Windows nodes found")
-
-		pollErr := wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
-			output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
-			if err != nil {
-				e2e.Logf("Error getting DaemonSet status: %v", err)
-				return false, nil
+			if isNone(oc) {
+				g.Skip("platform none does not support Windows node reconciliation")
 			}
-			numberReady, err := strconv.Atoi(output)
-			if err != nil {
-				return false, nil
-			}
-			e2e.Logf("DaemonSet ready: %d/%d pods", numberReady, expectedCount)
-			return numberReady == expectedCount, nil
+
+			namespace := "winc-87809"
+			daemonSetName := "test-windows-daemonset"
+			appLabel := "test-windows-daemon"
+
+			createProject(oc, namespace)
+			defer waitWindowsNodesReady(oc, 2, 15*time.Minute)
+			defer func() {
+				oc.AsAdmin().WithoutNamespace().Run("delete").Args("daemonset", daemonSetName, "-n", namespace, "--ignore-not-found").Execute()
+			}()
+			defer deleteProject(oc, namespace)
+
+			g.By("Step 1: Deploy DaemonSet targeting Windows nodes")
+			manifest := generateWindowsDaemonSetYAML(daemonSetName, namespace, appLabel, windowsDebugImage)
+			err := createResourceFromString(oc, namespace, manifest)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create DaemonSet")
+
+			g.By("Step 2: Wait for DaemonSet to be ready on all Windows nodes")
+			windowsNodes := getWindowsHostNames(oc)
+			expectedCount := len(windowsNodes)
+			o.Expect(expectedCount).To(o.BeNumerically(">", 0), "No Windows nodes found")
+
+			pollErr := wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
+				output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
+				if err != nil {
+					e2e.Logf("Error getting DaemonSet status: %v", err)
+					return false, nil
+				}
+				numberReady, err := strconv.Atoi(output)
+				if err != nil {
+					return false, nil
+				}
+				e2e.Logf("DaemonSet ready: %d/%d pods", numberReady, expectedCount)
+				return numberReady == expectedCount, nil
+			})
+			o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not become ready in time")
+
+			windowsNode := windowsNodes[0]
+
+			g.By(fmt.Sprintf("Step 3: Manually drain node %s with --ignore-daemonsets", windowsNode))
+			_, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args(
+				"drain", windowsNode, "--ignore-daemonsets", "--force", "--delete-emptydir-data").Output()
+			o.Expect(err).NotTo(o.HaveOccurred(), "Manual drain should succeed with --ignore-daemonsets")
+
+			g.By("Step 4: Verify DaemonSet pods remain on drained node")
+			pollErr = wait.Poll(10*time.Second, 2*time.Minute, func() (bool, error) {
+				pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"pods", "-n", namespace, "-l", "app="+appLabel,
+					"-o=jsonpath={.items[*].spec.nodeName}").Output()
+				if err != nil {
+					return false, nil
+				}
+				return strings.Contains(pods, windowsNode), nil
+			})
+			o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet pods should remain on drained node")
+
+			g.By(fmt.Sprintf("Step 5: Uncordon node %s", windowsNode))
+			_, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args("uncordon", windowsNode).Output()
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to uncordon node")
+
+			g.By("Step 6: Verify DaemonSet recovers after manual drain")
+			pollErr = wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+				output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
+				if err != nil {
+					return false, nil
+				}
+				numberReady, err := strconv.Atoi(output)
+				if err != nil {
+					return false, nil
+				}
+				e2e.Logf("DaemonSet recovery after manual drain: %d/%d pods ready", numberReady, expectedCount)
+				return numberReady == expectedCount, nil
+			})
+			o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after manual drain")
+
+			g.By(fmt.Sprintf("Step 7: Trigger WMCO reconciliation by setting invalidVersion on %s", windowsNode))
+			_, err = oc.AsAdmin().WithoutNamespace().Run("annotate").Args(
+				"node", windowsNode, "--overwrite",
+				"windowsmachineconfig.openshift.io/version=invalidVersion").Output()
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to set invalidVersion annotation")
+
+			g.By("Step 8: Wait for WMCO to reconcile the node")
+			waitVersionAnnotationReady(oc, windowsNode, 30*time.Second, 600*time.Second)
+
+			g.By("Step 9: Verify DaemonSet recovers after WMCO reconciliation")
+			pollErr = wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
+				output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
+				if err != nil {
+					return false, nil
+				}
+				numberReady, err := strconv.Atoi(output)
+				if err != nil {
+					return false, nil
+				}
+				e2e.Logf("DaemonSet recovery after WMCO reconciliation: %d/%d pods ready", numberReady, expectedCount)
+				return numberReady == expectedCount, nil
+			})
+			o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after WMCO reconciliation")
 		})
-		o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not become ready in time")
-
-		windowsNode := windowsNodes[0]
-
-		g.By(fmt.Sprintf("Step 3: Manually drain node %s with --ignore-daemonsets", windowsNode))
-		_, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args(
-			"drain", windowsNode, "--ignore-daemonsets", "--force", "--delete-emptydir-data").Output()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Manual drain should succeed with --ignore-daemonsets")
-
-		g.By("Step 4: Verify DaemonSet pods remain on drained node")
-		pollErr = wait.Poll(10*time.Second, 2*time.Minute, func() (bool, error) {
-			pods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"pods", "-n", namespace, "-l", "app="+appLabel,
-				"-o=jsonpath={.items[*].spec.nodeName}").Output()
-			if err != nil {
-				return false, nil
-			}
-			return strings.Contains(pods, windowsNode), nil
-		})
-		o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet pods should remain on drained node")
-
-		g.By(fmt.Sprintf("Step 5: Uncordon node %s", windowsNode))
-		_, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args("uncordon", windowsNode).Output()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to uncordon node")
-
-		g.By("Step 6: Verify DaemonSet recovers after manual drain")
-		pollErr = wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
-			output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
-			if err != nil {
-				return false, nil
-			}
-			numberReady, err := strconv.Atoi(output)
-			if err != nil {
-				return false, nil
-			}
-			e2e.Logf("DaemonSet recovery after manual drain: %d/%d pods ready", numberReady, expectedCount)
-			return numberReady == expectedCount, nil
-		})
-		o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after manual drain")
-
-		g.By(fmt.Sprintf("Step 7: Trigger WMCO reconciliation by setting invalidVersion on %s", windowsNode))
-		_, err = oc.AsAdmin().WithoutNamespace().Run("annotate").Args(
-			"node", windowsNode, "--overwrite",
-			"windowsmachineconfig.openshift.io/version=invalidVersion").Output()
-		o.Expect(err).NotTo(o.HaveOccurred(), "Failed to set invalidVersion annotation")
-
-		g.By("Step 8: Wait for WMCO to reconcile the node")
-		waitVersionAnnotationReady(oc, windowsNode, 30*time.Second, 600*time.Second)
-
-		g.By("Step 9: Verify DaemonSet recovers after WMCO reconciliation")
-		pollErr = wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
-			output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"daemonset", daemonSetName, "-n", namespace, "-o=jsonpath={.status.numberReady}").Output()
-			if err != nil {
-				return false, nil
-			}
-			numberReady, err := strconv.Atoi(output)
-			if err != nil {
-				return false, nil
-			}
-			e2e.Logf("DaemonSet recovery after WMCO reconciliation: %d/%d pods ready", numberReady, expectedCount)
-			return numberReady == expectedCount, nil
-		})
-		o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after WMCO reconciliation")
-	})
 
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Medium-37472-Idempotent check of service running in Windows node [Disruptive]", func() {
