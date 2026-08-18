@@ -1226,7 +1226,9 @@ spec:
 	})
 
 	// author: jfrancoa@redhat.com
-	g.It("Smokerun-Author:jfrancoa-Medium-50403-wmco creates and maintains Windows services ConfigMap [Disruptive]", func() {
+	g.It("Smokerun-Author:jfrancoa-Medium-50403-wmco creates and maintains Windows services ConfigMap [Disruptive][Serial]",
+		g.SpecTimeout(30*time.Minute),
+		func(ctx g.SpecContext) {
 		g.By("Check service configmap exists")
 		wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -1334,7 +1336,7 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Longduration-Smokerun-Medium-76765-WICD-Remove-Services [Slow][Disruptive]",
+	g.It("Author:rrasouli-Longduration-Smokerun-Medium-76765-WICD-Remove-Services [Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
@@ -1572,7 +1574,9 @@ spec:
 		})
 
 	// author: jfrancoa@redhat.com
-	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Disruptive]", func() {
+	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Disruptive][Serial]",
+		g.SpecTimeout(45*time.Minute),
+		func(ctx g.SpecContext) {
 		const (
 			caNamespace = "openshift-kube-apiserver-operator"
 			caConfigMap = "kube-apiserver-to-kubelet-client-ca"
@@ -1678,7 +1682,7 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Slow][Disruptive]",
+	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -1781,7 +1785,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Smokerun-Author:rrasouli-Longduration-High-39451-Access Windows workload through clusterIP [Slow][Disruptive]",
+	g.It("Smokerun-Author:rrasouli-Longduration-High-39451-Access Windows workload through clusterIP [Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -1884,7 +1888,7 @@ spec:
 		})
 
 	// author: sgao@redhat.com
-	g.It("Author:sgao-Longduration-Smokerun-Medium-39030-Re queue on Windows machines edge cases [Slow][Disruptive]",
+	g.It("Author:sgao-Longduration-Smokerun-Medium-39030-Re queue on Windows machines edge cases [Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -1913,7 +1917,9 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Disruptive]", func() {
+	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Disruptive][Serial]",
+		g.SpecTimeout(30*time.Minute),
+		func(ctx g.SpecContext) {
 		if isNone(oc) {
 			g.Skip("platform none does not support Windows node reconciliation")
 		}
