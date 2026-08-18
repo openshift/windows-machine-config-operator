@@ -39,7 +39,6 @@ var (
 	machineLabel      = "machine.openshift.io/os-id=Windows"
 	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 	linuxDebugImage   = "registry.access.redhat.com/ubi9/ubi:latest"
-	defaultWindowsMS  = "windows"
 )
 
 // Service represents a Windows service entry from the WICD windows-services ConfigMap.
@@ -58,14 +57,6 @@ func checkVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string) (bool, 
 		return false, err
 	}
 	return true, err
-}
-
-// waitVersionAnnotationReady polls until the WMCO version annotation is set on the node.
-func waitVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string, interval, timeout time.Duration) {
-	err := wait.Poll(interval, timeout, func() (bool, error) {
-		return checkVersionAnnotationReady(oc, windowsNodeName)
-	})
-	o.Expect(err).NotTo(o.HaveOccurred(), "Timed out waiting for version annotation on node %s", windowsNodeName)
 }
 
 // getWindowsHostNames returns the hostnames of all Windows nodes in the cluster.
@@ -963,29 +954,6 @@ func checkConnectivity(ctx context.Context, IP string, delay int) error {
 	}
 }
 
-// getServiceClusterIP returns the ClusterIP assigned to a Service.
-func getServiceClusterIP(oc *exutil.CLI, serviceName, namespace string) (string, error) {
-	return oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"service", serviceName, "-o=jsonpath={.spec.clusterIP}", "-n", namespace).Output()
-}
-
-// generateClusterIPServiceYAML returns a YAML manifest for a ClusterIP Service.
-func generateClusterIPServiceYAML(name, namespace, appLabel string, port int) string {
-	return fmt.Sprintf(`apiVersion: v1
-kind: Service
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  ports:
-  - port: %d
-    targetPort: %d
-  selector:
-    app: %s
-  type: ClusterIP
-`, name, namespace, port, port, appLabel)
-}
-
 // generateLinuxWebServerYAML returns a YAML manifest for a Linux web server Deployment using python http.server.
 func generateLinuxWebServerYAML(name, namespace, image string, replicas int) string {
 	return fmt.Sprintf(`apiVersion: apps/v1
@@ -1021,39 +989,6 @@ spec:
       nodeSelector:
         kubernetes.io/os: linux
 `, name, name, name, replicas, name, name, image)
-}
-
-// generateWindowsDaemonSetYAML returns a YAML manifest for a Windows DaemonSet.
-func generateWindowsDaemonSetYAML(name, namespace, appLabel, image string) string {
-	return fmt.Sprintf(`apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  selector:
-    matchLabels:
-      app: %s
-  template:
-    metadata:
-      labels:
-        app: %s
-    spec:
-      nodeSelector:
-        kubernetes.io/os: windows
-      tolerations:
-      - key: "os"
-        operator: "Equal"
-        value: "Windows"
-        effect: "NoSchedule"
-      containers:
-      - name: %s
-        image: %s
-        command:
-        - pwsh.exe
-        - -Command
-        - "while ($true) { Start-Sleep -Seconds 30 }"
-`, name, namespace, appLabel, appLabel, name, image)
 }
 
 // getWorkloadsNames returns the pod names for all pods belonging to the given Deployment, sorted by host IP.
@@ -1191,167 +1126,4 @@ func setServiceBinPath(oc *exutil.CLI, nodeName, image, serviceName, binPath str
 		return fmt.Errorf("sc.exe config did not report SUCCESS: %s", output)
 	}
 	return nil
-}
-
-func stopWindowsService(oc *exutil.CLI, nodeName, image, serviceName string) (string, error) {
-	cmd := fmt.Sprintf("Stop-Service '%s' -Force -ErrorAction SilentlyContinue; (Get-Service '%s').Status", serviceName, serviceName)
-	output, err := runDebugNodePS(oc, nodeName, image, cmd)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(output), nil
-}
-
-// getAvailabilityZone returns the availability zone of the cluster's MachineSet or nodes.
-func getAvailabilityZone(oc *exutil.CLI) string {
-	zone, err := getMachineSetZone(oc)
-	if err == nil && zone != "" {
-		return zone
-	}
-	for _, label := range []string{windowsNodeLabel, linuxNodeLabel} {
-		if z, err := getZoneFromNodes(oc, label); err == nil && z != "" {
-			return z
-		}
-	}
-	return ""
-}
-
-func getMachineSetZone(oc *exutil.CLI) (string, error) {
-	var zoneQuery string
-	if iaasPlatform == "gcp" {
-		zoneQuery = "-o=jsonpath={.items[0].spec.template.spec.providerSpec.value.zone}"
-	} else {
-		zoneQuery = "-o=jsonpath={.items[0].spec.template.spec.providerSpec.value.placement.availabilityZone}"
-	}
-	return oc.AsAdmin().WithoutNamespace().Run("get").Args("machineset", "-n", mcoNamespace, zoneQuery).Output()
-}
-
-func getZoneFromNodes(oc *exutil.CLI, nodeLabel string) (string, error) {
-	return oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"nodes", "-l", nodeLabel,
-		"-o=jsonpath={.items[0].metadata.labels.topology\\.kubernetes\\.io/zone}").Output()
-}
-
-// getWindowsMachineSetName returns the name of the Windows MachineSet in the cluster.
-// When looking for the default MachineSet, it queries the cluster directly to find
-// one containing "winworker" or the defaultWindowsMS keyword.
-func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) string {
-	if name == defaultWindowsMS {
-		machineSets, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			"machinesets", "-n", mcoNamespace, "-o=jsonpath={.items[*].metadata.name}").Output()
-		o.Expect(err).NotTo(o.HaveOccurred())
-		for _, ms := range strings.Split(machineSets, " ") {
-			if strings.Contains(ms, "winworker") || strings.Contains(ms, defaultWindowsMS) || strings.HasSuffix(ms, "-wm") {
-				return ms
-			}
-		}
-		e2e.Failf("Windows MachineSet not found in cluster. Found: %s", machineSets)
-	}
-
-	machinesetName := name
-	if (platform == "vsphere" || platform == "nutanix") && name == "windows" {
-		machinesetName = "winworker"
-	}
-
-	if platform == "aws" || platform == "gcp" {
-		if zone == "" {
-			zone = "us-central1-a"
-		}
-		infrastructureID, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			"infrastructure", "cluster", "-o=jsonpath={.status.infrastructureName}").Output()
-		o.Expect(err).NotTo(o.HaveOccurred())
-
-		switch platform {
-		case "aws":
-			machinesetName = infrastructureID + "-" + machinesetName + "-worker-" + zone
-		case "gcp":
-			zoneParts := strings.Split(zone, "-")
-			if len(zoneParts) < 3 {
-				e2e.Failf("GCP zone should have at least 3 segments, got: %s", zone)
-			}
-			machinesetName = infrastructureID + "-" + machinesetName + "-worker-" + zoneParts[2]
-		}
-	}
-
-	return machinesetName
-}
-
-// scaleWindowsMachineSet scales the Windows MachineSet to the specified replica count.
-func scaleWindowsMachineSet(oc *exutil.CLI, machineSetName string, deadTime, replicas int, skipWait bool) {
-	err := oc.AsAdmin().WithoutNamespace().Run("scale").Args(
-		"--replicas="+strconv.Itoa(replicas),
-		"machinesets.machine.openshift.io", machineSetName,
-		"-n", mcoNamespace).Execute()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to scale Windows MachineSet")
-
-	if !skipWait {
-		waitForMachinesetReady(oc, machineSetName, deadTime, replicas)
-	}
-}
-
-// cloneWindowsMachineSet creates a copy of the existing Windows MachineSet with a different name
-// and zero replicas.
-func cloneWindowsMachineSet(oc *exutil.CLI, sourceName, cloneName string) {
-	msJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"machinesets.machine.openshift.io", sourceName, "-n", mcoNamespace, "-o=json").Output()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get source MachineSet %s", sourceName)
-
-	msJSON = strings.ReplaceAll(msJSON, sourceName, cloneName)
-
-	tmpFile, err := os.CreateTemp("", "machineset-*.json")
-	o.Expect(err).NotTo(o.HaveOccurred())
-	defer os.Remove(tmpFile.Name())
-
-	_, err = tmpFile.WriteString(msJSON)
-	o.Expect(err).NotTo(o.HaveOccurred())
-	tmpFile.Close()
-
-	err = oc.AsAdmin().WithoutNamespace().Run("apply").Args("-f", tmpFile.Name()).Execute()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create cloned MachineSet %s", cloneName)
-
-	err = oc.AsAdmin().WithoutNamespace().Run("scale").Args(
-		"--replicas=0", "machinesets.machine.openshift.io", cloneName, "-n", mcoNamespace).Execute()
-	o.Expect(err).NotTo(o.HaveOccurred())
-}
-
-// extractPrivateKeyToFile reads the cloud-private-key secret and writes it to a temp file.
-// Returns the file path. Caller is responsible for cleanup.
-func extractPrivateKeyToFile(oc *exutil.CLI) string {
-	encodedKey, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"secret", "cloud-private-key", "-n", wmcoNamespace,
-		"-o=jsonpath={.data.private-key\\.pem}").Output()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get cloud-private-key secret")
-	o.Expect(encodedKey).NotTo(o.BeEmpty(), "cloud-private-key has no private-key.pem data")
-
-	keyBytes, err := base64.StdEncoding.DecodeString(encodedKey)
-	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to decode private key")
-
-	tmpFile, err := os.CreateTemp("", "cloud-private-key-*.pem")
-	o.Expect(err).NotTo(o.HaveOccurred())
-	_, err = tmpFile.Write(keyBytes)
-	o.Expect(err).NotTo(o.HaveOccurred())
-	tmpFile.Close()
-	os.Chmod(tmpFile.Name(), 0600)
-
-	e2e.Logf("Extracted private key to %s", tmpFile.Name())
-	return tmpFile.Name()
-}
-
-// waitForMachinesetReady polls until the MachineSet has the expected number of ready replicas.
-func waitForMachinesetReady(oc *exutil.CLI, machineSetName string, timeout, replicas int) {
-	err := wait.Poll(1*time.Minute, time.Duration(timeout)*time.Minute, func() (bool, error) {
-		readyReplicas, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			"machineset", machineSetName, "-n", mcoNamespace,
-			"-o=jsonpath={.status.readyReplicas}").Output()
-		if err != nil {
-			e2e.Logf("Error getting machineset %s: %v", machineSetName, err)
-			return false, err
-		}
-		readyReplicasInt, _ := strconv.Atoi(readyReplicas)
-		e2e.Logf("Waiting for machineset %s: %d/%d ready replicas", machineSetName, readyReplicasInt, replicas)
-		return readyReplicasInt >= replicas, nil
-	})
-	if err != nil {
-		e2e.Failf("machineset %s did not reach %d ready replicas within %d minutes", machineSetName, replicas, timeout)
-	}
 }
