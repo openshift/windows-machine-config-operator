@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 
@@ -16,6 +15,7 @@ import (
 	"golang.org/x/mod/semver"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 //+kubebuilder:rbac:groups=config.openshift.io,resources=infrastructures,verbs=get
@@ -33,12 +33,25 @@ const (
 	ClusterAPINamespace = "openshift-cluster-api"
 )
 
-var (
-	// WatchedEnvironmentVars is a list of the WMCO watched environment variables
-	WatchedEnvironmentVars = []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"}
-	// clusterWideProxyVars is a map of the global egress proxy variables and values from WMCO's environment
-	clusterWideProxyVars map[string]string
-)
+// proxyEnvVars is the single source of truth for the cluster-wide egress proxy environment variables WMCO watches.
+// Each entry binds the variable name to the field of the cluster Proxy status that supplies its value.
+var proxyEnvVars = []struct {
+	name  string
+	value func(oconfig.ProxyStatus) string
+}{
+	{"HTTP_PROXY", func(s oconfig.ProxyStatus) string { return s.HTTPProxy }},
+	{"HTTPS_PROXY", func(s oconfig.ProxyStatus) string { return s.HTTPSProxy }},
+	{"NO_PROXY", func(s oconfig.ProxyStatus) string { return s.NoProxy }},
+}
+
+// WatchedEnvironmentVars returns the names of the WMCO watched environment variables.
+func WatchedEnvironmentVars() []string {
+	names := make([]string, len(proxyEnvVars))
+	for i, v := range proxyEnvVars {
+		names[i] = v.name
+	}
+	return names
+}
 
 // Network interface contains methods to interact with cluster network objects
 type Network interface {
@@ -357,24 +370,26 @@ func GetDNS(subnet string) (string, error) {
 }
 
 // IsProxyEnabled returns whether a global egress proxy is active in the cluster
-func IsProxyEnabled() bool {
-	return len(GetProxyVars()) > 0
+func IsProxyEnabled(ctx context.Context, reader client.Reader) (bool, error) {
+	proxyVars, err := GetProxyVars(ctx, reader)
+	if err != nil {
+		return false, err
+	}
+	return len(proxyVars) > 0, nil
 }
 
-// GetProxyVars returns a map of the proxy variables and values from the WMCO container's environment. The presence of
-// any implies a proxy is enabled, as OLM would have injected them into the operator spec. Returns an empty map otherwise.
-func GetProxyVars() map[string]string {
-	if clusterWideProxyVars != nil {
-		return clusterWideProxyVars
+// GetProxyVars returns a map of the cluster-wide egress proxy variables and values, read from the cluster Proxy
+// object's status. Only non-empty values are included; an empty map means no proxy is active.
+func GetProxyVars(ctx context.Context, reader client.Reader) (map[string]string, error) {
+	proxy := &oconfig.Proxy{}
+	if err := reader.Get(ctx, client.ObjectKey{Name: "cluster"}, proxy); err != nil {
+		return nil, fmt.Errorf("unable to get cluster proxy: %w", err)
 	}
-	// if clusterWideProxyVars is not already cached, initialize it. We never expect these values to change during
-	// runtime as OLM restarts the operator when the global cluster proxy config changes
-	clusterWideProxyVars = make(map[string]string, len(WatchedEnvironmentVars))
-	for _, envVar := range WatchedEnvironmentVars {
-		value, found := os.LookupEnv(envVar)
-		if found {
-			clusterWideProxyVars[envVar] = value
+	proxyVars := make(map[string]string)
+	for _, v := range proxyEnvVars {
+		if value := v.value(proxy.Status); value != "" {
+			proxyVars[v.name] = value
 		}
 	}
-	return clusterWideProxyVars
+	return proxyVars, nil
 }

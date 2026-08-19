@@ -286,7 +286,11 @@ func main() {
 		setupLog.Error(err, "error removing invalid annotations from Linux nodes")
 	}
 
-	proxyEnabled := cluster.IsProxyEnabled()
+	proxyEnabled, err := cluster.IsProxyEnabled(ctx, mgr.GetAPIReader())
+	if err != nil {
+		setupLog.Error(err, "unable to determine proxy state")
+		os.Exit(1)
+	}
 	configMapReconciler, err := controllers.NewConfigMapReconciler(ctx, mgr, clusterConfig, watchNamespace, proxyEnabled)
 	if err != nil {
 		setupLog.Error(err, "unable to create ConfigMap reconciler")

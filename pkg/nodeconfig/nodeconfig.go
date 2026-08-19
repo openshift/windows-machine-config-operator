@@ -645,7 +645,11 @@ func (nc *NodeConfig) SyncTrustedCABundle(ctx context.Context) error {
 	for _, bundle := range cc.Spec.ImageRegistryBundleData {
 		caBundle += appendToCABundle(bundle)
 	}
-	if cluster.IsProxyEnabled() {
+	proxyEnabled, err := cluster.IsProxyEnabled(ctx, nc.client)
+	if err != nil {
+		return fmt.Errorf("unable to determine proxy state: %w", err)
+	}
+	if proxyEnabled {
 		proxyCA := &core.ConfigMap{}
 		if err := nc.client.Get(ctx, types.NamespacedName{Namespace: nc.wmcoNamespace,
 			Name: certificates.ProxyCertsConfigMap}, proxyCA); err != nil {

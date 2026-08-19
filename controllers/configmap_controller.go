@@ -71,6 +71,7 @@ import (
 // escalation check permits granting that same permission to WICD's ClusterRole in EnsureWICDRBAC
 //+kubebuilder:rbac:groups="certificates.k8s.io",resources=certificatesigningrequests,verbs=create
 //+kubebuilder:rbac:groups="config.openshift.io",resources=infrastructures,verbs=get;list;watch
+//+kubebuilder:rbac:groups="config.openshift.io",resources=proxies,verbs=get;list;watch
 
 const (
 	// BYOHLabel is a label that should be applied to all Windows nodes not associated with a Machine.
@@ -537,7 +538,28 @@ func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			builder.WithPredicates(windowsNodeVersionChangePredicate())).
 		Watches(&mcfgv1.MachineConfig{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
 			builder.WithPredicates(machineConfigCreatedPredicate())).
+		Watches(&oconfig.Proxy{}, handler.EnqueueRequestsFromMapFunc(r.mapToServicesConfigMap),
+			builder.WithPredicates(proxyChangedPredicate())).
 		Complete(r)
+}
+
+// proxyChangedPredicate triggers a reconcile on create or update of the cluster Proxy object, so that the
+// windows-services ConfigMap is regenerated with the current cluster-wide proxy variables.
+func proxyChangedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return e.Object.GetName() == "cluster"
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return e.ObjectNew.GetName() == "cluster"
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+	}
 }
 
 func machineConfigCreatedPredicate() predicate.Funcs {
@@ -737,7 +759,11 @@ func generateServicesManifest(ctx context.Context, client client.Client, port st
 	if err != nil {
 		return nil, fmt.Errorf("Error getting kubelet args from ignition: %w", err)
 	}
-	svcData, err := services.GenerateManifest(argsFromIgnition, apiServerEndpoint, port, platform,
+	proxyVars, err := cluster.GetProxyVars(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get proxy vars: %w", err)
+	}
+	svcData, err := services.GenerateManifest(argsFromIgnition, apiServerEndpoint, port, platform, proxyVars,
 		ctrl.Log.V(1).Enabled())
 	if err != nil {
 		return nil, fmt.Errorf("error generating expected Windows service state: %w", err)
