@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	oconfig "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
@@ -54,13 +55,20 @@ const (
 	WindowsMachineController = "windowsmachine"
 	// IgnoreLabel is a label that will cause machines to be ignored by the Windows Machine controller
 	IgnoreLabel = "windowsmachineconfig.openshift.io/ignore"
+	// machineDeletionRestrictedRequeueInterval is the amount of time to wait before re-checking whether a Machine
+	// whose deletion was restricted by maxUnhealthyCount is now allowed to be deleted. Using a backoff here (instead
+	// of an immediate requeue) avoids a tight reconcile loop and event/log spam while a sibling Machine's
+	// remediation is still in progress.
+	machineDeletionRestrictedRequeueInterval = 30 * time.Second
 )
 
 // WindowsMachineReconciler is used to create a controller which manages Windows Machine objects
 type WindowsMachineReconciler struct {
 	instanceReconciler
 	// machineClient holds the information for machine client
-	machineClient *mclient.MachineV1beta1Client
+	// This is typed as the interface (rather than the concrete *mclient.MachineV1beta1Client) so that it can be
+	// substituted with a fake implementation in unit tests.
+	machineClient mclient.MachineV1beta1Interface
 }
 
 // NewWindowsMachineReconciler returns a pointer to a WindowsMachineReconciler
@@ -281,18 +289,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			if node.Annotations[nodeconfig.PubKeyHashAnnotation] !=
 				nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
 				log.Info("deleting machine")
-				deletionAllowed, err := r.isAllowedDeletion(ctx, machine)
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("unable to determine if Machine can be deleted: %w", err)
-				}
-				if !deletionAllowed {
-					log.Info("machine deletion restricted", "maxUnhealthyCount", maxUnhealthyCount)
-					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted",
-						"Machine %v deletion restricted as the maximum unhealthy machines can`t exceed %v count",
-						machine.Name, maxUnhealthyCount)
-					return ctrl.Result{Requeue: true}, nil
-				}
-				return ctrl.Result{}, r.deleteMachine(ctx, machine)
+				return r.deleteMachineIfAllowed(ctx, machine, "private key out of date")
 			}
 			if node.Annotations[metadata.VersionAnnotation] == version.Get() {
 				// version annotation exists with a valid value, node is fully configured.
@@ -339,7 +336,7 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			// re-provisioned.
 			r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
 				"Machine %s authentication failure", machine.Name)
-			return ctrl.Result{}, r.deleteMachine(ctx, machine)
+			return r.deleteMachineIfAllowed(ctx, machine, "authentication failure")
 		}
 		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineSetupFailure",
 			"Machine %s configuration failure", machine.Name)
@@ -348,6 +345,30 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 	r.recorder.Eventf(machine, core.EventTypeNormal, "MachineSetup",
 		"Machine %s configured successfully", machine.Name)
 	return ctrl.Result{}, nil
+}
+
+// deleteMachineIfAllowed deletes the given Machine if doing so would not cause the number of unhealthy Machines
+// in its MachineSet to reach or exceed maxUnhealthyCount. This is the single safety gate used by every Machine
+// remediation path (e.g. authentication failure, stale private key), ensuring they are all bound by the same
+// disruption budget rather than some paths being gated and others deleting unconditionally.
+// reason is a short human-readable description of why deletion is being attempted, used for logging/events.
+func (r *WindowsMachineReconciler) deleteMachineIfAllowed(ctx context.Context, machine *mapi.Machine,
+	reason string) (ctrl.Result, error) {
+	deletionAllowed, err := r.isAllowedDeletion(ctx, machine)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("unable to determine if Machine can be deleted: %w", err)
+	}
+	if !deletionAllowed {
+		r.log.Info("machine deletion restricted", "name", machine.GetName(), "reason", reason,
+			"maxUnhealthyCount", maxUnhealthyCount)
+		r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted",
+			"Machine %v deletion restricted (%s) as the maximum unhealthy machines can`t exceed %v count",
+			machine.Name, reason, maxUnhealthyCount)
+		// Requeue with a backoff rather than immediately, to avoid a tight reconcile loop and event spam while
+		// waiting for a sibling Machine's remediation to complete.
+		return ctrl.Result{RequeueAfter: machineDeletionRestrictedRequeueInterval}, nil
+	}
+	return ctrl.Result{}, r.deleteMachine(ctx, machine)
 }
 
 // deleteMachine deletes the specified Machine
@@ -470,6 +491,9 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(ctx context.Context, machin
 	for _, ma := range machines.Items {
 		// Increment the count if the machine is identified as healthy and is a part of given Windows MachineSet and
 		// on which deletion is not already initiated.
+		// Note: `len(machine.OwnerReferences) != 0` here refers to the outer `machine` parameter (already validated
+		// non-empty at the top of this function), not the loop variable `ma`. It is redundant but kept for
+		// clarity/safety in case this function is refactored again in the future.
 		if len(machine.OwnerReferences) != 0 && ma.OwnerReferences[0].Name == machinesetName &&
 			r.isWindowsMachineHealthy(ctx, &ma) && ma.DeletionTimestamp.IsZero() {
 			totalHealthy += 1
@@ -489,14 +513,18 @@ func (r *WindowsMachineReconciler) isAllowedDeletion(ctx context.Context, machin
 // 2. Machine is not associated with a Node object
 // 3. Associated Node object doesn't have a Version annotation
 func (r *WindowsMachineReconciler) isWindowsMachineHealthy(ctx context.Context, machine *mapi.Machine) bool {
-	if (machine.Status.Phase == nil || *machine.Status.Phase != "Running") &&
-		machine.Status.NodeRef == nil {
+	// Note: these conditions must be OR'd, not AND'd. A previous version of this check used `&&`, which meant a
+	// Machine reporting phase "Running" with a nil NodeRef would fall through to the NodeRef.Name dereference
+	// below and panic, instead of correctly being treated as unhealthy.
+	if machine.Status.Phase == nil || *machine.Status.Phase != "Running" || machine.Status.NodeRef == nil {
 		return false
 	}
 
-	// Get node associated with the machine
-	node, err := r.k8sclientset.CoreV1().Nodes().Get(ctx, machine.Status.NodeRef.Name, meta.GetOptions{})
-	if err != nil {
+	// Get node associated with the machine. Use the cached controller-runtime client (consistent with how the
+	// Node is fetched in Reconcile) rather than k8sclientset, so this function can be exercised in unit tests
+	// against a fake client.
+	node := &core.Node{}
+	if err := r.client.Get(ctx, kubeTypes.NamespacedName{Name: machine.Status.NodeRef.Name}, node); err != nil {
 		return false
 	}
 	_, present := node.Annotations[metadata.VersionAnnotation]
