@@ -9,13 +9,13 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "master"
-      && !files.all.all(x, x.matches('^ote/|^docs/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|Containerfile.bundle)$'))
+      && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() || ".tekton/windows-machine-config-operator-bundle-*".pathChanged() )
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: windows-machine-config-operator-release-5-0
-    appstudio.openshift.io/component: windows-machine-config-operator-release-5-0
+    appstudio.openshift.io/application: windows-machine-config-operator-release-5-1
+    appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-5-1
     pipelines.appstudio.openshift.io/type: build
-  name: windows-machine-config-operator-release-5-0-on-push
+  name: windows-machine-config-operator-bundle-release-5-1-on-push
   namespace: windows-machine-conf-tenant
 spec:
   params:
@@ -26,11 +26,11 @@ spec:
   - name: prefetch-input
     value: '{"type": "gomod", "path": "."}'
   - name: dockerfile
-    value: Containerfile
+    value: Containerfile.bundle
   - name: git-url
     value: '{{source_url}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-release-5-0:{{revision}}
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-bundle-release-5-1:{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
@@ -267,6 +267,30 @@ spec:
         operator: in
         values:
         - 'false'
+    - name: fips-operator-bundle-check-oci-ta
+      params:
+      - name: image-digest
+        value: $(tasks.build-container.results.IMAGE_DIGEST)
+      - name: image-url
+        value: $(tasks.build-container.results.IMAGE_URL)
+      - name: SOURCE_ARTIFACT
+        value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
+      runAfter:
+      - build-container
+      taskRef:
+        params:
+        - name: name
+          value: fips-operator-bundle-check-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-fips-operator-bundle-check-oci-ta:0.1@sha256:1d8d73418bfdc9b0461cf91ba2ac836cc9dde3e0b871c36eed1135287fc7f6a8
+        - name: kind
+          value: task
+        resolver: bundles
+      when:
+      - input: $(params.skip-checks)
+        operator: in
+        values:
+        - 'false'
     - name: clair-scan
       params:
       - name: image-digest
@@ -281,26 +305,6 @@ spec:
           value: clair-scan
         - name: bundle
           value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.4.0@sha256:dcc6ca58d3ec03d05ce21c03b4f51b58cac9878caa932ad06a9fdf4bc422aaab
-        - name: kind
-          value: task
-        resolver: bundles
-      when:
-      - input: $(params.skip-checks)
-        operator: in
-        values:
-        - 'false'
-    - name: ecosystem-cert-preflight-checks
-      params:
-      - name: image-url
-        value: $(tasks.build-container.results.IMAGE_URL)
-      runAfter:
-      - build-container
-      taskRef:
-        params:
-        - name: name
-          value: ecosystem-cert-preflight-checks
-        - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:4619769705d4999e129b779d7699d89d33c47f7ab80d73ad6e3dcd8a6a4e43a7
         - name: kind
           value: task
         resolver: bundles
@@ -472,14 +476,6 @@ spec:
         requests:
           memory: 8Gi
       name: use-trusted-artifact
-  - pipelineTaskName: build-container
-    stepSpecs:
-    - computeResources:
-        limits:
-          memory: 8Gi
-        requests:
-          memory: 8Gi
-      name: use-trusted-artifact
   - pipelineTaskName: clone-repository
     stepSpecs:
     - computeResources:
@@ -488,6 +484,14 @@ spec:
         requests:
           memory: 8Gi
       name: create-trusted-artifact
+  - pipelineTaskName: fips-operator-bundle-check-oci-ta
+    stepSpecs:
+    - computeResources:
+        limits:
+          memory: 8Gi
+        requests:
+          memory: 8Gi
+      name: use-trusted-artifact
   - pipelineTaskName: prefetch-dependencies
     stepSpecs:
     - computeResources:
@@ -521,7 +525,7 @@ spec:
           memory: 8Gi
       name: use-trusted-artifact
   taskRunTemplate:
-    serviceAccountName: build-pipeline-windows-machine-config-operator-release-5-0
+    serviceAccountName: build-pipeline-windows-machine-config-operator-bundle-release-5-1
   workspaces:
   - name: git-auth
     secret:
