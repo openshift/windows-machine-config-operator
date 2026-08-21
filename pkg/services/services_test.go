@@ -45,6 +45,57 @@ func TestGetHostnameCmd(t *testing.T) {
 	}
 }
 
+func TestWindowsExporterConfiguration(t *testing.T) {
+	tests := []struct {
+		name                string
+		debug               bool
+		expectedCmdContains []string
+	}{
+		{
+			name:  "Default logging",
+			debug: false,
+			expectedCmdContains: []string{
+				windows.WindowsExporterPath,
+				"--web.config.file " + windows.TLSConfPath,
+				"--log.level info",
+				"--log.file " + windows.WindowsExporterLogPath,
+			},
+		},
+		{
+			name:  "Debug logging enabled",
+			debug: true,
+			expectedCmdContains: []string{
+				windows.WindowsExporterPath,
+				"--web.config.file " + windows.TLSConfPath,
+				"--log.level debug",
+				"--log.file " + windows.WindowsExporterLogPath,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			data, err := GenerateManifest(nil, "https://api-server.endpoint.local:6443", "",
+				config.AWSPlatformType, test.debug)
+			require.NoError(t, err, "error generating services manifest")
+
+			var command string
+			for _, service := range data.Services {
+				if service.Name == windows.WindowsExporterServiceName {
+					command = service.Command
+					break
+				}
+			}
+			require.NotEmpty(t, command, "windows_exporter service not found in generated manifest")
+
+			for _, expectedStr := range test.expectedCmdContains {
+				assert.Contains(t, command, expectedStr,
+					"Command should contain: %s\nActual command: %s", expectedStr, command)
+			}
+		})
+	}
+}
+
 func TestHybridOverlayConfiguration(t *testing.T) {
 	tests := []struct {
 		name                   string
