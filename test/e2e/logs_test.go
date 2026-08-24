@@ -28,6 +28,9 @@ func (tc *testContext) testNodeLogs(t *testing.T) {
 		"wicd/windows-instance-config-daemon.exe.INFO",
 		"csi-proxy/csi-proxy.log",
 	}
+	optionalLogs := []string{
+		"windows_exporter/windows_exporter.log",
+	}
 	nodeArtifacts := filepath.Join(tc.artifactDir, "nodes")
 	for _, node := range gc.allNodes() {
 		nodeDir := filepath.Join(nodeArtifacts, node.Name)
@@ -53,6 +56,9 @@ func (tc *testContext) testNodeLogs(t *testing.T) {
 				})
 				assert.NoError(t, err)
 			})
+		}
+		for _, file := range optionalLogs {
+			_ = retrieveLog(node.GetName(), file, nodeDir)
 		}
 	}
 }
