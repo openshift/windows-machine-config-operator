@@ -39,6 +39,7 @@ var (
 	machineLabel      = "machine.openshift.io/os-id=Windows"
 	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 	linuxDebugImage   = "registry.access.redhat.com/ubi9/ubi:latest"
+	defaultWindowsMS  = "windows"
 )
 
 // Service represents a Windows service entry from the WICD windows-services ConfigMap.
@@ -57,6 +58,13 @@ func checkVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string) (bool, 
 		return false, err
 	}
 	return true, err
+}
+
+func waitVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string, interval, timeout time.Duration) {
+	err := wait.Poll(interval, timeout, func() (bool, error) {
+		return checkVersionAnnotationReady(oc, windowsNodeName)
+	})
+	o.Expect(err).NotTo(o.HaveOccurred(), "Timed out waiting for version annotation on node %s", windowsNodeName)
 }
 
 // getWindowsHostNames returns the hostnames of all Windows nodes in the cluster.
@@ -480,7 +488,7 @@ func runHostProcessPS(oc *exutil.CLI, nodeName, image, psCommand string, waitFor
 				"kubernetes.io/hostname": nodeName,
 			},
 			"tolerations": []map[string]string{
-				{"key": "os", "value": "Windows", "effect": "NoSchedule"},
+				{"key": "os", "operator": "Equal", "value": "Windows", "effect": "NoSchedule"},
 			},
 			"securityContext": map[string]interface{}{
 				"windowsOptions": winOpts,
@@ -1290,6 +1298,61 @@ func waitForMachinesetReady(oc *exutil.CLI, machineSetName string, timeout, repl
 	if err != nil {
 		e2e.Failf("machineset %s did not reach %d ready replicas within %d minutes", machineSetName, replicas, timeout)
 	}
+}
+
+func getServiceClusterIP(oc *exutil.CLI, serviceName, namespace string) (string, error) {
+	return oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"service", serviceName, "-o=jsonpath={.spec.clusterIP}", "-n", namespace).Output()
+}
+
+// generateClusterIPServiceYAML returns a YAML manifest for a ClusterIP Service.
+func generateClusterIPServiceYAML(name, namespace, appLabel string, port int) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: Service
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  ports:
+  - port: %d
+    targetPort: %d
+  selector:
+    app: %s
+  type: ClusterIP
+`, name, namespace, port, port, appLabel)
+}
+
+// generateWindowsDaemonSetYAML returns a YAML manifest for a Windows DaemonSet.
+func generateWindowsDaemonSetYAML(name, namespace, appLabel, image string) string {
+	return fmt.Sprintf(`apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  selector:
+    matchLabels:
+      app: %s
+  template:
+    metadata:
+      labels:
+        app: %s
+    spec:
+      nodeSelector:
+        kubernetes.io/os: windows
+      tolerations:
+      - key: "os"
+        operator: "Equal"
+        value: "Windows"
+        effect: "NoSchedule"
+      containers:
+      - name: %s
+        image: %s
+        command:
+        - pwsh.exe
+        - -Command
+        - "while ($true) { Start-Sleep -Seconds 30 }"
+`, name, namespace, appLabel, appLabel, name, image)
 }
 
 const (

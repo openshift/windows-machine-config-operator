@@ -21,7 +21,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 	var initialProxySpec map[string]interface{}
 
 	g.BeforeEach(func() {
-		initialProxySpec = getProxySpec(oc)
+		initialProxySpec = getEnvVarProxyMap(oc)
 	})
 
 	g.It("Smokerun-Author:rrasouli-Critical-65980-[node-proxy]-Cluster-wide proxy settings validation [Serial]", func() {
@@ -96,6 +96,14 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 				err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", `[{"op": "remove", "path": "/spec/httpsProxy"}]`).Execute()
 				o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove httpsProxy")
 				checkWMCORestarted(oc, timeNoHttps)
+
+				// WORKAROUND(OCPBUGS-111093): Trigger reconciliation by patching noProxy to fix stuck nodes
+				currentNoProxy := getClusterProxy(oc, "spec.noProxy")
+				triggerValue := currentNoProxy + ",example.com"
+				err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p",
+					`[{"op": "add", "path": "/spec/noProxy", "value": "`+triggerValue+`"}]`).Execute()
+				o.Expect(err).NotTo(o.HaveOccurred())
+
 				winIPs := getWindowsInternalIPs(oc)
 				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
 				e2e.Logf("Skipping WICD ConfigMap and node propagation verification - WMCO doesn't remove env vars from ConfigMap")
