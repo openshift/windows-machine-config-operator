@@ -3,7 +3,7 @@ module github.com/openshift/windows-machine-config-operator
 go 1.26.5
 
 require (
-	github.com/apparentlymart/go-cidr v1.1.0
+	github.com/apparentlymart/go-cidr v1.1.1
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/coreos/ignition/v2 v2.26.0
 	github.com/go-imports-organizer/goio v1.5.0
