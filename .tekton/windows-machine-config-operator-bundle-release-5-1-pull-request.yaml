@@ -4,18 +4,19 @@ metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/openshift/windows-machine-config-operator?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: '3'
     pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "push"
+      event == "pull_request"
       && target_branch == "master"
       && ( "Containerfile.bundle".pathChanged() || "bundle/***".pathChanged() || ".tekton/windows-machine-config-operator-bundle-*".pathChanged() )
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: windows-machine-config-operator-release-5-0
-    appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-5-0
+    appstudio.openshift.io/application: windows-machine-config-operator-release-5-1
+    appstudio.openshift.io/component: windows-machine-config-operator-bundle-release-5-1
     pipelines.appstudio.openshift.io/type: build
-  name: windows-machine-config-operator-bundle-release-5-0-on-push
+  name: windows-machine-config-operator-bundle-release-5-1-on-pull-request
   namespace: windows-machine-conf-tenant
 spec:
   params:
@@ -29,8 +30,10 @@ spec:
     value: Containerfile.bundle
   - name: git-url
     value: '{{source_url}}'
+  - name: image-expires-after
+    value: 5d
   - name: output-image
-    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-bundle-release-5-0:{{revision}}
+    value: quay.io/redhat-user-workloads/windows-machine-conf-tenant/windows-machine-config-operator/windows-machine-config-operator-bundle-release-5-1:on-pr-{{revision}}
   - name: revision
     value: '{{revision}}'
   pipelineSpec:
@@ -84,6 +87,10 @@ spec:
       default: docker
       type: string
       description: The format for the resulting image's mediaType. Valid values are oci or docker.
+    - name: enable-cache-proxy
+      default: 'false'
+      description: Enable cache proxy configuration
+      type: string
     - name: enable-package-registry-proxy
       default: 'true'
       description: Use the package registry proxy when prefetching dependencies
@@ -119,6 +126,9 @@ spec:
       value: $(tasks.clone-repository.results.commit)
     tasks:
     - name: init
+      params:
+      - name: enable-cache-proxy
+        value: $(params.enable-cache-proxy)
       taskRef:
         params:
         - name: name
@@ -202,6 +212,10 @@ spec:
         value: $(tasks.prefetch-dependencies.results.CACHI2_ARTIFACT)
       - name: BUILDAH_FORMAT
         value: $(params.buildah-format)
+      - name: HTTP_PROXY
+        value: $(tasks.init.results.http-proxy)
+      - name: NO_PROXY
+        value: $(tasks.init.results.no-proxy)
       - name: SOURCE_DATE_EPOCH
         value: $(params.source-date-epoch)
       - name: REWRITE_TIMESTAMP
@@ -525,7 +539,7 @@ spec:
           memory: 8Gi
       name: use-trusted-artifact
   taskRunTemplate:
-    serviceAccountName: build-pipeline-windows-machine-config-operator-bundle-release-5-0
+    serviceAccountName: build-pipeline-windows-machine-config-operator-bundle-release-5-1
   workspaces:
   - name: git-auth
     secret:
