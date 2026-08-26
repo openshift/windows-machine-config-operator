@@ -116,6 +116,11 @@ func registerSuites(ext *e.Extension) {
 			Qualifiers: []string{`name.contains("[Disruptive]")`},
 		},
 		{
+			Name:       "windows-machine-config-operator/proxy",
+			Parents:    []string{"openshift/disruptive"},
+			Qualifiers: []string{`name.contains("[node-proxy]")`},
+		},
+		{
 			Name:       "windows-machine-config-operator/non-disruptive",
 			Qualifiers: []string{`!name.contains("[Disruptive]")`},
 		},
