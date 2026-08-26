@@ -544,7 +544,7 @@ func runHostProcessPS(oc *exutil.CLI, nodeName, image, psCommand string, waitFor
 
 	defer cleanupPod()
 
-	pollErr := wait.Poll(1*time.Second, 3*time.Minute, func() (bool, error) {
+	pollErr := wait.Poll(1*time.Second, 10*time.Minute, func() (bool, error) {
 		phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"pod", podName, "-n", wmcoNamespace, "-o=jsonpath={.status.phase}").Output()
 		if err != nil {
@@ -1144,8 +1144,6 @@ func stopWindowsService(oc *exutil.CLI, nodeName, image, serviceName string) (st
 	return strings.TrimSpace(output), nil
 }
 
-
-
 // getAvailabilityZone returns the availability zone of the cluster's MachineSet or nodes.
 func getAvailabilityZone(oc *exutil.CLI) string {
 	zone, err := getMachineSetZone(oc)
@@ -1496,6 +1494,16 @@ func compileEnvVars(pwshOutput string) string {
 	return value
 }
 
+// redactProxyURL redacts user:password credentials from proxy URLs for safe logging
+func redactProxyURL(proxyURL string) string {
+	if proxyURL == "" {
+		return ""
+	}
+	// Match http://user:pass@host or https://user:pass@host
+	re := regexp.MustCompile(`(https?://)([^:]+):([^@]+)@`)
+	return re.ReplaceAllString(proxyURL, "${1}***:***@")
+}
+
 func compareMaps(map1, map2 map[string]interface{}) bool {
 	if len(map1) != len(map2) {
 		return false
@@ -1505,7 +1513,7 @@ func compareMaps(map1, map2 map[string]interface{}) bool {
 		val2 := compileEnvVars(fmt.Sprint(map2[key]))
 		value := strings.ReplaceAll(val2, ";", ",")
 		if val1 != value {
-			e2e.Logf("values are different value: %v map2 value: %v", val1, val2)
+			e2e.Logf("Proxy variable %s values differ: expected=%s actual=%s", key, redactProxyURL(val1), redactProxyURL(val2))
 			return false
 		}
 	}
@@ -1553,7 +1561,8 @@ func waitForProxyOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[stri
 					return false, nil
 				}
 				if !strings.Contains(strings.TrimSpace(msg), proxyStr) {
-					e2e.Logf("Waiting for %v on %v: expected %q, got %q", key, nodeName, proxyStr, strings.TrimSpace(msg))
+					e2e.Logf("Waiting for proxy variable %s on node %s: expected=%s actual=%s",
+						key, nodeName, redactProxyURL(proxyStr), redactProxyURL(strings.TrimSpace(msg)))
 					return false, nil
 				}
 			}

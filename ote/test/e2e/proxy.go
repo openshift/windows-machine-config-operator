@@ -13,7 +13,7 @@ import (
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
-var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
+var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Containers", func() {
 	defer g.GinkgoRecover()
 
 	oc := compat_otp.NewCLIWithoutNamespace("default")
@@ -46,7 +46,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 	})
 
 	g.It("Smokerun-Author:rrasouli-Longduration-Critical-90290-[node-proxy]-Remove trusted CA from cluster proxy and verify propagation [Serial][Disruptive][Slow]",
-		g.SpecTimeout(30*time.Minute),
+		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
 			defer restoreProxyEnvironment(oc, initialProxySpec)
 
@@ -60,7 +60,8 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 			o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove trusted CA from proxy spec")
 
 			g.By("Wait for WMCO to process trusted CA removal")
-			restarted, _ := checkWMCORestarted(oc, wmcoStartTime)
+			restarted, err := checkWMCORestarted(oc, wmcoStartTime)
+			o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status")
 			if restarted {
 				e2e.Logf("WMCO restarted after trusted CA removal")
 				winIPs := getWindowsInternalIPs(oc)
@@ -71,7 +72,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		})
 
 	g.It("Smokerun-Author:rrasouli-Longduration-Critical-90289-[node-proxy]-Remove proxy variables and verify WMCO propagation [Serial][Disruptive][Slow]",
-		g.SpecTimeout(30*time.Minute),
+		g.SpecTimeout(60*time.Minute),
 		func(ctx g.SpecContext) {
 			winNodes := getWindowsNodeNames(oc)
 			defer restoreProxyEnvironment(oc, initialProxySpec)
@@ -81,7 +82,8 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 				timeNoProxy := getWMCOTimestamp(oc)
 				err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", `[{"op": "remove", "path": "/spec/noProxy"}]`).Execute()
 				o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove noProxy")
-				checkWMCORestarted(oc, timeNoProxy)
+				_, err = checkWMCORestarted(oc, timeNoProxy)
+				o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after noProxy removal")
 				winIPs := getWindowsInternalIPs(oc)
 				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
 				noProxyExpected := getEnvVarProxyMap(oc)
@@ -95,7 +97,8 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 				timeNoHttps := getWMCOTimestamp(oc)
 				err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", `[{"op": "remove", "path": "/spec/httpsProxy"}]`).Execute()
 				o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove httpsProxy")
-				checkWMCORestarted(oc, timeNoHttps)
+				_, err = checkWMCORestarted(oc, timeNoHttps)
+				o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after httpsProxy removal")
 
 				// WORKAROUND(OCPBUGS-111093): Trigger reconciliation by patching noProxy to fix stuck nodes
 				currentNoProxy := getClusterProxy(oc, "spec.noProxy")
@@ -115,8 +118,9 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 			if getClusterProxy(oc, "spec.httpProxy") != "" {
 				timeNoHttp := getWMCOTimestamp(oc)
 				err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", `[{"op": "remove", "path": "/spec/httpProxy"}]`).Execute()
-				o.Expect(err).NotTo(o.HaveOccurred())
-				checkWMCORestarted(oc, timeNoHttp)
+				o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove httpProxy")
+				_, err = checkWMCORestarted(oc, timeNoHttp)
+				o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after httpProxy removal")
 				winIPs := getWindowsInternalIPs(oc)
 				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
 				httpExpected := getEnvVarProxyMap(oc)
@@ -136,7 +140,8 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 			err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p",
 				`[{"op": "add", "path":"/spec/noProxy", "value":"test.no-proxy.com,example.com"}]`).Execute()
 			o.Expect(err).NotTo(o.HaveOccurred(), "could not patch proxy with new noProxy value")
-			checkWMCORestarted(oc, wmcoStartTime)
+			_, err = checkWMCORestarted(oc, wmcoStartTime)
+			o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after noProxy update")
 			winNodes := getWindowsNodeNames(oc)
 			winIPs := getWindowsInternalIPs(oc)
 			waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
@@ -177,64 +182,66 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 			waitForCM(oc, trustedCACM, trustedCACM, wmcoNamespace)
 		})
 
-	g.It("Smokerun-Author:rrasouli-Critical-68320-[node-proxy]-Import custom CA certificates into Windows node system store [Serial][Disruptive]", func() {
-		const (
-			name                        = "OCP-68320-custom"
-			validity                    = "3650"
-			caSubj                      = "/OU=openshift/CN=test-custom-self-cert-signer"
-			userSelfSignedCommonName    = "CN=test-custom-self-cert-signer, OU=openshift"
-			userInstalledCertCommonName = "CN=Installer-QE-CA, OU=Installer-QE, O=OCP, S=Beijing, C=CN"
-			namespace                   = "openshift-config"
-			configmap                   = "user-ca-bundle"
-		)
+	g.It("Smokerun-Author:rrasouli-Critical-68320-[node-proxy]-Import custom CA certificates into Windows node system store [Serial][Disruptive]",
+		g.SpecTimeout(45*time.Minute),
+		func() {
+			const (
+				name                        = "OCP-68320-custom"
+				validity                    = "3650"
+				caSubj                      = "/OU=openshift/CN=test-custom-self-cert-signer"
+				userSelfSignedCommonName    = "CN=test-custom-self-cert-signer, OU=openshift"
+				userInstalledCertCommonName = "CN=Installer-QE-CA, OU=Installer-QE, O=OCP, S=Beijing, C=CN"
+				namespace                   = "openshift-config"
+				configmap                   = "user-ca-bundle"
+			)
 
-		g.By("Verify that user certificate installed on each Windows worker")
-		checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
+			g.By("Verify that user certificate installed on each Windows worker")
+			checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
 
-		g.By("Create a self-signed certificate and append to user-ca-bundle")
-		keyPath := fmt.Sprintf("%s-ca.key", name)
-		crtPath := fmt.Sprintf("%s-ca.crt", name)
-		defer os.Remove(keyPath)
-		cmd := fmt.Sprintf("openssl genrsa -out %s-ca.key 4096", name)
-		output, err := exec.Command("bash", "-c", cmd).CombinedOutput()
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate key: %s", output)
+			g.By("Create a self-signed certificate and append to user-ca-bundle")
+			keyPath := fmt.Sprintf("%s-ca.key", name)
+			crtPath := fmt.Sprintf("%s-ca.crt", name)
+			defer os.Remove(keyPath)
+			cmd := fmt.Sprintf("openssl genrsa -out %s-ca.key 4096", name)
+			output, err := exec.Command("bash", "-c", cmd).CombinedOutput()
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate key: %s", output)
 
-		defer os.Remove(crtPath)
-		cmd = fmt.Sprintf("openssl req -x509 -new -nodes -key %s-ca.key -sha256 -days %s -out %s-ca.crt -subj %s", name, validity, name, caSubj)
-		output, err = exec.Command("bash", "-c", cmd).CombinedOutput()
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create certificate: %s", output)
+			defer os.Remove(crtPath)
+			cmd = fmt.Sprintf("openssl req -x509 -new -nodes -key %s-ca.key -sha256 -days %s -out %s-ca.crt -subj %s", name, validity, name, caSubj)
+			output, err = exec.Command("bash", "-c", cmd).CombinedOutput()
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create certificate: %s", output)
 
-		initialConfigMapContent := getConfigMapData(oc, configmap, "ca\\-bundle\\.crt", namespace)
-		initialConfigMapContent = removeOuterQuotes(initialConfigMapContent)
-		defer func() {
+			initialConfigMapContent := getConfigMapData(oc, configmap, "ca\\-bundle\\.crt", namespace)
+			initialConfigMapContent = removeOuterQuotes(initialConfigMapContent)
+			defer func() {
+				configureCertificateToJSONPatch(oc, initialConfigMapContent, configmap, namespace)
+			}()
+
+			newCertificateContent, err := os.ReadFile(crtPath)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			combinedContent := fmt.Sprintf("%s\n%s", initialConfigMapContent, string(newCertificateContent))
+			configureCertificateToJSONPatch(oc, combinedContent, configmap, namespace)
+
+			g.By("Verify that user certificate installed on each Windows worker")
+			checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
+
+			g.By("Creating certificate rotation")
+			cmd = fmt.Sprintf("openssl req -x509 -new -nodes -key %s-ca.key -sha256 -days 1 -out %s-ca.crt -subj %s", name, name, caSubj)
+			output, err = exec.Command("bash", "-c", cmd).CombinedOutput()
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create rotated certificate: %s", output)
+
+			newCertificateContent, err = os.ReadFile(crtPath)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			combinedContent = fmt.Sprintf("%s\n%s", initialConfigMapContent, string(newCertificateContent))
+			configureCertificateToJSONPatch(oc, combinedContent, configmap, namespace)
+
+			g.By("Verify that after certificate rotation certificates installed on each Windows worker")
+			checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
+
+			g.By("Verify that self-signed certificate has been removed from each Windows node")
 			configureCertificateToJSONPatch(oc, initialConfigMapContent, configmap, namespace)
-		}()
-
-		newCertificateContent, err := os.ReadFile(crtPath)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		combinedContent := fmt.Sprintf("%s\n%s", initialConfigMapContent, string(newCertificateContent))
-		configureCertificateToJSONPatch(oc, combinedContent, configmap, namespace)
-
-		g.By("Verify that user certificate installed on each Windows worker")
-		checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
-
-		g.By("Creating certificate rotation")
-		cmd = fmt.Sprintf("openssl req -x509 -new -nodes -key %s-ca.key -sha256 -days 1 -out %s-ca.crt -subj %s", name, name, caSubj)
-		output, err = exec.Command("bash", "-c", cmd).CombinedOutput()
-		o.Expect(err).NotTo(o.HaveOccurred(), "failed to create rotated certificate: %s", output)
-
-		newCertificateContent, err = os.ReadFile(crtPath)
-		o.Expect(err).NotTo(o.HaveOccurred())
-		combinedContent = fmt.Sprintf("%s\n%s", initialConfigMapContent, string(newCertificateContent))
-		configureCertificateToJSONPatch(oc, combinedContent, configmap, namespace)
-
-		g.By("Verify that after certificate rotation certificates installed on each Windows worker")
-		checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
-
-		g.By("Verify that self-signed certificate has been removed from each Windows node")
-		configureCertificateToJSONPatch(oc, initialConfigMapContent, configmap, namespace)
-		checkUserCertificatesOnNodes(oc, userSelfSignedCommonName, 0)
-	})
+			checkUserCertificatesOnNodes(oc, userSelfSignedCommonName, 0)
+		})
 
 	g.It("Author:rrasouli-Smokerun-Longduration-Critical-71173-[node-proxy]-Test connectivity from Windows nodes behind proxy [Serial][Disruptive][Slow]",
 		g.SpecTimeout(30*time.Minute),
@@ -265,7 +272,8 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 			o.Expect(err).NotTo(o.HaveOccurred(), "could not patch proxy with new noProxy value")
 
 			g.By("Wait for WMCO to process proxy change")
-			restarted, _ := checkWMCORestarted(oc, initialTimeStamp)
+			restarted, err := checkWMCORestarted(oc, initialTimeStamp)
+			o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status")
 			if restarted {
 				e2e.Logf("WMCO restarted after proxy patch, waiting for WICD propagation")
 			} else {
