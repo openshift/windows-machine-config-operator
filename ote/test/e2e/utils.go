@@ -1387,11 +1387,46 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 		machineSets, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"machinesets", "-n", mcoNamespace, "-o=jsonpath={.items[*].metadata.name}").Output()
 		o.Expect(err).NotTo(o.HaveOccurred())
+
+		// Try pattern matching first
 		for _, ms := range strings.Split(machineSets, " ") {
 			if strings.Contains(ms, "winworker") || strings.Contains(ms, defaultWindowsMS) || strings.HasSuffix(ms, "-wm") {
 				return ms
 			}
 		}
+
+		// Fallback: Try CI e2e pattern (contains "-e2e" but not "worker")
+		// CI e2e jobs use pattern like "ci-op-xxx-e2e" for Windows MachineSets
+		for _, ms := range strings.Split(machineSets, " ") {
+			if strings.Contains(ms, "-e2e") && !strings.Contains(ms, "worker") {
+				e2e.Logf("Found Windows MachineSet using CI e2e pattern: %s", ms)
+				return ms
+			}
+		}
+
+		// Final fallback: Get MachineSet from Windows node's Machine annotation
+		// This handles cases where MachineSet naming is non-standard
+		winHostNames := getWindowsHostNames(oc)
+		if len(winHostNames) > 0 {
+			machineAnnotation, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"node", winHostNames[0], "-o=jsonpath={.metadata.annotations.machine\\.openshift\\.io/machine}").Output()
+			if err == nil && machineAnnotation != "" {
+				// Extract Machine name from "openshift-machine-api/machine-name"
+				parts := strings.Split(strings.TrimSpace(machineAnnotation), "/")
+				if len(parts) == 2 {
+					machineName := parts[1]
+					// Get MachineSet from Machine's ownerReferences or labels
+					machineSetLabel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+						"machine", machineName, "-n", mcoNamespace,
+						"-o=jsonpath={.metadata.labels.machine\\.openshift\\.io/cluster-api-machineset}").Output()
+					if err == nil && machineSetLabel != "" {
+						e2e.Logf("Found Windows MachineSet from node Machine annotation: %s", machineSetLabel)
+						return strings.TrimSpace(machineSetLabel)
+					}
+				}
+			}
+		}
+
 		e2e.Failf("Windows MachineSet not found in cluster. Found: %s", machineSets)
 	}
 
