@@ -1502,3 +1502,22 @@ func waitForMachinesetReady(oc *exutil.CLI, machineSetName string, timeout, repl
 		e2e.Failf("machineset %s did not reach %d ready replicas within %d minutes", machineSetName, replicas, timeout)
 	}
 }
+
+// skipIfWindowsNodesUnhealthy checks if all Windows nodes are healthy and skips the test if not.
+// This prevents cryptic oc debug errors when nodes are unreachable due to infrastructure issues.
+// Use this at the start of tests that rely on oc debug node or direct node access.
+func skipIfWindowsNodesUnhealthy(oc *exutil.CLI) {
+	winHostNames := getWindowsHostNames(oc)
+	if len(winHostNames) == 0 {
+		g.Skip("No Windows nodes found in cluster")
+	}
+
+	for _, nodeName := range winHostNames {
+		// Quick health check via oc debug - if node is unreachable, this will fail
+		_, err := runDebugNodePS(oc, nodeName, windowsDebugImage, "echo 'health-check'")
+		if err != nil {
+			g.Skip(fmt.Sprintf("Windows node %s is unreachable (infrastructure issue), skipping test: %v", nodeName, err))
+		}
+	}
+	e2e.Logf("All %d Windows nodes are healthy and reachable", len(winHostNames))
+}

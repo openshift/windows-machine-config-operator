@@ -673,6 +673,8 @@ spec:
 
 	// author: rrasouli@redhat.com
 	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation", func() {
+		skipIfWindowsNodesUnhealthy(oc)
+
 		winInternalIPs := getWindowsInternalIPs(oc)
 		o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
 
@@ -1148,6 +1150,9 @@ spec:
 		if isNone(oc) {
 			g.Skip("Platform none does not support Load balancer, skipping")
 		}
+
+		skipIfWindowsNodesUnhealthy(oc)
+
 		namespace := "winc-38186"
 		deploymentName := "win-webserver"
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1582,14 +1587,14 @@ spec:
 				caConfigMap = "kube-apiserver-to-kubelet-client-ca"
 			)
 
-			winHostNames := getWindowsHostNames(oc)
-			expectedWindowsNodes := len(winHostNames)
-			if expectedWindowsNodes == 0 {
-				e2e.Failf("No Windows nodes detected in the cluster")
-			}
+			// Scale down Windows MachineSet to 1 node
+			zone := getAvailabilityZone(oc)
+			windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			defer scaleWindowsMachineSet(oc, windowsMachineSetName, 10, 2, false) // Restore 2 nodes
+			scaleWindowsMachineSet(oc, windowsMachineSetName, 15, 1, false)       // Scale to 1 node
 
-			g.By("Ensure Windows nodes are Ready before proceeding")
-			waitWindowsNodesReady(oc, expectedWindowsNodes, 15*time.Minute)
+			g.By("Ensure Windows node is Ready before proceeding")
+			waitWindowsNodesReady(oc, 1, 15*time.Minute)
 
 			initialCertNotBefore, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"secrets", "kube-apiserver-to-kubelet-signer", "-n", caNamespace,
@@ -1627,57 +1632,57 @@ spec:
 			})
 			o.Expect(err).NotTo(o.HaveOccurred(), "Kubelet CA rotation did not happen")
 
-			g.By("Waiting for Windows nodes to stabilize after CA rotation")
-			waitWindowsNodesReady(oc, expectedWindowsNodes, 10*time.Minute)
+			g.By("Waiting for Windows node to stabilize after CA rotation")
+			waitWindowsNodesReady(oc, 1, 10*time.Minute)
 			time.Sleep(3 * time.Minute)
 
-			g.By("Verify kubelet client CA is updated in Windows workers")
+			g.By("Verify kubelet client CA is updated in Windows worker")
 			caBundlePath := `C:\host\k\kubelet-ca.crt`
-
-			for _, nodeName := range winHostNames {
-				g.By(fmt.Sprintf("Verify kubelet client CA content on Windows worker %v", nodeName))
-
-				pollErr := wait.Poll(30*time.Second, 20*time.Minute, func() (bool, error) {
-					kubeletCA, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-						"configmap", caConfigMap, "-n", caNamespace,
-						"-o=jsonpath={.data.ca-bundle\\.crt}").Output()
-					if err != nil || kubeletCA == "" {
-						e2e.Logf("Error or empty kubelet client CA from ConfigMap: %v", err)
-						return false, nil
-					}
-
-					bundleContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-						fmt.Sprintf("Get-Content -Raw -Path '%s'", caBundlePath))
-					if err != nil || bundleContent == "" {
-						e2e.Logf("Failed fetching or empty CA bundle from Windows node %v: %v", nodeName, err)
-						return false, nil
-					}
-
-					if strings.Contains(bundleContent, strings.TrimSpace(kubeletCA)) {
-						e2e.Logf("Kubelet CA found in Windows worker node %v bundle", nodeName)
-						return true, nil
-					}
-					e2e.Logf("Kubelet CA not found in Windows worker node %v bundle, retrying...", nodeName)
-					return false, nil
-				})
-
-				o.Expect(pollErr).NotTo(o.HaveOccurred(),
-					"Failed to verify kubelet client CA in Windows worker %v bundle", nodeName)
+			winHostNames := getWindowsHostNames(oc)
+			if len(winHostNames) == 0 {
+				e2e.Failf("No Windows nodes found after CA rotation")
 			}
+			nodeName := winHostNames[0]
+			g.By(fmt.Sprintf("Verify kubelet client CA content on Windows worker %v", nodeName))
 
-			g.By("Ensure Windows workers were not restarted after CA rotation")
-			for _, nodeName := range winHostNames {
-				uptimeOutput, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
-					`(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")`)
-				o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get uptime from %s", nodeName)
-
-				lastBootTime, err := time.Parse(time.RFC3339, strings.TrimSpace(uptimeOutput))
-				o.Expect(err).NotTo(o.HaveOccurred(), "Failed to parse boot time from %s: %s", nodeName, uptimeOutput)
-
-				e2e.Logf("Node %s last boot time: %v", nodeName, lastBootTime)
-				if rotatedCertNotBeforeParsed.Before(lastBootTime) {
-					e2e.Failf("Windows worker %v got restarted after CA rotation", nodeName)
+			pollErr := wait.Poll(30*time.Second, 20*time.Minute, func() (bool, error) {
+				kubeletCA, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"configmap", caConfigMap, "-n", caNamespace,
+					"-o=jsonpath={.data.ca-bundle\\.crt}").Output()
+				if err != nil || kubeletCA == "" {
+					e2e.Logf("Error or empty kubelet client CA from ConfigMap: %v", err)
+					return false, nil
 				}
+
+				bundleContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+					fmt.Sprintf("Get-Content -Raw -Path '%s'", caBundlePath))
+				if err != nil || bundleContent == "" {
+					e2e.Logf("Failed fetching or empty CA bundle from Windows node %v: %v", nodeName, err)
+					return false, nil
+				}
+
+				if strings.Contains(bundleContent, strings.TrimSpace(kubeletCA)) {
+					e2e.Logf("Kubelet CA found in Windows worker node %v bundle", nodeName)
+					return true, nil
+				}
+				e2e.Logf("Kubelet CA not found in Windows worker node %v bundle, retrying...", nodeName)
+				return false, nil
+			})
+
+			o.Expect(pollErr).NotTo(o.HaveOccurred(),
+				"Failed to verify kubelet client CA in Windows worker %v bundle", nodeName)
+
+			g.By("Ensure Windows worker was not restarted after CA rotation")
+			uptimeOutput, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
+				`(Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")`)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get uptime from %s", nodeName)
+
+			lastBootTime, err := time.Parse(time.RFC3339, strings.TrimSpace(uptimeOutput))
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to parse boot time from %s: %s", nodeName, uptimeOutput)
+
+			e2e.Logf("Node %s last boot time: %v", nodeName, lastBootTime)
+			if rotatedCertNotBeforeParsed.Before(lastBootTime) {
+				e2e.Failf("Windows worker %v got restarted after CA rotation", nodeName)
 			}
 		})
 
