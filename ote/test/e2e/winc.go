@@ -1579,7 +1579,7 @@ spec:
 		})
 
 	// author: jfrancoa@redhat.com
-	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Disruptive][Serial]",
+	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Timeout:25m][Disruptive][Serial]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
 			const (
@@ -1590,7 +1590,7 @@ spec:
 			// Scale down Windows MachineSet to 1 node
 			zone := getAvailabilityZone(oc)
 			windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
-			defer scaleWindowsMachineSet(oc, windowsMachineSetName, 10, 2, false) // Restore 2 nodes
+			defer scaleWindowsMachineSet(oc, windowsMachineSetName, 20, 2, false) // Restore 2 nodes (20min for WMCO reconfiguration)
 			scaleWindowsMachineSet(oc, windowsMachineSetName, 15, 1, false)       // Scale to 1 node
 
 			g.By("Ensure Windows node is Ready before proceeding")
@@ -1687,7 +1687,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Slow][Disruptive][Serial]",
+	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Timeout:30m][Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -1922,7 +1922,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Disruptive][Serial]",
+	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Timeout:20m][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
