@@ -1337,6 +1337,128 @@ func extractPrivateKeyToFile(oc *exutil.CLI) string {
 	return tmpFile.Name()
 }
 
+// getWMCOTimestamp returns the start time of the running WMCO pod.
+func getWMCOTimestamp(oc *exutil.CLI) string {
+	wmcoTime, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "--selector", "name="+wmcoDeploymentName, "--field-selector=status.phase=Running", "-o=jsonpath={.items[0].status.startTime}", "-n", wmcoNamespace).Output()
+	if err != nil || wmcoTime == "" {
+		return ""
+	}
+	return wmcoTime
+}
+
+// checkWMCORestarted polls until the WMCO pod start time differs from the given startTime.
+func checkWMCORestarted(oc *exutil.CLI, startTime string) (bool, error) {
+	if startTime == "" {
+		return false, fmt.Errorf("empty restart baseline: must capture WMCO timestamp before triggering restart")
+	}
+	var restartDetected bool
+	pollErr := wait.Poll(20*time.Second, 6*time.Minute, func() (bool, error) {
+		actualWMCOTime := getWMCOTimestamp(oc)
+		if actualWMCOTime == "" {
+			e2e.Logf("WMCO pod timestamp unavailable (pod transitioning), waiting...")
+			return false, nil
+		}
+		if startTime != actualWMCOTime {
+			e2e.Logf("WMCO restarted (old: %s, new: %s)", startTime, actualWMCOTime)
+			restartDetected = true
+			return true, nil
+		}
+		e2e.Logf("WMCO did not restart yet, waiting...")
+		return false, nil
+	})
+	if pollErr != nil {
+		return false, fmt.Errorf("error waiting for WMCO restart: %w", pollErr)
+	}
+	return restartDetected, nil
+}
+
+// restoreAPIServerTLS restores the original TLS configuration on apiserver/cluster.
+func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) {
+	if origAdherence == "" {
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=json",
+			"-p", `[{"op":"remove","path":"/spec/tlsAdherence"}]`).Execute(); err != nil {
+			e2e.Logf("Warning: could not remove tlsAdherence: %v", err)
+		}
+	} else {
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
+			"-p", fmt.Sprintf(`{"spec":{"tlsAdherence":"%s"}}`, origAdherence)).Execute(); err != nil {
+			e2e.Logf("Warning: could not restore tlsAdherence: %v", err)
+		}
+	}
+	if origTLSProfile == "" {
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=json",
+			"-p", `[{"op":"remove","path":"/spec/tlsSecurityProfile"}]`).Execute(); err != nil {
+			e2e.Logf("Warning: could not remove tlsSecurityProfile: %v", err)
+		}
+	} else {
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
+			"-p", fmt.Sprintf(`{"spec":{"tlsSecurityProfile":%s}}`, origTLSProfile)).Execute(); err != nil {
+			e2e.Logf("Warning: could not restore tlsSecurityProfile: %v", err)
+		}
+	}
+}
+
+// createTLSCheckerPod creates a temporary Linux pod for running openssl commands
+// and waits for it to reach Running state. Uses the cluster-local tools image
+// from the OpenShift payload to support disconnected environments.
+func createTLSCheckerPod(oc *exutil.CLI) string {
+	podName := "tls-checker-" + getRandomString(5)
+
+	toolsImage, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"istag", "tools:latest", "-n", "openshift",
+		"-o=jsonpath={.image.dockerImageReference}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to get tools image from cluster")
+	o.Expect(toolsImage).NotTo(o.BeEmpty(), "tools imagestream reference is empty")
+
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  containers:
+  - name: checker
+    image: %s
+    command: ["sleep", "1800"]
+  restartPolicy: Never`, podName, wmcoNamespace, toolsImage)
+
+	err = createResourceFromString(oc, wmcoNamespace, manifest)
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to create TLS checker pod")
+
+	pollErr := wait.Poll(5*time.Second, 120*time.Second, func() (bool, error) {
+		phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pod", podName, "-n", wmcoNamespace,
+			"-o=jsonpath={.status.phase}").Output()
+		if err != nil {
+			return false, nil
+		}
+		return phase == "Running", nil
+	})
+	o.Expect(pollErr).NotTo(o.HaveOccurred(), "TLS checker pod did not reach Running state")
+	return podName
+}
+
+// deleteTLSCheckerPod deletes the TLS checker pod.
+func deleteTLSCheckerPod(oc *exutil.CLI, podName string) {
+	err := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+		"pod", podName, "-n", wmcoNamespace,
+		"--grace-period=0", "--force", "--ignore-not-found").Execute()
+	if err != nil {
+		e2e.Logf("Warning: failed to delete TLS checker pod %s: %v", podName, err)
+	}
+}
+
+// runTLSCheck runs openssl s_client from the checker pod against the given host:port.
+// tlsFlag can be "-tls1_2", "-tls1_3", or empty for default negotiation.
+func runTLSCheck(oc *exutil.CLI, checkerPod, host, port, tlsFlag string) (string, error) {
+	tlsArg := ""
+	if tlsFlag != "" {
+		tlsArg = " " + tlsFlag
+	}
+	cmd := fmt.Sprintf("echo | openssl s_client -connect %s%s 2>&1 || true", net.JoinHostPort(host, port), tlsArg)
+	return execInPod(oc, wmcoNamespace, "pod/"+checkerPod, "bash", "-c", cmd)
+}
+
 // waitForMachinesetReady polls until the MachineSet has the expected number of ready replicas.
 func waitForMachinesetReady(oc *exutil.CLI, machineSetName string, timeout, replicas int) {
 	err := wait.Poll(1*time.Minute, time.Duration(timeout)*time.Minute, func() (bool, error) {
