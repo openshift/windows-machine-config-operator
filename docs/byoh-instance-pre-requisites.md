@@ -11,6 +11,8 @@ The following pre-requisites must be fulfilled in order to add a Windows BYOH no
   * Start with an alphanumeric character.
   * End with an alphanumeric character.
 * A PTR record must exist corresponding to the instance address which resolves to the instance hostname for successful reverse DNS lookups.
+  * When the `windows-instances` ConfigMap key is an IP address, a PTR record must exist corresponding to that address, resolving to the instance hostname. This allows WMCO to validate CSR node names via reverse DNS lookup. 
+  * When the ConfigMap key is a DNS name (e.g., a headless Service FQDN like `win-byoh-0.headless.default.svc.cluster.local`), no PTR record is required. WMCO validates the node name by matching it directly against the DNS name.
 * Containerd should not be installed. If it is installed already, it is recommended to uninstall as WMCO installs and manages containerd.
 * If the instance uses a static IP, and the instance is *not* running Windows Server 2022, deviceless NICs must be disabled
   * This can be done by running the following in PowerShell:
