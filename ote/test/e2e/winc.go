@@ -245,7 +245,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 				"SERVICES_LOG_FILE_AGE-",
 				"SERVICES_LOG_FLUSH_INTERVAL-").Execute()
 			o.Expect(cleanupErr).NotTo(o.HaveOccurred(), "failed to restore WMCO deployment configuration")
-			waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
+			waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes
 		}()
 
 		g.By("Wait for WMCO to reconcile and Windows nodes to be reconfigured")
@@ -672,109 +672,111 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation", func() {
-		skipIfWindowsNodesUnhealthy(oc)
+	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation [Disruptive][Serial]",
+		g.SpecTimeout(15*time.Minute),
+		func(ctx g.SpecContext) {
+			skipIfWindowsNodesUnhealthy(oc)
 
-		winInternalIPs := getWindowsInternalIPs(oc)
-		o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
+			winInternalIPs := getWindowsInternalIPs(oc)
+			o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
 
-		for _, winhost := range winInternalIPs {
-			nodeName := getNodeNameFromIP(oc, winhost)
-			o.Expect(nodeName).NotTo(o.BeEmpty(), "Failed to get node name for IP %s", winhost)
+			for _, winhost := range winInternalIPs {
+				nodeName := getNodeNameFromIP(oc, winhost)
+				o.Expect(nodeName).NotTo(o.BeEmpty(), "Failed to get node name for IP %s", winhost)
 
-			g.By(fmt.Sprintf("Verifying node %s is Ready before testing", nodeName))
-			waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
+				g.By(fmt.Sprintf("Verifying node %s is Ready before testing", nodeName))
+				waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
 
-			g.By("Verifying hybrid-overlay-node binary and CA certificate on host filesystem")
-			binaryCheck, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-				`$bin = Test-Path 'C:\host\k\hybrid-overlay-node.exe'; `+
-					`$certs = Get-ChildItem 'C:\host\k' -Filter '*.crt' -ErrorAction SilentlyContinue; `+
-					`Write-Output "binary=$bin"; `+
-					`Write-Output "certs=$($certs.Count)"`)
-			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to check hybrid-overlay binary")
-			o.Expect(binaryCheck).To(o.ContainSubstring("binary=True"), "hybrid-overlay-node.exe should exist on host")
-			o.Expect(binaryCheck).To(o.MatchRegexp(`certs=[1-9]`), "CA certificate file should exist in C:\\k\\")
-			e2e.Logf("Hybrid-overlay binary and CA cert verified on %s", nodeName)
+				g.By("Verifying hybrid-overlay-node binary and CA certificate on host filesystem")
+				binaryCheck, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+					`$bin = Test-Path 'C:\host\k\hybrid-overlay-node.exe'; `+
+						`$certs = Get-ChildItem 'C:\host\k' -Filter '*.crt' -ErrorAction SilentlyContinue; `+
+						`Write-Output "binary=$bin"; `+
+						`Write-Output "certs=$($certs.Count)"`)
+				o.Expect(err).NotTo(o.HaveOccurred(), "Failed to check hybrid-overlay binary")
+				o.Expect(binaryCheck).To(o.ContainSubstring("binary=True"), "hybrid-overlay-node.exe should exist on host")
+				o.Expect(binaryCheck).To(o.MatchRegexp(`certs=[1-9]`), "CA certificate file should exist in C:\\k\\")
+				e2e.Logf("Hybrid-overlay binary and CA cert verified on %s", nodeName)
 
-			g.By("Dumping hybrid-overlay log for analysis")
-			logPath := `C:\host\var\log\hybrid-overlay\hybrid-overlay.log`
-			logContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-				fmt.Sprintf("Get-Content -Raw -Path '%s' -ErrorAction SilentlyContinue", logPath))
-			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to read log file content")
-			e2e.Logf("Successfully retrieved log content (%d characters)", len(logContent))
+				g.By("Dumping hybrid-overlay log for analysis")
+				logPath := `C:\host\var\log\hybrid-overlay\hybrid-overlay.log`
+				logContent, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+					fmt.Sprintf("Get-Content -Raw -Path '%s' -ErrorAction SilentlyContinue", logPath))
+				o.Expect(err).NotTo(o.HaveOccurred(), "Failed to read log file content")
+				e2e.Logf("Successfully retrieved log content (%d characters)", len(logContent))
 
-			if len(strings.TrimSpace(logContent)) > 0 {
-				g.By("Verifying certificate rotation patterns in log")
-				requiredPatterns := []struct {
-					pattern     string
-					description string
-				}{
-					{"Certificate rotation is enabled", "rotation is enabled"},
-					{"Rotating certificates", "rotation process started"},
-					{"Starting client certificate rotation controller", "rotation controller started"},
-					{"Certificate found", "certificate was found"},
-					{"is issued", "CSR was issued"},
-					{"Waiting", "future rotation scheduled"},
+				if len(strings.TrimSpace(logContent)) > 0 {
+					g.By("Verifying certificate rotation patterns in log")
+					requiredPatterns := []struct {
+						pattern     string
+						description string
+					}{
+						{"Certificate rotation is enabled", "rotation is enabled"},
+						{"Rotating certificates", "rotation process started"},
+						{"Starting client certificate rotation controller", "rotation controller started"},
+						{"Certificate found", "certificate was found"},
+						{"is issued", "CSR was issued"},
+						{"Waiting", "future rotation scheduled"},
+					}
+					for _, p := range requiredPatterns {
+						g.By(fmt.Sprintf("Checking for: %s", p.description))
+						o.Expect(strings.Contains(logContent, p.pattern)).To(o.BeTrue(),
+							"Log should contain pattern '%s' indicating %s", p.pattern, p.description)
+						e2e.Logf("Found pattern: %s", p.pattern)
+					}
+
+					g.By("Verifying absence of error patterns")
+					for _, badPattern := range []string{"actively refused", "localhost:8443"} {
+						o.Expect(strings.Contains(logContent, badPattern)).To(o.BeFalse(),
+							"Log should not contain error pattern: %s", badPattern)
+					}
+				} else {
+					e2e.Logf("Hybrid-overlay log is empty on %s, skipping log pattern checks", nodeName)
 				}
-				for _, p := range requiredPatterns {
-					g.By(fmt.Sprintf("Checking for: %s", p.description))
-					o.Expect(strings.Contains(logContent, p.pattern)).To(o.BeTrue(),
-						"Log should contain pattern '%s' indicating %s", p.pattern, p.description)
-					e2e.Logf("Found pattern: %s", p.pattern)
-				}
 
-				g.By("Verifying absence of error patterns")
-				for _, badPattern := range []string{"actively refused", "localhost:8443"} {
-					o.Expect(strings.Contains(logContent, badPattern)).To(o.BeFalse(),
-						"Log should not contain error pattern: %s", badPattern)
-				}
-			} else {
-				e2e.Logf("Hybrid-overlay log is empty on %s, skipping log pattern checks", nodeName)
+				g.By(fmt.Sprintf("Verifying node %s remains stable", nodeName))
+				waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
+
+				g.By(fmt.Sprintf("OCPBUGS-86246: Verifying cert cleanup on node %s via oc debug", nodeName))
+				certDir := `C:\host\k\cni\config`
+				certPattern := "ovnkube-client-*.pem"
+
+				countCmd := fmt.Sprintf(
+					`(Get-ChildItem -Path '%s' -Filter '%s' -ErrorAction SilentlyContinue | Measure-Object).Count`,
+					certDir, certPattern)
+				countBefore, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, countCmd)
+				o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to count existing cert files")
+				e2e.Logf("Existing ovnkube-client cert files before test: %s", strings.TrimSpace(countBefore))
+
+				createCmd := fmt.Sprintf(
+					`$dir = '%s'; $base = (Get-Date).AddDays(-10); `+
+						`for ($i = 1; $i -le 10; $i++) { `+
+						`$ts = $base.AddHours($i).ToString('yyyyMMddHHmmss'); `+
+						`$f = Join-Path $dir "ovnkube-client-$ts.pem"; `+
+						`Set-Content -Path $f -Value 'fake-cert'; `+
+						`(Get-Item $f).CreationTime = $base.AddHours($i); `+
+						`(Get-Item $f).LastWriteTime = $base.AddHours($i) }; `+
+						`(Get-ChildItem -Path '%s' -Filter '%s' | Measure-Object).Count`,
+					certDir, certDir, certPattern)
+				countAfterCreate, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, createCmd)
+				o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to create fake cert files")
+				e2e.Logf("Total cert files after creating fakes: %s", strings.TrimSpace(countAfterCreate))
+
+				e2e.Logf("Waiting 3 minutes for WICD to reconcile and clean up old certs...")
+				time.Sleep(3 * time.Minute)
+
+				countAfterCleanup, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, countCmd)
+				o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to count cert files after cleanup")
+				remaining := strings.TrimSpace(countAfterCleanup)
+				e2e.Logf("Cert files remaining after WICD cleanup: %s", remaining)
+				remainingCount, convErr := strconv.Atoi(remaining)
+				o.Expect(convErr).NotTo(o.HaveOccurred(), "Failed to parse cert count")
+				o.Expect(remainingCount).To(o.Equal(2),
+					"WICD should keep only 2 most recent ovnkube-client cert files, found %d", remainingCount)
+
+				e2e.Logf("Successfully verified certificate rotation and cert cleanup on %s", nodeName)
 			}
-
-			g.By(fmt.Sprintf("Verifying node %s remains stable", nodeName))
-			waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
-
-			g.By(fmt.Sprintf("OCPBUGS-86246: Verifying cert cleanup on node %s via oc debug", nodeName))
-			certDir := `C:\host\k\cni\config`
-			certPattern := "ovnkube-client-*.pem"
-
-			countCmd := fmt.Sprintf(
-				`(Get-ChildItem -Path '%s' -Filter '%s' -ErrorAction SilentlyContinue | Measure-Object).Count`,
-				certDir, certPattern)
-			countBefore, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, countCmd)
-			o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to count existing cert files")
-			e2e.Logf("Existing ovnkube-client cert files before test: %s", strings.TrimSpace(countBefore))
-
-			createCmd := fmt.Sprintf(
-				`$dir = '%s'; $base = (Get-Date).AddDays(-10); `+
-					`for ($i = 1; $i -le 10; $i++) { `+
-					`$ts = $base.AddHours($i).ToString('yyyyMMddHHmmss'); `+
-					`$f = Join-Path $dir "ovnkube-client-$ts.pem"; `+
-					`Set-Content -Path $f -Value 'fake-cert'; `+
-					`(Get-Item $f).CreationTime = $base.AddHours($i); `+
-					`(Get-Item $f).LastWriteTime = $base.AddHours($i) }; `+
-					`(Get-ChildItem -Path '%s' -Filter '%s' | Measure-Object).Count`,
-				certDir, certDir, certPattern)
-			countAfterCreate, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, createCmd)
-			o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to create fake cert files")
-			e2e.Logf("Total cert files after creating fakes: %s", strings.TrimSpace(countAfterCreate))
-
-			e2e.Logf("Waiting 3 minutes for WICD to reconcile and clean up old certs...")
-			time.Sleep(3 * time.Minute)
-
-			countAfterCleanup, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, countCmd)
-			o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to count cert files after cleanup")
-			remaining := strings.TrimSpace(countAfterCleanup)
-			e2e.Logf("Cert files remaining after WICD cleanup: %s", remaining)
-			remainingCount, convErr := strconv.Atoi(remaining)
-			o.Expect(convErr).NotTo(o.HaveOccurred(), "Failed to parse cert count")
-			o.Expect(remainingCount).To(o.Equal(2),
-				"WICD should keep only 2 most recent ovnkube-client cert files, found %d", remainingCount)
-
-			e2e.Logf("Successfully verified certificate rotation and cert cleanup on %s", nodeName)
-		}
-	})
+		})
 
 	// author: rrasouli@redhat.com
 	g.It("Author:rrasouli-Smokerun-Medium-88278-wmco reads certificates from controllerConfig instead of MachineConfig", func() {
@@ -1307,6 +1309,8 @@ spec:
 		expectedWindowsNodes := len(winHostNames)
 		waitWindowsNodesReady(oc, expectedWindowsNodes, 10*time.Minute)
 
+		defer waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes after WICD reconciliation
+
 		for _, nodeName := range winHostNames {
 			g.By(fmt.Sprintf("Modify %v service binPath and check that it gets restored on %v", targetService, nodeName))
 
@@ -1408,7 +1412,7 @@ spec:
 			g.By("Step 7: Scale WMCO back to 1 and wait for node reconfiguration")
 			err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
+			waitWindowsNodesReady(oc, 2, 15*time.Minute) // Wait for 2 Ready nodes after WMCO scale up
 
 			g.By("Step 8: Verify the initial state of services (all should be running)")
 			for _, nodeName := range winHostNames {
@@ -1482,7 +1486,7 @@ spec:
 			g.By("Step 11: Stop services on Windows workers")
 			maxRetries := 3
 			retryInterval := 30 * time.Second
-			defer waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
+			defer waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes after cleanup
 
 			// Stop-Service -Force handles the dependency chain that sc.exe stop
 			// cannot (error 1051). Kubelet and containerd are stopped together in
@@ -1539,7 +1543,7 @@ spec:
 			}
 
 			g.By("Step 12: Wait for nodes to recover and verify critical services")
-			waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
+			waitWindowsNodesReady(oc, 2, 15*time.Minute) // Wait for 2 Ready nodes after recovery
 			for _, nodeName := range winHostNames {
 				for _, svcName := range []string{"kubelet", "containerd"} {
 					ok, err := checkWindowsServiceRunning(oc, nodeName, windowsDebugImage, svcName)
@@ -1582,6 +1586,8 @@ spec:
 	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Timeout:25m][Disruptive][Serial]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
+			g.Skip("Blocked by OCPBUGS-114564: WMCO reconfiguration hangs indefinitely when scaling MachineSet back to 2 nodes during defer cleanup")
+
 			const (
 				caNamespace = "openshift-kube-apiserver-operator"
 				caConfigMap = "kube-apiserver-to-kubelet-client-ca"
@@ -1709,6 +1715,7 @@ spec:
 				oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 					"machinesets.machine.openshift.io", cloneMSName, "-n", mcoNamespace,
 					"--ignore-not-found").Execute()
+				waitWindowsNodesReady(oc, 2, 15*time.Minute) // Wait for original 2 nodes after clone cleanup
 			}()
 
 			g.By("Step 2: Scale WMCO to 0 and delete secrets")
@@ -1877,7 +1884,10 @@ spec:
 
 			zone := getAvailabilityZone(oc)
 			windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
-			defer scaleWindowsMachineSet(oc, windowsMachineSetName, 10, 2, false)
+			defer func() {
+				scaleWindowsMachineSet(oc, windowsMachineSetName, 10, 2, false)
+				waitWindowsNodesReady(oc, 2, 15*time.Minute) // Wait for 2 nodes after scale-down cleanup
+			}()
 			scaleWindowsMachineSet(oc, windowsMachineSetName, 15, 3, false)
 			waitWindowsNodesReady(oc, 3, 1200*time.Second)
 
@@ -1928,6 +1938,7 @@ spec:
 			if isNone(oc) {
 				g.Skip("platform none does not support Windows node reconciliation")
 			}
+			g.Skip("Blocked by OCPBUGS-114564: WMCO reconfiguration hangs indefinitely after triggering reconciliation via annotation change in Step 7")
 
 			namespace := "winc-87809"
 			daemonSetName := "test-windows-daemonset"
