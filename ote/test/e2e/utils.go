@@ -618,7 +618,8 @@ func getRandomString(length int) string {
 	_, err := rand.Read(buff)
 	o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate random bytes")
 	str := base64.StdEncoding.EncodeToString(buff)
-	return str[:length]
+	// Convert to lowercase for Kubernetes RFC 1123 subdomain compliance
+	return strings.ToLower(str[:length])
 }
 
 // createProject creates a namespace if it does not already exist and sets privileged SCC.
