@@ -15,7 +15,7 @@ require (
 	github.com/operator-framework/api v0.41.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.41.0
-	github.com/pkg/sftp v1.13.10
+	github.com/pkg/sftp v1.13.11
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.86.2
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.86.2
 	github.com/spf13/cobra v1.10.2
@@ -23,8 +23,8 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.27.1
-	golang.org/x/crypto v0.54.0
-	golang.org/x/mod v0.37.0
+	golang.org/x/crypto v0.55.0
+	golang.org/x/mod v0.38.0
 	golang.org/x/sys v0.47.0
 	k8s.io/api v0.36.4
 	k8s.io/apimachinery v0.36.4
@@ -123,7 +123,7 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20 // indirect
