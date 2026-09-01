@@ -38,6 +38,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Critical-33612-Windows node basic check", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		g.By("Check Windows worker nodes run the same kubelet version as other Linux worker nodes")
 		linuxKubeletVersion, err := getKubeletVersionWithRetry(oc, linuxNodeLabel)
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -116,6 +117,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Critical-32615-Generate userData secret [Serial]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		g.By("Derive public key from cloud-private-key cluster secret")
 		publicKeyContent := derivePublicKeyFromSecret(oc)
 
@@ -190,6 +192,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: sgao@redhat.com
 	g.It("Author:sgao-Smokerun-Low-32554-wmco run in a pod with HostNetwork", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		winInternalIPs := getWindowsInternalIPs(oc)
 		if len(winInternalIPs) == 0 {
 			e2e.Failf("No Windows nodes with InternalIP found")
@@ -206,6 +209,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: rrasouli@redhat.com
 	g.It("Smokerun-Author:rrasouli-Medium-37362-[wmco] wmco using correct golang version", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		g.By("Fetch the correct golang version")
 		getCMD := "oc version -ojson | jq '.serverVersion.goVersion'"
 		goVersion, err := exec.Command("bash", "-c", getCMD).Output()
@@ -224,6 +228,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: rrasouli@redhat.com
 	g.It("Smokerun-Author:rrasouli-High-89616-Verify log rotation for kubelet and kube-proxy services [Slow][Disruptive]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		winNodeCount, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"nodes", "-l", windowsNodeLabel, "--no-headers").Output()
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -278,8 +283,8 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: jfrancoa@redhat.com
 	g.It("Smokerun-Author:jfrancoa-Medium-38188-Get Windows instance/core number and CPU arch", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		winMetrics := []string{"cluster:node_instance_type_count:sum", "cluster:capacity_cpu_cores:sum"}
-
 		mon, err := compat_otp.NewPrometheusMonitor(oc.AsAdmin())
 		o.Expect(err).NotTo(o.HaveOccurred(),
 			"Error creating new thanos monitor")
@@ -310,6 +315,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: sgao@redhat.com
 	g.It("Author:sgao-Smokerun-Medium-33768-NodeWithoutOVNKubeNodePodRunning alert ignore Windows nodes", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		g.By("Check NodeWithoutOVNKubeNodePodRunning alert ignore Windows nodes")
 		prometheusPod, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "-n", "openshift-monitoring", "-l=app.kubernetes.io/name=prometheus", "-o", "jsonpath={.items[0].metadata.name}").Output()
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -322,6 +328,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: rrasouli@redhat.com
 	g.It("Smokerun-Author:rrasouli-Medium-60814-Check containerd version is properly reported", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		wmcoVersion, err := getWMCOVersionFromLogs(oc)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -350,6 +357,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: weinliu@redhat.com
 	g.It("Author:weinliu-Smokerun-High-77777-Verify metrics configuration and HTTPS endpoint [Serial]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		g.By("Verifying ServiceMonitor existence")
 		serviceMonitorName := "windows-exporter"
 
@@ -388,6 +396,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: rrasouli@redhat.com
 	g.It("Author:rrasouli-Smokerun-Medium-79251-Validate matching provider IDs between Windows nodes and machines", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		if isNone(oc) {
 			g.Skip("Platform none does not support Machine API")
 		}
@@ -440,6 +449,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 
 	// author: rrasouli@redhat.com
 	g.It("Smokerun-Author:rrasouli-Medium-42204-Create Windows pod with a Projected Volume", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		namespace := "winc-42204"
 		defer deleteProject(oc, namespace)
 		createProject(oc, namespace)
@@ -511,6 +521,7 @@ spec:
 
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Critical-25593-Prevent scheduling non Windows workloads on Windows nodes", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		namespace := "winc-25593"
 		defer deleteProject(oc, namespace)
 		createProject(oc, namespace)
@@ -573,6 +584,7 @@ spec:
 
 	// author: weinliu@redhat.com
 	g.It("Author:weinliu-Smokerun-Medium-73752-Monitor Network In, and Network Out graphs for Windows Pods managed by wmco", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		mon, err := compat_otp.NewPrometheusMonitor(oc.AsAdmin())
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating Prometheus monitor")
 
@@ -603,6 +615,7 @@ spec:
 
 	// author: weinliu@redhat.com
 	g.It("Author:weinliu-Smokerun-Medium-70922-Monitor CPU, Memory, and Filesystem graphs for Windows Pods managed by wmco", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		mon, err := compat_otp.NewPrometheusMonitor(oc.AsAdmin())
 		o.Expect(err).NotTo(o.HaveOccurred(), "Error creating Prometheus monitor")
 
@@ -673,6 +686,7 @@ spec:
 
 	// author: rrasouli@redhat.com
 	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		winInternalIPs := getWindowsInternalIPs(oc)
 		o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
 
@@ -776,6 +790,7 @@ spec:
 
 	// author: rrasouli@redhat.com
 	g.It("Author:rrasouli-Smokerun-Medium-88278-wmco reads certificates from controllerConfig instead of MachineConfig", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		winInternalIPs := getWindowsInternalIPs(oc)
 		o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
 
@@ -889,6 +904,7 @@ spec:
 	})
 
 	g.It("Author:rrasouli-Smokerun-Medium-79100-Horizontal Pod Autoscaling with Windows containers", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		if !haveMetricsServer(oc) {
 			g.Skip("metrics-server is required for HPA testing")
 		}
@@ -977,6 +993,7 @@ spec:
 	})
 
 	g.It("Author:rrasouli-Smokerun-Medium-87711-Windows workload with RuntimeClass [Serial]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		namespace := "winc-87711"
 		deploymentName := "win-webserver"
 		defer deleteProject(oc, namespace)
@@ -1095,6 +1112,7 @@ spec:
 	})
 
 	g.It("Smokerun-Author:sgao-Critical-28632-Windows and Linux east west network during a long time", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		namespace := "winc-28632"
 		winDeployment := "win-webserver"
 		linuxDeployment := "linux-webserver"
@@ -1142,6 +1160,7 @@ spec:
 	})
 
 	g.It("Smokerun-Author:rrasouli-High-38186-[wmco] Windows LB service [Slow]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		if iaasPlatform == "vsphere" || iaasPlatform == "nutanix" {
 			g.Skip(fmt.Sprintf("Platform %s does not support Load balancer, skipping", iaasPlatform))
 		}
@@ -1196,6 +1215,7 @@ spec:
 
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Critical-33783-Enable must gather on Windows node [Slow][Disruptive]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		destDir := "/tmp/must-gather-33783"
 		defer os.RemoveAll(destDir)
 
@@ -1227,6 +1247,7 @@ spec:
 
 	// author: jfrancoa@redhat.com
 	g.It("Smokerun-Author:jfrancoa-Medium-50403-wmco creates and maintains Windows services ConfigMap [Disruptive]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		g.By("Check service configmap exists")
 		wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -1293,6 +1314,7 @@ spec:
 
 	// author: jfrancoa@redhat.com
 	g.It("Author:jfrancoa-Smokerun-Medium-56354-Stop dependent services before stopping a service in WICD [Disruptive][Serial]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		targetService := "containerd"
 
 		g.By("Ensure Windows nodes are Ready before proceeding")
@@ -1337,6 +1359,7 @@ spec:
 	g.It("Author:rrasouli-Longduration-Smokerun-Medium-76765-WICD-Remove-Services [Slow][Disruptive]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
+			g.Skip("WINC-2016: Skipping non-TLS test")
 			wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -1573,6 +1596,7 @@ spec:
 
 	// author: jfrancoa@redhat.com
 	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Disruptive]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		const (
 			caNamespace = "openshift-kube-apiserver-operator"
 			caConfigMap = "kube-apiserver-to-kubelet-client-ca"
@@ -1681,6 +1705,7 @@ spec:
 	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Slow][Disruptive]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
+			g.Skip("WINC-2016: Skipping non-TLS test")
 			if isNone(oc) {
 				g.Skip("platform none does not support changing namespace and scaling up machines")
 			}
@@ -1784,6 +1809,7 @@ spec:
 	g.It("Smokerun-Author:rrasouli-Longduration-High-39451-Access Windows workload through clusterIP [Slow][Disruptive]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
+			g.Skip("WINC-2016: Skipping non-TLS test")
 			if isNone(oc) {
 				g.Skip("platform none does not support scaling up machineset tests")
 			}
@@ -1887,6 +1913,7 @@ spec:
 	g.It("Author:sgao-Longduration-Smokerun-Medium-39030-Re queue on Windows machines edge cases [Slow][Disruptive]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
+			g.Skip("WINC-2016: Skipping non-TLS test")
 			if isNone(oc) {
 				g.Skip("platform none does not support scaling up Windows machines")
 			}
@@ -1914,6 +1941,7 @@ spec:
 
 	// author: rrasouli@redhat.com
 	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Disruptive]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		if isNone(oc) {
 			g.Skip("platform none does not support Windows node reconciliation")
 		}
@@ -2022,6 +2050,7 @@ spec:
 
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Medium-37472-Idempotent check of service running in Windows node [Disruptive]", func() {
+		g.Skip("WINC-2016: Skipping non-TLS test")
 		if isNone(oc) {
 			g.Skip("platform none does not support load balancer nor external IP tests")
 		}
@@ -2227,9 +2256,8 @@ spec:
 			wmcoStartTime := getWMCOTimestamp(oc)
 
 			checkerPod := createTLSCheckerPod(oc)
-			defer deleteTLSCheckerPod(oc, checkerPod)
-
 			defer restoreAPIServerTLS(oc, origAdherence, origTLSProfile)
+			defer deleteTLSCheckerPod(oc, checkerPod)
 
 			g.By("Set TLS adherence to StrictAllComponents and Modern profile")
 			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
@@ -2323,9 +2351,8 @@ spec:
 			wmcoStartTime := getWMCOTimestamp(oc)
 
 			checkerPod := createTLSCheckerPod(oc)
-			defer deleteTLSCheckerPod(oc, checkerPod)
-
 			defer restoreAPIServerTLS(oc, origAdherence, origTLSProfile)
+			defer deleteTLSCheckerPod(oc, checkerPod)
 
 			g.By("Set TLS adherence to StrictAllComponents with Custom TLS profile")
 			customPatch := `{"spec":{"tlsAdherence":"StrictAllComponents","tlsSecurityProfile":{"type":"Custom","custom":{"ciphers":["ECDHE-RSA-AES128-GCM-SHA256","ECDHE-ECDSA-AES128-GCM-SHA256"],"minTLSVersion":"VersionTLS12"}}}}`
