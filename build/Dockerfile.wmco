@@ -1,6 +1,6 @@
 ARG BASE_IMG=localhost/wmco-base:latest
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.26-openshift-5.0 as build
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.26-openshift-4.23 as build
 LABEL stage=build
 
 # Silence go compliance shim output
@@ -52,7 +52,7 @@ LABEL stage=operator
 
 # This block contains standard Red Hat container labels
 LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \
-    cpe="cpe:/a:redhat:windows_machine_config:11.0::el9" \
+    cpe="cpe:/a:redhat:windows_machine_config:10.23::el9" \
     License="ASL 2.0" \
     io.k8s.display-name="Windows Machine Config Operator" \
     io.k8s.description="Windows Machine Config Operator" \
@@ -84,7 +84,7 @@ RUN  /usr/local/bin/user_setup
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
 
 # Used to tag the released image. Should be a semver.
-LABEL version="v11.0.0"
-LABEL release="v11.0.0"
+LABEL version="v10.23.0"
+LABEL release="v10.23.0"
 
 USER ${USER_UID}
