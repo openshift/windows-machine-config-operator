@@ -60,7 +60,6 @@ func checkVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string) (bool, 
 	return true, err
 }
 
-// waitVersionAnnotationReady polls until the WMCO version annotation is set on the node.
 func waitVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string, interval, timeout time.Duration) {
 	err := wait.Poll(interval, timeout, func() (bool, error) {
 		return checkVersionAnnotationReady(oc, windowsNodeName)
@@ -353,147 +352,8 @@ func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
 	return nodeName
 }
 
-// debugWindowsNodesNotReady captures comprehensive debug information when Windows nodes fail to become Ready
-func debugWindowsNodesNotReady(oc *exutil.CLI) {
-	e2e.Logf("===== DEBUG: Windows Nodes Not Ready - Capturing Diagnostic Information =====")
-
-	// 1. Get detailed status for all Windows nodes
-	e2e.Logf("=== Windows Node Status ===")
-	nodeOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"nodes", "-l", windowsNodeLabel,
-		"-o=custom-columns=NAME:.metadata.name,STATUS:.status.conditions[?(@.type==\"Ready\")].status,REASON:.status.conditions[?(@.type==\"Ready\")].reason,MESSAGE:.status.conditions[?(@.type==\"Ready\")].message").Output()
-	if err != nil {
-		e2e.Logf("ERROR: Failed to get node status: %v", err)
-	} else {
-		e2e.Logf("Node status:\n%s", nodeOutput)
-	}
-
-	// 2. Get all node conditions for each Windows node
-	e2e.Logf("=== Windows Node Conditions (JSON) ===")
-	nodeNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"nodes", "-l", windowsNodeLabel,
-		"-o=jsonpath={.items[*].metadata.name}").Output()
-	if err == nil {
-		for _, nodeName := range strings.Fields(nodeNames) {
-			e2e.Logf("--- Node: %s ---", nodeName)
-			conditionsOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"node", nodeName,
-				"-o=jsonpath={.status.conditions}").Output()
-			if err == nil {
-				e2e.Logf("Conditions: %s", conditionsOutput)
-			}
-
-			// Get node annotations
-			annotationsOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"node", nodeName,
-				"-o=jsonpath={.metadata.annotations}").Output()
-			if err == nil {
-				e2e.Logf("Annotations: %s", annotationsOutput)
-			}
-		}
-	}
-
-	// 3. Get WMCO operator logs (last 100 lines)
-	e2e.Logf("=== WMCO Operator Logs (last 100 lines) ===")
-	wmcoLogs, err := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
-		"deployment/windows-machine-config-operator",
-		"-n", wmcoNamespace,
-		"--tail=100").Output()
-	if err != nil {
-		e2e.Logf("ERROR: Failed to get WMCO logs: %v", err)
-	} else {
-		e2e.Logf("WMCO logs:\n%s", wmcoLogs)
-	}
-
-	// 4. Get events for Windows nodes
-	e2e.Logf("=== Events for Windows Nodes (last 20) ===")
-	if nodeNames != "" {
-		for _, nodeName := range strings.Fields(nodeNames) {
-			events, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"events", "--all-namespaces",
-				"--field-selector", fmt.Sprintf("involvedObject.name=%s", nodeName),
-				"--sort-by=.lastTimestamp",
-				"-o=custom-columns=TIME:.lastTimestamp,TYPE:.type,REASON:.reason,MESSAGE:.message").Output()
-			if err == nil {
-				e2e.Logf("Events for %s:\n%s", nodeName, events)
-			}
-		}
-	}
-
-	// 5. Get WICD pod status (if running)
-	e2e.Logf("=== WICD Pod Status ===")
-	wicdPods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"pods", "-n", wmcoNamespace,
-		"-l", "app=windows-instance-config-daemon",
-		"-o=custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,PHASE:.status.phase,READY:.status.conditions[?(@.type==\"Ready\")].status").Output()
-	if err != nil {
-		e2e.Logf("ERROR: Failed to get WICD pods: %v", err)
-	} else {
-		e2e.Logf("WICD pods:\n%s", wicdPods)
-	}
-
-	// 6. Check Machine status (if using Machine API)
-	e2e.Logf("=== Machine Status ===")
-	machineOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"machines", "-n", "openshift-machine-api",
-		"-o=custom-columns=NAME:.metadata.name,PHASE:.status.phase,NODE:.status.nodeRef.name,PROVIDERSTATE:.status.providerStatus.instanceState").Output()
-	if err != nil {
-		e2e.Logf("INFO: No machines or failed to query: %v", err)
-	} else {
-		e2e.Logf("Machines:\n%s", machineOutput)
-	}
-
-	// 7. Get kubelet and WICD logs from NotReady nodes via oc debug node
-	e2e.Logf("=== Windows Node Service Logs (kubelet, WICD) ===")
-	if nodeNames != "" {
-		for _, nodeName := range strings.Fields(nodeNames) {
-			// Check if node is NotReady
-			nodeReady, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"node", nodeName,
-				"-o=jsonpath={.status.conditions[?(@.type==\"Ready\")].status}").Output()
-			if err == nil && strings.TrimSpace(nodeReady) != "True" {
-				e2e.Logf("--- Capturing logs from NotReady node: %s ---", nodeName)
-
-				// Get kubelet logs (last 50 lines)
-				kubeletLogs, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-					"Get-Content -Tail 50 C:\\k\\logs\\kubelet.log -ErrorAction SilentlyContinue")
-				if err != nil {
-					e2e.Logf("ERROR: Failed to get kubelet logs from %s: %v", nodeName, err)
-				} else {
-					e2e.Logf("Kubelet logs (last 50 lines) from %s:\n%s", nodeName, kubeletLogs)
-				}
-
-				// Get WICD logs (last 50 lines)
-				wicdLogs, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-					"Get-Content -Tail 50 C:\\k\\logs\\wicd.log -ErrorAction SilentlyContinue")
-				if err != nil {
-					e2e.Logf("ERROR: Failed to get WICD logs from %s: %v", nodeName, err)
-				} else {
-					e2e.Logf("WICD logs (last 50 lines) from %s:\n%s", nodeName, wicdLogs)
-				}
-
-				// Get Windows service status
-				serviceStatus, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-					"Get-Service kubelet,windows-instance-config-daemon,containerd | Format-Table -AutoSize | Out-String -Width 200")
-				if err != nil {
-					e2e.Logf("ERROR: Failed to get service status from %s: %v", nodeName, err)
-				} else {
-					e2e.Logf("Windows service status on %s:\n%s", nodeName, serviceStatus)
-				}
-			}
-		}
-	}
-
-	e2e.Logf("===== END DEBUG =====")
-}
-
 // waitWindowsNodesReady polls until the expected number of Windows nodes report Ready status.
-// After 5 minutes of waiting, it captures debug information.
 func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
-	debugCaptured := false
-	debugThreshold := 5 * time.Minute
-	startTime := time.Now()
-
 	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
 		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"nodes", "-l", windowsNodeLabel,
@@ -510,14 +370,6 @@ func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Durat
 			}
 		}
 		e2e.Logf("Windows nodes ready: %d/%d", readyCount, expectedCount)
-
-		// Capture debug info if we've been waiting too long and haven't captured yet
-		if !debugCaptured && time.Since(startTime) > debugThreshold && readyCount < expectedCount {
-			e2e.Logf("WARNING: Windows nodes not ready after %v, capturing debug information...", debugThreshold)
-			debugWindowsNodesNotReady(oc)
-			debugCaptured = true
-		}
-
 		return readyCount >= expectedCount, nil
 	})
 	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("timed out waiting for %d Windows nodes to be Ready after %v", expectedCount, timeout))
@@ -636,7 +488,7 @@ func runHostProcessPS(oc *exutil.CLI, nodeName, image, psCommand string, waitFor
 				"kubernetes.io/hostname": nodeName,
 			},
 			"tolerations": []map[string]string{
-				{"key": "os", "value": "Windows", "effect": "NoSchedule"},
+				{"key": "os", "operator": "Equal", "value": "Windows", "effect": "NoSchedule"},
 			},
 			"securityContext": map[string]interface{}{
 				"windowsOptions": winOpts,
@@ -692,7 +544,7 @@ func runHostProcessPS(oc *exutil.CLI, nodeName, image, psCommand string, waitFor
 
 	defer cleanupPod()
 
-	pollErr := wait.Poll(5*time.Second, 3*time.Minute, func() (bool, error) {
+	pollErr := wait.Poll(1*time.Second, 10*time.Minute, func() (bool, error) {
 		phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"pod", podName, "-n", wmcoNamespace, "-o=jsonpath={.status.phase}").Output()
 		if err != nil {
@@ -1110,29 +962,6 @@ func checkConnectivity(ctx context.Context, IP string, delay int) error {
 	}
 }
 
-// getServiceClusterIP returns the ClusterIP assigned to a Service.
-func getServiceClusterIP(oc *exutil.CLI, serviceName, namespace string) (string, error) {
-	return oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"service", serviceName, "-o=jsonpath={.spec.clusterIP}", "-n", namespace).Output()
-}
-
-// generateClusterIPServiceYAML returns a YAML manifest for a ClusterIP Service.
-func generateClusterIPServiceYAML(name, namespace, appLabel string, port int) string {
-	return fmt.Sprintf(`apiVersion: v1
-kind: Service
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  ports:
-  - port: %d
-    targetPort: %d
-  selector:
-    app: %s
-  type: ClusterIP
-`, name, namespace, port, port, appLabel)
-}
-
 // generateLinuxWebServerYAML returns a YAML manifest for a Linux web server Deployment using python http.server.
 func generateLinuxWebServerYAML(name, namespace, image string, replicas int) string {
 	return fmt.Sprintf(`apiVersion: apps/v1
@@ -1168,39 +997,6 @@ spec:
       nodeSelector:
         kubernetes.io/os: linux
 `, name, name, name, replicas, name, name, image)
-}
-
-// generateWindowsDaemonSetYAML returns a YAML manifest for a Windows DaemonSet.
-func generateWindowsDaemonSetYAML(name, namespace, appLabel, image string) string {
-	return fmt.Sprintf(`apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  selector:
-    matchLabels:
-      app: %s
-  template:
-    metadata:
-      labels:
-        app: %s
-    spec:
-      nodeSelector:
-        kubernetes.io/os: windows
-      tolerations:
-      - key: "os"
-        operator: "Equal"
-        value: "Windows"
-        effect: "NoSchedule"
-      containers:
-      - name: %s
-        image: %s
-        command:
-        - pwsh.exe
-        - -Command
-        - "while ($true) { Start-Sleep -Seconds 30 }"
-`, name, namespace, appLabel, appLabel, name, image)
 }
 
 // getWorkloadsNames returns the pod names for all pods belonging to the given Deployment, sorted by host IP.
@@ -1339,10 +1135,9 @@ func setServiceBinPath(oc *exutil.CLI, nodeName, image, serviceName, binPath str
 	}
 	return nil
 }
-
 func stopWindowsService(oc *exutil.CLI, nodeName, image, serviceName string) (string, error) {
 	cmd := fmt.Sprintf("Stop-Service '%s' -Force -ErrorAction SilentlyContinue; (Get-Service '%s').Status", serviceName, serviceName)
-	output, err := runDebugNodePS(oc, nodeName, image, cmd)
+	output, err := runHostProcessPS(oc, nodeName, image, cmd)
 	if err != nil {
 		return "", err
 	}
@@ -1387,46 +1182,11 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 		machineSets, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"machinesets", "-n", mcoNamespace, "-o=jsonpath={.items[*].metadata.name}").Output()
 		o.Expect(err).NotTo(o.HaveOccurred())
-
-		// Try pattern matching first
 		for _, ms := range strings.Split(machineSets, " ") {
 			if strings.Contains(ms, "winworker") || strings.Contains(ms, defaultWindowsMS) || strings.HasSuffix(ms, "-wm") {
 				return ms
 			}
 		}
-
-		// Fallback: Try CI e2e pattern (contains "-e2e" but not "worker")
-		// CI e2e jobs use pattern like "ci-op-xxx-e2e" for Windows MachineSets
-		for _, ms := range strings.Split(machineSets, " ") {
-			if strings.Contains(ms, "-e2e") && !strings.Contains(ms, "worker") {
-				e2e.Logf("Found Windows MachineSet using CI e2e pattern: %s", ms)
-				return ms
-			}
-		}
-
-		// Final fallback: Get MachineSet from Windows node's Machine annotation
-		// This handles cases where MachineSet naming is non-standard
-		winHostNames := getWindowsHostNames(oc)
-		if len(winHostNames) > 0 {
-			machineAnnotation, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"node", winHostNames[0], "-o=jsonpath={.metadata.annotations.machine\\.openshift\\.io/machine}").Output()
-			if err == nil && machineAnnotation != "" {
-				// Extract Machine name from "openshift-machine-api/machine-name"
-				parts := strings.Split(strings.TrimSpace(machineAnnotation), "/")
-				if len(parts) == 2 {
-					machineName := parts[1]
-					// Get MachineSet from Machine's ownerReferences or labels
-					machineSetLabel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-						"machine", machineName, "-n", mcoNamespace,
-						"-o=jsonpath={.metadata.labels.machine\\.openshift\\.io/cluster-api-machineset}").Output()
-					if err == nil && machineSetLabel != "" {
-						e2e.Logf("Found Windows MachineSet from node Machine annotation: %s", machineSetLabel)
-						return strings.TrimSpace(machineSetLabel)
-					}
-				}
-			}
-		}
-
 		e2e.Failf("Windows MachineSet not found in cluster. Found: %s", machineSets)
 	}
 
@@ -1535,6 +1295,494 @@ func waitForMachinesetReady(oc *exutil.CLI, machineSetName string, timeout, repl
 	})
 	if err != nil {
 		e2e.Failf("machineset %s did not reach %d ready replicas within %d minutes", machineSetName, replicas, timeout)
+	}
+}
+
+func getServiceClusterIP(oc *exutil.CLI, serviceName, namespace string) (string, error) {
+	return oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"service", serviceName, "-o=jsonpath={.spec.clusterIP}", "-n", namespace).Output()
+}
+
+// generateClusterIPServiceYAML returns a YAML manifest for a ClusterIP Service.
+func generateClusterIPServiceYAML(name, namespace, appLabel string, port int) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: Service
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  ports:
+  - port: %d
+    targetPort: %d
+  selector:
+    app: %s
+  type: ClusterIP
+`, name, namespace, port, port, appLabel)
+}
+
+// generateWindowsDaemonSetYAML returns a YAML manifest for a Windows DaemonSet.
+func generateWindowsDaemonSetYAML(name, namespace, appLabel, image string) string {
+	return fmt.Sprintf(`apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  selector:
+    matchLabels:
+      app: %s
+  template:
+    metadata:
+      labels:
+        app: %s
+    spec:
+      nodeSelector:
+        kubernetes.io/os: windows
+      tolerations:
+      - key: "os"
+        operator: "Equal"
+        value: "Windows"
+        effect: "NoSchedule"
+      containers:
+      - name: %s
+        image: %s
+        command:
+        - pwsh.exe
+        - -Command
+        - "while ($true) { Start-Sleep -Seconds 30 }"
+`, name, namespace, appLabel, appLabel, name, image)
+}
+
+const (
+	wicdConfigMap    = "windows-services"
+	trustedCACM      = "trusted-ca"
+	proxyCAConfigMap = "trusted-ca"
+	windowsWorkloads = "win-webserver"
+	defaultNamespace = "winc-test"
+)
+
+type ConfigMapPayload struct {
+	Data struct {
+		CaBundleCrt string `json:"ca-bundle.crt"`
+	} `json:"data"`
+}
+
+func isProxy(oc *exutil.CLI) bool {
+	if iaasPlatform == "nutanix" {
+		return false
+	}
+	spec := getProxySpec(oc)
+	for _, v := range spec {
+		if s, ok := v.(string); ok && s != "" {
+			if strings.Contains(s, "ci.devcluster.openshift.com") {
+				return false
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func waitForProxyStatus(oc *exutil.CLI) {
+	e2e.Logf("Waiting for proxy status to be reconciled by cluster-network-operator")
+	waitErr := wait.Poll(10*time.Second, 4*time.Minute, func() (bool, error) {
+		statusMap := getEnvVarProxyMap(oc)
+		return len(statusMap) > 0, nil
+	})
+	o.Expect(waitErr).NotTo(o.HaveOccurred(), "proxy status was not reconciled within 4 minutes")
+}
+
+func getClusterProxy(oc *exutil.CLI, value string) string {
+	clusterProxy, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("proxies", "-o=jsonpath={.items[*]."+value+"}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	return clusterProxy
+}
+
+func getProxySpec(oc *exutil.CLI) map[string]interface{} {
+	spec := make(map[string]interface{})
+	spec["HTTPS_PROXY"] = getClusterProxy(oc, "spec.httpsProxy")
+	spec["HTTP_PROXY"] = getClusterProxy(oc, "spec.httpProxy")
+	spec["NO_PROXY"] = getClusterProxy(oc, "spec.noProxy")
+	return spec
+}
+
+func getEnvVarProxyMap(oc *exutil.CLI, replacement ...map[string]string) map[string]interface{} {
+	clusterEnvVars := make(map[string]interface{})
+	if replacement == nil {
+		if v := getClusterProxy(oc, "status.httpsProxy"); v != "" {
+			clusterEnvVars["HTTPS_PROXY"] = v
+		}
+		if v := getClusterProxy(oc, "status.httpProxy"); v != "" {
+			clusterEnvVars["HTTP_PROXY"] = v
+		}
+		if v := getClusterProxy(oc, "status.noProxy"); v != "" {
+			clusterEnvVars["NO_PROXY"] = v
+		}
+	} else {
+		for _, m := range replacement {
+			for key, value := range m {
+				if v := getClusterProxy(oc, value); v != "" {
+					clusterEnvVars[key] = v
+				}
+			}
+		}
+	}
+	return clusterEnvVars
+}
+
+func getPayloadMap(payload string) map[string]interface{} {
+	var m map[string]interface{}
+	json.Unmarshal([]byte(payload), &m)
+	return m
+}
+
+func waitForWICDConfigMapUpdate(oc *exutil.CLI, windowsServicesCM string, expectedValues map[string]interface{}) map[string]interface{} {
+	var wicdProxies map[string]interface{}
+	pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+		wicdPayload, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("cm", windowsServicesCM, "-n", wmcoNamespace, "-o=jsonpath={.data.environmentVars}").Output()
+		if err != nil || wicdPayload == "" {
+			e2e.Logf("Waiting for WICD ConfigMap update: %v", err)
+			return false, nil
+		}
+		wicdProxies = getPayloadMap(wicdPayload)
+		if compareMaps(expectedValues, wicdProxies) {
+			e2e.Logf("WICD ConfigMap updated with expected values")
+			return true, nil
+		}
+		e2e.Logf("Waiting for WICD ConfigMap to update")
+		return false, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, "WICD ConfigMap did not update with expected values within 5 minutes")
+	return wicdProxies
+}
+
+func waitForWICDConfigMapContains(oc *exutil.CLI, windowsServicesCM string, key string, substring string) {
+	pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+		jsonOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("cm", windowsServicesCM, "-ojsonpath={.data.environmentVars}", "-n", wmcoNamespace).Output()
+		if err != nil {
+			e2e.Logf("Waiting for WICD ConfigMap: %v", err)
+			return false, nil
+		}
+		value := gjson.Get(jsonOutput, key)
+		if strings.Contains(fmt.Sprint(value), substring) {
+			e2e.Logf("WICD ConfigMap %s contains %s", key, substring)
+			return true, nil
+		}
+		e2e.Logf("Waiting for %s in WICD ConfigMap %s, current: %s", substring, key, value)
+		return false, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("WICD ConfigMap %s did not contain %s within 5 minutes", key, substring))
+}
+
+func compileEnvVars(pwshOutput string) string {
+	var valueLines []string
+	var value string
+	lines := strings.Split(pwshOutput, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			valueLine := strings.TrimSpace(strings.TrimPrefix(parts[1], "Value:"))
+			valueLines = []string{valueLine}
+		} else if line != "" {
+			valueLines = append(valueLines, line)
+		}
+		if len(valueLines) > 0 {
+			value = strings.Join(valueLines, "")
+		}
+	}
+	return value
+}
+
+// redactProxyURL redacts user:password credentials from proxy URLs for safe logging
+func redactProxyURL(proxyURL string) string {
+	if proxyURL == "" {
+		return ""
+	}
+	// Match http://user:pass@host or https://user:pass@host
+	re := regexp.MustCompile(`(https?://)([^:]+):([^@]+)@`)
+	return re.ReplaceAllString(proxyURL, "${1}***:***@")
+}
+
+func compareMaps(map1, map2 map[string]interface{}) bool {
+	if len(map1) != len(map2) {
+		return false
+	}
+	for key := range map1 {
+		val1 := compileEnvVars(fmt.Sprint(map1[key]))
+		val2 := compileEnvVars(fmt.Sprint(map2[key]))
+		value := strings.ReplaceAll(val2, ";", ",")
+		if val1 != value {
+			e2e.Logf("Proxy variable %s values differ: expected=%s actual=%s", key, redactProxyURL(val1), redactProxyURL(val2))
+			return false
+		}
+	}
+	return true
+}
+
+func getWindowsNodeNames(oc *exutil.CLI) []string {
+	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"nodes", "-l", windowsNodeLabel, "-o=jsonpath={.items[*].metadata.name}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	if strings.TrimSpace(output) == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSpace(output), " ")
+}
+
+func checkProxyVarsOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[string]interface{}) {
+	for _, nodeName := range winNodes {
+		for key, proxy := range wicdProxies {
+			proxyStr := fmt.Sprint(proxy)
+			if proxyStr == "" {
+				continue
+			}
+			e2e.Logf("Check %v proxy exists on worker %v", key, nodeName)
+			cmd := fmt.Sprintf("[System.Environment]::GetEnvironmentVariable('%v', 'Machine')", key)
+			msg, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			o.Expect(strings.TrimSpace(msg)).Should(o.ContainSubstring(proxyStr), "proxy %v not found on %v", key, nodeName)
+		}
+	}
+}
+
+func waitForProxyOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[string]interface{}) {
+	pollErr := wait.Poll(20*time.Second, 5*time.Minute, func() (bool, error) {
+		for _, nodeName := range winNodes {
+			for key, proxy := range wicdProxies {
+				proxyStr := fmt.Sprint(proxy)
+				if proxyStr == "" {
+					continue
+				}
+				cmd := fmt.Sprintf("[System.Environment]::GetEnvironmentVariable('%v', 'Machine')", key)
+				msg, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
+				if err != nil {
+					e2e.Logf("Waiting for %v on %v: error: %v", key, nodeName, err)
+					return false, nil
+				}
+				if !strings.Contains(strings.TrimSpace(msg), proxyStr) {
+					e2e.Logf("Waiting for proxy variable %s on node %s: expected=%s actual=%s",
+						key, nodeName, redactProxyURL(proxyStr), redactProxyURL(strings.TrimSpace(msg)))
+					return false, nil
+				}
+			}
+		}
+		e2e.Logf("All proxy values propagated to all Windows nodes")
+		return true, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, "proxy values did not propagate to all Windows nodes within 5 minutes")
+}
+
+func getWMCOTimestamp(oc *exutil.CLI) string {
+	wmcoTime, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "--selector", "name="+wmcoDeploymentName, "--field-selector=status.phase=Running", "-o=jsonpath={.items[0].status.startTime}", "-n", wmcoNamespace).Output()
+	if err != nil || wmcoTime == "" {
+		return ""
+	}
+	return wmcoTime
+}
+
+func checkWMCORestarted(oc *exutil.CLI, startTime string) (bool, error) {
+	var restartDetected bool
+	pollErr := wait.Poll(20*time.Second, 6*time.Minute, func() (bool, error) {
+		actualWMCOTime := getWMCOTimestamp(oc)
+		if actualWMCOTime == "" {
+			e2e.Logf("WMCO pod timestamp unavailable (pod transitioning), waiting...")
+			return false, nil
+		}
+		if startTime != actualWMCOTime {
+			e2e.Logf("WMCO restarted (old: %s, new: %s)", startTime, actualWMCOTime)
+			restartDetected = true
+			return true, nil
+		}
+		e2e.Logf("WMCO did not restart yet, waiting...")
+		return false, nil
+	})
+	if pollErr != nil {
+		return false, fmt.Errorf("error restarting WMCO: %v", pollErr)
+	}
+	return restartDetected, nil
+}
+
+func generateClusterProxy(httpProxy, httpsProxy, noProxy string) string {
+	return fmt.Sprintf(`apiVersion: config.openshift.io/v1
+kind: Proxy
+metadata:
+  name: cluster
+spec:
+  httpProxy: %s
+  httpsProxy: %s
+  noProxy: %s
+  trustedCA:
+    name: user-ca-bundle
+`, httpProxy, httpsProxy, noProxy)
+}
+
+func restoreProxyEnvironment(oc *exutil.CLI, clusterEnvVars map[string]interface{}) {
+	e2e.Logf("Starting proxy environment restore")
+	wmcoStartTime := getWMCOTimestamp(oc)
+	httpProxy := fmt.Sprint(clusterEnvVars["HTTP_PROXY"])
+	httpsProxy := fmt.Sprint(clusterEnvVars["HTTPS_PROXY"])
+	noProxy := fmt.Sprint(clusterEnvVars["NO_PROXY"])
+
+	pollErr := wait.Poll(10*time.Second, 2*time.Minute, func() (bool, error) {
+		applyErr := createResourceFromString(oc, "", generateClusterProxy(httpProxy, httpsProxy, noProxy))
+		if applyErr != nil {
+			e2e.Logf("retrying proxy restore: %v", applyErr)
+			return false, nil
+		}
+		return true, nil
+	})
+	if pollErr != nil {
+		e2e.Logf("Warning: proxy restore did not complete within 2 minutes: %v", pollErr)
+		return
+	}
+
+	var patches []string
+	if noProxy == "" && getClusterProxy(oc, "spec.noProxy") != "" {
+		patches = append(patches, `{"op": "remove", "path": "/spec/noProxy"}`)
+	}
+	if httpsProxy == "" && getClusterProxy(oc, "spec.httpsProxy") != "" {
+		patches = append(patches, `{"op": "remove", "path": "/spec/httpsProxy"}`)
+	}
+	if httpProxy == "" && getClusterProxy(oc, "spec.httpProxy") != "" {
+		patches = append(patches, `{"op": "remove", "path": "/spec/httpProxy"}`)
+	}
+	if len(patches) > 0 {
+		patchJSON := "[" + strings.Join(patches, ",") + "]"
+		e2e.Logf("Removing empty proxy fields: %s", patchJSON)
+		err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", patchJSON).Execute()
+		if err != nil {
+			e2e.Logf("Warning: failed to remove empty proxy fields: %v", err)
+		}
+	}
+
+	restarted, _ := checkWMCORestarted(oc, wmcoStartTime)
+	if restarted {
+		e2e.Logf("WMCO restarted after proxy restore, waiting for WICD propagation")
+	} else {
+		e2e.Logf("WMCO did not restart after proxy restore")
+	}
+	winNodes := getWindowsInternalIPs(oc)
+	waitWindowsNodesReady(oc, len(winNodes), 15*time.Minute)
+	expectedProxies := getEnvVarProxyMap(oc)
+	winNodeNames := getWindowsNodeNames(oc)
+	waitForProxyOnNodes(oc, winNodeNames, expectedProxies)
+	e2e.Logf("Proxy environment restored successfully")
+}
+
+func popItemFromList(oc *exutil.CLI, value string, keywordSearch string, namespace string) (string, error) {
+	rawList, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(value, "-n", namespace, "-o=jsonpath={.items[*].metadata.name}").Output()
+	if err != nil {
+		return "", err
+	}
+	for _, val := range strings.Split(rawList, " ") {
+		if strings.Contains(val, keywordSearch) {
+			return val, nil
+		}
+	}
+	return "", nil
+}
+
+func waitForCM(oc *exutil.CLI, cmName string, cmType string, namespace string) {
+	pollErr := wait.Poll(10*time.Second, 600*time.Second, func() (bool, error) {
+		windowsCM, err := popItemFromList(oc, "configmap", cmType, namespace)
+		if err != nil || windowsCM == "" {
+			return false, nil
+		}
+		return windowsCM == cmName, nil
+	})
+	if pollErr != nil {
+		e2e.Failf("Expected configmap %v not found after 10 minutes", cmName)
+	}
+}
+
+func deleteResource(oc *exutil.CLI, resourceType string, resourceName string, namespace string) {
+	err := oc.AsAdmin().WithoutNamespace().Run("delete").Args(resourceType, resourceName, "-n", namespace).Execute()
+	o.Expect(err).NotTo(o.HaveOccurred())
+}
+
+func checkUserCertificatesOnNodes(oc *exutil.CLI, commonName string, expectedCount int) {
+	winNodes := getWindowsNodeNames(oc)
+	for _, nodeName := range winNodes {
+		e2e.Logf("Waiting for %d user certificate(s) with CN '%s' on node %s", expectedCount, commonName, nodeName)
+		cmd := fmt.Sprintf("(Get-ChildItem -Path Cert:\\LocalMachine\\Root | Where-Object {$_.Subject -eq '%s'}).Count", commonName)
+
+		pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+			msg, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
+			if err != nil {
+				e2e.Logf("Error checking certificates on node %s: %v", nodeName, err)
+				return false, nil
+			}
+			numOfCerts := 0
+			if trimmed := strings.TrimSpace(msg); trimmed != "" {
+				found := regexp.MustCompile(`\d+`).FindString(trimmed)
+				if found != "" {
+					numOfCerts, _ = strconv.Atoi(found)
+				}
+			}
+			if numOfCerts == expectedCount {
+				e2e.Logf("Found %d certificate(s) on node %s", numOfCerts, nodeName)
+				return true, nil
+			}
+			e2e.Logf("Waiting for certificates on node %s: expected %d, found %d", nodeName, expectedCount, numOfCerts)
+			return false, nil
+		})
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "certificate count did not reach %d on node %s within 5 minutes", expectedCount, nodeName)
+	}
+}
+
+func getConfigMapData(oc *exutil.CLI, cm string, dataKey string, namespace string) string {
+	dataValue, err := oc.AsAdmin().WithoutNamespace().Run("get").
+		Args("configmap", cm, "-o=jsonpath={.data."+dataKey+"}", "-n", namespace).Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to get cm %v data key %v", cm, dataKey)
+	return dataValue
+}
+
+func removeOuterQuotes(s string) string {
+	if len(s) >= 2 {
+		if c := s[len(s)-1]; s[0] == c && (c == '"' || c == '\'') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+func configureCertificateToJSONPatch(oc *exutil.CLI, payload, configmap, namespace string) {
+	payload = strings.Replace(payload, "\n\n", "\n", 1)
+	jsonPayload := fmt.Sprintf(`{"data":{"ca-bundle.crt":"%s"}}`, strings.ReplaceAll(payload, "\n", ""))
+	var configMapPayload ConfigMapPayload
+	err := json.Unmarshal([]byte(jsonPayload), &configMapPayload)
+	o.Expect(err).NotTo(o.HaveOccurred(), "error unmarshalling JSON")
+	cmd := oc.AsAdmin().WithoutNamespace().Run("patch").Args("configmap", configmap, "-n", namespace, "-p", jsonPayload)
+	output, err := cmd.Output()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			stderr := strings.TrimSpace(string(exitError.Stderr))
+			err = fmt.Errorf("%v: %s", err, stderr)
+		}
+		o.Expect(err).NotTo(o.HaveOccurred(), "error patching ConfigMap. Output: %s", output)
+	}
+}
+
+func extractStatusCode(output string) int {
+	re := regexp.MustCompile(`HTTP/\d+\.?\d*\s+(\d{3})`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) >= 2 {
+		statusCode, err := strconv.Atoi(matches[1])
+		if err == nil {
+			return statusCode
+		}
+	}
+	return 0
+}
+
+func testTraffic(oc *exutil.CLI, testURL string, winNodes []string) {
+	command := fmt.Sprintf("cmd.exe /c curl -vsIL %v", testURL)
+	for _, nodeName := range winNodes {
+		output, err := runHostProcessPS(oc, nodeName, windowsDebugImage, command)
+		o.Expect(err).NotTo(o.HaveOccurred(), "failed to execute curl on %v", nodeName)
+		statusCode := extractStatusCode(output)
+		o.Expect(statusCode).To(o.Equal(200), "expected status code 200 on %v from %v, but got %d", testURL, nodeName, statusCode)
 	}
 }
 
