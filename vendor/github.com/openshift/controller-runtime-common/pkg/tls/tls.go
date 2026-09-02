@@ -123,14 +123,21 @@ func GetTLSProfileSpec(profile *configv1.TLSSecurityProfile) (configv1.TLSProfil
 // Note: CipherSuites are only set when MinVersion is below TLS 1.3, as Go's TLS 1.3 implementation
 // does not allow configuring cipher suites - all TLS 1.3 ciphers are always enabled.
 // See: https://github.com/golang/go/issues/29349
-func NewTLSConfigFromProfile(profile configv1.TLSProfileSpec) (tlsConfig func(*tls.Config), unsupportedCiphers []string) {
+func NewTLSConfigFromProfile(profile configv1.TLSProfileSpec) (tlsConfig func(*tls.Config), unsupported []string) {
 	minVersion := libgocrypto.TLSVersionOrDie(string(profile.MinTLSVersion))
 	cipherSuites, unsupportedCiphers := cipherCodes(profile.Ciphers)
+	curvePrefs, unsupportedGroups := libgocrypto.TLSGroupsToCurveIDs(profile.Groups)
+
+	unsupported = unsupportedCiphers
+	for _, g := range unsupportedGroups {
+		unsupported = append(unsupported, string(g))
+	}
 
 	return func(tlsConf *tls.Config) {
 		tlsConf.MinVersion = minVersion
-		// TODO: add curve preferences from profile once https://github.com/openshift/api/pull/2583 merges.
-		// tlsConf.CurvePreferences <<<<<< profile.Curves
+		if len(curvePrefs) > 0 {
+			tlsConf.CurvePreferences = curvePrefs
+		}
 
 		// TLS 1.3 cipher suites are not configurable in Go (https://github.com/golang/go/issues/29349), so only set CipherSuites accordingly.
 		// TODO: revisit this once we get an answer on the best way to handle this here:
@@ -138,7 +145,7 @@ func NewTLSConfigFromProfile(profile configv1.TLSProfileSpec) (tlsConfig func(*t
 		if minVersion != tls.VersionTLS13 {
 			tlsConf.CipherSuites = cipherSuites
 		}
-	}, unsupportedCiphers
+	}, unsupported
 }
 
 // SetNextProtos returns a TLS configuration function that sets the ALPN
