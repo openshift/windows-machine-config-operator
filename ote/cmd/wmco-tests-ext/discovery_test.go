@@ -10,12 +10,18 @@ import (
 	"testing"
 )
 
-// TestSpecTimeoutCallbackSignatures verifies that every g.It / g.Describe
-// callback that uses g.SpecTimeout, g.NodeTimeout, or g.GracePeriod
-// decorators has a function parameter accepting g.SpecContext or
-// context.Context. Without this parameter Ginkgo panics during test
-// discovery ("Invalid NodeTimeout SpecTimeout, or GracePeriod") and
-// silently drops every spec in the suite.
+// TestSpecTimeoutCallbackSignatures verifies that every Ginkgo interruptible
+// node (It, BeforeEach, AfterEach, JustBeforeEach, JustAfterEach, BeforeAll,
+// AfterAll) that uses a SpecTimeout, NodeTimeout, or GracePeriod decorator
+// has a callback with exactly one parameter of type g.SpecContext or
+// context.Context in the first position.
+//
+// Without this parameter Ginkgo panics during test discovery
+// ("Invalid NodeTimeout SpecTimeout, or GracePeriod") and silently drops
+// every spec in the suite.
+//
+// Container nodes (Describe, Context, When) are excluded — Ginkgo rejects
+// timeout decorators on containers at a different validation layer.
 //
 // This is a regression test for the bug fixed in PR #4566 / OCP-68320.
 func TestSpecTimeoutCallbackSignatures(t *testing.T) {
@@ -24,6 +30,20 @@ func TestSpecTimeoutCallbackSignatures(t *testing.T) {
 		"SpecTimeout": true,
 		"NodeTimeout": true,
 		"GracePeriod": true,
+	}
+
+	// All non-container interruptible node types that support timeout
+	// decorators per the Ginkgo v2 contract (internal/node.go).
+	// Container nodes (Describe, Context, When) are excluded because
+	// Ginkgo rejects timeout decorators on them separately.
+	interruptibleNodes := map[string]bool{
+		"It":             true,
+		"BeforeEach":     true,
+		"AfterEach":      true,
+		"JustBeforeEach": true,
+		"JustAfterEach":  true,
+		"BeforeAll":      true,
+		"AfterAll":       true,
 	}
 
 	testDir := filepath.Join("..", "..", "test", "e2e")
@@ -49,18 +69,24 @@ func TestSpecTimeoutCallbackSignatures(t *testing.T) {
 			t.Fatalf("failed to parse %s: %v", filePath, err)
 		}
 
+		// Resolve import aliases so we can match exact types.
+		// e.g. g "github.com/onsi/ginkgo/v2" → alias "g"
+		//      "context" → alias "context"
+		ginkgoAlias := resolveImportAlias(f, "github.com/onsi/ginkgo/v2")
+		contextAlias := resolveImportAlias(f, "context")
+
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
 
-			// Match g.It(...) calls — the selector g.It
+			// Match g.It(...), g.BeforeEach(...), etc.
 			sel, ok := call.Fun.(*ast.SelectorExpr)
 			if !ok {
 				return true
 			}
-			if sel.Sel.Name != "It" {
+			if !interruptibleNodes[sel.Sel.Name] {
 				return true
 			}
 
@@ -68,8 +94,7 @@ func TestSpecTimeoutCallbackSignatures(t *testing.T) {
 				return true
 			}
 
-			// Check whether any argument is a decorator call
-			// (g.SpecTimeout, g.NodeTimeout, g.GracePeriod).
+			// Check whether any argument is a timeout decorator.
 			hasTimeoutDecorator := false
 			for _, arg := range call.Args {
 				if isDecoratorCall(arg, timeoutDecorators) {
@@ -87,7 +112,7 @@ func TestSpecTimeoutCallbackSignatures(t *testing.T) {
 				if !ok {
 					continue
 				}
-				if !callbackAcceptsContext(funcLit) {
+				if !callbackAcceptsContext(funcLit, ginkgoAlias, contextAlias) {
 					pos := fset.Position(funcLit.Pos())
 					violations = append(violations, pos.String())
 				}
@@ -97,12 +122,35 @@ func TestSpecTimeoutCallbackSignatures(t *testing.T) {
 	}
 
 	if len(violations) > 0 {
-		t.Errorf("found g.It callbacks with SpecTimeout/NodeTimeout/GracePeriod "+
-			"decorators that do not accept a SpecContext or context.Context parameter.\n"+
-			"Ginkgo requires the callback to accept a context parameter when these "+
-			"decorators are used.\nViolations at:\n  %s",
+		t.Errorf("found Ginkgo interruptible-node callbacks with "+
+			"SpecTimeout/NodeTimeout/GracePeriod decorators that do not "+
+			"accept exactly one parameter of type SpecContext or "+
+			"context.Context.\nGinkgo requires the callback to accept a "+
+			"context parameter when these decorators are used.\n"+
+			"Violations at:\n  %s",
 			strings.Join(violations, "\n  "))
 	}
+}
+
+// resolveImportAlias returns the local alias for an import path.
+// If the import has an explicit alias (e.g. g "github.com/onsi/ginkgo/v2"),
+// it returns the alias. Otherwise it returns the last path element
+// (e.g. "context" for "context", "ginkgo" for ".../ginkgo/v2").
+// Returns "" if the import is not found.
+func resolveImportAlias(f *ast.File, importPath string) string {
+	for _, imp := range f.Imports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		if path != importPath {
+			continue
+		}
+		if imp.Name != nil {
+			return imp.Name.Name
+		}
+		// No explicit alias — use last path element.
+		parts := strings.Split(path, "/")
+		return parts[len(parts)-1]
+	}
+	return ""
 }
 
 // isDecoratorCall checks whether an AST expression is a call to one of the
@@ -119,29 +167,53 @@ func isDecoratorCall(expr ast.Expr, decorators map[string]bool) bool {
 	return decorators[sel.Sel.Name]
 }
 
-// callbackAcceptsContext returns true if the function literal has at least
-// one parameter whose type name contains "SpecContext" or "Context".
-func callbackAcceptsContext(fn *ast.FuncLit) bool {
+// callbackAcceptsContext returns true if the function literal has exactly
+// one parameter and that parameter's type is either <ginkgoAlias>.SpecContext
+// or <contextAlias>.Context. This matches the Ginkgo v2 contract which
+// requires exactly func() or func(SpecContext)/func(context.Context) — no
+// other parameter counts are accepted for interruptible bodies.
+func callbackAcceptsContext(fn *ast.FuncLit, ginkgoAlias, contextAlias string) bool {
 	if fn.Type.Params == nil || len(fn.Type.Params.List) == 0 {
 		return false
 	}
-	for _, param := range fn.Type.Params.List {
-		typeName := typeNameString(param.Type)
-		if strings.Contains(typeName, "SpecContext") || strings.Contains(typeName, "Context") {
-			return true
+
+	// Ginkgo's extractBodyFunction rejects callbacks with >1 parameter
+	// or any return values. Count total parameters (a field may declare
+	// multiple names, e.g. "a, b int").
+	totalParams := 0
+	for _, field := range fn.Type.Params.List {
+		names := len(field.Names)
+		if names == 0 {
+			names = 1 // unnamed parameter
 		}
+		totalParams += names
 	}
-	return false
+	if totalParams != 1 {
+		return false
+	}
+
+	// Check the first (and only) parameter type.
+	firstParam := fn.Type.Params.List[0]
+	return isExactContextType(firstParam.Type, ginkgoAlias, contextAlias)
 }
 
-// typeNameString returns a simple string representation of a type expression.
-func typeNameString(expr ast.Expr) string {
-	switch t := expr.(type) {
-	case *ast.Ident:
-		return t.Name
-	case *ast.SelectorExpr:
-		return typeNameString(t.X) + "." + t.Sel.Name
-	default:
-		return ""
+// isExactContextType returns true if the type expression is exactly
+// <ginkgoAlias>.SpecContext or <contextAlias>.Context.
+func isExactContextType(expr ast.Expr, ginkgoAlias, contextAlias string) bool {
+	sel, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return false
 	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	if ginkgoAlias != "" && ident.Name == ginkgoAlias && sel.Sel.Name == "SpecContext" {
+		return true
+	}
+	if contextAlias != "" && ident.Name == contextAlias && sel.Sel.Name == "Context" {
+		return true
+	}
+	return false
 }

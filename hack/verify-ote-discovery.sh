@@ -6,7 +6,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-WMCO_ROOT=$(cd "$(dirname "${BASH_SOURCE}")/.." && pwd)
+WMCO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "${WMCO_ROOT}"
 
 echo "==> Running OTE callback-signature static checks..."
@@ -24,7 +24,7 @@ fi
 # The k8s test framework requires KUBECONFIG to be set; create a stub
 # so the binary can initialize without a real cluster connection.
 FAKE_KUBECONFIG=$(mktemp)
-trap "rm -f ${FAKE_KUBECONFIG}" EXIT
+trap 'rm -f -- "$FAKE_KUBECONFIG"' EXIT
 export KUBECONFIG="${FAKE_KUBECONFIG}"
 
 echo "==> Verifying OTE component registration (list components)..."
