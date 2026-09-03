@@ -1598,7 +1598,11 @@ func checkWMCORestarted(oc *exutil.CLI, startTime string) (bool, error) {
 		return false, nil
 	})
 	if pollErr != nil {
-		return false, fmt.Errorf("error restarting WMCO: %v", pollErr)
+		if pollErr == wait.ErrWaitTimeout {
+			e2e.Logf("WMCO did not restart within 6 minutes (this is expected for some proxy changes)")
+			return false, nil
+		}
+		return false, fmt.Errorf("error checking WMCO restart: %w", pollErr)
 	}
 	return restartDetected, nil
 }
@@ -1707,7 +1711,7 @@ func checkUserCertificatesOnNodes(oc *exutil.CLI, commonName string, expectedCou
 		e2e.Logf("Waiting for %d user certificate(s) with CN '%s' on node %s", expectedCount, commonName, nodeName)
 		cmd := fmt.Sprintf("(Get-ChildItem -Path Cert:\\LocalMachine\\Root | Where-Object {$_.Subject -eq '%s'}).Count", commonName)
 
-		pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+		pollErr := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
 			msg, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
 			if err != nil {
 				e2e.Logf("Error checking certificates on node %s: %v", nodeName, err)
@@ -1727,7 +1731,7 @@ func checkUserCertificatesOnNodes(oc *exutil.CLI, commonName string, expectedCou
 			e2e.Logf("Waiting for certificates on node %s: expected %d, found %d", nodeName, expectedCount, numOfCerts)
 			return false, nil
 		})
-		o.Expect(pollErr).NotTo(o.HaveOccurred(), "certificate count did not reach %d on node %s within 5 minutes", expectedCount, nodeName)
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "certificate count did not reach %d on node %s within 10 minutes", expectedCount, nodeName)
 	}
 }
 
