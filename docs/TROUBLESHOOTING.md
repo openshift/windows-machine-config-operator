@@ -99,8 +99,8 @@ tracing processes during troubleshooting:
   running processes, `kube-log-runner.exe` is the visible parent, and the actual
   service binary is its child. Log files are under `C:\var\log\<service>\`.
 
-- WICD service (`windows-instance-config-daemon`) however, runs as a standalone process with no
-  `kube-log-runner` wrapper. It writes and rotates its own log files directly under `C:\var\log\wicd\`.
+- WICD service (`windows-instance-config-daemon`), and windows-exporter (`windows-exporter`) however, run as standalone processes with no
+  `kube-log-runner` wrapper. They write their own log files directly under `C:\var\log\wicd\` and `C:\var\log\windows-exporter\` respectively.
 
 See [Logging architecture: WICD vs managed services](log-rotation-managed-services.md#logging-architecture-wicd-vs-managed-services)
 for the full explanation of why this difference exists.
@@ -120,6 +120,7 @@ ip-10-0-138-252.us-east-2.compute.internal containers/
 ip-10-0-138-252.us-east-2.compute.internal hybrid-overlay/
 ip-10-0-138-252.us-east-2.compute.internal kube-proxy/
 ip-10-0-138-252.us-east-2.compute.internal kubelet/
+ip-10-0-138-252.us-east-2.compute.internal windows-exporter/
 ip-10-0-138-252.us-east-2.compute.internal pods/
 ```
 You can now list files in the directories using the same command and view the individual log files. For example to view
