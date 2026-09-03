@@ -128,10 +128,7 @@ func (tc *testContext) getProxyCABundle() (string, error) {
 func (tc *testContext) checkDirsDoNotExist(address string) (bool, error) {
 	command := ""
 
-	dirs := make([]string, 0, len(windows.RequiredDirectories)+1)
-	dirs = append(dirs, windows.RequiredDirectories...)
-	dirs = append(dirs, windows.CniStateDir)
-	for _, dir := range dirs {
+	for _, dir := range windows.RequiredDirectories {
 		command += fmt.Sprintf("if ((Test-Path %s) -eq $true) { Write-Output %s exists}", dir, dir)
 	}
 	command += "exit 0"
