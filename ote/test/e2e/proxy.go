@@ -184,7 +184,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 
 	g.It("Smokerun-Author:rrasouli-Critical-68320-[node-proxy]-Import custom CA certificates into Windows node system store [Serial][Disruptive]",
 		g.SpecTimeout(45*time.Minute),
-		func() {
+		func(ctx g.SpecContext) {
 			const (
 				name                        = "OCP-68320-custom"
 				validity                    = "3650"
