@@ -44,7 +44,8 @@ EOF
 }
 
 # Default z-stream job patterns (platforms triggered for patch releases)
-ZSTREAM_PATTERNS="aws-ipi-ovn-winc|gcp-ipi-ovn-winc|vsphere-ipi-ovn-winc"
+ZSTREAM_PATTERNS="aws-ipi-ovn-winc|gcp-ipi-ovn-winc|vsphere-ipi-ovn-winc|nutanix-ipi-ovn-winc|azure-ipi-ovn-winc"
+# Y-stream includes all winc jobs from config (z-stream + disconnected, upi-aws, proxy, etc.)
 
 validate_version() {
   local ver="$1"
@@ -278,7 +279,7 @@ echo ""
 echo "Will rename (${STREAM_TYPE}-stream):"
 echo -e "$JOBS_TO_RENAME" | while read -r job; do
   [[ -z "$job" ]] && continue
-  echo "  $job -> $(echo "$job" | sed 's/winc-/winc-zstream-/')"
+  echo "  $job -> $(echo "$job" | sed "s/winc-/winc-${RENAME_LABEL}-/")"
 done
 
 echo ""
@@ -316,7 +317,7 @@ WORKTREE_CONFIG="${WORKTREE_DIR}/${CONFIG_DIR}/openshift-openshift-tests-private
 
 echo -e "$JOBS_TO_RENAME" | while read -r job; do
   [[ -z "$job" ]] && continue
-  new_name=$(echo "$job" | sed 's/winc-/winc-zstream-/')
+  new_name=$(echo "$job" | sed "s/winc-/winc-${RENAME_LABEL}-/")
   sed -i.bak "s/^- as: ${job}$/- as: ${new_name}/" "$WORKTREE_CONFIG"
 done
 rm -f "${WORKTREE_CONFIG}.bak"
