@@ -66,7 +66,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			if restarted {
 				e2e.Logf("WMCO restarted after trusted CA removal")
 				winIPs := getWindowsInternalIPs(oc)
-				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+				waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 			} else {
 				e2e.Logf("WMCO did not restart after trusted CA removal")
 			}
@@ -86,7 +86,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				_, err = checkWMCORestarted(oc, timeNoProxy)
 				o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after noProxy removal")
 				winIPs := getWindowsInternalIPs(oc)
-				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+				waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 				noProxyExpected := getEnvVarProxyMap(oc)
 				waitForProxyOnNodes(oc, winNodes, noProxyExpected)
 			} else {
@@ -109,7 +109,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				o.Expect(err).NotTo(o.HaveOccurred())
 
 				winIPs := getWindowsInternalIPs(oc)
-				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+				waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 				e2e.Logf("Skipping WICD ConfigMap and node propagation verification - WMCO doesn't remove env vars from ConfigMap")
 			} else {
 				e2e.Logf("spec.httpsProxy is not set, skipping removal")
@@ -123,7 +123,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				_, err = checkWMCORestarted(oc, timeNoHttp)
 				o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after httpProxy removal")
 				winIPs := getWindowsInternalIPs(oc)
-				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+				waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 				httpExpected := getEnvVarProxyMap(oc)
 				waitForProxyOnNodes(oc, winNodes, httpExpected)
 			} else {
@@ -145,7 +145,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after noProxy update")
 			winNodes := getWindowsNodeNames(oc)
 			winIPs := getWindowsInternalIPs(oc)
-			waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+			waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 
 			g.By("Verify newly added noProxy record exists on WICD Windows Services")
 			windowsServicesCM, err := popItemFromList(oc, "cm", wicdConfigMap, wmcoNamespace)
@@ -277,7 +277,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				e2e.Logf("WMCO did not restart after proxy patch, waiting for WICD propagation")
 			}
 			winIPs := getWindowsInternalIPs(oc)
-			waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+			waitWindowsNodesReady(oc, len(winIPs), 20*time.Minute)
 
 			g.By("Verify NO_PROXY changes propagated to Windows nodes")
 			expectedProxies := getEnvVarProxyMap(oc)
