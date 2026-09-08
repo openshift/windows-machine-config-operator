@@ -194,6 +194,16 @@ func main() {
 		setupLog.Error(err, "unable to generate CNI config script")
 		os.Exit(1)
 	}
+	honorTLSProfile := libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence)
+	unsupportedWebConfigCiphers, err := payload.PopulateWebConfig(tlsProfile, honorTLSProfile)
+	if err != nil {
+		setupLog.Error(err, "unable to generate windows-exporter webconfig")
+		os.Exit(1)
+	}
+	if len(unsupportedWebConfigCiphers) > 0 {
+		setupLog.Info("some cipher suites are not supported for the windows-exporter webconfig and will be ignored",
+			"unsupportedCiphers", unsupportedWebConfigCiphers)
+	}
 
 	// Become the leader before proceeding
 	err = leader.Become(ctx, "windows-machine-config-operator-lock")
