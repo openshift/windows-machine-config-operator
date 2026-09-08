@@ -22,6 +22,20 @@ var tls13Ciphers = map[string]bool{
 	"TLS_CHACHA20_POLY1305_SHA256": true,
 }
 
+// weakCipherPatterns contains substrings that identify weak cipher suites in
+// both OpenSSL and IANA naming conventions. Cipher suites whose IANA name
+// contains any of these patterns are filtered out of the generated webconfig.
+var weakCipherPatterns = []string{
+	"3DES",
+	"DES-CBC",
+	"DES_CBC",
+	"RC4",
+	"BLOWFISH",
+	"ECB",
+	"MD5",
+	"NULL",
+}
+
 // tlsVersionMap maps OpenShift TLS protocol version identifiers to the short
 // form expected by the Prometheus exporter-toolkit webconfig (Go crypto/tls).
 var tlsVersionMap = map[oconfig.TLSProtocolVersion]string{
@@ -59,9 +73,12 @@ func PopulateWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, honorTLSProfile bo
 	if err != nil {
 		return unsupported, fmt.Errorf("failed to create webconfig file: %w", err)
 	}
-	defer compressedFile.Close()
 	if err := createTarGzFile([]byte(content), fileName, compressedFile); err != nil {
+		compressedFile.Close()
 		return unsupported, fmt.Errorf("failed to write webconfig tar.gz: %w", err)
+	}
+	if err := compressedFile.Close(); err != nil {
+		return unsupported, fmt.Errorf("failed to close webconfig file: %w", err)
 	}
 	return unsupported, nil
 }
@@ -139,8 +156,9 @@ func mapTLSVersion(v oconfig.TLSProtocolVersion) string {
 // mapCipherSuites converts cipher names from the OpenShift TLS profile to
 // IANA cipher suite names accepted by the windows-exporter webconfig.
 // TLS 1.3 cipher suites are filtered out because Go enables them
-// unconditionally. Unsupported cipher names are collected and returned
-// separately for logging.
+// unconditionally. Weak cipher suites (DES/3DES, RC4, Blowfish, ECB, MD5,
+// SHA-1) are also filtered out. Unsupported and weak cipher names are
+// collected and returned separately for logging.
 func mapCipherSuites(ciphers []string) ([]string, []string) {
 	var result []string
 	var unsupported []string
@@ -150,24 +168,54 @@ func mapCipherSuites(ciphers []string) ([]string, []string) {
 			continue
 		}
 
+		// Determine the IANA name for the cipher
+		var ianaName string
+
 		// Try as Go/IANA name directly
 		if _, err := libgocrypto.CipherSuite(cipher); err == nil {
-			result = append(result, cipher)
+			ianaName = cipher
+		} else {
+			// Try converting from OpenSSL name to IANA
+			ianaCiphers := libgocrypto.OpenSSLToIANACipherSuites([]string{cipher})
+			if len(ianaCiphers) == 1 {
+				if _, err := libgocrypto.CipherSuite(ianaCiphers[0]); err == nil {
+					ianaName = ianaCiphers[0]
+				}
+			}
+		}
+
+		if ianaName == "" {
+			unsupported = append(unsupported, cipher)
 			continue
 		}
 
-		// Try converting from OpenSSL name to IANA
-		ianaCiphers := libgocrypto.OpenSSLToIANACipherSuites([]string{cipher})
-		if len(ianaCiphers) == 1 {
-			ianaName := ianaCiphers[0]
-			if _, err := libgocrypto.CipherSuite(ianaName); err == nil {
-				result = append(result, ianaName)
-				continue
-			}
+		// Filter weak cipher suites (DES/3DES, RC4, Blowfish, ECB, MD5, SHA-1)
+		if isWeakCipher(ianaName) {
+			unsupported = append(unsupported, cipher)
+			continue
 		}
-		unsupported = append(unsupported, cipher)
+
+		result = append(result, ianaName)
 	}
 	return result, unsupported
+}
+
+// isWeakCipher returns true if the cipher suite name (in IANA format) indicates
+// a weak cryptographic algorithm: DES/3DES, RC4, Blowfish, ECB mode, MD5, or
+// SHA-1 MAC. SHA-1 MAC ciphers are identified by IANA names ending in "_SHA"
+// (as opposed to "_SHA256" or "_SHA384").
+func isWeakCipher(name string) bool {
+	upper := strings.ToUpper(name)
+	for _, pattern := range weakCipherPatterns {
+		if strings.Contains(upper, pattern) {
+			return true
+		}
+	}
+	// SHA-1 MAC: IANA names end with "_SHA" (not "_SHA256" or "_SHA384")
+	if strings.HasSuffix(upper, "_SHA") {
+		return true
+	}
+	return false
 }
 
 // mapCurvePreferences converts OpenShift TLSGroup identifiers to the Go

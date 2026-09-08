@@ -394,13 +394,13 @@ func generateNetworkConfigScript(clusterCIDR, hnsNetworkName, hnsPSModulePath,
 	return networkConfScript, nil
 }
 
-// Creates a .tar.gz archive from file data
+// createTarGzFile creates a .tar.gz archive containing a single file from data.
+// It explicitly closes the tar and gzip writers to ensure all buffered data is
+// flushed, returning any close error with contextual wrapping.
 func createTarGzFile(data []byte, fileName string, outWriter io.Writer) error {
 	// Chain writers: File -> Gzip -> Tar
 	gzipWriter := gzip.NewWriter(outWriter)
-	defer gzipWriter.Close()
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
 
 	header := &tar.Header{
 		Name:    fileName,
@@ -414,6 +414,12 @@ func createTarGzFile(data []byte, fileName string, outWriter io.Writer) error {
 	}
 	if _, err := tarWriter.Write(data); err != nil {
 		return fmt.Errorf("failed to write data to tar writer: %w", err)
+	}
+	if err := tarWriter.Close(); err != nil {
+		return fmt.Errorf("failed to finalize tar archive: %w", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return fmt.Errorf("failed to finalize gzip compression: %w", err)
 	}
 	return nil
 }

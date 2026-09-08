@@ -58,7 +58,7 @@ func TestGenerateWebConfig(t *testing.T) {
 			},
 		},
 		{
-			name:            "old profile includes TLS10 and more ciphers",
+			name:            "old profile includes TLS10 and filters weak ciphers",
 			tlsProfileSpec:  *oconfig.TLSProfiles[oconfig.TLSProfileOldType],
 			honorTLSProfile: true,
 			wantContains: []string{
@@ -68,6 +68,15 @@ func TestGenerateWebConfig(t *testing.T) {
 			},
 			wantNotContains: []string{
 				"TLS_AES_128_GCM_SHA256",
+				// Weak ciphers from the Old profile must be filtered.
+				// Use newline suffix to avoid substring matches with SHA256 variants.
+				"TLS_RSA_WITH_3DES_EDE_CBC_SHA\n",
+				"TLS_RSA_WITH_AES_128_CBC_SHA\n",
+				"TLS_RSA_WITH_AES_256_CBC_SHA\n",
+				"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n",
+				"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n",
+				"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n",
+				"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n",
 			},
 		},
 		{
@@ -289,6 +298,65 @@ func TestMapCipherSuites(t *testing.T) {
 			input:       nil,
 			wantCiphers: nil,
 		},
+		{
+			name: "weak cipher DES-CBC3-SHA filtered",
+			input: []string{
+				"DES-CBC3-SHA",
+				"ECDHE-RSA-AES128-GCM-SHA256",
+			},
+			wantCiphers: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			},
+			wantUnsupported: []string{"DES-CBC3-SHA"},
+		},
+		{
+			name: "weak SHA-1 ciphers filtered",
+			input: []string{
+				"ECDHE-RSA-AES128-SHA",
+				"AES128-SHA",
+				"ECDHE-RSA-AES128-GCM-SHA256",
+			},
+			wantCiphers: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			},
+			wantUnsupported: []string{
+				"ECDHE-RSA-AES128-SHA",
+				"AES128-SHA",
+			},
+		},
+		{
+			name: "IANA weak cipher filtered directly",
+			input: []string{
+				"TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			},
+			wantCiphers: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			},
+			wantUnsupported: []string{"TLS_RSA_WITH_3DES_EDE_CBC_SHA"},
+		},
+		{
+			name: "all weak ciphers from Old profile filtered",
+			input: []string{
+				"ECDHE-ECDSA-AES128-SHA",
+				"ECDHE-RSA-AES128-SHA",
+				"ECDHE-ECDSA-AES256-SHA",
+				"ECDHE-RSA-AES256-SHA",
+				"AES128-SHA",
+				"AES256-SHA",
+				"DES-CBC3-SHA",
+			},
+			wantCiphers: nil,
+			wantUnsupported: []string{
+				"ECDHE-ECDSA-AES128-SHA",
+				"ECDHE-RSA-AES128-SHA",
+				"ECDHE-ECDSA-AES256-SHA",
+				"ECDHE-RSA-AES256-SHA",
+				"AES128-SHA",
+				"AES256-SHA",
+				"DES-CBC3-SHA",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -381,6 +449,69 @@ func TestGenerateWebConfigYAMLValidity(t *testing.T) {
 		assert.True(t, strings.HasPrefix(line, "  "),
 			"line %d should be indented: %q", i+1, line)
 	}
+}
+
+func TestIsWeakCipher(t *testing.T) {
+	tests := []struct {
+		name     string
+		cipher   string
+		expected bool
+	}{
+		// Weak ciphers
+		{"3DES IANA", "TLS_RSA_WITH_3DES_EDE_CBC_SHA", true},
+		{"RC4 IANA", "TLS_RSA_WITH_RC4_128_SHA", true},
+		{"MD5 IANA", "TLS_RSA_WITH_AES_128_CBC_SHA_MD5", true},
+		{"NULL IANA", "TLS_RSA_WITH_NULL_SHA", true},
+		{"SHA-1 CBC IANA", "TLS_RSA_WITH_AES_128_CBC_SHA", true},
+		{"SHA-1 ECDHE IANA", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA", true},
+		{"SHA-1 ECDSA IANA", "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA", true},
+		// Strong ciphers
+		{"GCM SHA256 IANA", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", false},
+		{"GCM SHA384 IANA", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", false},
+		{"CHACHA20 IANA", "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", false},
+		{"CBC SHA256 IANA", "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256", false},
+		{"RSA GCM SHA256", "TLS_RSA_WITH_AES_128_GCM_SHA256", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, isWeakCipher(tt.cipher),
+				"isWeakCipher(%q) should be %v", tt.cipher, tt.expected)
+		})
+	}
+}
+
+func TestOldProfileNoWeakCiphersInOutput(t *testing.T) {
+	// The Old TLS profile includes weak ciphers (DES-CBC3-SHA, *-SHA, etc.)
+	// that must be filtered from the generated webconfig.
+	oldProfile := *oconfig.TLSProfiles[oconfig.TLSProfileOldType]
+	content, unsupported := GenerateWebConfig(oldProfile, true)
+
+	// Weak cipher IANA names that must NOT appear in the output.
+	// Use newline suffix to avoid substring matches (e.g. _CBC_SHA vs _CBC_SHA256).
+	weakCiphers := []string{
+		"TLS_RSA_WITH_3DES_EDE_CBC_SHA\n",
+		"TLS_RSA_WITH_AES_128_CBC_SHA\n",
+		"TLS_RSA_WITH_AES_256_CBC_SHA\n",
+		"TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n",
+		"TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n",
+		"TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n",
+		"TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n",
+	}
+	for _, wc := range weakCiphers {
+		assert.NotContains(t, content, wc,
+			"webconfig should NOT contain weak cipher %q", wc)
+	}
+
+	// Strong ciphers should still be present
+	assert.Contains(t, content, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"webconfig should contain strong GCM cipher")
+	assert.Contains(t, content, "cipher_suites:",
+		"webconfig should still have cipher_suites section")
+
+	// The weak ciphers should appear in the unsupported list
+	assert.True(t, len(unsupported) > 0,
+		"weak ciphers should be reported as unsupported")
 }
 
 func TestBaseWebConfigMatchesStaticFile(t *testing.T) {
