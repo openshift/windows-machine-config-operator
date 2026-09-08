@@ -1752,11 +1752,16 @@ func removeOuterQuotes(s string) string {
 }
 
 func configureCertificateToJSONPatch(oc *exutil.CLI, payload, configmap, namespace string) {
+	// Collapse the blank line introduced when appending a certificate to the existing bundle
 	payload = strings.Replace(payload, "\n\n", "\n", 1)
-	jsonPayload := fmt.Sprintf(`{"data":{"ca-bundle.crt":"%s"}}`, strings.ReplaceAll(payload, "\n", ""))
+	// Marshal the payload so the PEM line breaks are escaped as \n and survive the patch.
+	// Stripping them instead yields a single-line blob that is not valid PEM, which makes
+	// WICD reject the whole ca-bundle.crt and import no certificates at all.
 	var configMapPayload ConfigMapPayload
-	err := json.Unmarshal([]byte(jsonPayload), &configMapPayload)
-	o.Expect(err).NotTo(o.HaveOccurred(), "error unmarshalling JSON")
+	configMapPayload.Data.CaBundleCrt = payload
+	jsonBytes, err := json.Marshal(configMapPayload)
+	o.Expect(err).NotTo(o.HaveOccurred(), "error marshalling ConfigMap patch")
+	jsonPayload := string(jsonBytes)
 	cmd := oc.AsAdmin().WithoutNamespace().Run("patch").Args("configmap", configmap, "-n", namespace, "-p", jsonPayload)
 	output, err := cmd.Output()
 	if err != nil {
