@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestGenerateWebConfig verifies that GenerateWebConfig returns correct YAML
+// content for each TLS profile type (Old, Intermediate, Modern, Custom).
 func TestGenerateWebConfig(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -218,6 +220,8 @@ func TestGenerateWebConfig(t *testing.T) {
 	}
 }
 
+// TestMapTLSVersion verifies the mapping of OpenShift TLS protocol versions
+// to the short form used by the exporter-toolkit webconfig.
 func TestMapTLSVersion(t *testing.T) {
 	tests := []struct {
 		input    oconfig.TLSProtocolVersion
@@ -238,6 +242,8 @@ func TestMapTLSVersion(t *testing.T) {
 	}
 }
 
+// TestMapCipherSuites verifies cipher suite conversion from OpenSSL to IANA
+// names, TLS 1.3 filtering, weak cipher filtering, and unsupported cipher reporting.
 func TestMapCipherSuites(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -370,6 +376,8 @@ func TestMapCipherSuites(t *testing.T) {
 	}
 }
 
+// TestMapCurvePreferences verifies the mapping of OpenShift TLSGroup identifiers
+// to Go tls.CurveID names and the reporting of unsupported groups.
 func TestMapCurvePreferences(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -424,6 +432,8 @@ func TestMapCurvePreferences(t *testing.T) {
 	}
 }
 
+// TestGenerateWebConfigYAMLValidity verifies that the generated YAML has correct
+// structure, indentation, and line endings.
 func TestGenerateWebConfigYAMLValidity(t *testing.T) {
 	// Verify the generated YAML starts and ends correctly
 	intermediateProfile := *oconfig.TLSProfiles[oconfig.TLSProfileIntermediateType]
@@ -451,6 +461,8 @@ func TestGenerateWebConfigYAMLValidity(t *testing.T) {
 	}
 }
 
+// TestIsWeakCipher verifies that isWeakCipher correctly identifies weak cipher
+// suites (3DES, RC4, MD5, NULL, SHA-1) and allows strong ones (GCM, ChaCha20).
 func TestIsWeakCipher(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -481,6 +493,8 @@ func TestIsWeakCipher(t *testing.T) {
 	}
 }
 
+// TestOldProfileNoWeakCiphersInOutput verifies that the Old TLS profile's weak
+// ciphers (DES-CBC3-SHA, *-SHA) are filtered from the generated webconfig output.
 func TestOldProfileNoWeakCiphersInOutput(t *testing.T) {
 	// The Old TLS profile includes weak ciphers (DES-CBC3-SHA, *-SHA, etc.)
 	// that must be filtered from the generated webconfig.
@@ -514,6 +528,8 @@ func TestOldProfileNoWeakCiphersInOutput(t *testing.T) {
 		"weak ciphers should be reported as unsupported")
 }
 
+// TestBaseWebConfigMatchesStaticFile verifies that the base webconfig (without
+// TLS profile) matches the original static file content.
 func TestBaseWebConfigMatchesStaticFile(t *testing.T) {
 	// The base webconfig (when not honoring TLS profile) should match
 	// the original static file content

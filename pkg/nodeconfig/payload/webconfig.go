@@ -2,6 +2,7 @@ package payload
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -74,8 +75,11 @@ func PopulateWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, honorTLSProfile bo
 		return unsupported, fmt.Errorf("failed to create webconfig file: %w", err)
 	}
 	if err := createTarGzFile([]byte(content), fileName, compressedFile); err != nil {
-		compressedFile.Close()
-		return unsupported, fmt.Errorf("failed to write webconfig tar.gz: %w", err)
+		writeErr := fmt.Errorf("failed to write webconfig tar.gz: %w", err)
+		if closeErr := compressedFile.Close(); closeErr != nil {
+			return unsupported, errors.Join(writeErr, fmt.Errorf("failed to close webconfig file: %w", closeErr))
+		}
+		return unsupported, writeErr
 	}
 	if err := compressedFile.Close(); err != nil {
 		return unsupported, fmt.Errorf("failed to close webconfig file: %w", err)
