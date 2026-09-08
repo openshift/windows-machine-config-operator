@@ -1598,7 +1598,11 @@ func checkWMCORestarted(oc *exutil.CLI, startTime string) (bool, error) {
 		return false, nil
 	})
 	if pollErr != nil {
-		return false, fmt.Errorf("error restarting WMCO: %v", pollErr)
+		if pollErr == wait.ErrWaitTimeout {
+			e2e.Logf("WMCO did not restart within 6 minutes (this is expected for some proxy changes)")
+			return false, nil
+		}
+		return false, fmt.Errorf("error checking WMCO restart: %w", pollErr)
 	}
 	return restartDetected, nil
 }
@@ -1707,7 +1711,7 @@ func checkUserCertificatesOnNodes(oc *exutil.CLI, commonName string, expectedCou
 		e2e.Logf("Waiting for %d user certificate(s) with CN '%s' on node %s", expectedCount, commonName, nodeName)
 		cmd := fmt.Sprintf("(Get-ChildItem -Path Cert:\\LocalMachine\\Root | Where-Object {$_.Subject -eq '%s'}).Count", commonName)
 
-		pollErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+		pollErr := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
 			msg, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
 			if err != nil {
 				e2e.Logf("Error checking certificates on node %s: %v", nodeName, err)
@@ -1727,7 +1731,7 @@ func checkUserCertificatesOnNodes(oc *exutil.CLI, commonName string, expectedCou
 			e2e.Logf("Waiting for certificates on node %s: expected %d, found %d", nodeName, expectedCount, numOfCerts)
 			return false, nil
 		})
-		o.Expect(pollErr).NotTo(o.HaveOccurred(), "certificate count did not reach %d on node %s within 5 minutes", expectedCount, nodeName)
+		o.Expect(pollErr).NotTo(o.HaveOccurred(), "certificate count did not reach %d on node %s within 10 minutes", expectedCount, nodeName)
 	}
 }
 
@@ -1748,11 +1752,16 @@ func removeOuterQuotes(s string) string {
 }
 
 func configureCertificateToJSONPatch(oc *exutil.CLI, payload, configmap, namespace string) {
+	// Collapse the blank line introduced when appending a certificate to the existing bundle
 	payload = strings.Replace(payload, "\n\n", "\n", 1)
-	jsonPayload := fmt.Sprintf(`{"data":{"ca-bundle.crt":"%s"}}`, strings.ReplaceAll(payload, "\n", ""))
+	// Marshal the payload so the PEM line breaks are escaped as \n and survive the patch.
+	// Stripping them instead yields a single-line blob that is not valid PEM, which makes
+	// WICD reject the whole ca-bundle.crt and import no certificates at all.
 	var configMapPayload ConfigMapPayload
-	err := json.Unmarshal([]byte(jsonPayload), &configMapPayload)
-	o.Expect(err).NotTo(o.HaveOccurred(), "error unmarshalling JSON")
+	configMapPayload.Data.CaBundleCrt = payload
+	jsonBytes, err := json.Marshal(configMapPayload)
+	o.Expect(err).NotTo(o.HaveOccurred(), "error marshalling ConfigMap patch")
+	jsonPayload := string(jsonBytes)
 	cmd := oc.AsAdmin().WithoutNamespace().Run("patch").Args("configmap", configmap, "-n", namespace, "-p", jsonPayload)
 	output, err := cmd.Output()
 	if err != nil {

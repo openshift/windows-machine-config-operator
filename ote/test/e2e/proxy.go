@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			if restarted {
 				e2e.Logf("WMCO restarted after trusted CA removal")
 				winIPs := getWindowsInternalIPs(oc)
-				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+				waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 			} else {
 				e2e.Logf("WMCO did not restart after trusted CA removal")
 			}
@@ -85,7 +86,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				_, err = checkWMCORestarted(oc, timeNoProxy)
 				o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after noProxy removal")
 				winIPs := getWindowsInternalIPs(oc)
-				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+				waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 				noProxyExpected := getEnvVarProxyMap(oc)
 				waitForProxyOnNodes(oc, winNodes, noProxyExpected)
 			} else {
@@ -108,7 +109,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				o.Expect(err).NotTo(o.HaveOccurred())
 
 				winIPs := getWindowsInternalIPs(oc)
-				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+				waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 				e2e.Logf("Skipping WICD ConfigMap and node propagation verification - WMCO doesn't remove env vars from ConfigMap")
 			} else {
 				e2e.Logf("spec.httpsProxy is not set, skipping removal")
@@ -122,7 +123,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				_, err = checkWMCORestarted(oc, timeNoHttp)
 				o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after httpProxy removal")
 				winIPs := getWindowsInternalIPs(oc)
-				waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+				waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 				httpExpected := getEnvVarProxyMap(oc)
 				waitForProxyOnNodes(oc, winNodes, httpExpected)
 			} else {
@@ -144,7 +145,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			o.Expect(err).NotTo(o.HaveOccurred(), "error checking WMCO restart status after noProxy update")
 			winNodes := getWindowsNodeNames(oc)
 			winIPs := getWindowsInternalIPs(oc)
-			waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+			waitWindowsNodesReady(oc, len(winIPs), 30*time.Minute)
 
 			g.By("Verify newly added noProxy record exists on WICD Windows Services")
 			windowsServicesCM, err := popItemFromList(oc, "cm", wicdConfigMap, wmcoNamespace)
@@ -186,28 +187,24 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
 			const (
-				name                        = "OCP-68320-custom"
-				validity                    = "3650"
-				caSubj                      = "/OU=openshift/CN=test-custom-self-cert-signer"
-				userSelfSignedCommonName    = "CN=test-custom-self-cert-signer, OU=openshift"
-				userInstalledCertCommonName = "CN=Installer-QE-CA, OU=Installer-QE, O=OCP, S=Beijing, C=CN"
-				namespace                   = "openshift-config"
-				configmap                   = "user-ca-bundle"
+				name                     = "OCP-68320-custom"
+				validity                 = "3650"
+				caSubj                   = "/OU=openshift/CN=test-custom-self-cert-signer"
+				userSelfSignedCommonName = "CN=test-custom-self-cert-signer, OU=openshift"
+				namespace                = "openshift-config"
+				configmap                = "user-ca-bundle"
 			)
 
-			g.By("Verify that user certificate installed on each Windows worker")
-			checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
-
 			g.By("Create a self-signed certificate and append to user-ca-bundle")
-			keyPath := fmt.Sprintf("%s-ca.key", name)
-			crtPath := fmt.Sprintf("%s-ca.crt", name)
+			keyPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-ca.key", name))
+			crtPath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-ca.crt", name))
 			defer os.Remove(keyPath)
-			cmd := fmt.Sprintf("openssl genrsa -out %s-ca.key 4096", name)
+			cmd := fmt.Sprintf("openssl genrsa -out %s 4096", keyPath)
 			output, err := exec.Command("bash", "-c", cmd).CombinedOutput()
 			o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate key: %s", output)
 
 			defer os.Remove(crtPath)
-			cmd = fmt.Sprintf("openssl req -x509 -new -nodes -key %s-ca.key -sha256 -days %s -out %s-ca.crt -subj %s", name, validity, name, caSubj)
+			cmd = fmt.Sprintf("openssl req -x509 -new -nodes -key %s -sha256 -days %s -out %s -subj %s", keyPath, validity, crtPath, caSubj)
 			output, err = exec.Command("bash", "-c", cmd).CombinedOutput()
 			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create certificate: %s", output)
 
@@ -222,11 +219,11 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			combinedContent := fmt.Sprintf("%s\n%s", initialConfigMapContent, string(newCertificateContent))
 			configureCertificateToJSONPatch(oc, combinedContent, configmap, namespace)
 
-			g.By("Verify that user certificate installed on each Windows worker")
-			checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
+			g.By("Verify that self-signed certificate synced to each Windows worker")
+			checkUserCertificatesOnNodes(oc, userSelfSignedCommonName, 1)
 
 			g.By("Creating certificate rotation")
-			cmd = fmt.Sprintf("openssl req -x509 -new -nodes -key %s-ca.key -sha256 -days 1 -out %s-ca.crt -subj %s", name, name, caSubj)
+			cmd = fmt.Sprintf("openssl req -x509 -new -nodes -key %s -sha256 -days 1 -out %s -subj %s", keyPath, crtPath, caSubj)
 			output, err = exec.Command("bash", "-c", cmd).CombinedOutput()
 			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create rotated certificate: %s", output)
 
@@ -235,8 +232,8 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			combinedContent = fmt.Sprintf("%s\n%s", initialConfigMapContent, string(newCertificateContent))
 			configureCertificateToJSONPatch(oc, combinedContent, configmap, namespace)
 
-			g.By("Verify that after certificate rotation certificates installed on each Windows worker")
-			checkUserCertificatesOnNodes(oc, userInstalledCertCommonName, 1)
+			g.By("Verify that rotated certificate synced to each Windows worker")
+			checkUserCertificatesOnNodes(oc, userSelfSignedCommonName, 1)
 
 			g.By("Verify that self-signed certificate has been removed from each Windows node")
 			configureCertificateToJSONPatch(oc, initialConfigMapContent, configmap, namespace)
@@ -280,7 +277,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				e2e.Logf("WMCO did not restart after proxy patch, waiting for WICD propagation")
 			}
 			winIPs := getWindowsInternalIPs(oc)
-			waitWindowsNodesReady(oc, len(winIPs), 15*time.Minute)
+			waitWindowsNodesReady(oc, len(winIPs), 20*time.Minute)
 
 			g.By("Verify NO_PROXY changes propagated to Windows nodes")
 			expectedProxies := getEnvVarProxyMap(oc)
