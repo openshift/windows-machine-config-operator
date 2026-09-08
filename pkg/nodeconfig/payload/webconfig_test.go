@@ -175,6 +175,7 @@ func TestGenerateWebConfig(t *testing.T) {
 				"curve_preferences:",
 				"X25519MLKEM768",
 			},
+			wantUnsupported: 1,
 		},
 	}
 
@@ -247,6 +248,15 @@ func TestMapCipherSuites(t *testing.T) {
 			},
 		},
 		{
+			name: "IANA/Go cipher name used directly",
+			input: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			},
+			wantCiphers: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			},
+		},
+		{
 			name: "TLS 1.3 ciphers filtered out",
 			input: []string{
 				"TLS_AES_128_GCM_SHA256",
@@ -294,9 +304,10 @@ func TestMapCipherSuites(t *testing.T) {
 
 func TestMapCurvePreferences(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    []oconfig.TLSGroup
-		expected []string
+		name            string
+		input           []oconfig.TLSGroup
+		expected        []string
+		wantUnsupported []string
 	}{
 		{
 			name:     "standard groups mapped",
@@ -304,9 +315,10 @@ func TestMapCurvePreferences(t *testing.T) {
 			expected: []string{"X25519", "CurveP256", "CurveP384"},
 		},
 		{
-			name:     "unsupported post-quantum groups skipped",
-			input:    []oconfig.TLSGroup{oconfig.TLSGroupX25519MLKEM768, oconfig.TLSGroupX25519, oconfig.TLSGroupSecP256r1},
-			expected: []string{"X25519", "CurveP256"},
+			name:            "unsupported post-quantum groups returned",
+			input:           []oconfig.TLSGroup{oconfig.TLSGroupX25519MLKEM768, oconfig.TLSGroupX25519, oconfig.TLSGroupSecP256r1},
+			expected:        []string{"X25519", "CurveP256"},
+			wantUnsupported: []string{string(oconfig.TLSGroupX25519MLKEM768)},
 		},
 		{
 			name:     "all groups including P521",
@@ -324,16 +336,22 @@ func TestMapCurvePreferences(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name:     "only unsupported groups",
-			input:    []oconfig.TLSGroup{oconfig.TLSGroupX25519MLKEM768},
-			expected: nil,
+			name:            "only unsupported groups",
+			input:           []oconfig.TLSGroup{oconfig.TLSGroupX25519MLKEM768},
+			expected:        nil,
+			wantUnsupported: []string{string(oconfig.TLSGroupX25519MLKEM768)},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := mapCurvePreferences(tt.input)
+			result, unsupported := mapCurvePreferences(tt.input)
 			assert.Equal(t, tt.expected, result)
+			if tt.wantUnsupported != nil {
+				assert.Equal(t, tt.wantUnsupported, unsupported)
+			} else {
+				assert.Empty(t, unsupported)
+			}
 		})
 	}
 }

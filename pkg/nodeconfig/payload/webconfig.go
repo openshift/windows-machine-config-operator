@@ -9,6 +9,7 @@ import (
 
 	oconfig "github.com/openshift/api/config/v1"
 	libgocrypto "github.com/openshift/library-go/pkg/crypto"
+	klog "k8s.io/klog/v2"
 )
 
 // tls13Ciphers are TLS 1.3 cipher suites that Go always enables.
@@ -74,7 +75,8 @@ func GenerateWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, honorTLSProfile bo
 
 	minVersion := mapTLSVersion(tlsProfileSpec.MinTLSVersion)
 	cipherSuites, unsupported := mapCipherSuites(tlsProfileSpec.Ciphers)
-	curvePrefs := mapCurvePreferences(tlsProfileSpec.Groups)
+	curvePrefs, unsupportedGroups := mapCurvePreferences(tlsProfileSpec.Groups)
+	unsupported = append(unsupported, unsupportedGroups...)
 
 	// Only include cipher_suites when min version is below TLS 1.3, as Go's
 	// TLS 1.3 implementation does not allow configuring cipher suites.
@@ -83,22 +85,26 @@ func GenerateWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, honorTLSProfile bo
 	return generateFullWebConfig(minVersion, cipherSuites, curvePrefs, includeCiphers), unsupported
 }
 
+// writeWebConfigHeader writes the common YAML header shared by both the base
+// and full webconfig: the tls_server_config key plus cert_file and key_file.
+func writeWebConfigHeader(b *strings.Builder) {
+	b.WriteString("tls_server_config:\n")
+	b.WriteString(fmt.Sprintf("  cert_file: %s\n", webConfigCertFile))
+	b.WriteString(fmt.Sprintf("  key_file: %s\n", webConfigKeyFile))
+}
+
 // generateBaseWebConfig returns the webconfig YAML with only cert_file and key_file,
 // which is the default when the cluster TLS profile is not honoured.
 func generateBaseWebConfig() string {
 	var b strings.Builder
-	b.WriteString("tls_server_config:\n")
-	b.WriteString(fmt.Sprintf("  cert_file: %s\n", webConfigCertFile))
-	b.WriteString(fmt.Sprintf("  key_file: %s\n", webConfigKeyFile))
+	writeWebConfigHeader(&b)
 	return b.String()
 }
 
 // generateFullWebConfig returns the webconfig YAML with TLS profile settings.
 func generateFullWebConfig(minVersion string, cipherSuites, curvePrefs []string, includeCiphers bool) string {
 	var b strings.Builder
-	b.WriteString("tls_server_config:\n")
-	b.WriteString(fmt.Sprintf("  cert_file: %s\n", webConfigCertFile))
-	b.WriteString(fmt.Sprintf("  key_file: %s\n", webConfigKeyFile))
+	writeWebConfigHeader(&b)
 	b.WriteString(fmt.Sprintf("  min_version: %s\n", minVersion))
 
 	if includeCiphers && len(cipherSuites) > 0 {
@@ -126,6 +132,7 @@ func mapTLSVersion(v oconfig.TLSProtocolVersion) string {
 	if mapped, ok := tlsVersionMap[v]; ok {
 		return mapped
 	}
+	klog.Warningf("unknown TLS version %q, defaulting to TLS12", v)
 	return "TLS12"
 }
 
@@ -165,13 +172,17 @@ func mapCipherSuites(ciphers []string) ([]string, []string) {
 
 // mapCurvePreferences converts OpenShift TLSGroup identifiers to the Go
 // tls.CurveID string names accepted by the exporter-toolkit webconfig.
-// Unsupported groups (e.g. post-quantum X25519MLKEM768) are silently skipped.
-func mapCurvePreferences(groups []oconfig.TLSGroup) []string {
+// Unsupported groups (e.g. post-quantum X25519MLKEM768) are collected and
+// returned separately for logging.
+func mapCurvePreferences(groups []oconfig.TLSGroup) ([]string, []string) {
 	var result []string
+	var unsupported []string
 	for _, g := range groups {
 		if curveName, ok := groupToCurve[g]; ok {
 			result = append(result, curveName)
+		} else {
+			unsupported = append(unsupported, string(g))
 		}
 	}
-	return result
+	return result, unsupported
 }

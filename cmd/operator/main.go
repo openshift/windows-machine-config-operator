@@ -143,8 +143,9 @@ func main() {
 	// Gate TLS profile enforcement on the adherence policy. WMCO was not previously honoring the
 	// cluster TLS profile, so per the centralized TLS config enhancement (StrictAllComponents mode)
 	// it should only enforce when ShouldHonorClusterTLSProfile returns true.
+	honorTLSProfile := libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence)
 	var metricsServerTLSOpts []func(*tls.Config)
-	if libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence) {
+	if honorTLSProfile {
 		tlsConfigFn, unsupportedCiphers := tlspkg.NewTLSConfigFromProfile(tlsProfile)
 		if len(unsupportedCiphers) > 0 {
 			setupLog.Info("some cipher suites are not supported by Go and will be ignored",
@@ -194,15 +195,14 @@ func main() {
 		setupLog.Error(err, "unable to generate CNI config script")
 		os.Exit(1)
 	}
-	honorTLSProfile := libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence)
 	unsupportedWebConfigCiphers, err := payload.PopulateWebConfig(tlsProfile, honorTLSProfile)
 	if err != nil {
 		setupLog.Error(err, "unable to generate windows-exporter webconfig")
 		os.Exit(1)
 	}
 	if len(unsupportedWebConfigCiphers) > 0 {
-		setupLog.Info("some cipher suites are not supported for the windows-exporter webconfig and will be ignored",
-			"unsupportedCiphers", unsupportedWebConfigCiphers)
+		setupLog.Info("some TLS settings are not supported for the windows-exporter webconfig and will be ignored",
+			"unsupported", unsupportedWebConfigCiphers)
 	}
 
 	// Become the leader before proceeding
