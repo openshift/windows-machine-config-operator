@@ -172,10 +172,8 @@ func (r *instanceReconciler) ensureWebConfigIsUpToDate(ctx context.Context, inst
 // (i.e. PopulateWebConfig has not been called yet).
 func (r *instanceReconciler) ensureWebConfigForNode(ctx context.Context, node core.Node) error {
 	expectedSHA := payload.GetWebConfigSHA()
-	if expectedSHA == "" {
-		return nil
-	}
-	if nodeSHA, present := node.GetAnnotations()[metadata.WebConfigSHAAnnotation]; present && nodeSHA == expectedSHA {
+	nodeInfo := &instance.Info{Node: &node}
+	if nodeInfo.WebConfigUpToDate(expectedSHA) {
 		return nil
 	}
 	r.log.Info("webconfig change detected, pushing updated file",
