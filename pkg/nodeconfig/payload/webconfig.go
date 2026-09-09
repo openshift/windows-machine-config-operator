@@ -62,10 +62,18 @@ const webConfigCertFile = `C:\\k\\tls\\certs\\tls.crt`
 const webConfigKeyFile = `C:\\k\\tls\\certs\\tls.key`
 
 // PopulateWebConfig generates the windows-exporter webconfig YAML and writes it
-// to the payload as a compressed .tar.gz file. When honorTLSProfile is true, the
-// webconfig includes min_version, cipher_suites, and curve_preferences derived
-// from the cluster TLS profile. The returned string slice contains any cipher suite
-// names from the profile that could not be mapped to Go cipher suites.
+// to the generated payload directory as a compressed .tar.gz file. When
+// honorTLSProfile is true, the webconfig includes min_version, cipher_suites,
+// and curve_preferences derived from the cluster TLS profile. The returned
+// string slice contains any cipher suite names from the profile that could not
+// be mapped to Go cipher suites.
+//
+// Live pickup of webconfig changes by a running windows-exporter relies on
+// exporter-toolkit's GetConfigForClient reload: exporter-toolkit ≥ 0.14.0
+// re-reads the entire webconfig on every TLS handshake, rebuilding MinVersion,
+// CipherSuites, and CurvePreferences from the file on disk. Pre-existing
+// keep-alive connections retain the old TLS parameters until the client
+// reconnects.
 func PopulateWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, honorTLSProfile bool) ([]string, error) {
 	content, unsupported := GenerateWebConfig(tlsProfileSpec, honorTLSProfile)
 	fileName := strings.TrimSuffix(filepath.Base(TLSConfPath), ".tar.gz")
