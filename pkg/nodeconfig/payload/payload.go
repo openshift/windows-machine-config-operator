@@ -397,6 +397,15 @@ func generateNetworkConfigScript(clusterCIDR, hnsNetworkName, hnsPSModulePath,
 	return networkConfScript, nil
 }
 
+// GetWebConfigSHA returns the SHA256 hash of the current (uncompressed) webconfig
+// file from the global shaMap. This hash is computed by PopulateWebConfig and
+// reflects the content that will be transferred to Windows nodes. Returns an
+// empty string if the webconfig has not been populated yet.
+func GetWebConfigSHA() string {
+	fileName := strings.TrimSuffix(filepath.Base(TLSConfPath), ".tar.gz")
+	return shaMap[fileName]
+}
+
 // createTarGzFile creates a .tar.gz archive containing a single file from data.
 // It explicitly closes the tar and gzip writers to ensure all buffered data is
 // flushed, returning any close error with contextual wrapping.

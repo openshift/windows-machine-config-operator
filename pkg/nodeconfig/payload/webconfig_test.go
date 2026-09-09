@@ -221,6 +221,24 @@ func TestGenerateWebConfig(t *testing.T) {
 	}
 }
 
+// TestGetWebConfigSHA verifies that GetWebConfigSHA returns the correct SHA
+// from the global shaMap after being set by PopulateWebConfig.
+func TestGetWebConfigSHA(t *testing.T) {
+	// Before any webconfig is populated, the SHA should be empty
+	origShaMap := shaMap
+	defer func() { shaMap = origShaMap }()
+	shaMap = make(map[string]string)
+
+	assert.Equal(t, "", GetWebConfigSHA(),
+		"GetWebConfigSHA should return empty string when webconfig is not populated")
+
+	// Manually set the webconfig SHA as PopulateWebConfig would
+	fileName := strings.TrimSuffix("windows-exporter-webconfig.yaml.tar.gz", ".tar.gz")
+	shaMap[fileName] = "abc123def456"
+	assert.Equal(t, "abc123def456", GetWebConfigSHA(),
+		"GetWebConfigSHA should return the SHA from the shaMap")
+}
+
 // TestMapTLSVersion verifies the mapping of OpenShift TLS protocol versions
 // to the short form used by the exporter-toolkit webconfig.
 func TestMapTLSVersion(t *testing.T) {

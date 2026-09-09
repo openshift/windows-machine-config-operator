@@ -36,6 +36,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/ignition"
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeutil"
 	"github.com/openshift/windows-machine-config-operator/pkg/rbac"
 	"github.com/openshift/windows-machine-config-operator/pkg/registries"
@@ -196,6 +197,11 @@ func (nc *NodeConfig) Configure(ctx context.Context) error {
 		// Ensure we are labeling and annotating the node as soon as the Node object is created, so that we can identify
 		// which controller should be watching it
 		annotationsToApply := map[string]string{PubKeyHashAnnotation: nc.publicKeyHash}
+		// Record the webconfig SHA so the lightweight update path can detect
+		// changes without triggering a full upgrade cycle.
+		if webConfigSHA := payload.GetWebConfigSHA(); webConfigSHA != "" {
+			annotationsToApply[metadata.WebConfigSHAAnnotation] = webConfigSHA
+		}
 		for key, value := range nc.additionalAnnotations {
 			annotationsToApply[key] = value
 		}
@@ -626,6 +632,23 @@ func (nc *NodeConfig) UpdateKubeletClientCA(contents []byte) error {
 	err := nc.Windows.EnsureFileContent(contents, KubeletClientCAFilename, windows.GetK8sDir())
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+// UpdateWebConfig pushes the current webconfig payload file to the Windows
+// node. The webconfig file is a compressed archive (.tar.gz) whose SHA is
+// already tracked in the payload shaMap, so EnsureFile will skip the transfer
+// if the remote file already matches. No service restart is required: the
+// exporter-toolkit in windows-exporter re-reads the webconfig on every TLS
+// handshake (GetConfigForClient reload).
+func (nc *NodeConfig) UpdateWebConfig() error {
+	webConfigFileInfo, err := payload.NewCompressedFileInfo(payload.TLSConfPath)
+	if err != nil {
+		return fmt.Errorf("error creating file info for webconfig: %w", err)
+	}
+	if err := nc.Windows.EnsureFile(webConfigFileInfo, windows.TLSDir); err != nil {
+		return fmt.Errorf("error transferring webconfig to node: %w", err)
 	}
 	return nil
 }
