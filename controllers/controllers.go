@@ -159,17 +159,31 @@ func (r *instanceReconciler) updateKubeletCA(ctx context.Context, node core.Node
 // webconfig on every TLS handshake, so the new TLS settings take effect on
 // the next client connection.
 func (r *instanceReconciler) ensureWebConfigIsUpToDate(ctx context.Context, instanceInfo *instance.Info) error {
+	if instanceInfo.Node == nil {
+		return nil
+	}
+	return r.ensureWebConfigForNode(ctx, *instanceInfo.Node)
+}
+
+// ensureWebConfigForNode compares the webconfig SHA annotation on the given
+// node with the current payload SHA. If they differ, it pushes the updated
+// webconfig and records the new SHA annotation. Returns nil immediately when
+// the webconfig is already up to date or when no webconfig SHA is available
+// (i.e. PopulateWebConfig has not been called yet).
+func (r *instanceReconciler) ensureWebConfigForNode(ctx context.Context, node core.Node) error {
 	expectedSHA := payload.GetWebConfigSHA()
-	if instanceInfo.WebConfigUpToDate(expectedSHA) {
+	if expectedSHA == "" {
+		return nil
+	}
+	if nodeSHA, present := node.GetAnnotations()[metadata.WebConfigSHAAnnotation]; present && nodeSHA == expectedSHA {
 		return nil
 	}
 	r.log.Info("webconfig change detected, pushing updated file",
-		"node", instanceInfo.Node.GetName(), "expectedSHA", expectedSHA)
-	if err := r.updateWebConfig(ctx, *instanceInfo.Node); err != nil {
+		"node", node.Name, "expectedSHA", expectedSHA)
+	if err := r.updateWebConfig(ctx, node); err != nil {
 		return err
 	}
-	// Update the annotation to record the new SHA
-	return metadata.ApplyLabelsAndAnnotations(ctx, r.client, *instanceInfo.Node, nil,
+	return metadata.ApplyLabelsAndAnnotations(ctx, r.client, node, nil,
 		map[string]string{metadata.WebConfigSHAAnnotation: expectedSHA})
 }
 

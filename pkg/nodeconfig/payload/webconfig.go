@@ -25,8 +25,8 @@ var tls13Ciphers = map[string]bool{
 }
 
 // weakCipherPatterns contains substrings that identify weak cipher suites in
-// both OpenSSL and IANA naming conventions. Cipher suites whose IANA name
-// contains any of these patterns are filtered out of the generated webconfig.
+// IANA naming conventions. Cipher suites whose IANA name contains any of these
+// patterns are filtered out of the generated webconfig.
 var weakCipherPatterns = []string{
 	"3DES",
 	"DES-CBC",
@@ -104,13 +104,20 @@ func GenerateWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, honorTLSProfile bo
 	}
 
 	minVersion := mapTLSVersion(tlsProfileSpec.MinTLSVersion)
-	cipherSuites, unsupported := mapCipherSuites(tlsProfileSpec.Ciphers)
+
+	// Only map and include cipher_suites when min version is below TLS 1.3,
+	// as Go's TLS 1.3 implementation does not allow configuring cipher suites.
+	// Skipping the mapping entirely avoids misleading "unsupported ciphers"
+	// log messages for ciphers that would be discarded anyway.
+	var cipherSuites []string
+	var unsupported []string
+	includeCiphers := minVersion != "TLS13"
+	if includeCiphers {
+		cipherSuites, unsupported = mapCipherSuites(tlsProfileSpec.Ciphers)
+	}
+
 	curvePrefs, unsupportedGroups := mapCurvePreferences(tlsProfileSpec.Groups)
 	unsupported = append(unsupported, unsupportedGroups...)
-
-	// Only include cipher_suites when min version is below TLS 1.3, as Go's
-	// TLS 1.3 implementation does not allow configuring cipher suites.
-	includeCiphers := minVersion != "TLS13"
 
 	return generateFullWebConfig(minVersion, cipherSuites, curvePrefs, includeCiphers), unsupported
 }
@@ -227,10 +234,11 @@ func mapCipherSuites(ciphers []string) ([]string, []string) {
 	return result, unsupported
 }
 
-// isWeakCipher returns true if the cipher suite name (in IANA format) indicates
-// a weak cryptographic algorithm: DES/3DES, RC4, Blowfish, ECB mode, MD5, or
-// SHA-1 MAC. SHA-1 MAC ciphers are identified by IANA names ending in "_SHA"
-// (as opposed to "_SHA256" or "_SHA384").
+// isWeakCipher returns true if the given IANA cipher suite name indicates a
+// weak cryptographic algorithm: DES/3DES, RC4, Blowfish, ECB mode, MD5, or
+// SHA-1 MAC. SHA-1 MAC ciphers are identified by names ending in "_SHA"
+// (as opposed to "_SHA256" or "_SHA384"). Callers are expected to pass IANA
+// names (the OpenSSL→IANA conversion happens in mapCipherSuites).
 func isWeakCipher(name string) bool {
 	upper := strings.ToUpper(name)
 	for _, pattern := range weakCipherPatterns {

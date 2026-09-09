@@ -77,6 +77,11 @@ const (
 	// Written to the world-writable /payload/generated/ directory because the
 	// operator runs as an arbitrary non-root UID (OpenShift SCC) and the static
 	// /payload/windows-exporter/ directory is baked read-only in the image.
+	// TODO(WINC-2118): The Dockerfile still bakes a static
+	// windows-exporter-webconfig.yaml into /payload/windows-exporter/.
+	// That file is now unused because PopulateWebConfig generates the
+	// webconfig here at runtime. Remove the static copy from the
+	// Dockerfile once all release branches use PopulateWebConfig.
 	TLSConfPath = payloadDirectory + "/generated/windows-exporter-webconfig.yaml.tar.gz"
 	// ECRCredentialProviderPath is the path to ecr-credential-provider.exe
 	ECRCredentialProviderPath = payloadDirectory + "ecr-credential-provider.exe.tar.gz"
