@@ -31,6 +31,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/pkg/signer"
 	"github.com/openshift/windows-machine-config-operator/pkg/windows"
@@ -296,6 +297,25 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			}
 			if node.Annotations[metadata.VersionAnnotation] == version.Get() {
 				// version annotation exists with a valid value, node is fully configured.
+				// However, the webconfig may need a lightweight update: when the cluster
+				// TLS security profile changes the operator restarts with a new webconfig,
+				// but Machine-API nodes with a current version annotation skip
+				// configureMachine → ensureInstanceIsUpToDate entirely. Check and push
+				// the updated webconfig here so Machine-API nodes stay in sync.
+				expectedSHA := payload.GetWebConfigSHA()
+				if expectedSHA != "" && node.Annotations[metadata.WebConfigSHAAnnotation] != expectedSHA {
+					log.Info("webconfig change detected for Machine-API node, pushing update",
+						"node", node.Name, "expectedSHA", expectedSHA)
+					if err := r.updateWebConfig(ctx, *node); err != nil {
+						return ctrl.Result{}, fmt.Errorf("error updating webconfig on node %s: %w",
+							node.Name, err)
+					}
+					if err := metadata.ApplyLabelsAndAnnotations(ctx, r.client, *node, nil,
+						map[string]string{metadata.WebConfigSHAAnnotation: expectedSHA}); err != nil {
+						return ctrl.Result{}, fmt.Errorf("error updating webconfig SHA annotation on node %s: %w",
+							node.Name, err)
+					}
+				}
 				return ctrl.Result{}, nil
 			}
 		}
