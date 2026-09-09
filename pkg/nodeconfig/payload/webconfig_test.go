@@ -544,25 +544,24 @@ func TestBaseWebConfigMatchesStaticFile(t *testing.T) {
 		"base webconfig should match the original static file content")
 }
 
-// TestIsSupportedCipher verifies that isSupportedCipher correctly identifies
-// cipher suite names recognized by the Go runtime (from tls.CipherSuites and
-// tls.InsecureCipherSuites) and rejects names that the runtime does not know.
-// In FIPS builds the supported set is smaller, but this test validates the
-// lookup logic itself.
+// TestIsSupportedCipher verifies that isSupportedCipher accepts only cipher
+// suite names from tls.CipherSuites() (the secure set) and rejects everything
+// else — including ciphers in tls.InsecureCipherSuites(), which the
+// exporter-toolkit does not recognize.
 func TestIsSupportedCipher(t *testing.T) {
 	tests := []struct {
 		name     string
 		cipher   string
 		expected bool
 	}{
-		// Ciphers that Go's crypto/tls recognizes (tls.CipherSuites)
+		// Ciphers in tls.CipherSuites (secure set — accepted by exporter-toolkit)
 		{"GCM SHA256 supported", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", true},
 		{"GCM SHA384 supported", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", true},
 		{"CHACHA20 supported", "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", true},
 
-		// Ciphers in tls.InsecureCipherSuites (deprecated but still recognized)
-		{"3DES insecure but recognized", "TLS_RSA_WITH_3DES_EDE_CBC_SHA", true},
-		{"RC4 insecure but recognized", "TLS_RSA_WITH_RC4_128_SHA", true},
+		// Ciphers only in tls.InsecureCipherSuites — rejected by exporter-toolkit
+		{"3DES insecure rejected", "TLS_RSA_WITH_3DES_EDE_CBC_SHA", false},
+		{"RC4 insecure rejected", "TLS_RSA_WITH_RC4_128_SHA", false},
 
 		// Fabricated names that are NOT in Go's cipher suite list
 		{"fabricated cipher not supported", "TLS_FAKE_WITH_AES_128_GCM_SHA256", false},
@@ -580,9 +579,8 @@ func TestIsSupportedCipher(t *testing.T) {
 }
 
 // TestMapCipherSuitesFiltersGoUnsupported verifies that mapCipherSuites filters
-// out cipher names that are not recognized by Go's crypto/tls runtime. This
-// prevents the exporter-toolkit from rejecting unknown ciphers in FIPS builds
-// where the available set is restricted.
+// out cipher names not in tls.CipherSuites() (the secure set). This prevents
+// the exporter-toolkit from rejecting unknown ciphers and crash-looping.
 func TestMapCipherSuitesFiltersGoUnsupported(t *testing.T) {
 	// TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 is a standard Go cipher — should pass.
 	// TLS_FAKE_WITH_AES_128_GCM_SHA256 is fabricated — should be filtered even
@@ -598,16 +596,12 @@ func TestMapCipherSuitesFiltersGoUnsupported(t *testing.T) {
 
 // TestOldProfileCiphersAreGoSupported verifies that after both weak-cipher and
 // Go-runtime filtering, every remaining cipher from the Old TLS profile is
-// present in tls.CipherSuites() or tls.InsecureCipherSuites(). This is the
-// end-to-end check that prevents crash-loops in FIPS builds where the
-// exporter-toolkit rejects unrecognized cipher names.
+// present in tls.CipherSuites() (the secure set). The exporter-toolkit only
+// accepts ciphers from this set — any other name causes a crash-loop.
 func TestOldProfileCiphersAreGoSupported(t *testing.T) {
-	// Build the set of all cipher names known to the Go runtime
+	// Build the set of cipher names accepted by the exporter-toolkit
 	goSupported := make(map[string]bool)
 	for _, cs := range tls.CipherSuites() {
-		goSupported[cs.Name] = true
-	}
-	for _, cs := range tls.InsecureCipherSuites() {
 		goSupported[cs.Name] = true
 	}
 
@@ -619,7 +613,7 @@ func TestOldProfileCiphersAreGoSupported(t *testing.T) {
 
 	for _, c := range ciphers {
 		assert.True(t, goSupported[c],
-			"cipher %q from Old profile output is not in tls.CipherSuites() or "+
-				"tls.InsecureCipherSuites() — it would cause a crash-loop in FIPS builds", c)
+			"cipher %q from Old profile output is not in tls.CipherSuites() — "+
+				"the exporter-toolkit would reject it as an unknown cipher", c)
 	}
 }

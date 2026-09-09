@@ -207,11 +207,10 @@ func mapCipherSuites(ciphers []string) ([]string, []string) {
 			continue
 		}
 
-		// Filter ciphers not recognized by the Go runtime's crypto/tls
-		// package. In FIPS builds (X:strictfipsruntime), the available
-		// cipher set is restricted and the exporter-toolkit rejects
-		// unknown cipher names, causing the windows_exporter to
-		// crash-loop.
+		// Filter ciphers not in tls.CipherSuites() (the secure set).
+		// The exporter-toolkit only accepts names from that set —
+		// any other name is rejected as "unknown cipher", causing
+		// the windows_exporter to crash-loop.
 		if !isSupportedCipher(ianaName) {
 			unsupported = append(unsupported, cipher)
 			continue
@@ -246,23 +245,14 @@ func isWeakCipher(name string) bool {
 	return false
 }
 
-// isSupportedCipher returns true if the given IANA cipher suite name is
-// recognized by the Go runtime's crypto/tls package. It checks both
-// tls.CipherSuites() (secure suites) and tls.InsecureCipherSuites()
-// (deprecated but still recognized by Go).
-//
-// In FIPS builds (X:strictfipsruntime), tls.CipherSuites() returns a
-// restricted set and the exporter-toolkit validates cipher names against it.
-// Any cipher name not in that set is rejected as "unknown cipher", causing
-// the windows_exporter to crash-loop. This function prevents those ciphers
-// from being included in the webconfig.
+// isSupportedCipher returns true if the given IANA cipher suite name appears
+// in tls.CipherSuites() (the secure set). Ciphers that only appear in
+// tls.InsecureCipherSuites() are intentionally excluded because the
+// exporter-toolkit validates cipher names against tls.CipherSuites() alone —
+// any name not in that set is rejected as "unknown cipher", causing the
+// windows_exporter to crash-loop regardless of FIPS mode.
 func isSupportedCipher(ianaName string) bool {
 	for _, cs := range tls.CipherSuites() {
-		if cs.Name == ianaName {
-			return true
-		}
-	}
-	for _, cs := range tls.InsecureCipherSuites() {
 		if cs.Name == ianaName {
 			return true
 		}
