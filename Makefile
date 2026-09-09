@@ -54,7 +54,7 @@ verify: all verify-ote-discovery
 
 .PHONY: verify-ote-discovery
 verify-ote-discovery:
-	hack/verify-ote-discovery.sh
+	ote/verify-ote-discovery.sh
 
 ##@ General
 

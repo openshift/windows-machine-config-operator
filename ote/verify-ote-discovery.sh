@@ -9,6 +9,12 @@ set -o pipefail
 WMCO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "${WMCO_ROOT}"
 
+# The k8s test framework requires KUBECONFIG to be set; create a stub
+# so the AST test and binary can initialize without a real cluster connection.
+FAKE_KUBECONFIG=$(mktemp)
+trap 'rm -f -- "$FAKE_KUBECONFIG"' EXIT
+export KUBECONFIG="${FAKE_KUBECONFIG}"
+
 echo "==> Running OTE callback-signature static checks..."
 (cd ote && GOFLAGS="" GOWORK=off go test -v -run TestSpecTimeoutCallbackSignatures -count=1 ./cmd/wmco-tests-ext/)
 
@@ -20,12 +26,6 @@ if [ ! -x "${BINARY}" ]; then
     echo "ERROR: wmco-tests-ext binary not found at ${BINARY}"
     exit 1
 fi
-
-# The k8s test framework requires KUBECONFIG to be set; create a stub
-# so the binary can initialize without a real cluster connection.
-FAKE_KUBECONFIG=$(mktemp)
-trap 'rm -f -- "$FAKE_KUBECONFIG"' EXIT
-export KUBECONFIG="${FAKE_KUBECONFIG}"
 
 echo "==> Verifying OTE component registration (list components)..."
 COMPONENTS=$("${BINARY}" list components 2>&1) || {
