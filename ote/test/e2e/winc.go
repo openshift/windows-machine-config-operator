@@ -672,10 +672,9 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation [Disruptive][Serial]",
+	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation [Timeout:20m][Disruptive][Serial]",
 		g.SpecTimeout(15*time.Minute),
 		func(ctx g.SpecContext) {
-			skipIfWindowsNodesUnhealthy(oc)
 
 			winInternalIPs := getWindowsInternalIPs(oc)
 			o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
@@ -1153,8 +1152,6 @@ spec:
 			g.Skip("Platform none does not support Load balancer, skipping")
 		}
 
-		skipIfWindowsNodesUnhealthy(oc)
-
 		namespace := "winc-38186"
 		deploymentName := "win-webserver"
 		ctx, cancel := context.WithCancel(context.Background())
@@ -1233,7 +1230,7 @@ spec:
 	})
 
 	// author: jfrancoa@redhat.com
-	g.It("Smokerun-Author:jfrancoa-Medium-50403-wmco creates and maintains Windows services ConfigMap [Disruptive][Serial]",
+	g.It("Smokerun-Author:jfrancoa-Medium-50403-wmco creates and maintains Windows services ConfigMap [Timeout:35m][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			g.By("Check service configmap exists")
@@ -1301,51 +1298,53 @@ spec:
 		})
 
 	// author: jfrancoa@redhat.com
-	g.It("Author:jfrancoa-Smokerun-Medium-56354-Stop dependent services before stopping a service in WICD [Disruptive][Serial]", func() {
-		targetService := "containerd"
+	g.It("Author:jfrancoa-Smokerun-Medium-56354-Stop dependent services before stopping a service in WICD [Timeout:45m][Disruptive][Serial]",
+		g.SpecTimeout(40*time.Minute),
+		func(ctx g.SpecContext) {
+			targetService := "containerd"
 
-		g.By("Ensure Windows nodes are Ready before proceeding")
-		winHostNames := getWindowsHostNames(oc)
-		expectedWindowsNodes := len(winHostNames)
-		waitWindowsNodesReady(oc, expectedWindowsNodes, 10*time.Minute)
+			g.By("Ensure Windows nodes are Ready before proceeding")
+			winHostNames := getWindowsHostNames(oc)
+			expectedWindowsNodes := len(winHostNames)
+			waitWindowsNodesReady(oc, expectedWindowsNodes, 10*time.Minute)
 
-		defer waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes after WICD reconciliation
+			defer waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes after WICD reconciliation
 
-		for _, nodeName := range winHostNames {
-			g.By(fmt.Sprintf("Modify %v service binPath and check that it gets restored on %v", targetService, nodeName))
+			for _, nodeName := range winHostNames {
+				g.By(fmt.Sprintf("Modify %v service binPath and check that it gets restored on %v", targetService, nodeName))
 
-			initialBinPath, err := getServiceBinPath(oc, nodeName, windowsDebugImage, targetService)
-			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(initialBinPath).NotTo(o.BeEmpty(), "initial binPath should not be empty")
+				initialBinPath, err := getServiceBinPath(oc, nodeName, windowsDebugImage, targetService)
+				o.Expect(err).NotTo(o.HaveOccurred())
+				o.Expect(initialBinPath).NotTo(o.BeEmpty(), "initial binPath should not be empty")
 
-			modifiedBinPath := initialBinPath + " --service-name containerd"
-			err = setServiceBinPath(oc, nodeName, windowsDebugImage, targetService, modifiedBinPath)
-			o.Expect(err).NotTo(o.HaveOccurred())
+				modifiedBinPath := initialBinPath + " --service-name containerd"
+				err = setServiceBinPath(oc, nodeName, windowsDebugImage, targetService, modifiedBinPath)
+				o.Expect(err).NotTo(o.HaveOccurred())
 
-			g.By("Poll for the service binPath to be restored by WICD")
-			pollErr := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
-				currentBinPath, err := getServiceBinPath(oc, nodeName, windowsDebugImage, targetService)
-				if err != nil {
-					e2e.Logf("Error getting binPath: %v", err)
-					return false, nil
-				}
-				return currentBinPath == initialBinPath, nil
-			})
-			o.Expect(pollErr).NotTo(o.HaveOccurred(),
-				"Service binPath did not return to initial state within timeout")
+				g.By("Poll for the service binPath to be restored by WICD")
+				pollErr := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
+					currentBinPath, err := getServiceBinPath(oc, nodeName, windowsDebugImage, targetService)
+					if err != nil {
+						e2e.Logf("Error getting binPath: %v", err)
+						return false, nil
+					}
+					return currentBinPath == initialBinPath, nil
+				})
+				o.Expect(pollErr).NotTo(o.HaveOccurred(),
+					"Service binPath did not return to initial state within timeout")
 
-			afterBinPath, err := getServiceBinPath(oc, nodeName, windowsDebugImage, targetService)
-			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(afterBinPath).To(o.Equal(initialBinPath))
+				afterBinPath, err := getServiceBinPath(oc, nodeName, windowsDebugImage, targetService)
+				o.Expect(err).NotTo(o.HaveOccurred())
+				o.Expect(afterBinPath).To(o.Equal(initialBinPath))
 
-			g.By(fmt.Sprintf("Waiting for node %s to stabilize after WICD reconciliation", nodeName))
-			waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
-			time.Sleep(30 * time.Second)
-		}
-	})
+				g.By(fmt.Sprintf("Waiting for node %s to stabilize after WICD reconciliation", nodeName))
+				waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
+				time.Sleep(30 * time.Second)
+			}
+		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Longduration-Smokerun-Medium-76765-WICD-Remove-Services [Slow][Disruptive][Serial]",
+	g.It("Author:rrasouli-Longduration-Smokerun-Medium-76765-WICD-Remove-Services [Timeout:35m][Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
@@ -1583,7 +1582,7 @@ spec:
 		})
 
 	// author: jfrancoa@redhat.com
-	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Timeout:25m][Disruptive][Serial]",
+	g.It("Smokerun-Author:jfrancoa-Critical-50924-Windows instances react to kubelet CA rotation [Timeout:50m][Disruptive][Serial]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
 			g.Skip("Blocked by OCPBUGS-114564: WMCO reconfiguration hangs indefinitely when scaling MachineSet back to 2 nodes during defer cleanup")
@@ -1693,7 +1692,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Timeout:30m][Slow][Disruptive][Serial]",
+	g.It("Smokerun-Author:rrasouli-Longduration-High-33794-Watch cloud private key secret [Timeout:35m][Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -1797,7 +1796,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Smokerun-Author:rrasouli-Longduration-High-39451-Access Windows workload through clusterIP [Slow][Disruptive][Serial]",
+	g.It("Smokerun-Author:rrasouli-Longduration-High-39451-Access Windows workload through clusterIP [Timeout:35m][Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -1884,11 +1883,15 @@ spec:
 
 			zone := getAvailabilityZone(oc)
 			windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			// This MachineSet owns only a subset of the cluster's Windows nodes, so cleanup must
+			// restore its own replica count. Hardcoding it to 2 scales the MachineSet past its
+			// original size and leaves the cluster with an extra Windows node.
+			initialReplicas := getMachineSetReplicas(oc, windowsMachineSetName)
 			defer func() {
-				scaleWindowsMachineSet(oc, windowsMachineSetName, 10, 2, false)
-				waitWindowsNodesReady(oc, 2, 15*time.Minute) // Wait for 2 nodes after scale-down cleanup
+				scaleWindowsMachineSet(oc, windowsMachineSetName, 10, initialReplicas, false)
+				waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes
 			}()
-			scaleWindowsMachineSet(oc, windowsMachineSetName, 15, 3, false)
+			scaleWindowsMachineSet(oc, windowsMachineSetName, 15, initialReplicas+1, false)
 			waitWindowsNodesReady(oc, 3, 1200*time.Second)
 
 			winPods, err = getWorkloadsNames(oc, winDeployment, namespace)
@@ -1903,7 +1906,7 @@ spec:
 		})
 
 	// author: sgao@redhat.com
-	g.It("Author:sgao-Longduration-Smokerun-Medium-39030-Re queue on Windows machines edge cases [Slow][Disruptive][Serial]",
+	g.It("Author:sgao-Longduration-Smokerun-Medium-39030-Re queue on Windows machines edge cases [Timeout:35m][Slow][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -1932,13 +1935,12 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Timeout:20m][Disruptive][Serial]",
+	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Timeout:35m][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
 				g.Skip("platform none does not support Windows node reconciliation")
 			}
-			g.Skip("Blocked by OCPBUGS-114564: WMCO reconfiguration hangs indefinitely after triggering reconciliation via annotation change in Step 7")
 
 			namespace := "winc-87809"
 			daemonSetName := "test-windows-daemonset"

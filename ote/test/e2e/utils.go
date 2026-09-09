@@ -1400,6 +1400,20 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 	return machinesetName
 }
 
+// getMachineSetReplicas returns the desired replica count of the given MachineSet. Tests that scale
+// a MachineSet must capture this before scaling so cleanup restores the cluster's original size
+// instead of assuming a fixed count.
+func getMachineSetReplicas(oc *exutil.CLI, machineSetName string) int {
+	replicas, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"machinesets.machine.openshift.io", machineSetName, "-n", mcoNamespace,
+		"-o=jsonpath={.spec.replicas}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get replicas of MachineSet %s", machineSetName)
+
+	count, err := strconv.Atoi(strings.TrimSpace(replicas))
+	o.Expect(err).NotTo(o.HaveOccurred(), "Unexpected replica count %q for MachineSet %s", replicas, machineSetName)
+	return count
+}
+
 // scaleWindowsMachineSet scales the Windows MachineSet to the specified replica count.
 func scaleWindowsMachineSet(oc *exutil.CLI, machineSetName string, deadTime, replicas int, skipWait bool) {
 	err := oc.AsAdmin().WithoutNamespace().Run("scale").Args(
