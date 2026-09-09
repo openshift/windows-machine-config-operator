@@ -2,6 +2,7 @@ package payload
 
 import (
 	"crypto/sha256"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"os"
@@ -157,6 +158,11 @@ func generateFullWebConfig(minVersion string, cipherSuites, curvePrefs []string,
 // used by the Go crypto/tls package and the Prometheus exporter-toolkit
 // webconfig (e.g. "VersionTLS12" -> "TLS12"). Returns "TLS12" for unknown
 // values as a safe default.
+//
+// Note: In FIPS builds (X:strictfipsruntime), Go's crypto/tls enforces a
+// minimum of TLS 1.2 regardless of the configured min_version value.
+// Setting TLS10 or TLS11 here will not actually lower the TLS floor on the
+// node.
 func mapTLSVersion(v oconfig.TLSProtocolVersion) string {
 	if mapped, ok := tlsVersionMap[v]; ok {
 		return mapped
@@ -201,6 +207,16 @@ func mapCipherSuites(ciphers []string) ([]string, []string) {
 			continue
 		}
 
+		// Filter ciphers not recognized by the Go runtime's crypto/tls
+		// package. In FIPS builds (X:strictfipsruntime), the available
+		// cipher set is restricted and the exporter-toolkit rejects
+		// unknown cipher names, causing the windows_exporter to
+		// crash-loop.
+		if !isSupportedCipher(ianaName) {
+			unsupported = append(unsupported, cipher)
+			continue
+		}
+
 		// Filter weak cipher suites (DES/3DES, RC4, Blowfish, ECB, MD5, SHA-1)
 		if isWeakCipher(ianaName) {
 			unsupported = append(unsupported, cipher)
@@ -226,6 +242,30 @@ func isWeakCipher(name string) bool {
 	// SHA-1 MAC: IANA names end with "_SHA" (not "_SHA256" or "_SHA384")
 	if strings.HasSuffix(upper, "_SHA") {
 		return true
+	}
+	return false
+}
+
+// isSupportedCipher returns true if the given IANA cipher suite name is
+// recognized by the Go runtime's crypto/tls package. It checks both
+// tls.CipherSuites() (secure suites) and tls.InsecureCipherSuites()
+// (deprecated but still recognized by Go).
+//
+// In FIPS builds (X:strictfipsruntime), tls.CipherSuites() returns a
+// restricted set and the exporter-toolkit validates cipher names against it.
+// Any cipher name not in that set is rejected as "unknown cipher", causing
+// the windows_exporter to crash-loop. This function prevents those ciphers
+// from being included in the webconfig.
+func isSupportedCipher(ianaName string) bool {
+	for _, cs := range tls.CipherSuites() {
+		if cs.Name == ianaName {
+			return true
+		}
+	}
+	for _, cs := range tls.InsecureCipherSuites() {
+		if cs.Name == ianaName {
+			return true
+		}
 	}
 	return false
 }

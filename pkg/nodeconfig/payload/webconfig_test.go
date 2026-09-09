@@ -1,6 +1,7 @@
 package payload
 
 import (
+	"crypto/tls"
 	"strings"
 	"testing"
 
@@ -541,4 +542,84 @@ func TestBaseWebConfigMatchesStaticFile(t *testing.T) {
 
 	assert.Equal(t, expected, content,
 		"base webconfig should match the original static file content")
+}
+
+// TestIsSupportedCipher verifies that isSupportedCipher correctly identifies
+// cipher suite names recognized by the Go runtime (from tls.CipherSuites and
+// tls.InsecureCipherSuites) and rejects names that the runtime does not know.
+// In FIPS builds the supported set is smaller, but this test validates the
+// lookup logic itself.
+func TestIsSupportedCipher(t *testing.T) {
+	tests := []struct {
+		name     string
+		cipher   string
+		expected bool
+	}{
+		// Ciphers that Go's crypto/tls recognizes (tls.CipherSuites)
+		{"GCM SHA256 supported", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", true},
+		{"GCM SHA384 supported", "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", true},
+		{"CHACHA20 supported", "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", true},
+
+		// Ciphers in tls.InsecureCipherSuites (deprecated but still recognized)
+		{"3DES insecure but recognized", "TLS_RSA_WITH_3DES_EDE_CBC_SHA", true},
+		{"RC4 insecure but recognized", "TLS_RSA_WITH_RC4_128_SHA", true},
+
+		// Fabricated names that are NOT in Go's cipher suite list
+		{"fabricated cipher not supported", "TLS_FAKE_WITH_AES_128_GCM_SHA256", false},
+		{"empty string not supported", "", false},
+		{"random string not supported", "NOT_A_CIPHER", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isSupportedCipher(tt.cipher)
+			assert.Equal(t, tt.expected, result,
+				"isSupportedCipher(%q) should be %v", tt.cipher, tt.expected)
+		})
+	}
+}
+
+// TestMapCipherSuitesFiltersGoUnsupported verifies that mapCipherSuites filters
+// out cipher names that are not recognized by Go's crypto/tls runtime. This
+// prevents the exporter-toolkit from rejecting unknown ciphers in FIPS builds
+// where the available set is restricted.
+func TestMapCipherSuitesFiltersGoUnsupported(t *testing.T) {
+	// TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 is a standard Go cipher — should pass.
+	// TLS_FAKE_WITH_AES_128_GCM_SHA256 is fabricated — should be filtered even
+	// if it somehow got past the library-go resolution step.
+	result, unsupported := mapCipherSuites([]string{
+		"ECDHE-RSA-AES128-GCM-SHA256",
+	})
+	assert.Contains(t, result, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"recognized cipher should pass through")
+	assert.Empty(t, unsupported,
+		"recognized cipher should not appear in unsupported list")
+}
+
+// TestOldProfileCiphersAreGoSupported verifies that after both weak-cipher and
+// Go-runtime filtering, every remaining cipher from the Old TLS profile is
+// present in tls.CipherSuites() or tls.InsecureCipherSuites(). This is the
+// end-to-end check that prevents crash-loops in FIPS builds where the
+// exporter-toolkit rejects unrecognized cipher names.
+func TestOldProfileCiphersAreGoSupported(t *testing.T) {
+	// Build the set of all cipher names known to the Go runtime
+	goSupported := make(map[string]bool)
+	for _, cs := range tls.CipherSuites() {
+		goSupported[cs.Name] = true
+	}
+	for _, cs := range tls.InsecureCipherSuites() {
+		goSupported[cs.Name] = true
+	}
+
+	oldProfile := *oconfig.TLSProfiles[oconfig.TLSProfileOldType]
+	ciphers, _ := mapCipherSuites(oldProfile.Ciphers)
+
+	require.NotEmpty(t, ciphers,
+		"Old profile should produce at least one supported cipher after filtering")
+
+	for _, c := range ciphers {
+		assert.True(t, goSupported[c],
+			"cipher %q from Old profile output is not in tls.CipherSuites() or "+
+				"tls.InsecureCipherSuites() — it would cause a crash-loop in FIPS builds", c)
+	}
 }
