@@ -353,8 +353,8 @@ func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
 }
 
 // debugWindowsNodesNotReady captures comprehensive debug information when Windows nodes fail to become Ready
-func debugWindowsNodesNotReady(oc *exutil.CLI) {
-	e2e.Logf("===== DEBUG: Windows Nodes Not Ready - Capturing Diagnostic Information =====")
+func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
+	e2e.Logf("===== DEBUG: Windows Nodes Not Ready - Capturing Diagnostic Information (cancellable) =====")
 
 	// 1. Get detailed status for all Windows nodes
 	e2e.Logf("=== Windows Node Status ===")
@@ -367,8 +367,8 @@ func debugWindowsNodesNotReady(oc *exutil.CLI) {
 		e2e.Logf("Node status:\n%s", nodeOutput)
 	}
 
-	// 2. Get all node conditions for each Windows node
-	e2e.Logf("=== Windows Node Conditions (JSON) ===")
+	// 2. Get all node conditions for each Windows node (summary only, no sensitive data)
+	e2e.Logf("=== Windows Node Conditions ===")
 	nodeNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"nodes", "-l", windowsNodeLabel,
 		"-o=jsonpath={.items[*].metadata.name}").Output()
@@ -377,42 +377,34 @@ func debugWindowsNodesNotReady(oc *exutil.CLI) {
 			e2e.Logf("--- Node: %s ---", nodeName)
 			conditionsOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"node", nodeName,
-				"-o=jsonpath={.status.conditions}").Output()
+				"-o=jsonpath={.status.conditions[*].type}").Output()
 			if err == nil {
-				e2e.Logf("Conditions: %s", conditionsOutput)
-			}
-
-			// Get node annotations
-			annotationsOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"node", nodeName,
-				"-o=jsonpath={.metadata.annotations}").Output()
-			if err == nil {
-				e2e.Logf("Annotations: %s", annotationsOutput)
+				e2e.Logf("Condition types: %s", conditionsOutput)
 			}
 		}
 	}
 
-	// 3. Get WMCO operator logs (last 100 lines)
-	e2e.Logf("=== WMCO Operator Logs (last 100 lines) ===")
-	wmcoLogs, err := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
-		"deployment/windows-machine-config-operator",
-		"-n", wmcoNamespace,
-		"--tail=100").Output()
+	// 3. Get WMCO operator pod status (not logs, to avoid sensitive data)
+	e2e.Logf("=== WMCO Operator Pod Status ===")
+	wmcoPods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pods", "-n", wmcoNamespace,
+		"-l", "app=windows-machine-config-operator",
+		"-o=custom-columns=NAME:.metadata.name,PHASE:.status.phase").Output()
 	if err != nil {
-		e2e.Logf("ERROR: Failed to get WMCO logs: %v", err)
+		e2e.Logf("ERROR: Failed to get WMCO pod status: %v", err)
 	} else {
-		e2e.Logf("WMCO logs:\n%s", wmcoLogs)
+		e2e.Logf("WMCO pods:\n%s", wmcoPods)
 	}
 
-	// 4. Get events for Windows nodes
-	e2e.Logf("=== Events for Windows Nodes (last 20) ===")
+	// 4. Get event counts for Windows nodes (avoid raw messages with sensitive data)
+	e2e.Logf("=== Events for Windows Nodes (summary) ===")
 	if nodeNames != "" {
 		for _, nodeName := range strings.Fields(nodeNames) {
 			events, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"events", "--all-namespaces",
 				"--field-selector", fmt.Sprintf("involvedObject.name=%s", nodeName),
 				"--sort-by=.lastTimestamp",
-				"-o=custom-columns=TIME:.lastTimestamp,TYPE:.type,REASON:.reason,MESSAGE:.message").Output()
+				"-o=custom-columns=TYPE:.type,REASON:.reason").Output()
 			if err == nil {
 				e2e.Logf("Events for %s:\n%s", nodeName, events)
 			}
@@ -442,37 +434,27 @@ func debugWindowsNodesNotReady(oc *exutil.CLI) {
 		e2e.Logf("Machines:\n%s", machineOutput)
 	}
 
-	// 7. Get kubelet and WICD logs from NotReady nodes via oc debug node
-	e2e.Logf("=== Windows Node Service Logs (kubelet, WICD) ===")
+	// 7. Get Windows service status from NotReady nodes (avoid raw logs with sensitive data)
+	e2e.Logf("=== Windows Node Service Status ===")
 	if nodeNames != "" {
 		for _, nodeName := range strings.Fields(nodeNames) {
+			// Check context cancellation before each node capture
+			select {
+			case <-ctx.Done():
+				e2e.Logf("Diagnostic timeout reached, stopping node captures")
+				break
+			default:
+			}
+
 			// Check if node is NotReady
 			nodeReady, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"node", nodeName,
 				"-o=jsonpath={.status.conditions[?(@.type==\"Ready\")].status}").Output()
 			if err == nil && strings.TrimSpace(nodeReady) != "True" {
-				e2e.Logf("--- Capturing logs from NotReady node: %s ---", nodeName)
+				e2e.Logf("--- Service status from NotReady node: %s ---", nodeName)
 
-				// Get kubelet logs (last 50 lines)
-				kubeletLogs, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-					"Get-Content -Tail 50 C:\\k\\logs\\kubelet.log -ErrorAction SilentlyContinue")
-				if err != nil {
-					e2e.Logf("ERROR: Failed to get kubelet logs from %s: %v", nodeName, err)
-				} else {
-					e2e.Logf("Kubelet logs (last 50 lines) from %s:\n%s", nodeName, kubeletLogs)
-				}
-
-				// Get WICD logs (last 50 lines)
-				wicdLogs, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-					"Get-Content -Tail 50 C:\\k\\logs\\wicd.log -ErrorAction SilentlyContinue")
-				if err != nil {
-					e2e.Logf("ERROR: Failed to get WICD logs from %s: %v", nodeName, err)
-				} else {
-					e2e.Logf("WICD logs (last 50 lines) from %s:\n%s", nodeName, wicdLogs)
-				}
-
-				// Get Windows service status
-				serviceStatus, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				// Get Windows service status (from host, not container)
+				serviceStatus, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
 					"Get-Service kubelet,windows-instance-config-daemon,containerd | Format-Table -AutoSize | Out-String -Width 200")
 				if err != nil {
 					e2e.Logf("ERROR: Failed to get service status from %s: %v", nodeName, err)
@@ -487,10 +469,12 @@ func debugWindowsNodesNotReady(oc *exutil.CLI) {
 }
 
 // waitWindowsNodesReady polls until the expected number of Windows nodes report Ready status.
-// After 5 minutes of waiting, it captures debug information.
+// After 5 minutes of waiting, it captures debug information with a 2-minute deadline to avoid
+// consuming the caller's entire timeout budget.
 func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
 	debugCaptured := false
 	debugThreshold := 5 * time.Minute
+	diagnosticTimeout := 2 * time.Minute
 	startTime := time.Now()
 
 	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
@@ -512,8 +496,10 @@ func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Durat
 
 		// Capture debug info if we've been waiting too long and haven't captured yet
 		if !debugCaptured && time.Since(startTime) > debugThreshold && readyCount < expectedCount {
-			e2e.Logf("WARNING: Windows nodes not ready after %v, capturing debug information...", debugThreshold)
-			debugWindowsNodesNotReady(oc)
+			e2e.Logf("WARNING: Windows nodes not ready after %v, capturing debug information (timeout: %v)...", debugThreshold, diagnosticTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), diagnosticTimeout)
+			debugWindowsNodesNotReady(ctx, oc)
+			cancel()
 			debugCaptured = true
 		}
 
@@ -1341,8 +1327,14 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 		// CI e2e jobs use pattern like "ci-op-xxx-e2e" for Windows MachineSets
 		for _, ms := range strings.Split(machineSets, " ") {
 			if strings.Contains(ms, "-e2e") && !strings.Contains(ms, "worker") {
-				e2e.Logf("Found Windows MachineSet using CI e2e pattern: %s", ms)
-				return ms
+				// Verify this is actually a Windows MachineSet by checking the label
+				msLabels, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"machineset", ms, "-n", mcoNamespace,
+					"-o=jsonpath={.spec.template.metadata.labels.machine\\.openshift\\.io/os-id}").Output()
+				if err == nil && strings.TrimSpace(msLabels) == "Windows" {
+					e2e.Logf("Found Windows MachineSet using CI e2e pattern: %s", ms)
+					return ms
+				}
 			}
 		}
 

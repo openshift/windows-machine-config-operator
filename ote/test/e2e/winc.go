@@ -245,7 +245,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 				"SERVICES_LOG_FILE_AGE-",
 				"SERVICES_LOG_FLUSH_INTERVAL-").Execute()
 			o.Expect(cleanupErr).NotTo(o.HaveOccurred(), "failed to restore WMCO deployment configuration")
-			waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes
+			waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
 		}()
 
 		g.By("Wait for WMCO to reconcile and Windows nodes to be reconfigured")
@@ -672,12 +672,15 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation [Timeout:20m][Disruptive][Serial]",
-		g.SpecTimeout(15*time.Minute),
+	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation [Timeout:45m][Disruptive][Serial]",
+		g.SpecTimeout(40*time.Minute),
 		func(ctx g.SpecContext) {
 
 			winInternalIPs := getWindowsInternalIPs(oc)
 			o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
+
+			expectedNodes := len(winInternalIPs)
+			defer waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
 
 			for _, winhost := range winInternalIPs {
 				nodeName := getNodeNameFromIP(oc, winhost)
@@ -1411,7 +1414,7 @@ spec:
 			g.By("Step 7: Scale WMCO back to 1 and wait for node reconfiguration")
 			err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			waitWindowsNodesReady(oc, 2, 15*time.Minute) // Wait for 2 Ready nodes after WMCO scale up
+			waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
 
 			g.By("Step 8: Verify the initial state of services (all should be running)")
 			for _, nodeName := range winHostNames {
@@ -1485,7 +1488,7 @@ spec:
 			g.By("Step 11: Stop services on Windows workers")
 			maxRetries := 3
 			retryInterval := 30 * time.Second
-			defer waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes after cleanup
+			defer waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
 
 			// Stop-Service -Force handles the dependency chain that sc.exe stop
 			// cannot (error 1051). Kubelet and containerd are stopped together in
@@ -1542,7 +1545,7 @@ spec:
 			}
 
 			g.By("Step 12: Wait for nodes to recover and verify critical services")
-			waitWindowsNodesReady(oc, 2, 15*time.Minute) // Wait for 2 Ready nodes after recovery
+			waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
 			for _, nodeName := range winHostNames {
 				for _, svcName := range []string{"kubelet", "containerd"} {
 					ok, err := checkWindowsServiceRunning(oc, nodeName, windowsDebugImage, svcName)
@@ -1709,12 +1712,16 @@ spec:
 			zone := getAvailabilityZone(oc)
 			sourceMSName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
 			cloneMSName := strings.ReplaceAll(sourceMSName, "winworker", "winc-worker")
+
+			originalNodeNames := getWindowsHostNames(oc)
+			expectedOriginalNodes := len(originalNodeNames)
+
 			cloneWindowsMachineSet(oc, sourceMSName, cloneMSName)
 			defer func() {
 				oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 					"machinesets.machine.openshift.io", cloneMSName, "-n", mcoNamespace,
 					"--ignore-not-found").Execute()
-				waitWindowsNodesReady(oc, 2, 15*time.Minute) // Wait for original 2 nodes after clone cleanup
+				waitWindowsNodesReady(oc, expectedOriginalNodes, 15*time.Minute)
 			}()
 
 			g.By("Step 2: Scale WMCO to 0 and delete secrets")
@@ -1887,9 +1894,10 @@ spec:
 			// restore its own replica count. Hardcoding it to 2 scales the MachineSet past its
 			// original size and leaves the cluster with an extra Windows node.
 			initialReplicas := getMachineSetReplicas(oc, windowsMachineSetName)
+			originalWindowsNodeCount := len(getWindowsHostNames(oc))
 			defer func() {
 				scaleWindowsMachineSet(oc, windowsMachineSetName, 10, initialReplicas, false)
-				waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes
+				waitWindowsNodesReady(oc, originalWindowsNodeCount, 15*time.Minute)
 			}()
 			scaleWindowsMachineSet(oc, windowsMachineSetName, 15, initialReplicas+1, false)
 			waitWindowsNodesReady(oc, 3, 1200*time.Second)
@@ -1949,11 +1957,6 @@ spec:
 			appLabel := "test-windows-daemon"
 
 			createProject(oc, namespace)
-			defer waitWindowsNodesReady(oc, 2, 15*time.Minute)
-			defer func() {
-				oc.AsAdmin().WithoutNamespace().Run("delete").Args("daemonset", daemonSetName, "-n", namespace, "--ignore-not-found").Execute()
-			}()
-			defer deleteProject(oc, namespace)
 
 			g.By("Step 1: Deploy DaemonSet targeting Windows nodes")
 			manifest := generateWindowsDaemonSetYAML(daemonSetName, namespace, appLabel, windowsDebugImage)
@@ -1963,6 +1966,11 @@ spec:
 			g.By("Step 2: Wait for DaemonSet to be ready on all Windows nodes")
 			windowsNodes := getWindowsHostNames(oc)
 			expectedCount := len(windowsNodes)
+			defer waitWindowsNodesReady(oc, expectedCount, 15*time.Minute)
+			defer func() {
+				oc.AsAdmin().WithoutNamespace().Run("delete").Args("daemonset", daemonSetName, "-n", namespace, "--ignore-not-found").Execute()
+			}()
+			defer deleteProject(oc, namespace)
 			o.Expect(expectedCount).To(o.BeNumerically(">", 0), "No Windows nodes found")
 
 			pollErr := wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
