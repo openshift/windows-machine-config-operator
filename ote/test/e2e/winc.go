@@ -1938,6 +1938,8 @@ spec:
 	g.It("Author:rrasouli-Smokerun-High-87809-Node drain with DaemonSet workloads during Windows reconciliation [Timeout:35m][Disruptive][Serial]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
+			g.Skip("Blocked by OCPBUGS-114564: WMCO reconfiguration hangs indefinitely during defer cleanup after annotation change")
+
 			if isNone(oc) {
 				g.Skip("platform none does not support Windows node reconciliation")
 			}
