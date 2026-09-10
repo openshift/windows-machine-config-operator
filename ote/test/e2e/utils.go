@@ -67,6 +67,67 @@ func waitVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string, interval
 	o.Expect(err).NotTo(o.HaveOccurred(), "Timed out waiting for version annotation on node %s", windowsNodeName)
 }
 
+// reconfigurationStableChecks is how many consecutive clean polls waitWMCOReconfigurationComplete
+// requires. WMCO does not cordon the node the instant it is asked to reconfigure: a node observed
+// converged can start a fresh pass seconds later, so the absence of in-progress markers on a
+// single poll cannot distinguish "finished" from "not started yet".
+const reconfigurationStableChecks = 6
+
+// waitWMCOReconfigurationComplete blocks until WMCO has finished reconfiguring the given Windows
+// node and left it that way. A restored version annotation is not a sufficient completion signal:
+// WICD rewrites it early, while WMCO still holds the node cordoned and labelled upgrading, pending
+// a reboot, and with its CNI torn down. Pods scheduled onto a node in that state sit in
+// ContainerCreating with "cni plugin not initialized" until they time out. Any test that triggers a
+// reconfiguration must call this before returning, or it hands an unusable node to whatever runs
+// next.
+func waitWMCOReconfigurationComplete(oc *exutil.CLI, windowsNodeName string, timeout time.Duration) {
+	const versionKey = `{.metadata.annotations.windowsmachineconfig\.openshift\.io/version}`
+	const desiredVersionKey = `{.metadata.annotations.windowsmachineconfig\.openshift\.io/desired-version}`
+	// The scalars come first so the maps, whose values are free-form, cannot contain the separator.
+	const jsonPath = `{.spec.unschedulable}|{.status.conditions[?(@.type=="Ready")].status}|` +
+		versionKey + `|` + desiredVersionKey + `|{.metadata.labels}{.metadata.annotations}`
+
+	stable := 0
+	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
+		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"node", windowsNodeName, "-o=jsonpath="+jsonPath).Output()
+		if err != nil {
+			e2e.Logf("Error getting node %s: %v", windowsNodeName, err)
+			stable = 0
+			return false, nil
+		}
+		fields := strings.SplitN(output, "|", 5)
+		if len(fields) != 5 {
+			stable = 0
+			return false, nil
+		}
+		unschedulable, ready, version, desiredVersion, metadata := fields[0], fields[1], fields[2], fields[3], fields[4]
+
+		// An absent reboot-required annotation and upgrading label are both rendered as a missing
+		// map key, and reboot-required carries an empty value, so match on the key names.
+		switch {
+		case unschedulable == "true":
+			e2e.Logf("Node %s is still cordoned by WMCO", windowsNodeName)
+		case ready != "True":
+			e2e.Logf("Node %s is not Ready yet (Ready=%q)", windowsNodeName, ready)
+		case version == "" || version != desiredVersion:
+			e2e.Logf("Node %s has not converged yet (version=%q desired-version=%q)", windowsNodeName, version, desiredVersion)
+		case strings.Contains(metadata, "windowsmachineconfig.openshift.io/upgrading"):
+			e2e.Logf("Node %s is still labelled upgrading", windowsNodeName)
+		case strings.Contains(metadata, "windowsmachineconfig.openshift.io/reboot-required"):
+			e2e.Logf("Node %s is still pending a reboot", windowsNodeName)
+		default:
+			stable++
+			e2e.Logf("Node %s looks reconfigured (%d/%d consecutive checks)", windowsNodeName, stable, reconfigurationStableChecks)
+			return stable >= reconfigurationStableChecks, nil
+		}
+		stable = 0
+		return false, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr,
+		fmt.Sprintf("node %s did not settle after WMCO reconfiguration within %v", windowsNodeName, timeout))
+}
+
 // getWindowsHostNames returns the hostnames of all Windows nodes in the cluster.
 func getWindowsHostNames(oc *exutil.CLI) []string {
 	winHostNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("nodes", "-l", windowsNodeLabel, "-o=jsonpath={.items[*].status.addresses[?(@.type==\"Hostname\")].address}").Output()
@@ -353,8 +414,8 @@ func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
 }
 
 // debugWindowsNodesNotReady captures comprehensive debug information when Windows nodes fail to become Ready
-func debugWindowsNodesNotReady(oc *exutil.CLI) {
-	e2e.Logf("===== DEBUG: Windows Nodes Not Ready - Capturing Diagnostic Information =====")
+func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
+	e2e.Logf("===== DEBUG: Windows Nodes Not Ready - Capturing Diagnostic Information (cancellable) =====")
 
 	// 1. Get detailed status for all Windows nodes
 	e2e.Logf("=== Windows Node Status ===")
@@ -367,8 +428,8 @@ func debugWindowsNodesNotReady(oc *exutil.CLI) {
 		e2e.Logf("Node status:\n%s", nodeOutput)
 	}
 
-	// 2. Get all node conditions for each Windows node
-	e2e.Logf("=== Windows Node Conditions (JSON) ===")
+	// 2. Get all node conditions for each Windows node (summary only, no sensitive data)
+	e2e.Logf("=== Windows Node Conditions ===")
 	nodeNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"nodes", "-l", windowsNodeLabel,
 		"-o=jsonpath={.items[*].metadata.name}").Output()
@@ -377,42 +438,34 @@ func debugWindowsNodesNotReady(oc *exutil.CLI) {
 			e2e.Logf("--- Node: %s ---", nodeName)
 			conditionsOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"node", nodeName,
-				"-o=jsonpath={.status.conditions}").Output()
+				"-o=jsonpath={.status.conditions[*].type}").Output()
 			if err == nil {
-				e2e.Logf("Conditions: %s", conditionsOutput)
-			}
-
-			// Get node annotations
-			annotationsOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"node", nodeName,
-				"-o=jsonpath={.metadata.annotations}").Output()
-			if err == nil {
-				e2e.Logf("Annotations: %s", annotationsOutput)
+				e2e.Logf("Condition types: %s", conditionsOutput)
 			}
 		}
 	}
 
-	// 3. Get WMCO operator logs (last 100 lines)
-	e2e.Logf("=== WMCO Operator Logs (last 100 lines) ===")
-	wmcoLogs, err := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
-		"deployment/windows-machine-config-operator",
-		"-n", wmcoNamespace,
-		"--tail=100").Output()
+	// 3. Get WMCO operator pod status (not logs, to avoid sensitive data)
+	e2e.Logf("=== WMCO Operator Pod Status ===")
+	wmcoPods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pods", "-n", wmcoNamespace,
+		"-l", "app=windows-machine-config-operator",
+		"-o=custom-columns=NAME:.metadata.name,PHASE:.status.phase").Output()
 	if err != nil {
-		e2e.Logf("ERROR: Failed to get WMCO logs: %v", err)
+		e2e.Logf("ERROR: Failed to get WMCO pod status: %v", err)
 	} else {
-		e2e.Logf("WMCO logs:\n%s", wmcoLogs)
+		e2e.Logf("WMCO pods:\n%s", wmcoPods)
 	}
 
-	// 4. Get events for Windows nodes
-	e2e.Logf("=== Events for Windows Nodes (last 20) ===")
+	// 4. Get event counts for Windows nodes (avoid raw messages with sensitive data)
+	e2e.Logf("=== Events for Windows Nodes (summary) ===")
 	if nodeNames != "" {
 		for _, nodeName := range strings.Fields(nodeNames) {
 			events, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"events", "--all-namespaces",
 				"--field-selector", fmt.Sprintf("involvedObject.name=%s", nodeName),
 				"--sort-by=.lastTimestamp",
-				"-o=custom-columns=TIME:.lastTimestamp,TYPE:.type,REASON:.reason,MESSAGE:.message").Output()
+				"-o=custom-columns=TYPE:.type,REASON:.reason").Output()
 			if err == nil {
 				e2e.Logf("Events for %s:\n%s", nodeName, events)
 			}
@@ -442,37 +495,27 @@ func debugWindowsNodesNotReady(oc *exutil.CLI) {
 		e2e.Logf("Machines:\n%s", machineOutput)
 	}
 
-	// 7. Get kubelet and WICD logs from NotReady nodes via oc debug node
-	e2e.Logf("=== Windows Node Service Logs (kubelet, WICD) ===")
+	// 7. Get Windows service status from NotReady nodes (avoid raw logs with sensitive data)
+	e2e.Logf("=== Windows Node Service Status ===")
 	if nodeNames != "" {
 		for _, nodeName := range strings.Fields(nodeNames) {
+			// Check context cancellation before each node capture
+			select {
+			case <-ctx.Done():
+				e2e.Logf("Diagnostic timeout reached, stopping node captures")
+				break
+			default:
+			}
+
 			// Check if node is NotReady
 			nodeReady, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"node", nodeName,
 				"-o=jsonpath={.status.conditions[?(@.type==\"Ready\")].status}").Output()
 			if err == nil && strings.TrimSpace(nodeReady) != "True" {
-				e2e.Logf("--- Capturing logs from NotReady node: %s ---", nodeName)
+				e2e.Logf("--- Service status from NotReady node: %s ---", nodeName)
 
-				// Get kubelet logs (last 50 lines)
-				kubeletLogs, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-					"Get-Content -Tail 50 C:\\k\\logs\\kubelet.log -ErrorAction SilentlyContinue")
-				if err != nil {
-					e2e.Logf("ERROR: Failed to get kubelet logs from %s: %v", nodeName, err)
-				} else {
-					e2e.Logf("Kubelet logs (last 50 lines) from %s:\n%s", nodeName, kubeletLogs)
-				}
-
-				// Get WICD logs (last 50 lines)
-				wicdLogs, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
-					"Get-Content -Tail 50 C:\\k\\logs\\wicd.log -ErrorAction SilentlyContinue")
-				if err != nil {
-					e2e.Logf("ERROR: Failed to get WICD logs from %s: %v", nodeName, err)
-				} else {
-					e2e.Logf("WICD logs (last 50 lines) from %s:\n%s", nodeName, wicdLogs)
-				}
-
-				// Get Windows service status
-				serviceStatus, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
+				// Get Windows service status (from host, not container)
+				serviceStatus, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
 					"Get-Service kubelet,windows-instance-config-daemon,containerd | Format-Table -AutoSize | Out-String -Width 200")
 				if err != nil {
 					e2e.Logf("ERROR: Failed to get service status from %s: %v", nodeName, err)
@@ -487,10 +530,12 @@ func debugWindowsNodesNotReady(oc *exutil.CLI) {
 }
 
 // waitWindowsNodesReady polls until the expected number of Windows nodes report Ready status.
-// After 5 minutes of waiting, it captures debug information.
+// After 5 minutes of waiting, it captures debug information with a 2-minute deadline to avoid
+// consuming the caller's entire timeout budget.
 func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
 	debugCaptured := false
 	debugThreshold := 5 * time.Minute
+	diagnosticTimeout := 2 * time.Minute
 	startTime := time.Now()
 
 	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
@@ -512,8 +557,10 @@ func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Durat
 
 		// Capture debug info if we've been waiting too long and haven't captured yet
 		if !debugCaptured && time.Since(startTime) > debugThreshold && readyCount < expectedCount {
-			e2e.Logf("WARNING: Windows nodes not ready after %v, capturing debug information...", debugThreshold)
-			debugWindowsNodesNotReady(oc)
+			e2e.Logf("WARNING: Windows nodes not ready after %v, capturing debug information (timeout: %v)...", debugThreshold, diagnosticTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), diagnosticTimeout)
+			debugWindowsNodesNotReady(ctx, oc)
+			cancel()
 			debugCaptured = true
 		}
 
@@ -768,14 +815,26 @@ func getRandomString(length int) string {
 }
 
 // createProject creates a namespace if it does not already exist and sets privileged SCC.
+// A namespace left behind by a previous attempt may still be Terminating, and the API server
+// rejects every object created in one ("unable to create new content in namespace ... because it
+// is being terminated"). Such a namespace is not reusable, so wait for it to disappear first.
 func createProject(oc *exutil.CLI, namespace string) {
-	exists := oc.AsAdmin().WithoutNamespace().Run("get").Args("namespace", namespace).Execute()
-	if exists == nil {
-		e2e.Logf("Namespace %s already exists, skipping creation", namespace)
-		return
+	phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"namespace", namespace, "-o=jsonpath={.status.phase}").Output()
+	if err == nil {
+		if strings.TrimSpace(phase) != "Terminating" {
+			e2e.Logf("Namespace %s already exists, skipping creation", namespace)
+			return
+		}
+		e2e.Logf("Namespace %s is Terminating, waiting for deletion to complete before recreating it", namespace)
+		pollErr := wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
+			gone := oc.AsAdmin().WithoutNamespace().Run("get").Args("namespace", namespace).Execute() != nil
+			return gone, nil
+		})
+		compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("namespace %s did not finish terminating", namespace))
 	}
 	oc.CreateSpecifiedNamespaceAsAdmin(namespace)
-	err := compat_otp.SetNamespacePrivileged(oc, namespace)
+	err = compat_otp.SetNamespacePrivileged(oc, namespace)
 	o.Expect(err).NotTo(o.HaveOccurred())
 }
 
@@ -1082,11 +1141,18 @@ func getWindowsBuildID(oc *exutil.CLI, nodeID string) (string, error) {
 	return build, err
 }
 
+// maxLBConnectivityFailures is how many consecutive failed checks checkConnectivity tolerates
+// before reporting the load balancer as broken. A freshly created cloud load balancer has a DNS
+// name that is not yet consistently resolvable, so an isolated curl failure says nothing about
+// whether the service stayed up. Only a sustained run of failures does.
+const maxLBConnectivityFailures = 3
+
 // checkConnectivity repeatedly curls the given IP on port 80 and verifies the Windows web server
 // response. Runs until the context is cancelled. Used with runInBackground for load-testing.
 func checkConnectivity(ctx context.Context, IP string, delay int) error {
 	url := "http://" + net.JoinHostPort(IP, "80")
 	timeout := strconv.Itoa(delay)
+	failures := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -1099,13 +1165,26 @@ func checkConnectivity(ctx context.Context, IP string, delay int) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if err != nil {
-			return fmt.Errorf("curl to %s failed: %v (output: %s)", url, err, string(out))
+
+		var checkErr error
+		switch {
+		case err != nil:
+			checkErr = fmt.Errorf("curl to %s failed: %v (output: %s)", url, err, string(out))
+		case !strings.Contains(string(out), "Windows Container Web Server"):
+			checkErr = fmt.Errorf("unexpected response from LB %s: %s", url, string(out))
 		}
-		if !strings.Contains(string(out), "Windows Container Web Server") {
-			return fmt.Errorf("unexpected response from LB %s: %s", url, string(out))
+		if checkErr == nil {
+			failures = 0
+			e2e.Logf("Checked LB connectivity of %s", url)
+			continue
 		}
-		e2e.Logf("Checked LB connectivity of %s", url)
+
+		failures++
+		if failures >= maxLBConnectivityFailures {
+			return fmt.Errorf("LB %s failed %d consecutive connectivity checks, last error: %w",
+				url, failures, checkErr)
+		}
+		e2e.Logf("LB connectivity check %d/%d failed, retrying: %v", failures, maxLBConnectivityFailures, checkErr)
 	}
 }
 
@@ -1341,8 +1420,14 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 		// CI e2e jobs use pattern like "ci-op-xxx-e2e" for Windows MachineSets
 		for _, ms := range strings.Split(machineSets, " ") {
 			if strings.Contains(ms, "-e2e") && !strings.Contains(ms, "worker") {
-				e2e.Logf("Found Windows MachineSet using CI e2e pattern: %s", ms)
-				return ms
+				// Verify this is actually a Windows MachineSet by checking the label
+				msLabels, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"machineset", ms, "-n", mcoNamespace,
+					"-o=jsonpath={.spec.template.metadata.labels.machine\\.openshift\\.io/os-id}").Output()
+				if err == nil && strings.TrimSpace(msLabels) == "Windows" {
+					e2e.Logf("Found Windows MachineSet using CI e2e pattern: %s", ms)
+					return ms
+				}
 			}
 		}
 
@@ -1430,26 +1515,50 @@ func scaleWindowsMachineSet(oc *exutil.CLI, machineSetName string, deadTime, rep
 // cloneWindowsMachineSet creates a copy of the existing Windows MachineSet with a different name
 // and zero replicas.
 func cloneWindowsMachineSet(oc *exutil.CLI, sourceName, cloneName string) {
+	// The caller deletes cloneName during cleanup. If the names match, that cleanup
+	// destroys the cluster's own Windows MachineSet and every node it owns.
+	o.Expect(cloneName).NotTo(o.Equal(sourceName),
+		"clone MachineSet name must differ from source %s", sourceName)
+
 	msJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"machinesets.machine.openshift.io", sourceName, "-n", mcoNamespace, "-o=json").Output()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get source MachineSet %s", sourceName)
 
 	msJSON = strings.ReplaceAll(msJSON, sourceName, cloneName)
 
+	var ms map[string]interface{}
+	err = json.Unmarshal([]byte(msJSON), &ms)
+	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to parse source MachineSet %s", sourceName)
+
+	// Drop server-managed fields so the API server accepts this as a new object,
+	// and start at zero replicas so no machine is provisioned before the caller scales up.
+	delete(ms, "status")
+	if metadata, ok := ms["metadata"].(map[string]interface{}); ok {
+		for _, field := range []string{"resourceVersion", "uid", "creationTimestamp", "generation", "selfLink", "managedFields"} {
+			delete(metadata, field)
+		}
+		if annotations, ok := metadata["annotations"].(map[string]interface{}); ok {
+			delete(annotations, "kubectl.kubernetes.io/last-applied-configuration")
+		}
+	}
+	if spec, ok := ms["spec"].(map[string]interface{}); ok {
+		spec["replicas"] = 0
+	}
+
+	cloneJSON, err := json.Marshal(ms)
+	o.Expect(err).NotTo(o.HaveOccurred())
+
 	tmpFile, err := os.CreateTemp("", "machineset-*.json")
 	o.Expect(err).NotTo(o.HaveOccurred())
 	defer os.Remove(tmpFile.Name())
 
-	_, err = tmpFile.WriteString(msJSON)
+	_, err = tmpFile.Write(cloneJSON)
 	o.Expect(err).NotTo(o.HaveOccurred())
 	tmpFile.Close()
 
-	err = oc.AsAdmin().WithoutNamespace().Run("apply").Args("-f", tmpFile.Name()).Execute()
+	// create, not apply: apply would silently mutate an existing MachineSet instead of cloning.
+	err = oc.AsAdmin().WithoutNamespace().Run("create").Args("-f", tmpFile.Name()).Execute()
 	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create cloned MachineSet %s", cloneName)
-
-	err = oc.AsAdmin().WithoutNamespace().Run("scale").Args(
-		"--replicas=0", "machinesets.machine.openshift.io", cloneName, "-n", mcoNamespace).Execute()
-	o.Expect(err).NotTo(o.HaveOccurred())
 }
 
 // extractPrivateKeyToFile reads the cloud-private-key secret and writes it to a temp file.
