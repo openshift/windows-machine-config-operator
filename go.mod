@@ -5,12 +5,17 @@ go 1.23.0
 toolchain go1.23.5
 
 replace (
+	// pin 1.23 versions
+	github.com/go-openapi/jsonpointer => github.com/go-openapi/jsonpointer v0.22.0
+	github.com/go-openapi/jsonreference => github.com/go-openapi/jsonreference v0.21.1
 	// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
 	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/golang-jwt/jwt/v5 => github.com/golang-jwt/jwt/v5 v5.2.2
 
 	// pin kube-openapi to pre structured-merge-diff/v6 to resolve apimachinery type mismatch
 	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250628140032-d90c4fd18f59
+	// pin 1.23 versions
+	k8s.io/utils => k8s.io/utils v0.0.0-20250820121507-0af2bda4dd1d
 )
 
 require (
