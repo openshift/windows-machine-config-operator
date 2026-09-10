@@ -1308,7 +1308,7 @@ spec:
 			expectedWindowsNodes := len(winHostNames)
 			waitWindowsNodesReady(oc, expectedWindowsNodes, 10*time.Minute)
 
-			defer waitWindowsNodesReady(oc, 2, 15*time.Minute) // Always restore 2 Ready nodes after WICD reconciliation
+			defer waitWindowsNodesReady(oc, expectedWindowsNodes, 15*time.Minute)
 
 			for _, nodeName := range winHostNames {
 				g.By(fmt.Sprintf("Modify %v service binPath and check that it gets restored on %v", targetService, nodeName))
