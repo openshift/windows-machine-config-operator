@@ -1,6 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "baseBranches": ["master"],
+  "baseBranchPatterns": [
+    "master"
+  ],
   "extends": [
     "config:recommended",
     ":gitSignOff",
