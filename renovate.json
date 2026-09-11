@@ -1,6 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "baseBranches": ["master"],
+  "baseBranchPatterns": [
+    "master"
+  ],
   "extends": [
     "config:recommended",
     ":gitSignOff",
@@ -140,14 +142,22 @@
     "branchPrefix": "konflux/mintmaker/",
     "packageRules": [
       {
-        "matchManagers": ["gomod"],
-        "matchBaseBranches": ["!master"],
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchBaseBranches": [
+          "!master"
+        ],
         "enabled": false
       },
       {
         "groupName": "Go dependencies",
-        "matchManagers": ["gomod"],
-        "matchBaseBranches": ["master"],
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchBaseBranches": [
+          "master"
+        ],
         "matchPackageNames": [
           "!k8s.io/kubernetes",
           "!github.com/openshift/api",
