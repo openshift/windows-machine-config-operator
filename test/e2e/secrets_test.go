@@ -74,6 +74,11 @@ func (tc *testContext) testUserData(t *testing.T) {
 	require.NoError(t, err, "could not retrieve userdata contents")
 	assert.Contains(t, userData, string(ssh.MarshalAuthorizedKey(pubKey)), "public key not found within Windows userdata")
 	t.Run("Delete the userdata secret", tc.testUserDataRegeneration)
+}
+
+func userDataTamperTestSuite(t *testing.T) {
+	tc, err := NewTestContext()
+	require.NoError(t, err)
 	t.Run("Update the userdata secret with invalid data", tc.testUserDataTamper)
 }
 
