@@ -104,7 +104,10 @@ func (tc *testContext) waitForNewMachineNodes() error {
 
 	// waitForConfiguredWindowsNodes will re-populate gc.machineNodes with the configured nodes found
 	log.Printf("waiting for existing Machine nodes to be removed and replaced")
-	return wait.Poll(retryInterval, time.Minute*10, func() (done bool, err error) {
+	// This timeout must allow for a full replacement Machine to be provisioned and configured
+	// (vmConfigurationTime), plus a safety margin, in case WMCO's maxUnhealthyCount safety gate (see
+	// isAllowedDeletion) restricts deletion of an old Machine until a sibling's replacement becomes healthy.
+	return wait.Poll(retryInterval, vmConfigurationTime+time.Minute*5, func() (done bool, err error) {
 		err = tc.waitForConfiguredWindowsNodes(gc.numberOfMachineNodes, false, false)
 		if err != nil {
 			log.Printf("error waiting for configured Windows Nodes: %s", err)
@@ -227,9 +230,6 @@ func generatePrivateKey() ([]byte, error) {
 // createPrivateKeySecret ensures that a private key secret exists with the correct data in both the operator and test
 // namespaces
 func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
-	if err := tc.ensurePrivateKeyDeleted(); err != nil {
-		return fmt.Errorf("error ensuring any existing private key is removed: %w", err)
-	}
 	var keyData []byte
 	var err error
 	if useKnownKey {
@@ -244,19 +244,35 @@ func (tc *testContext) createPrivateKeySecret(useKnownKey bool) error {
 		}
 	}
 
-	privateKeySecret := core.Secret{
-		Data: map[string][]byte{secrets.PrivateKeySecretKey: keyData},
-		ObjectMeta: meta.ObjectMeta{
-			Name: secrets.PrivateKeySecret,
-		},
-	}
-
-	// Create the private key secret in both the operator's namespace, and the test namespace. This is needed to make it
-	// possible to SSH into the Windows nodes from pods spun up in the test namespace.
+	// Update the private key secret in place, falling back to Create if it doesn't yet exist, in both the
+	// operator's namespace and the test namespace. This is needed to make it possible to SSH into the Windows
+	// nodes from pods spun up in the test namespace.
+	// An atomic update-or-create is used here instead of deleting then re-creating the secret, to avoid a window
+	// where the secret does not exist at all. That window was observed to cause a burst of unrelated
+	// "Secret cloud-private-key not found" errors across multiple WMCO controllers while this test rotated keys.
 	for _, ns := range []string{wmcoNamespace, tc.workloadNamespace} {
-		_, err := tc.client.K8s.CoreV1().Secrets(ns).Create(context.TODO(), &privateKeySecret, meta.CreateOptions{})
-		if err != nil {
-			return fmt.Errorf("could not create private key secret in namespace %s: %w", ns, err)
+		existing, getErr := tc.client.K8s.CoreV1().Secrets(ns).Get(context.TODO(), secrets.PrivateKeySecret,
+			meta.GetOptions{})
+		if getErr != nil {
+			if !apierrors.IsNotFound(getErr) {
+				return fmt.Errorf("error getting private key secret in namespace %s: %w", ns, getErr)
+			}
+			newSecret := &core.Secret{
+				Data: map[string][]byte{secrets.PrivateKeySecretKey: keyData},
+				ObjectMeta: meta.ObjectMeta{
+					Name: secrets.PrivateKeySecret,
+				},
+			}
+			if _, err := tc.client.K8s.CoreV1().Secrets(ns).Create(context.TODO(), newSecret,
+				meta.CreateOptions{}); err != nil {
+				return fmt.Errorf("could not create private key secret in namespace %s: %w", ns, err)
+			}
+			continue
+		}
+		existing.Data = map[string][]byte{secrets.PrivateKeySecretKey: keyData}
+		if _, err := tc.client.K8s.CoreV1().Secrets(ns).Update(context.TODO(), existing,
+			meta.UpdateOptions{}); err != nil {
+			return fmt.Errorf("could not update private key secret in namespace %s: %w", ns, err)
 		}
 	}
 	return nil
