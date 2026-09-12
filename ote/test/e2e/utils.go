@@ -352,8 +352,131 @@ func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
 	return nodeName
 }
 
+// debugWindowsNodesNotReady captures comprehensive debug information when Windows nodes fail to become Ready
+func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
+	e2e.Logf("===== DEBUG: Windows Nodes Not Ready - Capturing Diagnostic Information (cancellable) =====")
+
+	// 1. Get detailed status for all Windows nodes
+	e2e.Logf("=== Windows Node Status ===")
+	nodeOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"nodes", "-l", windowsNodeLabel,
+		"-o=custom-columns=NAME:.metadata.name,STATUS:.status.conditions[?(@.type==\"Ready\")].status,REASON:.status.conditions[?(@.type==\"Ready\")].reason,MESSAGE:.status.conditions[?(@.type==\"Ready\")].message").Output()
+	if err != nil {
+		e2e.Logf("ERROR: Failed to get node status: %v", err)
+	} else {
+		e2e.Logf("Node status:\n%s", nodeOutput)
+	}
+
+	// 2. Get all node conditions for each Windows node (summary only, no sensitive data)
+	e2e.Logf("=== Windows Node Conditions ===")
+	nodeNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"nodes", "-l", windowsNodeLabel,
+		"-o=jsonpath={.items[*].metadata.name}").Output()
+	if err == nil {
+		for _, nodeName := range strings.Fields(nodeNames) {
+			e2e.Logf("--- Node: %s ---", nodeName)
+			conditionsOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"node", nodeName,
+				"-o=jsonpath={.status.conditions[*].type}").Output()
+			if err == nil {
+				e2e.Logf("Condition types: %s", conditionsOutput)
+			}
+		}
+	}
+
+	// 3. Get WMCO operator pod status (not logs, to avoid sensitive data)
+	e2e.Logf("=== WMCO Operator Pod Status ===")
+	wmcoPods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pods", "-n", wmcoNamespace,
+		"-l", "app=windows-machine-config-operator",
+		"-o=custom-columns=NAME:.metadata.name,PHASE:.status.phase").Output()
+	if err != nil {
+		e2e.Logf("ERROR: Failed to get WMCO pod status: %v", err)
+	} else {
+		e2e.Logf("WMCO pods:\n%s", wmcoPods)
+	}
+
+	// 4. Get event counts for Windows nodes (avoid raw messages with sensitive data)
+	e2e.Logf("=== Events for Windows Nodes (summary) ===")
+	if nodeNames != "" {
+		for _, nodeName := range strings.Fields(nodeNames) {
+			events, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"events", "--all-namespaces",
+				"--field-selector", fmt.Sprintf("involvedObject.name=%s", nodeName),
+				"--sort-by=.lastTimestamp",
+				"-o=custom-columns=TYPE:.type,REASON:.reason").Output()
+			if err == nil {
+				e2e.Logf("Events for %s:\n%s", nodeName, events)
+			}
+		}
+	}
+
+	// 5. Get WICD pod status (if running)
+	e2e.Logf("=== WICD Pod Status ===")
+	wicdPods, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pods", "-n", wmcoNamespace,
+		"-l", "app=windows-instance-config-daemon",
+		"-o=custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,PHASE:.status.phase,READY:.status.conditions[?(@.type==\"Ready\")].status").Output()
+	if err != nil {
+		e2e.Logf("ERROR: Failed to get WICD pods: %v", err)
+	} else {
+		e2e.Logf("WICD pods:\n%s", wicdPods)
+	}
+
+	// 6. Check Machine status (if using Machine API)
+	e2e.Logf("=== Machine Status ===")
+	machineOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"machines", "-n", "openshift-machine-api",
+		"-o=custom-columns=NAME:.metadata.name,PHASE:.status.phase,NODE:.status.nodeRef.name,PROVIDERSTATE:.status.providerStatus.instanceState").Output()
+	if err != nil {
+		e2e.Logf("INFO: No machines or failed to query: %v", err)
+	} else {
+		e2e.Logf("Machines:\n%s", machineOutput)
+	}
+
+	// 7. Get Windows service status from NotReady nodes (avoid raw logs with sensitive data)
+	e2e.Logf("=== Windows Node Service Status ===")
+	if nodeNames != "" {
+		for _, nodeName := range strings.Fields(nodeNames) {
+			// Check context cancellation before each node capture
+			select {
+			case <-ctx.Done():
+				e2e.Logf("Diagnostic timeout reached, stopping node captures")
+				break
+			default:
+			}
+
+			// Check if node is NotReady
+			nodeReady, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"node", nodeName,
+				"-o=jsonpath={.status.conditions[?(@.type==\"Ready\")].status}").Output()
+			if err == nil && strings.TrimSpace(nodeReady) != "True" {
+				e2e.Logf("--- Service status from NotReady node: %s ---", nodeName)
+
+				// Get Windows service status (from host, not container)
+				serviceStatus, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
+					"Get-Service kubelet,windows-instance-config-daemon,containerd | Format-Table -AutoSize | Out-String -Width 200")
+				if err != nil {
+					e2e.Logf("ERROR: Failed to get service status from %s: %v", nodeName, err)
+				} else {
+					e2e.Logf("Windows service status on %s:\n%s", nodeName, serviceStatus)
+				}
+			}
+		}
+	}
+
+	e2e.Logf("===== END DEBUG =====")
+}
+
 // waitWindowsNodesReady polls until the expected number of Windows nodes report Ready status.
+// After 5 minutes of waiting, it captures debug information with a 2-minute deadline to avoid
+// consuming the caller's entire timeout budget.
 func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
+	debugCaptured := false
+	debugThreshold := 5 * time.Minute
+	diagnosticTimeout := 2 * time.Minute
+	startTime := time.Now()
+
 	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
 		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"nodes", "-l", windowsNodeLabel,
@@ -370,6 +493,16 @@ func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Durat
 			}
 		}
 		e2e.Logf("Windows nodes ready: %d/%d", readyCount, expectedCount)
+
+		// Capture debug info if we've been waiting too long and haven't captured yet
+		if !debugCaptured && time.Since(startTime) > debugThreshold && readyCount < expectedCount {
+			e2e.Logf("WARNING: Windows nodes not ready after %v, capturing debug information (timeout: %v)...", debugThreshold, diagnosticTimeout)
+			ctx, cancel := context.WithTimeout(context.Background(), diagnosticTimeout)
+			debugWindowsNodesNotReady(ctx, oc)
+			cancel()
+			debugCaptured = true
+		}
+
 		return readyCount >= expectedCount, nil
 	})
 	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("timed out waiting for %d Windows nodes to be Ready after %v", expectedCount, timeout))
@@ -1182,11 +1315,52 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 		machineSets, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"machinesets", "-n", mcoNamespace, "-o=jsonpath={.items[*].metadata.name}").Output()
 		o.Expect(err).NotTo(o.HaveOccurred())
+
+		// Try pattern matching first
 		for _, ms := range strings.Split(machineSets, " ") {
 			if strings.Contains(ms, "winworker") || strings.Contains(ms, defaultWindowsMS) || strings.HasSuffix(ms, "-wm") {
 				return ms
 			}
 		}
+
+		// Fallback: Try CI e2e pattern (contains "-e2e" but not "worker")
+		// CI e2e jobs use pattern like "ci-op-xxx-e2e" for Windows MachineSets
+		for _, ms := range strings.Split(machineSets, " ") {
+			if strings.Contains(ms, "-e2e") && !strings.Contains(ms, "worker") {
+				// Verify this is actually a Windows MachineSet by checking the label
+				msLabels, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"machineset", ms, "-n", mcoNamespace,
+					"-o=jsonpath={.spec.template.metadata.labels.machine\\.openshift\\.io/os-id}").Output()
+				if err == nil && strings.TrimSpace(msLabels) == "Windows" {
+					e2e.Logf("Found Windows MachineSet using CI e2e pattern: %s", ms)
+					return ms
+				}
+			}
+		}
+
+		// Final fallback: Get MachineSet from Windows node's Machine annotation
+		// This handles cases where MachineSet naming is non-standard
+		winHostNames := getWindowsHostNames(oc)
+		if len(winHostNames) > 0 {
+			machineAnnotation, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"node", winHostNames[0], "-o=jsonpath={.metadata.annotations.machine\\.openshift\\.io/machine}").Output()
+			if err == nil && machineAnnotation != "" {
+				// Extract Machine name from "openshift-machine-api/machine-name"
+				parts := strings.Split(strings.TrimSpace(machineAnnotation), "/")
+				if len(parts) == 2 {
+					machineName := parts[1]
+					// Get MachineSet from Machine's ownerReferences or labels
+					machineSetLabel, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+						"machine", machineName, "-n", mcoNamespace,
+						"-o=jsonpath={.metadata.labels.machine\\.openshift\\.io/cluster-api-machineset}").Output()
+					if err == nil && machineSetLabel != "" {
+						e2e.Logf("Found Windows MachineSet from node Machine annotation: %s", machineSetLabel)
+						return strings.TrimSpace(machineSetLabel)
+					}
+				}
+			}
+		}
+
 		e2e.Failf("Windows MachineSet not found in cluster. Found: %s", machineSets)
 	}
 
@@ -1216,6 +1390,20 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 	}
 
 	return machinesetName
+}
+
+// getMachineSetReplicas returns the desired replica count of the given MachineSet. Tests that scale
+// a MachineSet must capture this before scaling so cleanup restores the cluster's original size
+// instead of assuming a fixed count.
+func getMachineSetReplicas(oc *exutil.CLI, machineSetName string) int {
+	replicas, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"machinesets.machine.openshift.io", machineSetName, "-n", mcoNamespace,
+		"-o=jsonpath={.spec.replicas}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get replicas of MachineSet %s", machineSetName)
+
+	count, err := strconv.Atoi(strings.TrimSpace(replicas))
+	o.Expect(err).NotTo(o.HaveOccurred(), "Unexpected replica count %q for MachineSet %s", replicas, machineSetName)
+	return count
 }
 
 // scaleWindowsMachineSet scales the Windows MachineSet to the specified replica count.
