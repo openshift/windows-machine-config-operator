@@ -296,6 +296,15 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			}
 			if node.Annotations[metadata.VersionAnnotation] == version.Get() {
 				// version annotation exists with a valid value, node is fully configured.
+				// However, the webconfig may need a lightweight update: when the cluster
+				// TLS security profile changes the operator restarts with a new webconfig,
+				// but Machine-API nodes with a current version annotation skip
+				// configureMachine → ensureInstanceIsUpToDate entirely. Check and push
+				// the updated webconfig here so Machine-API nodes stay in sync.
+				if err := r.ensureWebConfigForNode(ctx, *node); err != nil {
+					return ctrl.Result{}, fmt.Errorf("error ensuring webconfig is up to date on node %s: %w",
+						node.Name, err)
+				}
 				return ctrl.Result{}, nil
 			}
 		}

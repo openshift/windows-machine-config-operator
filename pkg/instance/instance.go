@@ -47,6 +47,18 @@ func (i *Info) UpToDate() bool {
 	return present && versionAnnotation == version.Get()
 }
 
+// WebConfigUpToDate returns true if the instance's webconfig SHA annotation
+// matches the given expected SHA. An empty expected SHA is treated as up to
+// date (nothing to compare against). A missing annotation on the node is
+// treated as outdated so the webconfig will be pushed and the annotation set.
+func (i *Info) WebConfigUpToDate(expectedSHA string) bool {
+	if expectedSHA == "" || i.Node == nil {
+		return true
+	}
+	nodeSHA, present := i.Node.GetAnnotations()[metadata.WebConfigSHAAnnotation]
+	return present && nodeSHA == expectedSHA
+}
+
 // UpgradeRequired returns true if the instance needs to go through the upgrade process
 func (i *Info) UpgradeRequired() bool {
 	// instance being up to date implies instance is fully upgraded
