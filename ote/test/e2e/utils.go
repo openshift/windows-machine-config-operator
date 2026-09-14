@@ -2099,3 +2099,55 @@ func testTraffic(oc *exutil.CLI, testURL string, winNodes []string) {
 		o.Expect(statusCode).To(o.Equal(200), "expected status code 200 on %v from %v, but got %d", testURL, nodeName, statusCode)
 	}
 }
+
+// getNumNodesWithAnnotation returns the number of Windows nodes whose
+// windowsmachineconfig.openshift.io/version annotation matches annotationValue.
+func getNumNodesWithAnnotation(oc *exutil.CLI, annotationValue string) int {
+	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"nodes", "-l", windowsNodeLabel,
+		"-o=jsonpath={.items[*].metadata.annotations.windowsmachineconfig\\.openshift\\.io\\/version}").Output()
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, v := range strings.Fields(output) {
+		if v == annotationValue {
+			count++
+		}
+	}
+	return count
+}
+
+// generateClusterAutoscalerYAML returns a YAML manifest for a ClusterAutoscaler.
+func generateClusterAutoscalerYAML() string {
+	return `apiVersion: autoscaling.openshift.io/v1
+kind: ClusterAutoscaler
+metadata:
+  name: default
+spec:
+  podPriorityThreshold: -10
+  resourceLimits:
+    maxNodesTotal: 24
+  scaleDown:
+    enabled: true
+    delayAfterAdd: 10s
+    delayAfterDelete: 10s
+    delayAfterFailure: 10s
+    unneededTime: 10s`
+}
+
+// generateMachineAutoscalerYAML returns a YAML manifest for a MachineAutoscaler targeting a MachineSet.
+func generateMachineAutoscalerYAML(machineSetName string, minReplicas, maxReplicas int) string {
+	return fmt.Sprintf(`apiVersion: autoscaling.openshift.io/v1beta1
+kind: MachineAutoscaler
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  minReplicas: %d
+  maxReplicas: %d
+  scaleTargetRef:
+    apiVersion: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: %s`, machineSetName, mcoNamespace, minReplicas, maxReplicas, machineSetName)
+}

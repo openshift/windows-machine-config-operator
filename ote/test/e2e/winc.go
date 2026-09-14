@@ -2065,6 +2065,226 @@ spec:
 			o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after WMCO reconciliation")
 		})
 
+	// author: rrasouli@redhat.com
+	g.It("OCP-42047 Cluster autoscaling with Windows nodes [Serial][Timeout:45m]",
+		g.SpecTimeout(40*time.Minute),
+		func(ctx g.SpecContext) {
+			if isNone(oc) {
+				g.Skip("platform none does not support changing namespace and scaling up machines")
+			}
+
+			namespace := "winc-42047"
+			defer deleteProject(oc, namespace)
+			createProject(oc, namespace)
+
+			g.By("Step 1: Clone Windows MachineSet and scale to 1")
+			zone := getAvailabilityZone(oc)
+			sourceMSName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			cloneMSName := sourceMSName + "-clone"
+			o.Expect(cloneMSName).NotTo(o.Equal(sourceMSName))
+
+			originalWindowsNodeCount := len(getWindowsHostNames(oc))
+			cloneWindowsMachineSet(oc, sourceMSName, cloneMSName)
+			defer func() {
+				oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+					"machinesets.machine.openshift.io", cloneMSName, "-n", mcoNamespace,
+					"--ignore-not-found").Execute()
+				waitWindowsNodesReady(oc, originalWindowsNodeCount, 15*time.Minute)
+			}()
+			scaleWindowsMachineSet(oc, cloneMSName, 25, 1, false)
+
+			g.By("Step 2: Create cluster and machine autoscaler")
+			clusterAutoscalerYAML := generateClusterAutoscalerYAML()
+			err := createResourceFromString(oc, "", clusterAutoscalerYAML)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			defer oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+				"clusterautoscaler", "default", "--ignore-not-found").Execute()
+
+			machineAutoscalerYAML := generateMachineAutoscalerYAML(cloneMSName, 1, 4)
+			err = createResourceFromString(oc, mcoNamespace, machineAutoscalerYAML)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			defer oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+				"machineautoscaler", cloneMSName, "-n", mcoNamespace, "--ignore-not-found").Execute()
+
+			g.By("Step 3: Create Windows workloads with resource limits")
+			manifest := generateWindowsWebServerYAML(windowsWorkloads, namespace, windowsDebugImage, 1, false, "1", "")
+			err = createResourceFromString(oc, namespace, manifest)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			err = waitForDeploymentReady(oc, windowsWorkloads, namespace, 5*time.Minute)
+			o.Expect(err).NotTo(o.HaveOccurred())
+
+			if iaasPlatform == "gcp" || iaasPlatform == "vsphere" {
+				g.By("Step 4: Scale up the Windows workload to 4")
+				err = scaleDeployment(oc, windowsWorkloads, 4, namespace)
+				o.Expect(err).NotTo(o.HaveOccurred())
+
+				g.By("Step 5: Wait for Windows nodes to auto scale to 2")
+				waitForMachinesetReady(oc, cloneMSName, 20, 2)
+			} else {
+				g.By("Step 4: Scale up the Windows workload to 2")
+				err = scaleDeployment(oc, windowsWorkloads, 2, namespace)
+				o.Expect(err).NotTo(o.HaveOccurred())
+
+				g.By("Step 5: Wait for Windows nodes to auto scale to 2")
+				waitForMachinesetReady(oc, cloneMSName, 20, 2)
+			}
+
+			g.By("Step 6: Scale down the Windows workload to 1")
+			err = scaleDeployment(oc, windowsWorkloads, 1, namespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			waitForMachinesetReady(oc, cloneMSName, 10, 1)
+		})
+
+	// author: rrasouli@redhat.com
+	g.It("OCP-39640 Replace private key during Windows machine configuration [Serial][Timeout:50m]",
+		g.SpecTimeout(45*time.Minute),
+		func(ctx g.SpecContext) {
+			// vSphere contains a builtin private and public key with its template,
+			// currently changing its private key is super challenging
+			if iaasPlatform == "vsphere" {
+				g.Skip(fmt.Sprintf("%s does not support key replacement, skipping", iaasPlatform))
+			}
+			if isNone(oc) {
+				g.Skip("Platform none does not support key replacement, skipping")
+			}
+
+			g.By("Step 1: Capture initial state and extract private key")
+			zone := getAvailabilityZone(oc)
+			msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			initialReplicas := getMachineSetReplicas(oc, msName)
+			expectedNodes := len(getWindowsHostNames(oc))
+			privateKeyFile := extractPrivateKeyToFile(oc)
+			defer os.Remove(privateKeyFile)
+
+			g.By("Step 2: Scale down the machineset to 1")
+			defer func() {
+				scaleWindowsMachineSet(oc, msName, 45, initialReplicas, false)
+				waitWindowsNodesReady(oc, expectedNodes, 50*time.Minute)
+			}()
+			scaleWindowsMachineSet(oc, msName, 18, 1, false)
+
+			g.By("Step 3: Scale down WMCO to 0")
+			defer scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+			err := scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+
+			g.By("Step 4: Replace the private key with a newly created key during machine scale up")
+			defer func() {
+				oc.AsAdmin().WithoutNamespace().Run("create").Args(
+					"secret", "generic", "cloud-private-key",
+					"--from-file=private-key.pem="+privateKeyFile,
+					"-n", wmcoNamespace).Execute()
+			}()
+			_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+				"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
+			o.Expect(err).NotTo(o.HaveOccurred())
+
+			g.By("Step 5: Scale up the machineset")
+			scaleWindowsMachineSet(oc, msName, 18, initialReplicas, true)
+
+			defer os.Remove("mykey")
+			defer os.Remove("mykey.pub")
+			cmd := "ssh-keygen -N '' -C 'test key' -f mykey"
+			_, err = exec.Command("bash", "-c", cmd).CombinedOutput()
+			o.Expect(err).NotTo(o.HaveOccurred())
+			defer oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+				"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
+			_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args(
+				"secret", "generic", "cloud-private-key",
+				"--from-file=private-key.pem=mykey", "-n", wmcoNamespace).Output()
+			o.Expect(err).NotTo(o.HaveOccurred())
+
+			g.By("Step 6: Wait for nodes to be in a Ready status")
+			err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			// A delay waiting for machine upgrade to be completed
+			waitUntilWMCOStatusChanged(oc, "\"unhealthy\":0", "1m")
+			waitWindowsNodesReady(oc, expectedNodes, 3000*time.Second)
+		})
+
+	// author: rrasouli@redhat.com
+	g.It("OCP-35707 Re-create Windows nodes not matching wmco version annotation [Serial][Timeout:50m]",
+		g.SpecTimeout(45*time.Minute),
+		func(ctx g.SpecContext) {
+			if isNone(oc) {
+				g.Skip(fmt.Sprintf("%s does not support LB nor machineset, skipping", iaasPlatform))
+			}
+
+			namespace := "winc-35707"
+			deploymentName := "win-webserver"
+			createProject(oc, namespace)
+			defer deleteProject(oc, namespace)
+
+			g.By("Step 1: Capture initial state")
+			zone := getAvailabilityZone(oc)
+			msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			initialReplicas := getMachineSetReplicas(oc, msName)
+			expectedNodes := len(getWindowsHostNames(oc))
+
+			g.By("Step 2: Deploy Windows web server workload")
+			includeLB := iaasPlatform != "vsphere" && iaasPlatform != "nutanix"
+			manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, includeLB, "", "")
+			err := createResourceFromString(oc, namespace, manifest)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
+			o.Expect(err).NotTo(o.HaveOccurred())
+
+			// Background connectivity check
+			var bgCtx context.Context
+			var bgCancel context.CancelFunc
+			if includeLB {
+				externalIP, exErr := getExternalIP(iaasPlatform, oc, deploymentName, namespace)
+				o.Expect(exErr).NotTo(o.HaveOccurred())
+				bgCtx, bgCancel = context.WithCancel(context.Background())
+				defer bgCancel()
+				runInBackground(bgCtx, bgCancel, checkConnectivity, externalIP, 60)
+			}
+
+			g.By("Step 3: Scale machines to initialReplicas+1")
+			defer waitWindowsNodesReady(oc, expectedNodes, time.Second*1000)
+			defer scaleWindowsMachineSet(oc, msName, 18, initialReplicas, false)
+			scaleWindowsMachineSet(oc, msName, 18, initialReplicas+1, false)
+			// Wait for the added node to be in Ready state, otherwise workloads
+			// won't get scheduled into it.
+			waitWindowsNodesReady(oc, expectedNodes+1, 300*time.Second)
+
+			g.By("Step 4: Scale workloads to 9")
+			err = scaleDeployment(oc, deploymentName, 9, namespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+
+			g.By("Step 5: Tamper Windows machines version annotation and verify service continues")
+			defer scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+			err = scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			for _, node := range getWindowsHostNames(oc) {
+				_, annotateErr := oc.AsAdmin().WithoutNamespace().Run("annotate").Args("node", node, "--overwrite",
+					"windowsmachineconfig.openshift.io/version=invalidVersion").Output()
+				o.Expect(annotateErr).NotTo(o.HaveOccurred(), "failed to annotate node %s", node)
+				waitVersionAnnotationReady(oc, node, 30*time.Second, 600*time.Second)
+			}
+			// Scaling WMCO back to 1 we can expect to have new nodes instead of
+			// wrong version annotated nodes
+			err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
+			msg, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"pods", "-owide", "-n", namespace).Output()
+			o.Expect(err).NotTo(o.HaveOccurred())
+			e2e.Logf("%s", msg)
+			for ok := true; ok; ok = (getNumNodesWithAnnotation(oc, "invalidVersion") > 0) {
+				waitForMachinesetReady(oc, msName, 28, initialReplicas+1)
+			}
+
+			if includeLB {
+				// Context was cancelled due to an error
+				if bgCtx.Err() != nil {
+					e2e.Failf("Connectivity check failed")
+				} else {
+					bgCancel() // Stop go routine
+					e2e.Logf("Ending checkConnectivity")
+				}
+			}
+		})
+
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Medium-37472-Idempotent check of service running in Windows node [Disruptive]", func() {
 		if isNone(oc) {
