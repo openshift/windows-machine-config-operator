@@ -46,7 +46,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 		o.Expect(err).NotTo(o.HaveOccurred(), "trusted-ca configmap not found")
 	})
 
-	g.It("Smokerun-Author:rrasouli-Longduration-Critical-90290-[node-proxy]-Remove trusted CA from cluster proxy and verify propagation [Serial][Disruptive][Slow]",
+	g.It("Smokerun-Author:rrasouli-Longduration-Critical-90290-[node-proxy]-Remove trusted CA from cluster proxy and verify propagation [Timeout:50m][Serial][Disruptive][Slow]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
 			defer restoreProxyEnvironment(oc, initialProxySpec)
@@ -72,7 +72,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			}
 		})
 
-	g.It("Smokerun-Author:rrasouli-Longduration-Critical-90289-[node-proxy]-Remove proxy variables and verify WMCO propagation [Serial][Disruptive][Slow]",
+	g.It("Smokerun-Author:rrasouli-Longduration-Critical-90289-[node-proxy]-Remove proxy variables and verify WMCO propagation [Timeout:65m][Serial][Disruptive][Slow]",
 		g.SpecTimeout(60*time.Minute),
 		func(ctx g.SpecContext) {
 			winNodes := getWindowsNodeNames(oc)
@@ -131,7 +131,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			}
 		})
 
-	g.It("Smokerun-Author:rrasouli-Longduration-Critical-66670-[node-proxy]-Cluster-wide proxy trusted-ca configmap tests [Serial][Disruptive][Slow]",
+	g.It("Smokerun-Author:rrasouli-Longduration-Critical-66670-[node-proxy]-Cluster-wide proxy trusted-ca configmap tests [Timeout:35m][Serial][Disruptive][Slow]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			defer restoreProxyEnvironment(oc, initialProxySpec)
@@ -183,7 +183,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			waitForCM(oc, trustedCACM, trustedCACM, wmcoNamespace)
 		})
 
-	g.It("Smokerun-Author:rrasouli-Critical-68320-[node-proxy]-Import custom CA certificates into Windows node system store [Serial][Disruptive]",
+	g.It("Smokerun-Author:rrasouli-Critical-68320-[node-proxy]-Import custom CA certificates into Windows node system store [Timeout:50m][Serial][Disruptive]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
 			const (
@@ -240,7 +240,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			checkUserCertificatesOnNodes(oc, userSelfSignedCommonName, 0)
 		})
 
-	g.It("Author:rrasouli-Smokerun-Longduration-Critical-71173-[node-proxy]-Test connectivity from Windows nodes behind proxy [Serial][Disruptive][Slow]",
+	g.It("Author:rrasouli-Smokerun-Longduration-Critical-71173-[node-proxy]-Test connectivity from Windows nodes behind proxy [Timeout:35m][Serial][Disruptive][Slow]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
 			o.Expect(getClusterProxy(oc, "status.noProxy")).ToNot(o.BeEmpty(), "status.noProxy is not set on the cluster")
