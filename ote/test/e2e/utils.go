@@ -2102,12 +2102,12 @@ func testTraffic(oc *exutil.CLI, testURL string, winNodes []string) {
 
 // getNumNodesWithAnnotation returns the number of Windows nodes whose
 // windowsmachineconfig.openshift.io/version annotation matches annotationValue.
-func getNumNodesWithAnnotation(oc *exutil.CLI, annotationValue string) int {
+func getNumNodesWithAnnotation(oc *exutil.CLI, annotationValue string) (int, error) {
 	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"nodes", "-l", windowsNodeLabel,
 		"-o=jsonpath={.items[*].metadata.annotations.windowsmachineconfig\\.openshift\\.io\\/version}").Output()
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("failed to get node annotations: %w", err)
 	}
 	count := 0
 	for _, v := range strings.Fields(output) {
@@ -2115,7 +2115,7 @@ func getNumNodesWithAnnotation(oc *exutil.CLI, annotationValue string) int {
 			count++
 		}
 	}
-	return count
+	return count, nil
 }
 
 // generateClusterAutoscalerYAML returns a YAML manifest for a ClusterAutoscaler.

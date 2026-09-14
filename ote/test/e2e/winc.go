@@ -2066,7 +2066,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("OCP-42047 Cluster autoscaling with Windows nodes [Serial][Timeout:45m]",
+	g.It("OCP-42047 Cluster autoscaling with Windows nodes [Serial][Disruptive][Timeout:45m]",
 		g.SpecTimeout(40*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -2136,7 +2136,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("OCP-39640 Replace private key during Windows machine configuration [Serial][Timeout:50m]",
+	g.It("OCP-39640 Replace private key during Windows machine configuration [Serial][Disruptive][Timeout:50m]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
 			// vSphere contains a builtin private and public key with its template,
@@ -2203,7 +2203,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("OCP-35707 Re-create Windows nodes not matching wmco version annotation [Serial][Timeout:50m]",
+	g.It("OCP-35707 Re-create Windows nodes not matching wmco version annotation [Serial][Disruptive][Timeout:50m]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
@@ -2270,9 +2270,19 @@ spec:
 				"pods", "-owide", "-n", namespace).Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
 			e2e.Logf("%s", msg)
-			for ok := true; ok; ok = (getNumNodesWithAnnotation(oc, "invalidVersion") > 0) {
-				waitForMachinesetReady(oc, msName, 28, initialReplicas+1)
-			}
+			pollErr := wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
+				count, err := getNumNodesWithAnnotation(oc, "invalidVersion")
+				if err != nil {
+					e2e.Logf("Error checking annotation count: %v", err)
+					return false, nil // retry on transient errors
+				}
+				if count > 0 {
+					waitForMachinesetReady(oc, msName, 28, initialReplicas+1)
+					return false, nil // keep waiting
+				}
+				return true, nil // all invalid annotations cleared
+			})
+			o.Expect(pollErr).NotTo(o.HaveOccurred(), "Timed out waiting for invalid version annotations to be cleared")
 
 			if includeLB {
 				// Context was cancelled due to an error
