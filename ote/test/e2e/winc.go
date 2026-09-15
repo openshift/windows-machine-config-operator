@@ -2177,10 +2177,9 @@ spec:
 			g.By("Step 5: Scale up the machineset")
 			scaleWindowsMachineSet(oc, msName, 18, initialReplicas, true)
 
-			keyDir, err := os.MkdirTemp("", "winc-39640-key-*")
-			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create temp dir for ssh key")
-			defer os.RemoveAll(keyDir)
-			keyPath := filepath.Join(keyDir, "mykey")
+			keyPath := filepath.Join(os.TempDir(), fmt.Sprintf("winc-39640-%d-mykey", time.Now().UnixNano()))
+			defer os.Remove(keyPath)
+			defer os.Remove(keyPath + ".pub")
 			cmd := fmt.Sprintf("ssh-keygen -N '' -C 'test key' -f %s", keyPath)
 			out, err := exec.Command("bash", "-c", cmd).CombinedOutput()
 			o.Expect(err).NotTo(o.HaveOccurred(), "ssh-keygen failed: %s", string(out))
