@@ -2086,12 +2086,12 @@ spec:
 
 			originalWindowsNodeCount := len(getWindowsHostNames(oc))
 			cloneWindowsMachineSet(oc, sourceMSName, cloneMSName)
-			defer func() {
+			g.DeferCleanup(func() {
 				oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 					"machinesets.machine.openshift.io", cloneMSName, "-n", mcoNamespace,
 					"--ignore-not-found").Execute()
 				waitWindowsNodesReady(oc, originalWindowsNodeCount, 15*time.Minute)
-			}()
+			})
 			scaleWindowsMachineSet(oc, cloneMSName, 25, 1, false)
 
 			g.By("Step 2: Create cluster and machine autoscaler")
@@ -2124,10 +2124,22 @@ spec:
 			g.By(fmt.Sprintf("Step 5: Wait for clone MachineSet to auto scale from %d to %d", baselineReplicas, baselineReplicas+1))
 			waitForMachinesetReady(oc, cloneMSName, 20, baselineReplicas+1)
 
-			g.By("Step 6: Scale down the Windows workload to 1")
+			g.By("Step 6: Scale down the Windows workload to 1 and verify autoscaler scales down the clone MachineSet")
 			err = scaleDeployment(oc, windowsWorkloads, 1, namespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			waitForMachinesetReady(oc, cloneMSName, 10, baselineReplicas)
+
+			// waitForMachinesetReady uses >= semantics (readyReplicas >= target), so it
+			// would return immediately after scale-up when the MachineSet still sits at
+			// baselineReplicas+1. Poll .spec.replicas via getMachineSetReplicas instead
+			// to confirm the cluster-autoscaler actually scaled the MachineSet back down.
+			pollErr := wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
+				currentReplicas := getMachineSetReplicas(oc, cloneMSName)
+				e2e.Logf("Waiting for MachineSet %s to scale down: current replicas %d, target <= %d",
+					cloneMSName, currentReplicas, baselineReplicas)
+				return currentReplicas <= baselineReplicas, nil
+			})
+			o.Expect(pollErr).NotTo(o.HaveOccurred(),
+				"MachineSet %s did not scale down to %d replicas within 10 minutes", cloneMSName, baselineReplicas)
 		})
 
 	// author: rrasouli@redhat.com
@@ -2152,24 +2164,26 @@ spec:
 			defer os.Remove(privateKeyFile)
 
 			g.By("Step 2: Scale down the machineset to 1")
-			defer func() {
+			g.DeferCleanup(func() {
 				scaleWindowsMachineSet(oc, msName, 45, initialReplicas, false)
 				waitWindowsNodesReady(oc, expectedNodes, 40*time.Minute)
-			}()
+			})
 			scaleWindowsMachineSet(oc, msName, 18, 1, false)
 
 			g.By("Step 3: Scale down WMCO to 0")
-			defer scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+			g.DeferCleanup(func() {
+				scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
+			})
 			err := scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("Step 4: Replace the private key with a newly created key during machine scale up")
-			defer func() {
+			g.DeferCleanup(func() {
 				oc.AsAdmin().WithoutNamespace().Run("create").Args(
 					"secret", "generic", "cloud-private-key",
 					"--from-file=private-key.pem="+privateKeyFile,
 					"-n", wmcoNamespace).Execute()
-			}()
+			})
 			_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 				"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
@@ -2177,9 +2191,10 @@ spec:
 			g.By("Step 5: Scale up the machineset")
 			scaleWindowsMachineSet(oc, msName, 18, initialReplicas, true)
 
-			keyPath := filepath.Join(os.TempDir(), fmt.Sprintf("winc-39640-%d-mykey", time.Now().UnixNano()))
-			defer os.Remove(keyPath)
-			defer os.Remove(keyPath + ".pub")
+			keyDir, err := os.MkdirTemp("", "winc-39640-key-*")
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create temp dir for ssh key")
+			defer os.RemoveAll(keyDir)
+			keyPath := filepath.Join(keyDir, "mykey")
 			cmd := fmt.Sprintf("ssh-keygen -N '' -C 'test key' -f %s", keyPath)
 			out, err := exec.Command("bash", "-c", cmd).CombinedOutput()
 			o.Expect(err).NotTo(o.HaveOccurred(), "ssh-keygen failed: %s", string(out))
