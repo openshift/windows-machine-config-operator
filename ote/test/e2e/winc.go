@@ -1599,7 +1599,8 @@ spec:
 			// Scale down Windows MachineSet to 1 node
 			zone := getAvailabilityZone(oc)
 			windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
-			initialReplicas := getMachineSetReplicas(oc, windowsMachineSetName)
+			initialReplicas, err := getMachineSetReplicas(oc, windowsMachineSetName)
+			o.Expect(err).NotTo(o.HaveOccurred())
 			originalWindowsNodeCount := len(getWindowsHostNames(oc))
 			defer func() {
 				// 20min: WMCO must fully reconfigure each restored node
@@ -1901,7 +1902,8 @@ spec:
 			// This MachineSet owns only a subset of the cluster's Windows nodes, so cleanup must
 			// restore its own replica count. Hardcoding it to 2 scales the MachineSet past its
 			// original size and leaves the cluster with an extra Windows node.
-			initialReplicas := getMachineSetReplicas(oc, windowsMachineSetName)
+			initialReplicas, err := getMachineSetReplicas(oc, windowsMachineSetName)
+			o.Expect(err).NotTo(o.HaveOccurred())
 			originalWindowsNodeCount := len(getWindowsHostNames(oc))
 			defer func() {
 				scaleWindowsMachineSet(oc, windowsMachineSetName, 10, initialReplicas, false)
@@ -1937,7 +1939,8 @@ spec:
 			g.By("Step 2: Scale up the Windows MachineSet while WMCO is down")
 			zone := getAvailabilityZone(oc)
 			windowsMachineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
-			initialReplicas := getMachineSetReplicas(oc, windowsMachineSetName)
+			initialReplicas, err := getMachineSetReplicas(oc, windowsMachineSetName)
+			o.Expect(err).NotTo(o.HaveOccurred())
 			originalWindowsNodeCount := len(getWindowsHostNames(oc))
 			defer waitWindowsNodesReady(oc, originalWindowsNodeCount, 1000*time.Second)
 			defer scaleWindowsMachineSet(oc, windowsMachineSetName, 10, initialReplicas, false)
@@ -2114,7 +2117,8 @@ spec:
 			err = waitForDeploymentReady(oc, windowsWorkloads, namespace, 5*time.Minute)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
-			baselineReplicas := getMachineSetReplicas(oc, cloneMSName)
+			baselineReplicas, err := getMachineSetReplicas(oc, cloneMSName)
+			o.Expect(err).NotTo(o.HaveOccurred())
 			desiredReplicas := len(getWindowsHostNames(oc)) + 1
 
 			g.By(fmt.Sprintf("Step 4: Scale up the Windows workload to %d to create autoscaler pressure", desiredReplicas))
@@ -2133,7 +2137,11 @@ spec:
 			// baselineReplicas+1. Poll .spec.replicas via getMachineSetReplicas instead
 			// to confirm the cluster-autoscaler actually scaled the MachineSet back down.
 			pollErr := wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
-				currentReplicas := getMachineSetReplicas(oc, cloneMSName)
+				currentReplicas, err := getMachineSetReplicas(oc, cloneMSName)
+				if err != nil {
+					e2e.Logf("Error getting MachineSet replicas: %v", err)
+					return false, nil
+				}
 				e2e.Logf("Waiting for MachineSet %s to scale down: current replicas %d, target <= %d",
 					cloneMSName, currentReplicas, baselineReplicas)
 				return currentReplicas <= baselineReplicas, nil
@@ -2158,10 +2166,11 @@ spec:
 			g.By("Step 1: Capture initial state and extract private key")
 			zone := getAvailabilityZone(oc)
 			msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
-			initialReplicas := getMachineSetReplicas(oc, msName)
+			initialReplicas, err := getMachineSetReplicas(oc, msName)
+			o.Expect(err).NotTo(o.HaveOccurred())
 			expectedNodes := len(getWindowsHostNames(oc))
 			privateKeyFile := extractPrivateKeyToFile(oc)
-			defer os.Remove(privateKeyFile)
+			g.DeferCleanup(func() { os.Remove(privateKeyFile) })
 
 			g.By("Step 2: Scale down the machineset to 1")
 			g.DeferCleanup(func() {
@@ -2174,15 +2183,16 @@ spec:
 			g.DeferCleanup(func() {
 				scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
 			})
-			err := scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
+			err = scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("Step 4: Replace the private key with a newly created key during machine scale up")
 			g.DeferCleanup(func() {
-				oc.AsAdmin().WithoutNamespace().Run("create").Args(
+				out, err := oc.AsAdmin().WithoutNamespace().Run("create").Args(
 					"secret", "generic", "cloud-private-key",
 					"--from-file=private-key.pem="+privateKeyFile,
-					"-n", wmcoNamespace).Execute()
+					"-n", wmcoNamespace).Output()
+				o.Expect(err).NotTo(o.HaveOccurred(), "failed to restore cloud-private-key secret: %s", out)
 			})
 			_, err = oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 				"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
@@ -2198,8 +2208,10 @@ spec:
 			cmd := fmt.Sprintf("ssh-keygen -N '' -C 'test key' -f %s", keyPath)
 			out, err := exec.Command("bash", "-c", cmd).CombinedOutput()
 			o.Expect(err).NotTo(o.HaveOccurred(), "ssh-keygen failed: %s", string(out))
-			defer oc.AsAdmin().WithoutNamespace().Run("delete").Args(
-				"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
+			g.DeferCleanup(func() {
+				oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+					"secret", "cloud-private-key", "-n", wmcoNamespace).Execute()
+			})
 			_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args(
 				"secret", "generic", "cloud-private-key",
 				"--from-file=private-key.pem="+keyPath, "-n", wmcoNamespace).Output()
@@ -2229,13 +2241,14 @@ spec:
 			g.By("Step 1: Capture initial state")
 			zone := getAvailabilityZone(oc)
 			msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
-			initialReplicas := getMachineSetReplicas(oc, msName)
+			initialReplicas, err := getMachineSetReplicas(oc, msName)
+			o.Expect(err).NotTo(o.HaveOccurred())
 			expectedNodes := len(getWindowsHostNames(oc))
 
 			g.By("Step 2: Deploy Windows web server workload")
 			includeLB := iaasPlatform != "vsphere" && iaasPlatform != "nutanix"
 			manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, includeLB, "", "")
-			err := createResourceFromString(oc, namespace, manifest)
+			err = createResourceFromString(oc, namespace, manifest)
 			o.Expect(err).NotTo(o.HaveOccurred())
 			err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
 			o.Expect(err).NotTo(o.HaveOccurred())
