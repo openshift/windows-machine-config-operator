@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -2107,32 +2108,26 @@ spec:
 				"machineautoscaler", cloneMSName, "-n", mcoNamespace, "--ignore-not-found").Execute()
 
 			g.By("Step 3: Create Windows workloads with resource limits")
-			manifest := generateWindowsWebServerYAML(windowsWorkloads, namespace, windowsDebugImage, 1, false, "1", "")
+			manifest := generateWindowsWebServerYAML(windowsWorkloads, namespace, windowsDebugImage, 1, false, "2", "")
 			err = createResourceFromString(oc, namespace, manifest)
 			o.Expect(err).NotTo(o.HaveOccurred())
 			err = waitForDeploymentReady(oc, windowsWorkloads, namespace, 5*time.Minute)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
-			if iaasPlatform == "gcp" || iaasPlatform == "vsphere" {
-				g.By("Step 4: Scale up the Windows workload to 4")
-				err = scaleDeployment(oc, windowsWorkloads, 4, namespace)
-				o.Expect(err).NotTo(o.HaveOccurred())
+			baselineReplicas := getMachineSetReplicas(oc, cloneMSName)
+			desiredReplicas := len(getWindowsHostNames(oc)) + 1
 
-				g.By("Step 5: Wait for Windows nodes to auto scale to 2")
-				waitForMachinesetReady(oc, cloneMSName, 20, 2)
-			} else {
-				g.By("Step 4: Scale up the Windows workload to 2")
-				err = scaleDeployment(oc, windowsWorkloads, 2, namespace)
-				o.Expect(err).NotTo(o.HaveOccurred())
+			g.By(fmt.Sprintf("Step 4: Scale up the Windows workload to %d to create autoscaler pressure", desiredReplicas))
+			err = scaleDeployment(oc, windowsWorkloads, desiredReplicas, namespace)
+			o.Expect(err).NotTo(o.HaveOccurred())
 
-				g.By("Step 5: Wait for Windows nodes to auto scale to 2")
-				waitForMachinesetReady(oc, cloneMSName, 20, 2)
-			}
+			g.By(fmt.Sprintf("Step 5: Wait for clone MachineSet to auto scale from %d to %d", baselineReplicas, baselineReplicas+1))
+			waitForMachinesetReady(oc, cloneMSName, 20, baselineReplicas+1)
 
 			g.By("Step 6: Scale down the Windows workload to 1")
 			err = scaleDeployment(oc, windowsWorkloads, 1, namespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			waitForMachinesetReady(oc, cloneMSName, 10, 1)
+			waitForMachinesetReady(oc, cloneMSName, 10, baselineReplicas)
 		})
 
 	// author: rrasouli@redhat.com
@@ -2159,7 +2154,7 @@ spec:
 			g.By("Step 2: Scale down the machineset to 1")
 			defer func() {
 				scaleWindowsMachineSet(oc, msName, 45, initialReplicas, false)
-				waitWindowsNodesReady(oc, expectedNodes, 50*time.Minute)
+				waitWindowsNodesReady(oc, expectedNodes, 40*time.Minute)
 			}()
 			scaleWindowsMachineSet(oc, msName, 18, 1, false)
 
@@ -2182,16 +2177,18 @@ spec:
 			g.By("Step 5: Scale up the machineset")
 			scaleWindowsMachineSet(oc, msName, 18, initialReplicas, true)
 
-			defer os.Remove("mykey")
-			defer os.Remove("mykey.pub")
-			cmd := "ssh-keygen -N '' -C 'test key' -f mykey"
-			_, err = exec.Command("bash", "-c", cmd).CombinedOutput()
-			o.Expect(err).NotTo(o.HaveOccurred())
+			keyDir, err := os.MkdirTemp("", "winc-39640-key-*")
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to create temp dir for ssh key")
+			defer os.RemoveAll(keyDir)
+			keyPath := filepath.Join(keyDir, "mykey")
+			cmd := fmt.Sprintf("ssh-keygen -N '' -C 'test key' -f %s", keyPath)
+			out, err := exec.Command("bash", "-c", cmd).CombinedOutput()
+			o.Expect(err).NotTo(o.HaveOccurred(), "ssh-keygen failed: %s", string(out))
 			defer oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 				"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
 			_, err = oc.AsAdmin().WithoutNamespace().Run("create").Args(
 				"secret", "generic", "cloud-private-key",
-				"--from-file=private-key.pem=mykey", "-n", wmcoNamespace).Output()
+				"--from-file=private-key.pem="+keyPath, "-n", wmcoNamespace).Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("Step 6: Wait for nodes to be in a Ready status")
@@ -2199,7 +2196,7 @@ spec:
 			o.Expect(err).NotTo(o.HaveOccurred())
 			// A delay waiting for machine upgrade to be completed
 			waitUntilWMCOStatusChanged(oc, "\"unhealthy\":0", "1m")
-			waitWindowsNodesReady(oc, expectedNodes, 3000*time.Second)
+			waitWindowsNodesReady(oc, expectedNodes, 40*time.Minute)
 		})
 
 	// author: rrasouli@redhat.com
