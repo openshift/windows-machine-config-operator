@@ -1204,7 +1204,7 @@ spec:
 
 	// author: sgao@redhat.com
 	g.It("Smokerun-Author:sgao-Critical-33783-Enable must gather on Windows node [Slow][Disruptive]", func() {
-		destDir := "/tmp/must-gather-33783"
+		destDir := filepath.Join(os.TempDir(), "must-gather-33783")
 		defer os.RemoveAll(destDir)
 
 		g.By("Run must-gather and verify Windows log paths")
