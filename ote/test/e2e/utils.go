@@ -3,8 +3,11 @@ package winc
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"os"
@@ -1586,6 +1589,46 @@ func extractPrivateKeyToFile(oc *exutil.CLI) string {
 
 	e2e.Logf("Extracted private key to %s", tmpFile.Name())
 	return tmpFile.Name()
+}
+
+// generateTestPrivateKey generates an RSA private key and writes it to a temporary PEM file.
+// Returns the file path. Caller is responsible for cleanup.
+func generateTestPrivateKey() (string, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", fmt.Errorf("generate RSA private key: %w", err)
+	}
+
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	tmpFile, err := os.CreateTemp("", "winc-39640-key-*.pem")
+	if err != nil {
+		return "", fmt.Errorf("create temporary private key file: %w", err)
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpFile.Name())
+		}
+	}()
+
+	if err := tmpFile.Chmod(0600); err != nil {
+		return "", fmt.Errorf("set private key file permissions: %w", err)
+	}
+	if n, err := tmpFile.Write(privateKeyPEM); err != nil {
+		return "", fmt.Errorf("write private key file: %w", err)
+	} else if n != len(privateKeyPEM) {
+		return "", fmt.Errorf("write private key file: wrote %d of %d bytes", n, len(privateKeyPEM))
+	}
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("close private key file: %w", err)
+	}
+
+	cleanup = false
+	return tmpFile.Name(), nil
 }
 
 // waitForMachinesetReady polls until the MachineSet has the expected number of ready replicas.
