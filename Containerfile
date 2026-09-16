@@ -180,7 +180,7 @@ chmod -R 644 /payload && chmod -R +X /payload &&\
 # Create directory for generated files with open permissions, this allows WMCO to write to this directory
 mkdir -m 0777 /payload/generated
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:186a94b76e386782f576c9c49813b16dceb2ba63102af5a28405dcefec2806d0
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:e5161a7d7d99cf22e4f34b72e111211a399d956d9b0e8714da18e9c4c8151041
 LABEL stage=operator
 
 # This block contains standard Red Hat container labels
