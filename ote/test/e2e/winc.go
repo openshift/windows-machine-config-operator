@@ -2186,7 +2186,11 @@ spec:
 			err = scaleDeployment(oc, wmcoDeploymentName, 0, wmcoNamespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
-			g.By("Step 4: Replace the private key with a newly created key during machine scale up")
+			keyPath, err := generateTestPrivateKey()
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate test private key")
+			defer os.Remove(keyPath)
+
+			g.By("Step 4: Replace the private key with a newly created key before machine scale up")
 			g.DeferCleanup(func() {
 				out, err := oc.AsAdmin().WithoutNamespace().Run("create").Args(
 					"secret", "generic", "cloud-private-key",
@@ -2198,12 +2202,6 @@ spec:
 				"secret", "cloud-private-key", "-n", wmcoNamespace).Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
 
-			g.By("Step 5: Scale up the machineset")
-			scaleWindowsMachineSet(oc, msName, 18, initialReplicas, true)
-
-			keyPath, err := generateTestPrivateKey()
-			o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate test private key")
-			defer os.Remove(keyPath)
 			g.DeferCleanup(func() {
 				oc.AsAdmin().WithoutNamespace().Run("delete").Args(
 					"secret", "cloud-private-key", "-n", wmcoNamespace).Execute()
@@ -2212,6 +2210,9 @@ spec:
 				"secret", "generic", "cloud-private-key",
 				"--from-file=private-key.pem="+keyPath, "-n", wmcoNamespace).Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
+
+			g.By("Step 5: Scale up the machineset")
+			scaleWindowsMachineSet(oc, msName, 18, initialReplicas, true)
 
 			g.By("Step 6: Wait for nodes to be in a Ready status")
 			err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
