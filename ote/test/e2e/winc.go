@@ -2083,7 +2083,7 @@ spec:
 
 			defer func() {
 				g.By("Restore original apiserver TLS configuration")
-				restoreTime := getWMCOTimestamp(oc)
+				restoreTime := getWMCORestartState(oc)
 				currentTLSProfile, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 					"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}").Output()
 				currentAdherence, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -2136,7 +2136,7 @@ spec:
 
 			defer func() {
 				g.By("Restore original apiserver TLS configuration")
-				restoreTime := getWMCOTimestamp(oc)
+				restoreTime := getWMCORestartState(oc)
 				currentTLSProfile, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 					"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}").Output()
 				currentAdherence, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -2153,7 +2153,7 @@ spec:
 			}()
 
 			g.By("Patch apiserver/cluster with Modern TLS security profile (TLS 1.3)")
-			profileStartTime := getWMCOTimestamp(oc)
+			profileStartTime := getWMCORestartState(oc)
 			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
 				"-p", `{"spec":{"tlsSecurityProfile":{"type":"Modern","modern":{}}}}`).Execute()
 			o.Expect(err).NotTo(o.HaveOccurred())
@@ -2191,7 +2191,7 @@ spec:
 				"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
 
-			wmcoStartTime := getWMCOTimestamp(oc)
+			wmcoStartTime := getWMCORestartState(oc)
 
 			checkerPod := createTLSCheckerPod(oc)
 			defer deleteTLSCheckerPod(oc, checkerPod)
@@ -2247,7 +2247,7 @@ spec:
 				"TLS 1.3 connection should succeed when Modern profile is active")
 
 			g.By("Switch to Old TLS profile")
-			oldProfileTime := getWMCOTimestamp(oc)
+			oldProfileTime := getWMCORestartState(oc)
 			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
 				"-p", `{"spec":{"tlsSecurityProfile":{"type":"Old","old":{}}}}`).Execute()
 			o.Expect(err).NotTo(o.HaveOccurred())
@@ -2290,7 +2290,7 @@ spec:
 				g.Skip("TLS adherence must be preconfigured as StrictAllComponents for this test")
 			}
 
-			wmcoStartTime := getWMCOTimestamp(oc)
+			wmcoStartTime := getWMCORestartState(oc)
 
 			checkerPod := createTLSCheckerPod(oc)
 			defer deleteTLSCheckerPod(oc, checkerPod)

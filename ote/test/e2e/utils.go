@@ -1676,29 +1676,47 @@ func waitForProxyOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[stri
 	compat_otp.AssertWaitPollNoErr(pollErr, "proxy values did not propagate to all Windows nodes within 5 minutes")
 }
 
-// getWMCOTimestamp returns the start time of the running WMCO pod.
-func getWMCOTimestamp(oc *exutil.CLI) string {
-	wmcoTime, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "--selector", "name="+wmcoDeploymentName, "--field-selector=status.phase=Running", "-o=jsonpath={.items[0].status.startTime}", "-n", wmcoNamespace).Output()
-	if err != nil || wmcoTime == "" {
+// getWMCORestartState returns state that changes when either the WMCO pod is
+// recreated or its manager container is restarted in place.
+func getWMCORestartState(oc *exutil.CLI) string {
+	podJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pod", "--selector", "name="+wmcoDeploymentName,
+		"--field-selector=status.phase=Running", "-o=json", "-n", wmcoNamespace).Output()
+	if err != nil || podJSON == "" {
 		return ""
 	}
-	return wmcoTime
+
+	pod := gjson.Parse(podJSON).Get("items.0")
+	if !pod.Exists() {
+		return ""
+	}
+	manager := pod.Get(`status.containerStatuses.#(name=="manager")`)
+	if !manager.Exists() {
+		return ""
+	}
+
+	return fmt.Sprintf("podUID=%s podStartTime=%s managerRestartCount=%s managerContainerID=%s",
+		pod.Get("metadata.uid").String(),
+		pod.Get("status.startTime").String(),
+		manager.Get("restartCount").String(),
+		manager.Get("containerID").String())
 }
 
-// checkWMCORestarted polls until the WMCO pod start time differs from the given startTime.
-func checkWMCORestarted(oc *exutil.CLI, startTime string) (bool, error) {
-	if startTime == "" {
-		return false, fmt.Errorf("empty restart baseline: must capture WMCO timestamp before triggering restart")
+// checkWMCORestarted polls until the WMCO pod is recreated or its manager
+// container is restarted in place.
+func checkWMCORestarted(oc *exutil.CLI, initialRestartState string) (bool, error) {
+	if initialRestartState == "" {
+		return false, fmt.Errorf("empty restart baseline: must capture WMCO restart state before triggering restart")
 	}
 	var restartDetected bool
 	pollErr := wait.Poll(20*time.Second, 6*time.Minute, func() (bool, error) {
-		actualWMCOTime := getWMCOTimestamp(oc)
-		if actualWMCOTime == "" {
-			e2e.Logf("WMCO pod timestamp unavailable (pod transitioning), waiting...")
+		actualRestartState := getWMCORestartState(oc)
+		if actualRestartState == "" {
+			e2e.Logf("WMCO restart state unavailable (pod transitioning), waiting...")
 			return false, nil
 		}
-		if startTime != actualWMCOTime {
-			e2e.Logf("WMCO restarted (old: %s, new: %s)", startTime, actualWMCOTime)
+		if initialRestartState != actualRestartState {
+			e2e.Logf("WMCO restarted (old: %s, new: %s)", initialRestartState, actualRestartState)
 			restartDetected = true
 			return true, nil
 		}
@@ -1707,7 +1725,7 @@ func checkWMCORestarted(oc *exutil.CLI, startTime string) (bool, error) {
 	})
 	if pollErr != nil {
 		if pollErr == wait.ErrWaitTimeout {
-			e2e.Logf("WMCO did not restart within 6 minutes (this is expected for some proxy changes)")
+			e2e.Logf("WMCO did not restart within 6 minutes; continuing after the restart wait timed out")
 			return false, nil
 		}
 		return false, fmt.Errorf("error checking WMCO restart: %w", pollErr)
@@ -1731,7 +1749,7 @@ spec:
 
 func restoreProxyEnvironment(oc *exutil.CLI, clusterEnvVars map[string]interface{}) {
 	e2e.Logf("Starting proxy environment restore")
-	wmcoStartTime := getWMCOTimestamp(oc)
+	wmcoStartTime := getWMCORestartState(oc)
 	httpProxy := fmt.Sprint(clusterEnvVars["HTTP_PROXY"])
 	httpsProxy := fmt.Sprint(clusterEnvVars["HTTPS_PROXY"])
 	noProxy := fmt.Sprint(clusterEnvVars["NO_PROXY"])
