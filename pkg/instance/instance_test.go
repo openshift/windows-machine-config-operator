@@ -58,6 +58,69 @@ func TestUpToDate(t *testing.T) {
 		})
 	}
 }
+func TestWebConfigUpToDate(t *testing.T) {
+	testCases := []struct {
+		name        string
+		input       Info
+		expectedSHA string
+		expectedOut bool
+	}{
+		{
+			name:        "Empty expected SHA always up to date",
+			input:       Info{Node: &core.Node{}},
+			expectedSHA: "",
+			expectedOut: true,
+		},
+		{
+			name:        "No associated Node always up to date",
+			input:       Info{Node: nil},
+			expectedSHA: "abc123",
+			expectedOut: true,
+		},
+		{
+			name: "Annotation missing treated as outdated",
+			input: Info{
+				Node: &core.Node{
+					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{}},
+				},
+			},
+			expectedSHA: "abc123",
+			expectedOut: false,
+		},
+		{
+			name: "Annotation mismatch treated as outdated",
+			input: Info{
+				Node: &core.Node{
+					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{
+						metadata.WebConfigSHAAnnotation: "old-sha",
+					}},
+				},
+			},
+			expectedSHA: "new-sha",
+			expectedOut: false,
+		},
+		{
+			name: "Annotation matches treated as up to date",
+			input: Info{
+				Node: &core.Node{
+					ObjectMeta: meta.ObjectMeta{Annotations: map[string]string{
+						metadata.WebConfigSHAAnnotation: "matching-sha",
+					}},
+				},
+			},
+			expectedSHA: "matching-sha",
+			expectedOut: true,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			out := test.input.WebConfigUpToDate(test.expectedSHA)
+			assert.Equal(t, test.expectedOut, out)
+		})
+	}
+}
+
 func TestUpgradeRequired(t *testing.T) {
 	testCases := []struct {
 		name        string

@@ -73,8 +73,16 @@ const (
 	// WindowsExporterPath contains the path of the windows_exporter binary. The container image should already have
 	// this binary mounted
 	WindowsExporterPath = payloadDirectory + WindowsExporterDirectory + WindowsExporterName
-	// TLSConfPath contains the path of the TLS config file
-	TLSConfPath = payloadDirectory + WindowsExporterDirectory + "windows-exporter-webconfig.yaml.tar.gz"
+	// TLSConfPath contains the path of the generated TLS webconfig file.
+	// Written to the world-writable /payload/generated/ directory because the
+	// operator runs as an arbitrary non-root UID (OpenShift SCC) and the static
+	// /payload/windows-exporter/ directory is baked read-only in the image.
+	// TODO(WINC-2118): The Dockerfile still bakes a static
+	// windows-exporter-webconfig.yaml into /payload/windows-exporter/.
+	// That file is now unused because PopulateWebConfig generates the
+	// webconfig here at runtime. Remove the static copy from the
+	// Dockerfile once all release branches use PopulateWebConfig.
+	TLSConfPath = payloadDirectory + "/generated/windows-exporter-webconfig.yaml.tar.gz"
 	// ECRCredentialProviderPath is the path to ecr-credential-provider.exe
 	ECRCredentialProviderPath = payloadDirectory + "ecr-credential-provider.exe.tar.gz"
 	// AzureCloudNodeManager is the name of the cloud node manager for Azure platform
@@ -394,13 +402,22 @@ func generateNetworkConfigScript(clusterCIDR, hnsNetworkName, hnsPSModulePath,
 	return networkConfScript, nil
 }
 
-// Creates a .tar.gz archive from file data
+// GetWebConfigSHA returns the SHA256 hash of the current (uncompressed) webconfig
+// file from the global shaMap. This hash is computed by PopulateWebConfig and
+// reflects the content that will be transferred to Windows nodes. Returns an
+// empty string if the webconfig has not been populated yet.
+func GetWebConfigSHA() string {
+	fileName := strings.TrimSuffix(filepath.Base(TLSConfPath), ".tar.gz")
+	return shaMap[fileName]
+}
+
+// createTarGzFile creates a .tar.gz archive containing a single file from data.
+// It explicitly closes the tar and gzip writers to ensure all buffered data is
+// flushed, returning any close error with contextual wrapping.
 func createTarGzFile(data []byte, fileName string, outWriter io.Writer) error {
 	// Chain writers: File -> Gzip -> Tar
 	gzipWriter := gzip.NewWriter(outWriter)
-	defer gzipWriter.Close()
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
 
 	header := &tar.Header{
 		Name:    fileName,
@@ -414,6 +431,12 @@ func createTarGzFile(data []byte, fileName string, outWriter io.Writer) error {
 	}
 	if _, err := tarWriter.Write(data); err != nil {
 		return fmt.Errorf("failed to write data to tar writer: %w", err)
+	}
+	if err := tarWriter.Close(); err != nil {
+		return fmt.Errorf("failed to finalize tar archive: %w", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return fmt.Errorf("failed to finalize gzip compression: %w", err)
 	}
 	return nil
 }
