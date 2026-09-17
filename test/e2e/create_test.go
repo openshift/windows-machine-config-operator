@@ -175,7 +175,13 @@ func (tc *testContext) testMachineConfiguration(t *testing.T) {
 	require.NoError(t, err, "failed to create Windows MachineSet")
 	machineCreationTime := time.Now()
 
-	t.Run("Machine configuration while private key change", tc.testMachineConfigurationWhilePrivateKeyChange)
+	if !t.Run("Machine configuration while private key change", tc.testMachineConfigurationWhilePrivateKeyChange) {
+		// If the private key rotation subtest failed (e.g. Machine deletion timed out), the MachineSet may still be
+		// self-healing (old Machines mid-deletion alongside new replacements), so continuing on would race against
+		// that in-progress remediation and produce a confusing, unrelated failure. Stop here since the root cause
+		// has already been reported by the failed subtest.
+		return
+	}
 
 	machines, err := tc.waitForWindowsMachines(int(gc.numberOfMachineNodes), "Provisioned", false)
 	require.NoError(t, err, "error waiting for Windows Machines to be provisioned")
@@ -252,6 +258,14 @@ func (tc *testContext) waitForSSHAvailable(addresses []string) error {
 // deleted after the private key is changed, but before WMCO is able to configure them, resulting in WMCO getting an
 // SSH authentication error. This could be considered a platform-agnostic test (except for vSphere where the private
 // key is baked in the VM template) so we run it only on Azure.
+//
+// Depending on exact reconcile timing, some Machines provisioned here may instead have already finished
+// configuring with the old key by the time the key is rotated. Those Machines are remediated via the "stale
+// private key" path rather than the "authentication failure" path, but both paths are gated by the same
+// maxUnhealthyCount safety check in WMCO (see isAllowedDeletion), so all original Machines are still expected to
+// eventually be deleted and replaced - potentially after a MachineDeletionRestricted event is observed on one of
+// them while it waits for a sibling's replacement to become healthy. waitForMachinesDeleted's timeout accounts for
+// this worst case.
 func (tc *testContext) testMachineConfigurationWhilePrivateKeyChange(t *testing.T) {
 	if tc.CloudProvider.GetType() != config.AzurePlatformType {
 		t.Skip("test disabled, exclusively runs on Azure")
@@ -268,8 +282,12 @@ func (tc *testContext) testMachineConfigurationWhilePrivateKeyChange(t *testing.
 
 // waitForMachinesDeleted waits for the given list of machines to be deleted
 func (tc *testContext) waitForMachinesDeleted(machines []mapi.Machine) (err error) {
-	// This is the maximum amount of time for the deletion of all machines in Azure
-	deletionTimeout := time.Minute * 15
+	// This timeout must account for the worst case remediation path: if the Machine deletion is restricted by
+	// WMCO's maxUnhealthyCount safety gate (e.g. because a sibling Machine's replacement is still being built),
+	// the restricted Machine will not be deleted until that sibling's replacement Machine has been fully
+	// provisioned and configured into a healthy Node - a process that can take up to vmConfigurationTime. A flat
+	// 15 minute timeout (assuming only a simple VM deletion) was observed to be insufficient in this scenario.
+	deletionTimeout := vmConfigurationTime + time.Minute*15
 	for _, m := range machines {
 		log.Printf("waiting (timeout: %s) for machine %s to be deleted", deletionTimeout.String(), m.GetName())
 		err = wait.PollUntilContextTimeout(context.TODO(), retry.ResourceChangeTimeout, deletionTimeout, false,
@@ -574,7 +592,12 @@ func (tc *testContext) waitForWindowsMachines(machineCount int, phase string, ig
 			return false, nil
 		}
 		if len(machines.Items) != machineCount {
-			log.Printf("waiting for %d/%d Windows Machines", machineCount-len(machines.Items), machineCount)
+			if len(machines.Items) < machineCount {
+				log.Printf("found %d/%d Windows Machines, still waiting", len(machines.Items), machineCount)
+			} else {
+				log.Printf("found %d Windows Machines, expected %d (extra Machines present, likely mid-remediation)",
+					len(machines.Items), machineCount)
+			}
 			return false, nil
 		}
 		// A phase of "" skips the phase check
