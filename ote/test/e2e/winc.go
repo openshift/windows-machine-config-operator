@@ -2076,43 +2076,28 @@ spec:
 			origAdherence, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
+			if origAdherence != "StrictAllComponents" {
+				g.Skip("TLS adherence must be preconfigured as StrictAllComponents for this test")
+			}
 			e2e.Logf("Original TLS profile: %q, adherence: %q", origTLSProfile, origAdherence)
-
-			wmcoStartTime := getWMCOTimestamp(oc)
 
 			defer func() {
 				g.By("Restore original apiserver TLS configuration")
 				restoreTime := getWMCOTimestamp(oc)
-				restoreAPIServerTLS(oc, origAdherence, origTLSProfile)
-				// Only check for WMCO restart if tlsAdherence field exists
-				// (if we skipped early, WMCO never restarted)
+				currentTLSProfile, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}").Output()
 				currentAdherence, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 					"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
-				if currentAdherence != "" || origAdherence != "" {
+				configurationChanged := currentTLSProfile != origTLSProfile || currentAdherence != origAdherence
+				restoreAPIServerTLS(oc, origAdherence, origTLSProfile)
+				if configurationChanged {
 					checkWMCORestarted(oc, restoreTime)
 					waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
 				}
 			}()
 
-			g.By("Set TLS adherence to StrictAllComponents to enable TLS profile enforcement")
-			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
-				"-p", `{"spec":{"tlsAdherence":"StrictAllComponents"}}`).Execute()
-			if err != nil {
-				g.Skip("TLS adherence field not supported on this cluster version: " + err.Error())
-			}
+			g.By("Use preconfigured StrictAllComponents adherence")
 
-			// Verify the field was actually set (kubectl warnings don't cause errors)
-			verifyAdherence, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
-			o.Expect(err).NotTo(o.HaveOccurred())
-			if verifyAdherence == "" {
-				g.Skip("TLS adherence field not available on this cluster version (field not found in spec)")
-			}
-
-			g.By("Wait for WMCO pod to restart after adherence change")
-			restarted, restartErr := checkWMCORestarted(oc, wmcoStartTime)
-			o.Expect(restartErr).NotTo(o.HaveOccurred(), "WMCO did not restart after adherence change")
-			o.Expect(restarted).To(o.BeTrue(), "WMCO should restart after StrictAllComponents is set")
 			err = waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -2143,18 +2128,22 @@ spec:
 			origAdherence, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
+			if origAdherence != "StrictAllComponents" {
+				g.Skip("TLS adherence must be preconfigured as StrictAllComponents for this test")
+			}
 
-			wmcoStartTime := getWMCOTimestamp(oc)
 			windowsNodeCount := len(getWindowsHostNames(oc))
 
 			defer func() {
 				g.By("Restore original apiserver TLS configuration")
 				restoreTime := getWMCOTimestamp(oc)
-				restoreAPIServerTLS(oc, origAdherence, origTLSProfile)
-				// Only check for WMCO restart if tlsAdherence field exists
+				currentTLSProfile, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}").Output()
 				currentAdherence, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 					"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
-				if currentAdherence != "" || origAdherence != "" {
+				configurationChanged := currentTLSProfile != origTLSProfile || currentAdherence != origAdherence
+				restoreAPIServerTLS(oc, origAdherence, origTLSProfile)
+				if configurationChanged {
 					checkWMCORestarted(oc, restoreTime)
 					waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
 					if windowsNodeCount > 0 {
@@ -2163,28 +2152,6 @@ spec:
 				}
 			}()
 
-			g.By("Set TLS adherence to StrictAllComponents")
-			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
-				"-p", `{"spec":{"tlsAdherence":"StrictAllComponents"}}`).Execute()
-			if err != nil {
-				g.Skip("TLS adherence field not supported: " + err.Error())
-			}
-
-			// Verify the field was actually set (kubectl warnings don't cause errors)
-			verifyAdherence, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
-			o.Expect(err).NotTo(o.HaveOccurred())
-			if verifyAdherence == "" {
-				g.Skip("TLS adherence field not available on this cluster version (field not found in spec)")
-			}
-
-			g.By("Wait for WMCO pod to restart after adherence change")
-			restarted, restartErr := checkWMCORestarted(oc, wmcoStartTime)
-			o.Expect(restartErr).NotTo(o.HaveOccurred(), "WMCO did not restart after adherence change")
-			o.Expect(restarted).To(o.BeTrue())
-			err = waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
-			o.Expect(err).NotTo(o.HaveOccurred())
-
 			g.By("Patch apiserver/cluster with Modern TLS security profile (TLS 1.3)")
 			profileStartTime := getWMCOTimestamp(oc)
 			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
@@ -2192,7 +2159,7 @@ spec:
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("Wait for WMCO pod to restart after TLS profile change")
-			restarted, restartErr = checkWMCORestarted(oc, profileStartTime)
+			restarted, restartErr := checkWMCORestarted(oc, profileStartTime)
 			o.Expect(restartErr).NotTo(o.HaveOccurred(), "WMCO did not restart after profile change")
 			o.Expect(restarted).To(o.BeTrue())
 			err = waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
@@ -2213,7 +2180,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Longduration-Critical-90119-[tls-adherance]-WMCO metrics endpoint enforces updated TLS profile after pod restart [Slow][Serial][Disruptive]",
+	g.It("Author:rrasouli-Longduration-Critical-90119-[tls-adherence]-WMCO metrics endpoint enforces updated TLS profile after pod restart [Slow][Serial][Disruptive]",
 		g.SpecTimeout(20*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
@@ -2231,9 +2198,9 @@ spec:
 
 			defer restoreAPIServerTLS(oc, origAdherence, origTLSProfile)
 
-			g.By("Set TLS adherence to StrictAllComponents and Modern profile")
+			g.By("Set Modern TLS profile with StrictAllComponents adherence")
 			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
-				"-p", `{"spec":{"tlsAdherence":"StrictAllComponents","tlsSecurityProfile":{"type":"Modern","modern":{}}}}`).Execute()
+				"-p", `{"spec":{"tlsSecurityProfile":{"type":"Modern","modern":{}}}}`).Execute()
 			if err != nil {
 				g.Skip("TLS adherence field not supported: " + err.Error())
 			}
@@ -2309,7 +2276,7 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Medium-90120-[tls-adherance]-WMCO metrics endpoint enforces Custom TLS profile with specific cipher suites [Serial][Disruptive]",
+	g.It("Author:rrasouli-Medium-90120-[tls-adherence]-WMCO metrics endpoint enforces Custom TLS profile with specific cipher suites [Serial][Disruptive]",
 		g.SpecTimeout(15*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
@@ -2319,6 +2286,9 @@ spec:
 			origAdherence, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
 			o.Expect(err).NotTo(o.HaveOccurred())
+			if origAdherence != "StrictAllComponents" {
+				g.Skip("TLS adherence must be preconfigured as StrictAllComponents for this test")
+			}
 
 			wmcoStartTime := getWMCOTimestamp(oc)
 
@@ -2327,8 +2297,8 @@ spec:
 
 			defer restoreAPIServerTLS(oc, origAdherence, origTLSProfile)
 
-			g.By("Set TLS adherence to StrictAllComponents with Custom TLS profile")
-			customPatch := `{"spec":{"tlsAdherence":"StrictAllComponents","tlsSecurityProfile":{"type":"Custom","custom":{"ciphers":["ECDHE-RSA-AES128-GCM-SHA256","ECDHE-ECDSA-AES128-GCM-SHA256"],"minTLSVersion":"VersionTLS12"}}}}`
+			g.By("Set Custom TLS profile with StrictAllComponents adherence")
+			customPatch := `{"spec":{"tlsSecurityProfile":{"type":"Custom","custom":{"ciphers":["ECDHE-RSA-AES128-GCM-SHA256","ECDHE-ECDSA-AES128-GCM-SHA256"],"minTLSVersion":"VersionTLS12"}}}}`
 			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
 				"-p", customPatch).Execute()
 			if err != nil {

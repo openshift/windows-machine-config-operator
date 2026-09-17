@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -618,6 +619,16 @@ func getRandomString(length int) string {
 	o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate random bytes")
 	str := base64.StdEncoding.EncodeToString(buff)
 	return str[:length]
+}
+
+// getRandomDNSLabel returns a random lowercase hexadecimal string suitable for
+// use in a Kubernetes resource name.
+func getRandomDNSLabel(length int) string {
+	o.Expect(length).To(o.BeNumerically(">", 0), "getRandomDNSLabel requires a positive length")
+	buff := make([]byte, (length+1)/2)
+	_, err := rand.Read(buff)
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate random bytes")
+	return hex.EncodeToString(buff)[:length]
 }
 
 // createProject creates a namespace if it does not already exist and sets privileged SCC.
@@ -1293,9 +1304,12 @@ func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) {
 		}
 	}
 	if origTLSProfile == "" {
-		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=json",
-			"-p", `[{"op":"remove","path":"/spec/tlsSecurityProfile"}]`).Execute(); err != nil {
-			e2e.Logf("Warning: could not remove tlsSecurityProfile: %v", err)
+		// The API server may default this field and reject removing it. An
+		// explicit Intermediate profile is equivalent to the default and is
+		// safely accepted as the restored state.
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
+			"-p", `{"spec":{"tlsSecurityProfile":{"type":"Intermediate","intermediate":{}}}}`).Execute(); err != nil {
+			e2e.Logf("Warning: could not restore default tlsSecurityProfile: %v", err)
 		}
 	} else {
 		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
@@ -1309,7 +1323,9 @@ func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) {
 // and waits for it to reach Running state. Uses the cluster-local tools image
 // from the OpenShift payload to support disconnected environments.
 func createTLSCheckerPod(oc *exutil.CLI) string {
-	podName := "tls-checker-" + getRandomString(5)
+	// Pod names must comply with RFC 1123. Use a lowercase hexadecimal suffix
+	// so the generated name contains only valid characters.
+	podName := "tls-checker-" + getRandomDNSLabel(5)
 
 	toolsImage, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"istag", "tools:latest", "-n", "openshift",
