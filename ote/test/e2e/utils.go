@@ -1291,16 +1291,17 @@ func extractPrivateKeyToFile(oc *exutil.CLI) string {
 }
 
 // restoreAPIServerTLS restores the original TLS configuration on apiserver/cluster.
-func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) {
+func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) error {
+	var restoreErr error
 	if origAdherence == "" {
 		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=json",
 			"-p", `[{"op":"remove","path":"/spec/tlsAdherence"}]`).Execute(); err != nil {
-			e2e.Logf("Warning: could not remove tlsAdherence: %v", err)
+			restoreErr = fmt.Errorf("could not remove tlsAdherence: %w", err)
 		}
 	} else {
 		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
 			"-p", fmt.Sprintf(`{"spec":{"tlsAdherence":"%s"}}`, origAdherence)).Execute(); err != nil {
-			e2e.Logf("Warning: could not restore tlsAdherence: %v", err)
+			restoreErr = fmt.Errorf("could not restore tlsAdherence: %w", err)
 		}
 	}
 	if origTLSProfile == "" {
@@ -1309,14 +1310,103 @@ func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) {
 		// safely accepted as the restored state.
 		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
 			"-p", `{"spec":{"tlsSecurityProfile":{"type":"Intermediate","intermediate":{}}}}`).Execute(); err != nil {
-			e2e.Logf("Warning: could not restore default tlsSecurityProfile: %v", err)
+			if restoreErr != nil {
+				return fmt.Errorf("%v; could not restore default tlsSecurityProfile: %w", restoreErr, err)
+			}
+			return fmt.Errorf("could not restore default tlsSecurityProfile: %w", err)
 		}
 	} else {
 		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
 			"-p", fmt.Sprintf(`{"spec":{"tlsSecurityProfile":%s}}`, origTLSProfile)).Execute(); err != nil {
-			e2e.Logf("Warning: could not restore tlsSecurityProfile: %v", err)
+			if restoreErr != nil {
+				return fmt.Errorf("%v; could not restore tlsSecurityProfile: %w", restoreErr, err)
+			}
+			return fmt.Errorf("could not restore tlsSecurityProfile: %w", err)
 		}
 	}
+	return restoreErr
+}
+
+func getAPIServerTLSConfiguration(oc *exutil.CLI) (string, string, error) {
+	profile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}").Output()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get apiserver TLS profile: %w", err)
+	}
+	adherence, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get apiserver TLS adherence: %w", err)
+	}
+	return profile, adherence, nil
+}
+
+func tlsProfileType(profile string) string {
+	if profile == "" {
+		return "Intermediate"
+	}
+	return gjson.Parse(profile).Get("type").String()
+}
+
+// ensureTLSProfileDiffersFromTarget changes a target profile to Intermediate
+// first when necessary, ensuring the next target patch triggers the watcher.
+func ensureTLSProfileDiffersFromTarget(oc *exutil.CLI, targetType string) error {
+	profile, _, err := getAPIServerTLSConfiguration(oc)
+	if err != nil {
+		return err
+	}
+	if tlsProfileType(profile) != targetType {
+		return nil
+	}
+
+	baseline := getWMCORestartState(oc)
+	if baseline == "" {
+		return fmt.Errorf("could not capture WMCO restart state before setting alternate Intermediate profile")
+	}
+	if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
+		"-p", `{"spec":{"tlsSecurityProfile":{"type":"Intermediate","intermediate":{}}}}`).Execute(); err != nil {
+		return fmt.Errorf("failed to set alternate Intermediate TLS profile: %w", err)
+	}
+	restarted, err := checkWMCORestarted(oc, baseline)
+	if err != nil {
+		return err
+	}
+	if !restarted {
+		return fmt.Errorf("WMCO did not restart after setting alternate Intermediate TLS profile")
+	}
+	return waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
+}
+
+func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile string, windowsNodeCount int) error {
+	currentProfile, currentAdherence, err := getAPIServerTLSConfiguration(oc)
+	if err != nil {
+		return err
+	}
+	configurationChanged := currentProfile != origTLSProfile || currentAdherence != origAdherence
+	if !configurationChanged {
+		return nil
+	}
+	baseline := getWMCORestartState(oc)
+	if baseline == "" {
+		return fmt.Errorf("could not capture WMCO restart state before restoring TLS configuration")
+	}
+	if err := restoreAPIServerTLS(oc, origAdherence, origTLSProfile); err != nil {
+		return err
+	}
+	restarted, err := checkWMCORestarted(oc, baseline)
+	if err != nil {
+		return err
+	}
+	if !restarted {
+		return fmt.Errorf("WMCO did not restart while restoring TLS configuration")
+	}
+	if err := waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute); err != nil {
+		return err
+	}
+	if windowsNodeCount > 0 {
+		waitWindowsNodesReady(oc, windowsNodeCount, 5*time.Minute)
+	}
+	return nil
 }
 
 // createTLSCheckerPod creates a temporary Linux pod for running openssl commands
