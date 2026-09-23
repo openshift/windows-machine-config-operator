@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -814,6 +815,16 @@ func getRandomString(length int) string {
 	return str[:length]
 }
 
+// getRandomDNSLabel returns a random lowercase hexadecimal string suitable for
+// use in a Kubernetes resource name.
+func getRandomDNSLabel(length int) string {
+	o.Expect(length).To(o.BeNumerically(">", 0), "getRandomDNSLabel requires a positive length")
+	buff := make([]byte, (length+1)/2)
+	_, err := rand.Read(buff)
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate random bytes")
+	return hex.EncodeToString(buff)[:length]
+}
+
 // createProject creates a namespace if it does not already exist and sets privileged SCC.
 // A namespace left behind by a previous attempt may still be Terminating, and the API server
 // rejects every object created in one ("unable to create new content in namespace ... because it
@@ -1584,6 +1595,188 @@ func extractPrivateKeyToFile(oc *exutil.CLI) string {
 	return tmpFile.Name()
 }
 
+// restoreAPIServerTLS restores the original TLS configuration on apiserver/cluster.
+func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) error {
+	var restoreErr error
+	if origAdherence == "" {
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=json",
+			"-p", `[{"op":"remove","path":"/spec/tlsAdherence"}]`).Execute(); err != nil {
+			restoreErr = fmt.Errorf("could not remove tlsAdherence: %w", err)
+		}
+	} else {
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
+			"-p", fmt.Sprintf(`{"spec":{"tlsAdherence":"%s"}}`, origAdherence)).Execute(); err != nil {
+			restoreErr = fmt.Errorf("could not restore tlsAdherence: %w", err)
+		}
+	}
+	if origTLSProfile == "" {
+		// The API server may default this field and reject removing it. An
+		// explicit Intermediate profile is equivalent to the default and is
+		// safely accepted as the restored state.
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
+			"-p", `{"spec":{"tlsSecurityProfile":{"type":"Intermediate","intermediate":{}}}}`).Execute(); err != nil {
+			if restoreErr != nil {
+				return fmt.Errorf("%v; could not restore default tlsSecurityProfile: %w", restoreErr, err)
+			}
+			return fmt.Errorf("could not restore default tlsSecurityProfile: %w", err)
+		}
+	} else {
+		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
+			"-p", fmt.Sprintf(`{"spec":{"tlsSecurityProfile":%s}}`, origTLSProfile)).Execute(); err != nil {
+			if restoreErr != nil {
+				return fmt.Errorf("%v; could not restore tlsSecurityProfile: %w", restoreErr, err)
+			}
+			return fmt.Errorf("could not restore tlsSecurityProfile: %w", err)
+		}
+	}
+	return restoreErr
+}
+
+func getAPIServerTLSConfiguration(oc *exutil.CLI) (string, string, error) {
+	profile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}").Output()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get apiserver TLS profile: %w", err)
+	}
+	adherence, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get apiserver TLS adherence: %w", err)
+	}
+	return profile, adherence, nil
+}
+
+func tlsProfileType(profile string) string {
+	if profile == "" {
+		return "Intermediate"
+	}
+	return gjson.Parse(profile).Get("type").String()
+}
+
+// ensureTLSProfileDiffersFromTarget changes a target profile to Intermediate
+// first when necessary, ensuring the next target patch triggers the watcher.
+func ensureTLSProfileDiffersFromTarget(oc *exutil.CLI, targetType string) error {
+	profile, _, err := getAPIServerTLSConfiguration(oc)
+	if err != nil {
+		return err
+	}
+	if tlsProfileType(profile) != targetType {
+		return nil
+	}
+
+	baseline := getWMCORestartState(oc)
+	if baseline == "" {
+		return fmt.Errorf("could not capture WMCO restart state before setting alternate Intermediate profile")
+	}
+	if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
+		"-p", `{"spec":{"tlsSecurityProfile":{"type":"Intermediate","intermediate":{}}}}`).Execute(); err != nil {
+		return fmt.Errorf("failed to set alternate Intermediate TLS profile: %w", err)
+	}
+	restarted, err := checkWMCORestarted(oc, baseline)
+	if err != nil {
+		return err
+	}
+	if !restarted {
+		return fmt.Errorf("WMCO did not restart after setting alternate Intermediate TLS profile")
+	}
+	return waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
+}
+
+func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile string, windowsNodeCount int) error {
+	currentProfile, currentAdherence, err := getAPIServerTLSConfiguration(oc)
+	if err != nil {
+		return err
+	}
+	configurationChanged := currentProfile != origTLSProfile || currentAdherence != origAdherence
+	if !configurationChanged {
+		return nil
+	}
+	baseline := getWMCORestartState(oc)
+	if baseline == "" {
+		return fmt.Errorf("could not capture WMCO restart state before restoring TLS configuration")
+	}
+	if err := restoreAPIServerTLS(oc, origAdherence, origTLSProfile); err != nil {
+		return err
+	}
+	restarted, err := checkWMCORestarted(oc, baseline)
+	if err != nil {
+		return err
+	}
+	if !restarted {
+		return fmt.Errorf("WMCO did not restart while restoring TLS configuration")
+	}
+	if err := waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute); err != nil {
+		return err
+	}
+	if windowsNodeCount > 0 {
+		waitWindowsNodesReady(oc, windowsNodeCount, 5*time.Minute)
+	}
+	return nil
+}
+
+// createTLSCheckerPod creates a temporary Linux pod for running openssl commands
+// and waits for it to reach Running state. Uses the cluster-local tools image
+// from the OpenShift payload to support disconnected environments.
+func createTLSCheckerPod(oc *exutil.CLI) string {
+	// Pod names must comply with RFC 1123. Use a lowercase hexadecimal suffix
+	// so the generated name contains only valid characters.
+	podName := "tls-checker-" + getRandomDNSLabel(5)
+
+	toolsImage, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"istag", "tools:latest", "-n", "openshift",
+		"-o=jsonpath={.image.dockerImageReference}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to get tools image from cluster")
+	o.Expect(toolsImage).NotTo(o.BeEmpty(), "tools imagestream reference is empty")
+
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  containers:
+  - name: checker
+    image: %s
+    command: ["sleep", "1800"]
+  restartPolicy: Never`, podName, wmcoNamespace, toolsImage)
+
+	err = createResourceFromString(oc, wmcoNamespace, manifest)
+	o.Expect(err).NotTo(o.HaveOccurred(), "failed to create TLS checker pod")
+
+	pollErr := wait.Poll(5*time.Second, 120*time.Second, func() (bool, error) {
+		phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pod", podName, "-n", wmcoNamespace,
+			"-o=jsonpath={.status.phase}").Output()
+		if err != nil {
+			return false, nil
+		}
+		return phase == "Running", nil
+	})
+	o.Expect(pollErr).NotTo(o.HaveOccurred(), "TLS checker pod did not reach Running state")
+	return podName
+}
+
+// deleteTLSCheckerPod deletes the TLS checker pod.
+func deleteTLSCheckerPod(oc *exutil.CLI, podName string) {
+	err := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+		"pod", podName, "-n", wmcoNamespace,
+		"--grace-period=0", "--force", "--ignore-not-found").Execute()
+	if err != nil {
+		e2e.Logf("Warning: failed to delete TLS checker pod %s: %v", podName, err)
+	}
+}
+
+// runTLSCheck runs openssl s_client from the checker pod against the given host:port.
+// tlsFlag can be "-tls1_2", "-tls1_3", or empty for default negotiation.
+func runTLSCheck(oc *exutil.CLI, checkerPod, host, port, tlsFlag string) (string, error) {
+	tlsArg := ""
+	if tlsFlag != "" {
+		tlsArg = " " + tlsFlag
+	}
+	cmd := fmt.Sprintf("echo | openssl s_client -connect %s%s 2>&1 || true", net.JoinHostPort(host, port), tlsArg)
+	return execInPod(oc, wmcoNamespace, "pod/"+checkerPod, "bash", "-c", cmd)
+}
+
 // waitForMachinesetReady polls until the MachineSet has the expected number of ready replicas.
 func waitForMachinesetReady(oc *exutil.CLI, machineSetName string, timeout, replicas int) {
 	err := wait.Poll(1*time.Minute, time.Duration(timeout)*time.Minute, func() (bool, error) {
@@ -1878,24 +2071,47 @@ func waitForProxyOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[stri
 	compat_otp.AssertWaitPollNoErr(pollErr, "proxy values did not propagate to all Windows nodes within 5 minutes")
 }
 
-func getWMCOTimestamp(oc *exutil.CLI) string {
-	wmcoTime, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pod", "--selector", "name="+wmcoDeploymentName, "--field-selector=status.phase=Running", "-o=jsonpath={.items[0].status.startTime}", "-n", wmcoNamespace).Output()
-	if err != nil || wmcoTime == "" {
+// getWMCORestartState returns state that changes when either the WMCO pod is
+// recreated or its manager container is restarted in place.
+func getWMCORestartState(oc *exutil.CLI) string {
+	podJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pod", "--selector", "name="+wmcoDeploymentName,
+		"--field-selector=status.phase=Running", "-o=json", "-n", wmcoNamespace).Output()
+	if err != nil || podJSON == "" {
 		return ""
 	}
-	return wmcoTime
+
+	pod := gjson.Parse(podJSON).Get("items.0")
+	if !pod.Exists() {
+		return ""
+	}
+	manager := pod.Get(`status.containerStatuses.#(name=="manager")`)
+	if !manager.Exists() {
+		return ""
+	}
+
+	return fmt.Sprintf("podUID=%s podStartTime=%s managerRestartCount=%s managerContainerID=%s",
+		pod.Get("metadata.uid").String(),
+		pod.Get("status.startTime").String(),
+		manager.Get("restartCount").String(),
+		manager.Get("containerID").String())
 }
 
-func checkWMCORestarted(oc *exutil.CLI, startTime string) (bool, error) {
+// checkWMCORestarted polls until the WMCO pod is recreated or its manager
+// container is restarted in place.
+func checkWMCORestarted(oc *exutil.CLI, initialRestartState string) (bool, error) {
+	if initialRestartState == "" {
+		return false, fmt.Errorf("empty restart baseline: must capture WMCO restart state before triggering restart")
+	}
 	var restartDetected bool
 	pollErr := wait.Poll(20*time.Second, 6*time.Minute, func() (bool, error) {
-		actualWMCOTime := getWMCOTimestamp(oc)
-		if actualWMCOTime == "" {
-			e2e.Logf("WMCO pod timestamp unavailable (pod transitioning), waiting...")
+		actualRestartState := getWMCORestartState(oc)
+		if actualRestartState == "" {
+			e2e.Logf("WMCO restart state unavailable (pod transitioning), waiting...")
 			return false, nil
 		}
-		if startTime != actualWMCOTime {
-			e2e.Logf("WMCO restarted (old: %s, new: %s)", startTime, actualWMCOTime)
+		if initialRestartState != actualRestartState {
+			e2e.Logf("WMCO restarted (old: %s, new: %s)", initialRestartState, actualRestartState)
 			restartDetected = true
 			return true, nil
 		}
@@ -1904,7 +2120,7 @@ func checkWMCORestarted(oc *exutil.CLI, startTime string) (bool, error) {
 	})
 	if pollErr != nil {
 		if pollErr == wait.ErrWaitTimeout {
-			e2e.Logf("WMCO did not restart within 6 minutes (this is expected for some proxy changes)")
+			e2e.Logf("WMCO did not restart within 6 minutes; continuing after the restart wait timed out")
 			return false, nil
 		}
 		return false, fmt.Errorf("error checking WMCO restart: %w", pollErr)
@@ -1928,7 +2144,7 @@ spec:
 
 func restoreProxyEnvironment(oc *exutil.CLI, clusterEnvVars map[string]interface{}) {
 	e2e.Logf("Starting proxy environment restore")
-	wmcoStartTime := getWMCOTimestamp(oc)
+	wmcoStartTime := getWMCORestartState(oc)
 	httpProxy := fmt.Sprint(clusterEnvVars["HTTP_PROXY"])
 	httpsProxy := fmt.Sprint(clusterEnvVars["HTTPS_PROXY"])
 	noProxy := fmt.Sprint(clusterEnvVars["NO_PROXY"])
