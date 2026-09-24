@@ -280,12 +280,32 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 			// If the private key used to configure the machine is out of date, the machine should be deleted
 			if node.Annotations[nodeconfig.PubKeyHashAnnotation] !=
 				nodeconfig.CreatePubKeyHashAnnotation(r.signer.PublicKey()) {
-				log.Info("deleting machine")
+				log.Info("deleting machine due to public key mismatch", "machine", machine.Name)
+
+				// Check cluster-wide upgrade limit before deletion (defense in depth)
+				if err := markNodeAsUpgrading(ctx, r.client, node); err != nil {
+					var upgradeErr *UpgradeLimitExceededError
+					if !errors.As(err, &upgradeErr) {
+						return ctrl.Result{}, err
+					}
+					// Upgrade limit reached - log and requeue
+					r.log.Info(upgradeErr.Error())
+					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionDeferred",
+						"Machine %v deletion deferred: %v", machine.Name, upgradeErr.Error())
+					return ctrl.Result{Requeue: true}, nil
+				}
+
 				deletionAllowed, err := r.isAllowedDeletion(ctx, machine)
 				if err != nil {
+					if rbErr := metadata.RemoveUpgradingLabel(ctx, r.client, node); rbErr != nil {
+						r.log.Error(rbErr, "failed to rollback upgrading label", "node", node.GetName())
+					}
 					return ctrl.Result{}, fmt.Errorf("unable to determine if Machine can be deleted: %w", err)
 				}
 				if !deletionAllowed {
+					if rbErr := metadata.RemoveUpgradingLabel(ctx, r.client, node); rbErr != nil {
+						r.log.Error(rbErr, "failed to rollback upgrading label", "node", node.GetName())
+					}
 					log.Info("machine deletion restricted", "maxUnhealthyCount", maxUnhealthyCount)
 					r.recorder.Eventf(machine, core.EventTypeWarning, "MachineDeletionRestricted",
 						"Machine %v deletion restricted as the maximum unhealthy machines can`t exceed %v count",
