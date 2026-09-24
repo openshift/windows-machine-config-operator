@@ -295,7 +295,12 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 				return ctrl.Result{}, r.deleteMachine(ctx, machine)
 			}
 			if node.Annotations[metadata.VersionAnnotation] == version.Get() {
-				// version annotation exists with a valid value, node is fully configured.
+				// Node is version-current; reconcile the webconfig SHA in case
+				// the TLS profile changed since the node was last configured.
+				if err := r.ensureWebConfigForNode(ctx, *node); err != nil {
+					return ctrl.Result{}, fmt.Errorf("error ensuring webconfig is up to date on node %s: %w",
+						node.Name, err)
+				}
 				return ctrl.Result{}, nil
 			}
 		}
