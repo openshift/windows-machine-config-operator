@@ -65,20 +65,12 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(ctx context.Context, insta
 		return fmt.Errorf("instance cannot be nil")
 	}
 
-	// Instance is up to date, do nothing — except check for webconfig changes.
-	// When the cluster TLS security profile changes, the operator restarts and
-	// regenerates the webconfig with new TLS settings. Existing nodes already
-	// have the correct WMCO version annotation, so UpToDate() returns true and
-	// a full configure/upgrade cycle is skipped. The lightweight webconfig
-	// update below pushes ONLY the updated webconfig file (via EnsureFile)
-	// without draining, deconfiguring, or restarting the node — the
-	// exporter-toolkit's GetConfigForClient reload picks up the new file on
-	// the next TLS handshake.
+	// Instance version is current — only the lightweight webconfig SHA
+	// reconciliation is needed (no drain/deconfigure/restart).
 	if instanceInfo.UpToDate() {
-		// Instance being up to date indicates that node object is present with the version annotation
-		r.log.Info("instance is up to date", "node", instanceInfo.Node.GetName(), "version",
-			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation])
-		// Check if the webconfig needs a lightweight update
+		r.log.Info("instance version is current, checking webconfig SHA",
+			"node", instanceInfo.Node.GetName(),
+			"version", instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation])
 		if err := r.ensureWebConfigIsUpToDate(ctx, instanceInfo); err != nil {
 			return fmt.Errorf("error ensuring webconfig is up to date on node %s: %w",
 				instanceInfo.Node.GetName(), err)

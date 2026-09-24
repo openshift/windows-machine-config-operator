@@ -200,6 +200,9 @@ func main() {
 		setupLog.Error(err, "unable to generate windows-exporter webconfig")
 		os.Exit(1)
 	}
+	setupLog.Info("windows-exporter webconfig generated",
+		"honorTLSProfile", honorTLSProfile,
+		"webConfigSHA", payload.GetWebConfigSHA())
 	if len(unsupportedWebConfigCiphers) > 0 {
 		setupLog.Info("some TLS settings are not supported for the windows-exporter webconfig and will be ignored",
 			"unsupported", unsupportedWebConfigCiphers)

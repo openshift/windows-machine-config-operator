@@ -73,15 +73,9 @@ const (
 	// WindowsExporterPath contains the path of the windows_exporter binary. The container image should already have
 	// this binary mounted
 	WindowsExporterPath = payloadDirectory + WindowsExporterDirectory + WindowsExporterName
-	// TLSConfPath contains the path of the generated TLS webconfig file.
-	// Written to the world-writable /payload/generated/ directory because the
-	// operator runs as an arbitrary non-root UID (OpenShift SCC) and the static
-	// /payload/windows-exporter/ directory is baked read-only in the image.
-	// TODO(WINC-2118): The Dockerfile still bakes a static
-	// windows-exporter-webconfig.yaml into /payload/windows-exporter/.
-	// That file is now unused because PopulateWebConfig generates the
-	// webconfig here at runtime. Remove the static copy from the
-	// Dockerfile once all release branches use PopulateWebConfig.
+	// TLSConfPath contains the path of the runtime-generated TLS webconfig file.
+	// Written to /payload/generated/ because the operator runs as a non-root
+	// UID (OpenShift SCC) and the static /payload/ directory is read-only.
 	TLSConfPath = payloadDirectory + "/generated/windows-exporter-webconfig.yaml.tar.gz"
 	// ECRCredentialProviderPath is the path to ecr-credential-provider.exe
 	ECRCredentialProviderPath = payloadDirectory + "ecr-credential-provider.exe.tar.gz"
