@@ -85,27 +85,38 @@ func commandOutputWithContext(ctx context.Context, start cliCommandStarter) (str
 		waitResult <- cmd.Wait()
 	}()
 
-	combinedOutput := func() string {
-		return strings.TrimSpace(strings.TrimSpace(stdout.String()) + "\n" + strings.TrimSpace(stderr.String()))
+	stdoutOutput := func() string {
+		return strings.TrimSpace(stdout.String())
+	}
+	commandError := func(message string, err error) error {
+		stdoutText := stdoutOutput()
+		stderrText := strings.TrimSpace(stderr.String())
+		switch {
+		case stdoutText != "" && stderrText != "":
+			return fmt.Errorf("%s: stdout: %s; stderr: %s: %w", message, stdoutText, stderrText, err)
+		case stderrText != "":
+			return fmt.Errorf("%s: stderr: %s: %w", message, stderrText, err)
+		case stdoutText != "":
+			return fmt.Errorf("%s: stdout: %s: %w", message, stdoutText, err)
+		default:
+			return fmt.Errorf("%s: %w", message, err)
+		}
 	}
 	select {
 	case err := <-waitResult:
-		output := combinedOutput()
+		output := stdoutOutput()
 		if err == nil {
 			return output, nil
 		}
-		if output == "" {
-			return "", fmt.Errorf("CLI command failed: %w", err)
-		}
-		return output, fmt.Errorf("CLI command failed: %s: %w", output, err)
+		return output, commandError("CLI command failed", err)
 	case <-ctx.Done():
 		killErr := cmd.Process.Kill()
 		<-waitResult
-		output := combinedOutput()
+		output := stdoutOutput()
 		if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
-			return output, fmt.Errorf("killing CLI command after cancellation: %v: %w", killErr, ctx.Err())
+			return output, commandError(fmt.Sprintf("killing CLI command after cancellation: %v", killErr), ctx.Err())
 		}
-		return output, fmt.Errorf("CLI command canceled: %w", ctx.Err())
+		return output, commandError("CLI command canceled", ctx.Err())
 	}
 }
 

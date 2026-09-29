@@ -3,6 +3,7 @@ package winc
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -10,6 +11,74 @@ import (
 	"testing"
 	"time"
 )
+
+func TestCommandOutputWithContext(t *testing.T) {
+	startCommand := func(command string, startedCommand **exec.Cmd) cliCommandStarter {
+		return func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			cmd := exec.Command("sh", "-c", command)
+			cmd.Stdout = stdout
+			cmd.Stderr = stderr
+			if startedCommand != nil {
+				*startedCommand = cmd
+			}
+			return cmd, stdout, stderr, cmd.Start()
+		}
+	}
+
+	t.Run("successful JSON output excludes stderr warnings", func(t *testing.T) {
+		output, err := commandOutputWithContext(context.Background(),
+			startCommand(`printf '{"status":"ok"}'; printf 'warning from stderr' >&2`, nil))
+		if err != nil {
+			t.Fatalf("expected command to succeed, got %v", err)
+		}
+		var result struct {
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal([]byte(output), &result); err != nil {
+			t.Fatalf("expected parseable JSON stdout, got %q: %v", output, err)
+		}
+		if result.Status != "ok" {
+			t.Fatalf("expected JSON status ok, got %q", result.Status)
+		}
+		if strings.Contains(output, "warning from stderr") {
+			t.Fatalf("successful output included stderr warning: %q", output)
+		}
+	})
+
+	t.Run("failed command includes stderr diagnostics", func(t *testing.T) {
+		output, err := commandOutputWithContext(context.Background(),
+			startCommand(`printf 'partial stdout'; printf 'failure detail' >&2; exit 7`, nil))
+		if err == nil {
+			t.Fatal("expected command to fail")
+		}
+		if output != "partial stdout" {
+			t.Fatalf("expected only stdout to be returned, got %q", output)
+		}
+		if !strings.Contains(err.Error(), "stdout: partial stdout") ||
+			!strings.Contains(err.Error(), "stderr: failure detail") {
+			t.Fatalf("expected stdout and stderr failure diagnostics, got %v", err)
+		}
+	})
+
+	t.Run("cancellation includes stderr and reaps command", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		var command *exec.Cmd
+		output, err := commandOutputWithContext(ctx,
+			startCommand(`printf 'cancellation detail' >&2; exec sleep 30`, &command))
+		if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected command cancellation, got output=%q err=%v", output, err)
+		}
+		if !strings.Contains(err.Error(), "stderr: cancellation detail") {
+			t.Fatalf("expected cancellation stderr diagnostics, got %v", err)
+		}
+		if command == nil || command.ProcessState == nil {
+			t.Fatal("expected canceled command to be waited on and reaped")
+		}
+	})
+}
 
 func TestClusterOperatorsSettled(t *testing.T) {
 	operatorJSON := `{
