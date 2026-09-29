@@ -1,8 +1,11 @@
 package winc
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -151,24 +154,25 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 
 	t.Run("waits for rollout before control-plane stability", func(t *testing.T) {
 		var calls []string
-		err := waitForTLSRecoveryAfterRestore(time.Now().Add(time.Minute), 2, tlsRecoveryWaitOperations{
-			waitForRestart: func(timeout time.Duration) (bool, error) {
-				calls = append(calls, "restart")
-				return true, nil
-			},
-			waitForDeployment: func(timeout time.Duration) error {
-				calls = append(calls, "deployment")
-				return nil
-			},
-			waitForWindowsNodes: func(timeout time.Duration) error {
-				calls = append(calls, "nodes")
-				return nil
-			},
-			waitForStability: func(timeout time.Duration) error {
-				calls = append(calls, "stability")
-				return nil
-			},
-		})
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(time.Minute), 2,
+			tlsRecoveryWaitOperations{
+				waitForRestart: func(context.Context, time.Duration) (bool, error) {
+					calls = append(calls, "restart")
+					return true, nil
+				},
+				waitForDeployment: func(context.Context, time.Duration) error {
+					calls = append(calls, "deployment")
+					return nil
+				},
+				waitForWindowsNodes: func(context.Context, time.Duration) error {
+					calls = append(calls, "nodes")
+					return nil
+				},
+				waitForStability: func(context.Context, time.Duration) error {
+					calls = append(calls, "stability")
+					return nil
+				},
+			})
 		if err != nil {
 			t.Fatalf("expected recovery, got %v", err)
 		}
@@ -179,14 +183,17 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 
 	t.Run("stops after a fatal rollout error", func(t *testing.T) {
 		stabilityCalled := false
-		err := waitForTLSRecoveryAfterRestore(time.Now().Add(time.Minute), 0, tlsRecoveryWaitOperations{
-			waitForRestart:    func(timeout time.Duration) (bool, error) { return true, nil },
-			waitForDeployment: func(timeout time.Duration) error { return errors.New("deployment failed") },
-			waitForStability: func(timeout time.Duration) error {
-				stabilityCalled = true
-				return nil
-			},
-		})
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(time.Minute), 0,
+			tlsRecoveryWaitOperations{
+				waitForRestart: func(context.Context, time.Duration) (bool, error) { return true, nil },
+				waitForDeployment: func(context.Context, time.Duration) error {
+					return errors.New("deployment failed")
+				},
+				waitForStability: func(context.Context, time.Duration) error {
+					stabilityCalled = true
+					return nil
+				},
+			})
 		if err == nil || !strings.Contains(err.Error(), "deployment failed") || stabilityCalled {
 			t.Fatalf("expected deployment failure to stop recovery, got stabilityCalled=%t err=%v",
 				stabilityCalled, err)
@@ -210,16 +217,55 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 
 	t.Run("stops when restart is not observed", func(t *testing.T) {
 		deploymentCalled := false
-		err := waitForTLSRecoveryAfterRestore(time.Now().Add(time.Minute), 0, tlsRecoveryWaitOperations{
-			waitForRestart: func(timeout time.Duration) (bool, error) { return false, nil },
-			waitForDeployment: func(timeout time.Duration) error {
-				deploymentCalled = true
-				return nil
-			},
-		})
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(time.Minute), 0,
+			tlsRecoveryWaitOperations{
+				waitForRestart: func(context.Context, time.Duration) (bool, error) { return false, nil },
+				waitForDeployment: func(context.Context, time.Duration) error {
+					deploymentCalled = true
+					return nil
+				},
+			})
 		if err == nil || !strings.Contains(err.Error(), "did not restart") || deploymentCalled {
 			t.Fatalf("expected missing restart to stop recovery, got deploymentCalled=%t err=%v",
 				deploymentCalled, err)
+		}
+	})
+
+	t.Run("shared deadline cancels and reaps a blocked command", func(t *testing.T) {
+		var blockedCommand *exec.Cmd
+		deploymentCalled := false
+		start := time.Now()
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(30*time.Millisecond), 0,
+			tlsRecoveryWaitOperations{
+				waitForRestart: func(ctx context.Context, _ time.Duration) (bool, error) {
+					return false, func() error {
+						_, err := commandOutputWithContext(ctx, func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+							stdout := &bytes.Buffer{}
+							stderr := &bytes.Buffer{}
+							blockedCommand = exec.Command("sleep", "30")
+							blockedCommand.Stdout = stdout
+							blockedCommand.Stderr = stderr
+							return blockedCommand, stdout, stderr, blockedCommand.Start()
+						})
+						return err
+					}()
+				},
+				waitForDeployment: func(context.Context, time.Duration) error {
+					deploymentCalled = true
+					return nil
+				},
+			})
+		if err == nil || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected blocked command to be canceled by the shared deadline, got %v", err)
+		}
+		if elapsed := time.Since(start); elapsed > time.Second {
+			t.Fatalf("blocked command outlived the shared deadline: %v", elapsed)
+		}
+		if blockedCommand == nil || blockedCommand.ProcessState == nil {
+			t.Fatal("expected blocked command to be waited on and reaped")
+		}
+		if deploymentCalled {
+			t.Fatal("expected recovery to stop after the canceled restart check")
 		}
 	})
 }
@@ -259,6 +305,43 @@ func TestReadyWMCOPodName(t *testing.T) {
 }
 
 func TestPollForWMCOManagerTLSLogs(t *testing.T) {
+	t.Run("matches only the expected missing pod log resource", func(t *testing.T) {
+		const podName = "windows-machine-config-operator-7477bf7f4-g2f9x"
+		tests := []struct {
+			name      string
+			message   string
+			transient bool
+		}{
+			{
+				name: "verbatim unquoted Prow error",
+				message: "Error from server (NotFound): the server could not find the requested resource " +
+					"( pods/log windows-machine-config-operator-7477bf7f4-g2f9x)",
+				transient: true,
+			},
+			{
+				name:      "quoted pod log resource",
+				message:   `Error from server (NotFound): pods/log "windows-machine-config-operator-7477bf7f4-g2f9x" not found`,
+				transient: true,
+			},
+			{
+				name: "different pod",
+				message: "Error from server (NotFound): the server could not find the requested resource " +
+					"( pods/log windows-machine-config-operator-7477bf7f4-other)",
+			},
+			{
+				name:    "permanent namespace error",
+				message: `Error from server (NotFound): namespaces "openshift-windows-machine-config-operator" not found`,
+			},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				if got := isExpectedPodLogNotFound(errors.New(test.message), podName); got != test.transient {
+					t.Fatalf("expected transient=%t, got %t for %q", test.transient, got, test.message)
+				}
+			})
+		}
+	})
+
 	t.Run("retries transient and incomplete logs", func(t *testing.T) {
 		attempts := 0
 		logs, err := pollForWMCOManagerTLSLogs(time.Millisecond, 100*time.Millisecond, "VersionTLS13",

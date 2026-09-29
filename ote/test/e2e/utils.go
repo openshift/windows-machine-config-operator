@@ -1,6 +1,7 @@
 package winc
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -49,6 +50,7 @@ var (
 var (
 	errNoReadyWMCOPod     = errors.New("no ready WMCO manager pod found")
 	errWMCOPodDisappeared = errors.New("ready WMCO pod disappeared before its logs could be read")
+	podLogResourcePattern = regexp.MustCompile(`(?i)(?:^|[\s(])pods/log\s+(?:"([^"]+)"|([a-z0-9](?:[-a-z0-9.]*[a-z0-9])?))(?:[\s):]|$)`)
 )
 
 const (
@@ -63,6 +65,53 @@ const (
 	tlsRestorationTimeout = tlsRecoveryRestartTimeout + tlsRecoveryDeploymentTimeout +
 		tlsRecoveryWindowsNodesTimeout + tlsRecoveryAPITimeout + time.Minute
 )
+
+type cliCommandStarter func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error)
+
+// commandOutputWithContext runs an OTE CLI command until it completes or the
+// supplied context expires. On cancellation it kills the in-flight process and
+// waits for it to be reaped before returning.
+func commandOutputWithContext(ctx context.Context, start cliCommandStarter) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("CLI command canceled before start: %w", err)
+	}
+
+	cmd, stdout, stderr, err := start()
+	if err != nil {
+		return "", fmt.Errorf("starting CLI command: %w", err)
+	}
+	waitResult := make(chan error, 1)
+	go func() {
+		waitResult <- cmd.Wait()
+	}()
+
+	combinedOutput := func() string {
+		return strings.TrimSpace(strings.TrimSpace(stdout.String()) + "\n" + strings.TrimSpace(stderr.String()))
+	}
+	select {
+	case err := <-waitResult:
+		output := combinedOutput()
+		if err == nil {
+			return output, nil
+		}
+		if output == "" {
+			return "", fmt.Errorf("CLI command failed: %w", err)
+		}
+		return output, fmt.Errorf("CLI command failed: %s: %w", output, err)
+	case <-ctx.Done():
+		killErr := cmd.Process.Kill()
+		<-waitResult
+		output := combinedOutput()
+		if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+			return output, fmt.Errorf("killing CLI command after cancellation: %v: %w", killErr, ctx.Err())
+		}
+		return output, fmt.Errorf("CLI command canceled: %w", ctx.Err())
+	}
+}
+
+func cliOutputWithContext(ctx context.Context, command *exutil.CLI) (string, error) {
+	return commandOutputWithContext(ctx, command.Background)
+}
 
 // Service represents a Windows service entry from the WICD windows-services ConfigMap.
 type Service struct {
@@ -376,10 +425,16 @@ func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
 
 // waitWindowsNodesReady polls until the expected number of Windows nodes report Ready status.
 func pollWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) error {
-	return wait.Poll(10*time.Second, timeout, func() (bool, error) {
-		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return pollWindowsNodesReadyWithContext(ctx, oc, expectedCount)
+}
+
+func pollWindowsNodesReadyWithContext(ctx context.Context, oc *exutil.CLI, expectedCount int) error {
+	return wait.PollUntilContextCancel(ctx, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+		output, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"nodes", "-l", windowsNodeLabel,
-			"-o=jsonpath={.items[*].status.conditions[?(@.type==\"Ready\")].status}").Output()
+			"-o=jsonpath={.items[*].status.conditions[?(@.type==\"Ready\")].status}"))
 		if err != nil {
 			e2e.Logf("Error querying Windows nodes: %v", err)
 			if !isTransientTLSRecoveryError(err) {
@@ -809,33 +864,56 @@ scheduling:
 // waitForDeploymentReady polls until all replicas of a Deployment are ready, or returns an error
 // on timeout, ImagePullBackOff, or CrashLoopBackOff. Logs diagnostic info on failure.
 func waitForDeploymentReady(oc *exutil.CLI, deploymentName, namespace string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return waitForDeploymentReadyWithContext(ctx, oc, deploymentName, namespace, timeout)
+}
+
+func waitForDeploymentReadyWithContext(ctx context.Context, oc *exutil.CLI, deploymentName, namespace string,
+	timeout time.Duration) error {
 	var lastPodStatus string
 	imagePullBackOffCount := 0
 
-	err := wait.Poll(10*time.Second, timeout, func() (bool, error) {
-		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("deployment", deploymentName,
+	err := wait.PollUntilContextCancel(ctx, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+		output, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"deployment", deploymentName,
 			"-n", namespace,
-			"-o", "jsonpath={.status.replicas},{.status.readyReplicas}").Output()
+			"-o", "jsonpath={.status.replicas},{.status.readyReplicas}"))
 		if err != nil {
+			if !isTransientTLSRecoveryError(err) {
+				return false, fmt.Errorf("querying deployment readiness: %w", err)
+			}
 			return false, nil
 		}
 
 		parts := strings.Split(strings.TrimSpace(output), ",")
 		if len(parts) != 2 {
+			return false, fmt.Errorf("unexpected deployment readiness response %q", output)
+		}
+		if parts[0] == "" || parts[1] == "" {
 			return false, nil
 		}
 
-		replicas, _ := strconv.Atoi(parts[0])
-		readyReplicas, _ := strconv.Atoi(parts[1])
+		replicas, err := strconv.Atoi(parts[0])
+		if err != nil {
+			return false, fmt.Errorf("parsing deployment replicas %q: %w", parts[0], err)
+		}
+		readyReplicas, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return false, fmt.Errorf("parsing deployment ready replicas %q: %w", parts[1], err)
+		}
 
 		if replicas > 0 && replicas == readyReplicas {
 			return true, nil
 		}
 
-		podStatus, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods",
+		podStatus, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args("pods",
 			"-n", namespace,
 			"-l", "app="+deploymentName,
-			"-o", "jsonpath={.items[*].status.containerStatuses[*].state}").Output()
+			"-o", "jsonpath={.items[*].status.containerStatuses[*].state}"))
+		if err != nil && !isTransientTLSRecoveryError(err) {
+			return false, fmt.Errorf("querying deployment pod status: %w", err)
+		}
 
 		if err == nil && podStatus != "" {
 			lastPodStatus = podStatus
@@ -861,20 +939,20 @@ func waitForDeploymentReady(oc *exutil.CLI, deploymentName, namespace string, ti
 		e2e.Logf("Deployment %s failed to become ready in namespace %s", deploymentName, namespace)
 		e2e.Logf("Last pod status: %s", lastPodStatus)
 
-		podList, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args("pods",
+		podList, _ := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args("pods",
 			"-n", namespace,
 			"-l", "app="+deploymentName,
-			"-o", "wide").Output()
+			"-o", "wide"))
 		e2e.Logf("Pod list:\n%s", podList)
 
-		events, _ := oc.AsAdmin().WithoutNamespace().Run("get").Args("events",
+		events, _ := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args("events",
 			"-n", namespace,
 			"--field-selector", "involvedObject.kind=Pod",
-			"--sort-by", ".lastTimestamp").Output()
+			"--sort-by", ".lastTimestamp"))
 		e2e.Logf("Pod events:\n%s", events)
 
-		deployStatus, _ := oc.AsAdmin().WithoutNamespace().Run("describe").Args("deployment", deploymentName,
-			"-n", namespace).Output()
+		deployStatus, _ := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("describe").Args(
+			"deployment", deploymentName, "-n", namespace))
 		e2e.Logf("Deployment status:\n%s", deployStatus)
 	}
 
@@ -1319,16 +1397,19 @@ func extractPrivateKeyToFile(oc *exutil.CLI) string {
 }
 
 // restoreAPIServerTLS restores the original TLS configuration on apiserver/cluster.
-func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) error {
+func restoreAPIServerTLS(ctx context.Context, oc *exutil.CLI, origAdherence, origTLSProfile string) error {
 	var restoreErr error
 	if origAdherence == "" {
-		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=json",
-			"-p", `[{"op":"remove","path":"/spec/tlsAdherence"}]`).Execute(); err != nil {
+		_, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"apiserver/cluster", "--type=json", "-p", `[{"op":"remove","path":"/spec/tlsAdherence"}]`))
+		if err != nil {
 			restoreErr = fmt.Errorf("could not remove tlsAdherence: %w", err)
 		}
 	} else {
-		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
-			"-p", fmt.Sprintf(`{"spec":{"tlsAdherence":"%s"}}`, origAdherence)).Execute(); err != nil {
+		_, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"apiserver/cluster", "--type=merge",
+			"-p", fmt.Sprintf(`{"spec":{"tlsAdherence":"%s"}}`, origAdherence)))
+		if err != nil {
 			restoreErr = fmt.Errorf("could not restore tlsAdherence: %w", err)
 		}
 	}
@@ -1336,16 +1417,20 @@ func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) e
 		// The API server may default this field and reject removing it. An
 		// explicit Intermediate profile is equivalent to the default and is
 		// safely accepted as the restored state.
-		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
-			"-p", `{"spec":{"tlsSecurityProfile":{"type":"Intermediate","intermediate":{}}}}`).Execute(); err != nil {
+		_, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"apiserver/cluster", "--type=merge",
+			"-p", `{"spec":{"tlsSecurityProfile":{"type":"Intermediate","intermediate":{}}}}`))
+		if err != nil {
 			if restoreErr != nil {
 				return fmt.Errorf("%v; could not restore default tlsSecurityProfile: %w", restoreErr, err)
 			}
 			return fmt.Errorf("could not restore default tlsSecurityProfile: %w", err)
 		}
 	} else {
-		if err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("apiserver/cluster", "--type=merge",
-			"-p", fmt.Sprintf(`{"spec":{"tlsSecurityProfile":%s}}`, origTLSProfile)).Execute(); err != nil {
+		_, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("patch").Args(
+			"apiserver/cluster", "--type=merge",
+			"-p", fmt.Sprintf(`{"spec":{"tlsSecurityProfile":%s}}`, origTLSProfile)))
+		if err != nil {
 			if restoreErr != nil {
 				return fmt.Errorf("%v; could not restore tlsSecurityProfile: %w", restoreErr, err)
 			}
@@ -1412,6 +1497,7 @@ func clusterOperatorsSettled(operatorJSON string, operatorNames []string) (bool,
 }
 
 type tlsRecoveryCheck func() (bool, string, error)
+type tlsRecoveryContextCheck func(context.Context) (bool, string, error)
 
 func isTransientTLSRecoveryError(err error) bool {
 	message := strings.ToLower(err.Error())
@@ -1435,11 +1521,21 @@ func isTransientTLSRecoveryError(err error) bool {
 }
 
 func pollForTLSRecovery(interval, timeout, minimumStablePeriod time.Duration, check tlsRecoveryCheck) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return pollForTLSRecoveryWithContext(ctx, interval, timeout, minimumStablePeriod,
+		func(context.Context) (bool, string, error) {
+			return check()
+		})
+}
+
+func pollForTLSRecoveryWithContext(ctx context.Context, interval, timeout,
+	minimumStablePeriod time.Duration, check tlsRecoveryContextCheck) error {
 	var lastErr error
 	var lastState string
 	var stableSince time.Time
-	pollErr := wait.Poll(interval, timeout, func() (bool, error) {
-		ready, state, err := check()
+	pollErr := wait.PollUntilContextCancel(ctx, interval, true, func(ctx context.Context) (bool, error) {
+		ready, state, err := check(ctx)
 		if err != nil {
 			if !isTransientTLSRecoveryError(err) {
 				return false, err
@@ -1463,7 +1559,7 @@ func pollForTLSRecovery(interval, timeout, minimumStablePeriod time.Duration, ch
 	if pollErr == nil {
 		return nil
 	}
-	if !errors.Is(pollErr, wait.ErrWaitTimeout) {
+	if !errors.Is(pollErr, context.DeadlineExceeded) && !errors.Is(pollErr, context.Canceled) {
 		return fmt.Errorf("checking OpenShift API recovery: %w", pollErr)
 	}
 	if lastErr != nil {
@@ -1479,10 +1575,16 @@ func pollForTLSRecovery(interval, timeout, minimumStablePeriod time.Duration, ch
 // server TLS profile. This mitigates test cleanup races; it does not identify
 // the cause of any API outage observed during the rollout.
 func waitForOpenShiftAPIAndOperators(oc *exutil.CLI, timeout time.Duration) error {
-	return pollForTLSRecovery(tlsRecoveryPollInterval, timeout, tlsRecoveryMinimumStablePeriod,
-		func() (bool, string, error) {
-			userJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"--raw=/apis/user.openshift.io/v1/users/~", "--request-timeout=10s").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return waitForOpenShiftAPIAndOperatorsWithContext(ctx, oc, timeout)
+}
+
+func waitForOpenShiftAPIAndOperatorsWithContext(ctx context.Context, oc *exutil.CLI, timeout time.Duration) error {
+	return pollForTLSRecoveryWithContext(ctx, tlsRecoveryPollInterval, timeout, tlsRecoveryMinimumStablePeriod,
+		func(ctx context.Context) (bool, string, error) {
+			userJSON, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"--raw=/apis/user.openshift.io/v1/users/~", "--request-timeout=10s"))
 			if err != nil {
 				e2e.Logf("Waiting for the OpenShift user API to recover: %v", err)
 				return false, "", fmt.Errorf("querying the OpenShift user API: %w", err)
@@ -1501,8 +1603,8 @@ func waitForOpenShiftAPIAndOperators(oc *exutil.CLI, timeout time.Duration) erro
 
 			// The suite's BeforeEach reads this exact resource and field, so a
 			// successful sample must prove that path is healthy as well.
-			infrastructureJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"infrastructure", "cluster", "-o=json", "--request-timeout=10s").Output()
+			infrastructureJSON, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"infrastructure", "cluster", "-o=json", "--request-timeout=10s"))
 			if err != nil {
 				e2e.Logf("Waiting for the infrastructure API read used by BeforeEach: %v", err)
 				return false, "", fmt.Errorf("querying infrastructure/cluster: %w", err)
@@ -1523,7 +1625,8 @@ func waitForOpenShiftAPIAndOperators(oc *exutil.CLI, timeout time.Duration) erro
 
 			args := append([]string{"clusteroperator"}, tlsRecoveryClusterOperators...)
 			args = append(args, "-o=json", "--request-timeout=10s")
-			operatorJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Output()
+			operatorJSON, err := cliOutputWithContext(ctx,
+				oc.AsAdmin().WithoutNamespace().Run("get").Args(args...))
 			if err != nil {
 				e2e.Logf("Waiting for control-plane cluster operators: %v", err)
 				return false, "", fmt.Errorf("querying control-plane cluster operators: %w", err)
@@ -1540,13 +1643,17 @@ func waitForOpenShiftAPIAndOperators(oc *exutil.CLI, timeout time.Duration) erro
 }
 
 func getAPIServerTLSConfiguration(oc *exutil.CLI) (string, string, error) {
-	profile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}").Output()
+	return getAPIServerTLSConfigurationWithContext(context.Background(), oc)
+}
+
+func getAPIServerTLSConfigurationWithContext(ctx context.Context, oc *exutil.CLI) (string, string, error) {
+	profile, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}"))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get apiserver TLS profile: %w", err)
 	}
-	adherence, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}").Output()
+	adherence, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"apiserver/cluster", "-o=jsonpath={.spec.tlsAdherence}"))
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get apiserver TLS adherence: %w", err)
 	}
@@ -1590,10 +1697,10 @@ func ensureTLSProfileDiffersFromTarget(oc *exutil.CLI, targetType string) error 
 }
 
 type tlsRecoveryWaitOperations struct {
-	waitForRestart      func(time.Duration) (bool, error)
-	waitForDeployment   func(time.Duration) error
-	waitForWindowsNodes func(time.Duration) error
-	waitForStability    func(time.Duration) error
+	waitForRestart      func(context.Context, time.Duration) (bool, error)
+	waitForDeployment   func(context.Context, time.Duration) error
+	waitForWindowsNodes func(context.Context, time.Duration) error
+	waitForStability    func(context.Context, time.Duration) error
 }
 
 func tlsRecoveryPhaseTimeout(deadline time.Time, maximum time.Duration) (time.Duration, error) {
@@ -1607,13 +1714,25 @@ func tlsRecoveryPhaseTimeout(deadline time.Time, maximum time.Duration) (time.Du
 	return maximum, nil
 }
 
-func waitForTLSRecoveryAfterRestore(deadline time.Time, windowsNodeCount int,
+func tlsRecoveryPhaseContext(parent context.Context, deadline time.Time,
+	maximum time.Duration) (context.Context, context.CancelFunc, time.Duration, error) {
+	timeout, err := tlsRecoveryPhaseTimeout(deadline, maximum)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	return ctx, cancel, timeout, nil
+}
+
+func waitForTLSRecoveryAfterRestore(ctx context.Context, deadline time.Time, windowsNodeCount int,
 	operations tlsRecoveryWaitOperations) error {
-	restartTimeout, err := tlsRecoveryPhaseTimeout(deadline, tlsRecoveryRestartTimeout)
+	restartCtx, cancelRestart, restartTimeout, err := tlsRecoveryPhaseContext(ctx, deadline,
+		tlsRecoveryRestartTimeout)
 	if err != nil {
 		return err
 	}
-	restarted, err := operations.waitForRestart(restartTimeout)
+	restarted, err := operations.waitForRestart(restartCtx, restartTimeout)
+	cancelRestart()
 	if err != nil {
 		return err
 	}
@@ -1621,34 +1740,44 @@ func waitForTLSRecoveryAfterRestore(deadline time.Time, windowsNodeCount int,
 		return fmt.Errorf("WMCO did not restart while restoring TLS configuration")
 	}
 
-	deploymentTimeout, err := tlsRecoveryPhaseTimeout(deadline, tlsRecoveryDeploymentTimeout)
+	deploymentCtx, cancelDeployment, deploymentTimeout, err := tlsRecoveryPhaseContext(ctx, deadline,
+		tlsRecoveryDeploymentTimeout)
 	if err != nil {
 		return err
 	}
-	if err := operations.waitForDeployment(deploymentTimeout); err != nil {
+	if err := operations.waitForDeployment(deploymentCtx, deploymentTimeout); err != nil {
+		cancelDeployment()
 		return err
 	}
+	cancelDeployment()
 
 	if windowsNodeCount > 0 {
-		nodesTimeout, err := tlsRecoveryPhaseTimeout(deadline, tlsRecoveryWindowsNodesTimeout)
+		nodesCtx, cancelNodes, nodesTimeout, err := tlsRecoveryPhaseContext(ctx, deadline,
+			tlsRecoveryWindowsNodesTimeout)
 		if err != nil {
 			return err
 		}
-		if err := operations.waitForWindowsNodes(nodesTimeout); err != nil {
+		if err := operations.waitForWindowsNodes(nodesCtx, nodesTimeout); err != nil {
+			cancelNodes()
 			return err
 		}
+		cancelNodes()
 	}
 
-	stabilityTimeout, err := tlsRecoveryPhaseTimeout(deadline, tlsRecoveryAPITimeout)
+	stabilityCtx, cancelStability, stabilityTimeout, err := tlsRecoveryPhaseContext(ctx, deadline,
+		tlsRecoveryAPITimeout)
 	if err != nil {
 		return err
 	}
-	return operations.waitForStability(stabilityTimeout)
+	defer cancelStability()
+	return operations.waitForStability(stabilityCtx, stabilityTimeout)
 }
 
 func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile string, windowsNodeCount int) error {
 	deadline := time.Now().Add(tlsRestorationTimeout)
-	currentProfile, currentAdherence, err := getAPIServerTLSConfiguration(oc)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	currentProfile, currentAdherence, err := getAPIServerTLSConfigurationWithContext(ctx, oc)
 	if err != nil {
 		return err
 	}
@@ -1656,25 +1785,28 @@ func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile st
 	if !configurationChanged {
 		return nil
 	}
-	baseline := getWMCORestartState(oc)
+	baseline, err := getWMCORestartStateWithContext(ctx, oc)
+	if err != nil {
+		return err
+	}
 	if baseline == "" {
 		return fmt.Errorf("could not capture WMCO restart state before restoring TLS configuration")
 	}
-	if err := restoreAPIServerTLS(oc, origAdherence, origTLSProfile); err != nil {
+	if err := restoreAPIServerTLS(ctx, oc, origAdherence, origTLSProfile); err != nil {
 		return err
 	}
-	return waitForTLSRecoveryAfterRestore(deadline, windowsNodeCount, tlsRecoveryWaitOperations{
-		waitForRestart: func(timeout time.Duration) (bool, error) {
-			return checkWMCORestartedWithin(oc, baseline, timeout)
+	return waitForTLSRecoveryAfterRestore(ctx, deadline, windowsNodeCount, tlsRecoveryWaitOperations{
+		waitForRestart: func(ctx context.Context, timeout time.Duration) (bool, error) {
+			return checkWMCORestartedWithinContext(ctx, oc, baseline, timeout)
 		},
-		waitForDeployment: func(timeout time.Duration) error {
-			return waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, timeout)
+		waitForDeployment: func(ctx context.Context, timeout time.Duration) error {
+			return waitForDeploymentReadyWithContext(ctx, oc, wmcoDeploymentName, wmcoNamespace, timeout)
 		},
-		waitForWindowsNodes: func(timeout time.Duration) error {
-			return pollWindowsNodesReady(oc, windowsNodeCount, timeout)
+		waitForWindowsNodes: func(ctx context.Context, _ time.Duration) error {
+			return pollWindowsNodesReadyWithContext(ctx, oc, windowsNodeCount)
 		},
-		waitForStability: func(timeout time.Duration) error {
-			return waitForOpenShiftAPIAndOperators(oc, timeout)
+		waitForStability: func(ctx context.Context, timeout time.Duration) error {
+			return waitForOpenShiftAPIAndOperatorsWithContext(ctx, oc, timeout)
 		},
 	})
 }
@@ -2115,15 +2247,28 @@ func fetchReadyWMCOManagerLogs(oc *exutil.CLI) (string, error) {
 	logs, err := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
 		podName, "-c", "manager", "-n", wmcoNamespace, "--request-timeout=10s").Output()
 	if err != nil {
-		message := strings.ToLower(err.Error())
-		quotedPodName := `"` + strings.ToLower(podName) + `"`
-		if strings.Contains(message, quotedPodName) &&
-			(strings.Contains(message, "not found") || strings.Contains(message, "(notfound)")) {
+		if isExpectedPodLogNotFound(err, podName) {
 			return "", fmt.Errorf("%w: %v", errWMCOPodDisappeared, err)
 		}
 		return "", fmt.Errorf("fetching manager logs from ready WMCO pod %s: %w", podName, err)
 	}
 	return logs, nil
+}
+
+func isExpectedPodLogNotFound(err error, expectedPodName string) bool {
+	message := strings.ToLower(err.Error())
+	if !strings.Contains(message, "not found") && !strings.Contains(message, "notfound") {
+		return false
+	}
+	match := podLogResourcePattern.FindStringSubmatch(message)
+	if len(match) != 3 {
+		return false
+	}
+	podName := match[1]
+	if podName == "" {
+		podName = match[2]
+	}
+	return podName == strings.ToLower(expectedPodName)
 }
 
 func isTransientWMCOLogError(err error) bool {
@@ -2195,27 +2340,38 @@ func waitForWMCOManagerTLSLogs(oc *exutil.CLI, expectedTLSVersion string, timeou
 // getWMCORestartState returns state that changes when either the WMCO pod is
 // recreated or its manager container is restarted in place.
 func getWMCORestartState(oc *exutil.CLI) string {
-	podJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+	state, _ := getWMCORestartStateWithContext(context.Background(), oc)
+	return state
+}
+
+func getWMCORestartStateWithContext(ctx context.Context, oc *exutil.CLI) (string, error) {
+	podJSON, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"pod", "--selector", "name="+wmcoDeploymentName,
-		"--field-selector=status.phase=Running", "-o=json", "-n", wmcoNamespace).Output()
-	if err != nil || podJSON == "" {
-		return ""
+		"--field-selector=status.phase=Running", "-o=json", "-n", wmcoNamespace))
+	if err != nil {
+		return "", fmt.Errorf("querying WMCO restart state: %w", err)
+	}
+	if podJSON == "" {
+		return "", nil
+	}
+	if !gjson.Valid(podJSON) {
+		return "", fmt.Errorf("parsing WMCO restart state: invalid pod JSON")
 	}
 
 	pod := gjson.Parse(podJSON).Get("items.0")
 	if !pod.Exists() {
-		return ""
+		return "", nil
 	}
 	manager := pod.Get(`status.containerStatuses.#(name=="manager")`)
 	if !manager.Exists() {
-		return ""
+		return "", nil
 	}
 
 	return fmt.Sprintf("podUID=%s podStartTime=%s managerRestartCount=%s managerContainerID=%s",
 		pod.Get("metadata.uid").String(),
 		pod.Get("status.startTime").String(),
 		manager.Get("restartCount").String(),
-		manager.Get("containerID").String())
+		manager.Get("containerID").String()), nil
 }
 
 // checkWMCORestarted polls until the WMCO pod is recreated or its manager
@@ -2225,12 +2381,26 @@ func checkWMCORestarted(oc *exutil.CLI, initialRestartState string) (bool, error
 }
 
 func checkWMCORestartedWithin(oc *exutil.CLI, initialRestartState string, timeout time.Duration) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return checkWMCORestartedWithinContext(ctx, oc, initialRestartState, timeout)
+}
+
+func checkWMCORestartedWithinContext(ctx context.Context, oc *exutil.CLI, initialRestartState string,
+	timeout time.Duration) (bool, error) {
 	if initialRestartState == "" {
 		return false, fmt.Errorf("empty restart baseline: must capture WMCO restart state before triggering restart")
 	}
 	var restartDetected bool
-	pollErr := wait.Poll(20*time.Second, timeout, func() (bool, error) {
-		actualRestartState := getWMCORestartState(oc)
+	pollErr := wait.PollUntilContextCancel(ctx, 20*time.Second, true, func(ctx context.Context) (bool, error) {
+		actualRestartState, err := getWMCORestartStateWithContext(ctx, oc)
+		if err != nil {
+			if !isTransientTLSRecoveryError(err) {
+				return false, err
+			}
+			e2e.Logf("WMCO restart state unavailable: %v", err)
+			return false, nil
+		}
 		if actualRestartState == "" {
 			e2e.Logf("WMCO restart state unavailable (pod transitioning), waiting...")
 			return false, nil
@@ -2244,7 +2414,7 @@ func checkWMCORestartedWithin(oc *exutil.CLI, initialRestartState string, timeou
 		return false, nil
 	})
 	if pollErr != nil {
-		if pollErr == wait.ErrWaitTimeout {
+		if errors.Is(pollErr, context.DeadlineExceeded) || errors.Is(pollErr, context.Canceled) {
 			e2e.Logf("WMCO did not restart within %v; continuing after the restart wait timed out", timeout)
 			return false, nil
 		}
