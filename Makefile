@@ -112,7 +112,7 @@ build-tests-ext:
 
 .PHONY: ote-unit
 ote-unit: ## Run focused unit tests for OTE helper logic.
-	cd ote && GOFLAGS="" GOWORK=off go test ./test/e2e -run 'Test(ClusterOperatorsSettled|PollForTLSRecovery|TLSRecoveryAfterRestore|ReadyWMCOPodName|PollForWMCOManagerTLSLogs)$$' -count=1
+	cd ote && KUBECONFIG="$${KUBECONFIG:-/dev/null}" GOFLAGS="" GOWORK=off go test ./test/e2e -run 'Test(ClusterOperatorsSettled|PollForTLSRecovery|TLSRecoveryAfterRestore|ReadyWMCOPodName|PollForWMCOManagerTLSLogs)$$' -count=1
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
