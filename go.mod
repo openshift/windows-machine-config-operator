@@ -2,6 +2,9 @@ module github.com/openshift/windows-machine-config-operator
 
 go 1.25.11
 
+// pin latest version compatible with go1.25
+replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20260624041617-8f3fa4921821
+
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.55.8
