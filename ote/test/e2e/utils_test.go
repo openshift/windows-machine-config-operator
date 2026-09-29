@@ -52,42 +52,140 @@ func TestClusterOperatorsSettled(t *testing.T) {
 }
 
 func TestPollForTLSRecovery(t *testing.T) {
-	t.Run("retries errors and unsettled state", func(t *testing.T) {
+	t.Run("continuous stability resets after a transient error", func(t *testing.T) {
+		const stablePeriod = 5 * time.Millisecond
 		attempts := 0
-		err := pollForTLSRecovery(time.Millisecond, 100*time.Millisecond, 2, func() (bool, string, error) {
-			attempts++
-			switch attempts {
-			case 1:
-				return false, "", errors.New("user API unavailable")
-			case 2:
-				return false, "kube-apiserver Progressing=True", nil
-			default:
-				return true, "", nil
-			}
-		})
+		var stableAfterReset time.Time
+		err := pollForTLSRecovery(2*time.Millisecond, 100*time.Millisecond, stablePeriod,
+			func() (bool, string, error) {
+				attempts++
+				switch attempts {
+				case 2:
+					return false, "", errors.New("service unavailable")
+				default:
+					if attempts == 3 {
+						stableAfterReset = time.Now()
+					}
+					return true, "", nil
+				}
+			})
 		if err != nil {
 			t.Fatalf("expected recovery, got %v", err)
 		}
-		if attempts != 4 {
-			t.Fatalf("expected 4 attempts, got %d", attempts)
+		if stableAfterReset.IsZero() || time.Since(stableAfterReset) < stablePeriod {
+			t.Fatalf("recovery completed before a full stable period elapsed after the error")
+		}
+	})
+
+	t.Run("continuous stability resets after an unsettled result", func(t *testing.T) {
+		const stablePeriod = 5 * time.Millisecond
+		attempts := 0
+		var stableAfterReset time.Time
+		err := pollForTLSRecovery(2*time.Millisecond, 100*time.Millisecond, stablePeriod,
+			func() (bool, string, error) {
+				attempts++
+				if attempts == 2 {
+					return false, "kube-apiserver Progressing=True", nil
+				}
+				if attempts == 3 {
+					stableAfterReset = time.Now()
+				}
+				return true, "", nil
+			})
+		if err != nil {
+			t.Fatalf("expected recovery, got %v", err)
+		}
+		if stableAfterReset.IsZero() || time.Since(stableAfterReset) < stablePeriod {
+			t.Fatalf("recovery completed before a full stable period elapsed after an unsettled result")
 		}
 	})
 
 	t.Run("persistent API outage fails", func(t *testing.T) {
-		err := pollForTLSRecovery(time.Millisecond, 10*time.Millisecond, 1, func() (bool, string, error) {
-			return false, "", errors.New("user API still unavailable")
+		err := pollForTLSRecovery(time.Millisecond, 10*time.Millisecond, time.Millisecond, func() (bool, string, error) {
+			return false, "", errors.New("service unavailable")
 		})
-		if err == nil || !strings.Contains(err.Error(), "user API still unavailable") {
+		if err == nil || !strings.Contains(err.Error(), "service unavailable") {
 			t.Fatalf("expected persistent API error, got %v", err)
 		}
 	})
 
 	t.Run("unsettled operator fails", func(t *testing.T) {
-		err := pollForTLSRecovery(time.Millisecond, 10*time.Millisecond, 1, func() (bool, string, error) {
+		err := pollForTLSRecovery(time.Millisecond, 10*time.Millisecond, time.Millisecond, func() (bool, string, error) {
 			return false, "openshift-apiserver Degraded=True", nil
 		})
 		if err == nil || !strings.Contains(err.Error(), "openshift-apiserver Degraded=True") {
 			t.Fatalf("expected unsettled operator error, got %v", err)
+		}
+	})
+
+	t.Run("authorization error fails immediately", func(t *testing.T) {
+		attempts := 0
+		err := pollForTLSRecovery(time.Millisecond, 100*time.Millisecond, time.Millisecond,
+			func() (bool, string, error) {
+				attempts++
+				return false, "", errors.New("forbidden: user cannot get users/~")
+			})
+		if err == nil || attempts != 1 || !strings.Contains(err.Error(), "forbidden") {
+			t.Fatalf("expected immediate authorization failure, got attempts=%d err=%v", attempts, err)
+		}
+	})
+
+	t.Run("malformed operator response fails immediately", func(t *testing.T) {
+		attempts := 0
+		err := pollForTLSRecovery(time.Millisecond, 100*time.Millisecond, time.Millisecond,
+			func() (bool, string, error) {
+				attempts++
+				ready, state, err := clusterOperatorsSettled("{", tlsRecoveryClusterOperators)
+				return ready, state, err
+			})
+		if err == nil || attempts != 1 || !strings.Contains(err.Error(), "parsing cluster operator status") {
+			t.Fatalf("expected immediate schema failure, got attempts=%d err=%v", attempts, err)
+		}
+	})
+}
+
+func TestTLSRecoveryAfterRestore(t *testing.T) {
+	t.Run("waits for rollout before control-plane stability", func(t *testing.T) {
+		var calls []string
+		err := waitForTLSRecoveryAfterRestore(time.Now().Add(time.Minute), 2, tlsRecoveryWaitOperations{
+			waitForRestart: func(timeout time.Duration) (bool, error) {
+				calls = append(calls, "restart")
+				return true, nil
+			},
+			waitForDeployment: func(timeout time.Duration) error {
+				calls = append(calls, "deployment")
+				return nil
+			},
+			waitForWindowsNodes: func(timeout time.Duration) error {
+				calls = append(calls, "nodes")
+				return nil
+			},
+			waitForStability: func(timeout time.Duration) error {
+				calls = append(calls, "stability")
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("expected recovery, got %v", err)
+		}
+		if got, want := strings.Join(calls, ","), "restart,deployment,nodes,stability"; got != want {
+			t.Fatalf("unexpected recovery order: got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("stops after a fatal rollout error", func(t *testing.T) {
+		stabilityCalled := false
+		err := waitForTLSRecoveryAfterRestore(time.Now().Add(time.Minute), 0, tlsRecoveryWaitOperations{
+			waitForRestart:    func(timeout time.Duration) (bool, error) { return true, nil },
+			waitForDeployment: func(timeout time.Duration) error { return errors.New("deployment failed") },
+			waitForStability: func(timeout time.Duration) error {
+				stabilityCalled = true
+				return nil
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "deployment failed") || stabilityCalled {
+			t.Fatalf("expected deployment failure to stop recovery, got stabilityCalled=%t err=%v",
+				stabilityCalled, err)
 		}
 	})
 }

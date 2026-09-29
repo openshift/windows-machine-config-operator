@@ -48,6 +48,19 @@ var (
 
 var errNoReadyWMCOPod = errors.New("no ready WMCO manager pod found")
 
+const (
+	tlsRecoveryPollInterval        = 10 * time.Second
+	tlsRecoveryMinimumStablePeriod = 3 * time.Minute
+	tlsRecoveryAPITimeout          = 5 * time.Minute
+	tlsRecoveryRestartTimeout      = 6 * time.Minute
+	tlsRecoveryDeploymentTimeout   = 5 * time.Minute
+	tlsRecoveryWindowsNodesTimeout = 5 * time.Minute
+	// tlsRestorationTimeout is shared by all post-patch recovery phases. The
+	// extra minute covers in-flight CLI requests at phase boundaries.
+	tlsRestorationTimeout = tlsRecoveryRestartTimeout + tlsRecoveryDeploymentTimeout +
+		tlsRecoveryWindowsNodesTimeout + tlsRecoveryAPITimeout + time.Minute
+)
+
 // Service represents a Windows service entry from the WICD windows-services ConfigMap.
 type Service struct {
 	Name         string   `json:"name"`
@@ -359,8 +372,8 @@ func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
 }
 
 // waitWindowsNodesReady polls until the expected number of Windows nodes report Ready status.
-func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
-	pollErr := wait.Poll(10*time.Second, timeout, func() (bool, error) {
+func pollWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) error {
+	return wait.Poll(10*time.Second, timeout, func() (bool, error) {
 		output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"nodes", "-l", windowsNodeLabel,
 			"-o=jsonpath={.items[*].status.conditions[?(@.type==\"Ready\")].status}").Output()
@@ -378,6 +391,10 @@ func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Durat
 		e2e.Logf("Windows nodes ready: %d/%d", readyCount, expectedCount)
 		return readyCount >= expectedCount, nil
 	})
+}
+
+func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Duration) {
+	pollErr := pollWindowsNodesReady(oc, expectedCount, timeout)
 	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("timed out waiting for %d Windows nodes to be Ready after %v", expectedCount, timeout))
 }
 
@@ -1390,26 +1407,52 @@ func clusterOperatorsSettled(operatorJSON string, operatorNames []string) (bool,
 
 type tlsRecoveryCheck func() (bool, string, error)
 
-func pollForTLSRecovery(interval, timeout time.Duration, requiredStableChecks int, check tlsRecoveryCheck) error {
+func isTransientTLSRecoveryError(err error) bool {
+	message := strings.ToLower(err.Error())
+	for _, transientMessage := range []string{
+		"connection refused",
+		"connection reset by peer",
+		"context deadline exceeded",
+		"gateway timeout",
+		"i/o timeout",
+		"server is currently unable to handle the request",
+		"service unavailable",
+		"temporarily unavailable",
+		"tls handshake timeout",
+		"timeout awaiting response headers",
+	} {
+		if strings.Contains(message, transientMessage) {
+			return true
+		}
+	}
+	return false
+}
+
+func pollForTLSRecovery(interval, timeout, minimumStablePeriod time.Duration, check tlsRecoveryCheck) error {
 	var lastErr error
 	var lastState string
-	stableChecks := 0
+	var stableSince time.Time
 	pollErr := wait.Poll(interval, timeout, func() (bool, error) {
 		ready, state, err := check()
 		if err != nil {
+			if !isTransientTLSRecoveryError(err) {
+				return false, err
+			}
 			lastErr = err
 			lastState = ""
-			stableChecks = 0
+			stableSince = time.Time{}
 			return false, nil
 		}
 		lastErr = nil
 		lastState = state
 		if !ready {
-			stableChecks = 0
+			stableSince = time.Time{}
 			return false, nil
 		}
-		stableChecks++
-		return stableChecks >= requiredStableChecks, nil
+		if stableSince.IsZero() {
+			stableSince = time.Now()
+		}
+		return time.Since(stableSince) >= minimumStablePeriod, nil
 	})
 	if pollErr == nil {
 		return nil
@@ -1430,33 +1473,34 @@ func pollForTLSRecovery(interval, timeout time.Duration, requiredStableChecks in
 // server TLS profile. This mitigates test cleanup races; it does not identify
 // the cause of any API outage observed during the rollout.
 func waitForOpenShiftAPIAndOperators(oc *exutil.CLI, timeout time.Duration) error {
-	return pollForTLSRecovery(10*time.Second, timeout, 3, func() (bool, string, error) {
-		user, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			"--raw=/apis/user.openshift.io/v1/users/~", "--request-timeout=10s").Output()
-		if err != nil {
-			e2e.Logf("Waiting for the OpenShift user API to recover: %v", err)
-			return false, "", fmt.Errorf("querying the OpenShift user API: %w", err)
-		}
-		if strings.TrimSpace(user) == "" {
-			return false, "", fmt.Errorf("querying the OpenShift user API returned an empty response")
-		}
+	return pollForTLSRecovery(tlsRecoveryPollInterval, timeout, tlsRecoveryMinimumStablePeriod,
+		func() (bool, string, error) {
+			user, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"--raw=/apis/user.openshift.io/v1/users/~", "--request-timeout=10s").Output()
+			if err != nil {
+				e2e.Logf("Waiting for the OpenShift user API to recover: %v", err)
+				return false, "", fmt.Errorf("querying the OpenShift user API: %w", err)
+			}
+			if strings.TrimSpace(user) == "" {
+				return false, "", fmt.Errorf("querying the OpenShift user API returned an empty response")
+			}
 
-		args := append([]string{"clusteroperator"}, tlsRecoveryClusterOperators...)
-		args = append(args, "-o=json", "--request-timeout=10s")
-		operatorJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Output()
-		if err != nil {
-			e2e.Logf("Waiting for control-plane cluster operators: %v", err)
-			return false, "", fmt.Errorf("querying control-plane cluster operators: %w", err)
-		}
-		settled, state, err := clusterOperatorsSettled(operatorJSON, tlsRecoveryClusterOperators)
-		if err != nil {
-			return false, "", err
-		}
-		if !settled {
-			e2e.Logf("Waiting for control-plane cluster operators: %s", state)
-		}
-		return settled, state, nil
-	})
+			args := append([]string{"clusteroperator"}, tlsRecoveryClusterOperators...)
+			args = append(args, "-o=json", "--request-timeout=10s")
+			operatorJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Output()
+			if err != nil {
+				e2e.Logf("Waiting for control-plane cluster operators: %v", err)
+				return false, "", fmt.Errorf("querying control-plane cluster operators: %w", err)
+			}
+			settled, state, err := clusterOperatorsSettled(operatorJSON, tlsRecoveryClusterOperators)
+			if err != nil {
+				return false, "", err
+			}
+			if !settled {
+				e2e.Logf("Waiting for control-plane cluster operators: %s", state)
+			}
+			return settled, state, nil
+		})
 }
 
 func getAPIServerTLSConfiguration(oc *exutil.CLI) (string, string, error) {
@@ -1509,7 +1553,65 @@ func ensureTLSProfileDiffersFromTarget(oc *exutil.CLI, targetType string) error 
 	return waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
 }
 
+type tlsRecoveryWaitOperations struct {
+	waitForRestart      func(time.Duration) (bool, error)
+	waitForDeployment   func(time.Duration) error
+	waitForWindowsNodes func(time.Duration) error
+	waitForStability    func(time.Duration) error
+}
+
+func tlsRecoveryPhaseTimeout(deadline time.Time, maximum time.Duration) (time.Duration, error) {
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return 0, fmt.Errorf("TLS restoration exceeded its %v shared deadline", tlsRestorationTimeout)
+	}
+	if remaining < maximum {
+		return remaining, nil
+	}
+	return maximum, nil
+}
+
+func waitForTLSRecoveryAfterRestore(deadline time.Time, windowsNodeCount int,
+	operations tlsRecoveryWaitOperations) error {
+	restartTimeout, err := tlsRecoveryPhaseTimeout(deadline, tlsRecoveryRestartTimeout)
+	if err != nil {
+		return err
+	}
+	restarted, err := operations.waitForRestart(restartTimeout)
+	if err != nil {
+		return err
+	}
+	if !restarted {
+		return fmt.Errorf("WMCO did not restart while restoring TLS configuration")
+	}
+
+	deploymentTimeout, err := tlsRecoveryPhaseTimeout(deadline, tlsRecoveryDeploymentTimeout)
+	if err != nil {
+		return err
+	}
+	if err := operations.waitForDeployment(deploymentTimeout); err != nil {
+		return err
+	}
+
+	if windowsNodeCount > 0 {
+		nodesTimeout, err := tlsRecoveryPhaseTimeout(deadline, tlsRecoveryWindowsNodesTimeout)
+		if err != nil {
+			return err
+		}
+		if err := operations.waitForWindowsNodes(nodesTimeout); err != nil {
+			return err
+		}
+	}
+
+	stabilityTimeout, err := tlsRecoveryPhaseTimeout(deadline, tlsRecoveryAPITimeout)
+	if err != nil {
+		return err
+	}
+	return operations.waitForStability(stabilityTimeout)
+}
+
 func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile string, windowsNodeCount int) error {
+	deadline := time.Now().Add(tlsRestorationTimeout)
 	currentProfile, currentAdherence, err := getAPIServerTLSConfiguration(oc)
 	if err != nil {
 		return err
@@ -1525,23 +1627,20 @@ func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile st
 	if err := restoreAPIServerTLS(oc, origAdherence, origTLSProfile); err != nil {
 		return err
 	}
-	if err := waitForOpenShiftAPIAndOperators(oc, 5*time.Minute); err != nil {
-		return err
-	}
-	restarted, err := checkWMCORestarted(oc, baseline)
-	if err != nil {
-		return err
-	}
-	if !restarted {
-		return fmt.Errorf("WMCO did not restart while restoring TLS configuration")
-	}
-	if err := waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute); err != nil {
-		return err
-	}
-	if windowsNodeCount > 0 {
-		waitWindowsNodesReady(oc, windowsNodeCount, 5*time.Minute)
-	}
-	return nil
+	return waitForTLSRecoveryAfterRestore(deadline, windowsNodeCount, tlsRecoveryWaitOperations{
+		waitForRestart: func(timeout time.Duration) (bool, error) {
+			return checkWMCORestartedWithin(oc, baseline, timeout)
+		},
+		waitForDeployment: func(timeout time.Duration) error {
+			return waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, timeout)
+		},
+		waitForWindowsNodes: func(timeout time.Duration) error {
+			return pollWindowsNodesReady(oc, windowsNodeCount, timeout)
+		},
+		waitForStability: func(timeout time.Duration) error {
+			return waitForOpenShiftAPIAndOperators(oc, timeout)
+		},
+	})
 }
 
 // createTLSCheckerPod creates a temporary Linux pod for running openssl commands
@@ -2043,11 +2142,15 @@ func getWMCORestartState(oc *exutil.CLI) string {
 // checkWMCORestarted polls until the WMCO pod is recreated or its manager
 // container is restarted in place.
 func checkWMCORestarted(oc *exutil.CLI, initialRestartState string) (bool, error) {
+	return checkWMCORestartedWithin(oc, initialRestartState, tlsRecoveryRestartTimeout)
+}
+
+func checkWMCORestartedWithin(oc *exutil.CLI, initialRestartState string, timeout time.Duration) (bool, error) {
 	if initialRestartState == "" {
 		return false, fmt.Errorf("empty restart baseline: must capture WMCO restart state before triggering restart")
 	}
 	var restartDetected bool
-	pollErr := wait.Poll(20*time.Second, 6*time.Minute, func() (bool, error) {
+	pollErr := wait.Poll(20*time.Second, timeout, func() (bool, error) {
 		actualRestartState := getWMCORestartState(oc)
 		if actualRestartState == "" {
 			e2e.Logf("WMCO restart state unavailable (pod transitioning), waiting...")
@@ -2063,7 +2166,7 @@ func checkWMCORestarted(oc *exutil.CLI, initialRestartState string) (bool, error
 	})
 	if pollErr != nil {
 		if pollErr == wait.ErrWaitTimeout {
-			e2e.Logf("WMCO did not restart within 6 minutes; continuing after the restart wait timed out")
+			e2e.Logf("WMCO did not restart within %v; continuing after the restart wait timed out", timeout)
 			return false, nil
 		}
 		return false, fmt.Errorf("error checking WMCO restart: %w", pollErr)

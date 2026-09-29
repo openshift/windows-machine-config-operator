@@ -2066,8 +2066,8 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Medium-90117-[tls-adherence]-WMCO metrics endpoint uses default Intermediate TLS profile [Serial][Disruptive]",
-		g.SpecTimeout(15*time.Minute), func(ctx g.SpecContext) {
+	g.It("Author:rrasouli-Medium-90117-[tls-adherence]-WMCO metrics endpoint uses default Intermediate TLS profile [Timeout:35m][Serial][Disruptive]",
+		g.SpecTimeout(30*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
 			origTLSProfile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -2111,8 +2111,8 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Critical-90118-[tls-adherence]-WMCO pod restarts when APIServer TLS security profile changes [Serial][Disruptive]",
-		g.SpecTimeout(15*time.Minute), func(ctx g.SpecContext) {
+	g.It("Author:rrasouli-Critical-90118-[tls-adherence]-WMCO pod restarts when APIServer TLS security profile changes [Timeout:55m][Serial][Disruptive]",
+		g.SpecTimeout(50*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
 			origTLSProfile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -2157,8 +2157,8 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Longduration-Critical-90119-[tls-adherence]-WMCO metrics endpoint enforces updated TLS profile after pod restart [Slow][Serial][Disruptive]",
-		g.SpecTimeout(20*time.Minute), func(ctx g.SpecContext) {
+	g.It("Author:rrasouli-Longduration-Critical-90119-[tls-adherence]-WMCO metrics endpoint enforces updated TLS profile after pod restart [Timeout:60m][Slow][Serial][Disruptive]",
+		g.SpecTimeout(55*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
 			origTLSProfile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -2257,8 +2257,8 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Medium-90120-[tls-adherence]-WMCO metrics endpoint enforces Custom TLS profile with specific cipher suites [Serial][Disruptive]",
-		g.SpecTimeout(15*time.Minute), func(ctx g.SpecContext) {
+	g.It("Author:rrasouli-Medium-90120-[tls-adherence]-WMCO metrics endpoint enforces Custom TLS profile with specific cipher suites [Timeout:50m][Serial][Disruptive]",
+		g.SpecTimeout(45*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
 			origTLSProfile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(

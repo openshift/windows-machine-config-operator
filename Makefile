@@ -110,6 +110,10 @@ build-daemon:
 build-tests-ext:
 	cd ote && GOFLAGS="" GOWORK=off go mod download && GOFLAGS="" GOWORK=off GO_COMPLIANCE_POLICY="exempt_all" go build -o ../${OUTPUT_DIR}/bin/wmco-tests-ext ./cmd/wmco-tests-ext
 
+.PHONY: ote-unit
+ote-unit: ## Run focused unit tests for OTE helper logic.
+	cd ote && GOFLAGS="" GOWORK=off go test ./test/e2e -run 'Test(ClusterOperatorsSettled|PollForTLSRecovery|TLSRecoveryAfterRestore|ReadyWMCOPodName|PollForWMCOManagerTLSLogs)$$' -count=1
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run cmd/operator/main.go
