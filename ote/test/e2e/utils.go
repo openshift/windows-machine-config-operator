@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -41,7 +42,11 @@ var (
 	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 	linuxDebugImage   = "registry.access.redhat.com/ubi9/ubi:latest"
 	defaultWindowsMS  = "windows"
+
+	tlsRecoveryClusterOperators = []string{"authentication", "kube-apiserver", "openshift-apiserver"}
 )
+
+var errNoReadyWMCOPod = errors.New("no ready WMCO manager pod found")
 
 // Service represents a Windows service entry from the WICD windows-services ConfigMap.
 type Service struct {
@@ -1327,6 +1332,133 @@ func restoreAPIServerTLS(oc *exutil.CLI, origAdherence, origTLSProfile string) e
 	return restoreErr
 }
 
+type clusterOperatorList struct {
+	Items []struct {
+		Metadata struct {
+			Name string `json:"name"`
+		} `json:"metadata"`
+		Status struct {
+			Conditions []struct {
+				Type   string `json:"type"`
+				Status string `json:"status"`
+			} `json:"conditions"`
+		} `json:"status"`
+	} `json:"items"`
+}
+
+// clusterOperatorsSettled checks that the named operators are available and
+// neither progressing nor degraded.
+func clusterOperatorsSettled(operatorJSON string, operatorNames []string) (bool, string, error) {
+	var operators clusterOperatorList
+	if err := json.Unmarshal([]byte(operatorJSON), &operators); err != nil {
+		return false, "", fmt.Errorf("parsing cluster operator status: %w", err)
+	}
+
+	operatorConditions := make(map[string]map[string]string, len(operators.Items))
+	for _, operator := range operators.Items {
+		conditions := make(map[string]string, len(operator.Status.Conditions))
+		for _, condition := range operator.Status.Conditions {
+			conditions[condition.Type] = condition.Status
+		}
+		operatorConditions[operator.Metadata.Name] = conditions
+	}
+
+	expectedConditions := map[string]string{
+		"Available":   "True",
+		"Progressing": "False",
+		"Degraded":    "False",
+	}
+	for _, operatorName := range operatorNames {
+		conditions, found := operatorConditions[operatorName]
+		if !found {
+			return false, fmt.Sprintf("cluster operator %s was not returned", operatorName), nil
+		}
+		for conditionType, expectedStatus := range expectedConditions {
+			actualStatus, found := conditions[conditionType]
+			if !found {
+				return false, fmt.Sprintf("cluster operator %s has no %s condition", operatorName, conditionType), nil
+			}
+			if actualStatus != expectedStatus {
+				return false, fmt.Sprintf("cluster operator %s has %s=%s, expected %s",
+					operatorName, conditionType, actualStatus, expectedStatus), nil
+			}
+		}
+	}
+
+	return true, "", nil
+}
+
+type tlsRecoveryCheck func() (bool, string, error)
+
+func pollForTLSRecovery(interval, timeout time.Duration, requiredStableChecks int, check tlsRecoveryCheck) error {
+	var lastErr error
+	var lastState string
+	stableChecks := 0
+	pollErr := wait.Poll(interval, timeout, func() (bool, error) {
+		ready, state, err := check()
+		if err != nil {
+			lastErr = err
+			lastState = ""
+			stableChecks = 0
+			return false, nil
+		}
+		lastErr = nil
+		lastState = state
+		if !ready {
+			stableChecks = 0
+			return false, nil
+		}
+		stableChecks++
+		return stableChecks >= requiredStableChecks, nil
+	})
+	if pollErr == nil {
+		return nil
+	}
+	if !errors.Is(pollErr, wait.ErrWaitTimeout) {
+		return fmt.Errorf("checking OpenShift API recovery: %w", pollErr)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("OpenShift API did not recover within %v: %w", timeout, lastErr)
+	}
+	if lastState != "" {
+		return fmt.Errorf("OpenShift control plane did not settle within %v: %s", timeout, lastState)
+	}
+	return fmt.Errorf("OpenShift API and control plane did not recover within %v", timeout)
+}
+
+// waitForOpenShiftAPIAndOperators verifies recovery after changing the API
+// server TLS profile. This mitigates test cleanup races; it does not identify
+// the cause of any API outage observed during the rollout.
+func waitForOpenShiftAPIAndOperators(oc *exutil.CLI, timeout time.Duration) error {
+	return pollForTLSRecovery(10*time.Second, timeout, 3, func() (bool, string, error) {
+		user, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"--raw=/apis/user.openshift.io/v1/users/~", "--request-timeout=10s").Output()
+		if err != nil {
+			e2e.Logf("Waiting for the OpenShift user API to recover: %v", err)
+			return false, "", fmt.Errorf("querying the OpenShift user API: %w", err)
+		}
+		if strings.TrimSpace(user) == "" {
+			return false, "", fmt.Errorf("querying the OpenShift user API returned an empty response")
+		}
+
+		args := append([]string{"clusteroperator"}, tlsRecoveryClusterOperators...)
+		args = append(args, "-o=json", "--request-timeout=10s")
+		operatorJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Output()
+		if err != nil {
+			e2e.Logf("Waiting for control-plane cluster operators: %v", err)
+			return false, "", fmt.Errorf("querying control-plane cluster operators: %w", err)
+		}
+		settled, state, err := clusterOperatorsSettled(operatorJSON, tlsRecoveryClusterOperators)
+		if err != nil {
+			return false, "", err
+		}
+		if !settled {
+			e2e.Logf("Waiting for control-plane cluster operators: %s", state)
+		}
+		return settled, state, nil
+	})
+}
+
 func getAPIServerTLSConfiguration(oc *exutil.CLI) (string, string, error) {
 	profile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"apiserver/cluster", "-o=jsonpath={.spec.tlsSecurityProfile}").Output()
@@ -1391,6 +1523,9 @@ func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile st
 		return fmt.Errorf("could not capture WMCO restart state before restoring TLS configuration")
 	}
 	if err := restoreAPIServerTLS(oc, origAdherence, origTLSProfile); err != nil {
+		return err
+	}
+	if err := waitForOpenShiftAPIAndOperators(oc, 5*time.Minute); err != nil {
 		return err
 	}
 	restarted, err := checkWMCORestarted(oc, baseline)
@@ -1764,6 +1899,119 @@ func waitForProxyOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[stri
 		return true, nil
 	})
 	compat_otp.AssertWaitPollNoErr(pollErr, "proxy values did not propagate to all Windows nodes within 5 minutes")
+}
+
+func readyWMCOPodName(podJSON string) (string, error) {
+	pods := gjson.Parse(podJSON).Get("items").Array()
+	var newestPodName string
+	var newestCreationTime string
+	for _, pod := range pods {
+		if pod.Get("metadata.deletionTimestamp").Exists() || pod.Get("status.phase").String() != "Running" {
+			continue
+		}
+		readyCondition := pod.Get(`status.conditions.#(type=="Ready")`)
+		managerStatus := pod.Get(`status.containerStatuses.#(name=="manager")`)
+		if readyCondition.Get("status").String() != "True" || !managerStatus.Get("ready").Bool() {
+			continue
+		}
+		podName := pod.Get("metadata.name").String()
+		creationTime := pod.Get("metadata.creationTimestamp").String()
+		if podName != "" && (newestPodName == "" || creationTime > newestCreationTime) {
+			newestPodName = podName
+			newestCreationTime = creationTime
+		}
+	}
+	if newestPodName == "" {
+		return "", errNoReadyWMCOPod
+	}
+	return newestPodName, nil
+}
+
+func fetchReadyWMCOManagerLogs(oc *exutil.CLI) (string, error) {
+	podJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pods", "--selector", "name="+wmcoDeploymentName,
+		"--field-selector=status.phase=Running", "-o=json", "-n", wmcoNamespace,
+		"--request-timeout=10s").Output()
+	if err != nil {
+		return "", fmt.Errorf("listing WMCO pods: %w", err)
+	}
+	podName, err := readyWMCOPodName(podJSON)
+	if err != nil {
+		return "", err
+	}
+	logs, err := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
+		podName, "-c", "manager", "-n", wmcoNamespace, "--request-timeout=10s").Output()
+	if err != nil {
+		return "", fmt.Errorf("fetching manager logs from ready WMCO pod %s: %w", podName, err)
+	}
+	return logs, nil
+}
+
+func isTransientWMCOLogError(err error) bool {
+	if errors.Is(err, errNoReadyWMCOPod) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	for _, transientMessage := range []string{
+		"not found",
+		"server is currently unable to handle the request",
+		"service unavailable",
+		"connection refused",
+		"connection reset by peer",
+		"tls handshake timeout",
+	} {
+		if strings.Contains(message, transientMessage) {
+			return true
+		}
+	}
+	return false
+}
+
+type wmcoLogFetch func() (string, error)
+
+func pollForWMCOManagerTLSLogs(interval, timeout time.Duration, expectedTLSVersion string,
+	fetch wmcoLogFetch) (string, error) {
+	var logs string
+	var lastErr error
+	missingExpectedLog := false
+	pollErr := wait.Poll(interval, timeout, func() (bool, error) {
+		var err error
+		logs, err = fetch()
+		if err != nil {
+			if !isTransientWMCOLogError(err) {
+				return false, err
+			}
+			lastErr = err
+			missingExpectedLog = false
+			return false, nil
+		}
+		lastErr = nil
+		missingExpectedLog = !strings.Contains(logs, "TLS configuration loaded") ||
+			!strings.Contains(logs, expectedTLSVersion)
+		return !missingExpectedLog, nil
+	})
+	if pollErr == nil {
+		return logs, nil
+	}
+	if !errors.Is(pollErr, wait.ErrWaitTimeout) {
+		return "", fmt.Errorf("fetching current WMCO manager TLS logs: %w", pollErr)
+	}
+	if lastErr != nil {
+		return "", fmt.Errorf("timed out after %v waiting for current WMCO manager logs containing %s: %w",
+			timeout, expectedTLSVersion, lastErr)
+	}
+	if missingExpectedLog {
+		return "", fmt.Errorf("timed out after %v waiting for current WMCO manager logs containing both %q and %q",
+			timeout, "TLS configuration loaded", expectedTLSVersion)
+	}
+	return "", fmt.Errorf("timed out after %v waiting for current WMCO manager TLS logs", timeout)
+}
+
+func waitForWMCOManagerTLSLogs(oc *exutil.CLI, expectedTLSVersion string, timeout time.Duration) error {
+	_, err := pollForWMCOManagerTLSLogs(5*time.Second, timeout, expectedTLSVersion, func() (string, error) {
+		return fetchReadyWMCOManagerLogs(oc)
+	})
+	return err
 }
 
 // getWMCORestartState returns state that changes when either the WMCO pod is

@@ -2147,12 +2147,8 @@ spec:
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("Verify new WMCO pod logs show TLS configuration with VersionTLS13")
-			logs, err := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
-				wmcoDeployment, "-n", wmcoNamespace).Output()
+			err = waitForWMCOManagerTLSLogs(oc, "VersionTLS13", 2*time.Minute)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(logs).To(o.ContainSubstring("TLS configuration loaded"))
-			o.Expect(logs).To(o.ContainSubstring("VersionTLS13"),
-				"Modern profile should use VersionTLS13")
 
 			g.By("Verify Windows nodes remain Ready")
 			if windowsNodeCount > 0 {
