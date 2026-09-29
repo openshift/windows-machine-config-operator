@@ -46,7 +46,10 @@ var (
 	tlsRecoveryClusterOperators = []string{"authentication", "kube-apiserver", "openshift-apiserver"}
 )
 
-var errNoReadyWMCOPod = errors.New("no ready WMCO manager pod found")
+var (
+	errNoReadyWMCOPod     = errors.New("no ready WMCO manager pod found")
+	errWMCOPodDisappeared = errors.New("ready WMCO pod disappeared before its logs could be read")
+)
 
 const (
 	tlsRecoveryPollInterval        = 10 * time.Second
@@ -379,6 +382,9 @@ func pollWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Durat
 			"-o=jsonpath={.items[*].status.conditions[?(@.type==\"Ready\")].status}").Output()
 		if err != nil {
 			e2e.Logf("Error querying Windows nodes: %v", err)
+			if !isTransientTLSRecoveryError(err) {
+				return false, fmt.Errorf("querying Windows nodes: %w", err)
+			}
 			return false, nil
 		}
 		statuses := strings.Fields(output)
@@ -1475,14 +1481,44 @@ func pollForTLSRecovery(interval, timeout, minimumStablePeriod time.Duration, ch
 func waitForOpenShiftAPIAndOperators(oc *exutil.CLI, timeout time.Duration) error {
 	return pollForTLSRecovery(tlsRecoveryPollInterval, timeout, tlsRecoveryMinimumStablePeriod,
 		func() (bool, string, error) {
-			user, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			userJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"--raw=/apis/user.openshift.io/v1/users/~", "--request-timeout=10s").Output()
 			if err != nil {
 				e2e.Logf("Waiting for the OpenShift user API to recover: %v", err)
 				return false, "", fmt.Errorf("querying the OpenShift user API: %w", err)
 			}
-			if strings.TrimSpace(user) == "" {
-				return false, "", fmt.Errorf("querying the OpenShift user API returned an empty response")
+			var user struct {
+				Metadata struct {
+					Name string `json:"name"`
+				} `json:"metadata"`
+			}
+			if err := json.Unmarshal([]byte(userJSON), &user); err != nil {
+				return false, "", fmt.Errorf("parsing the OpenShift user API response: %w", err)
+			}
+			if user.Metadata.Name == "" {
+				return false, "", fmt.Errorf("OpenShift user API response has no metadata.name")
+			}
+
+			// The suite's BeforeEach reads this exact resource and field, so a
+			// successful sample must prove that path is healthy as well.
+			infrastructureJSON, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"infrastructure", "cluster", "-o=json", "--request-timeout=10s").Output()
+			if err != nil {
+				e2e.Logf("Waiting for the infrastructure API read used by BeforeEach: %v", err)
+				return false, "", fmt.Errorf("querying infrastructure/cluster: %w", err)
+			}
+			var infrastructure struct {
+				Status struct {
+					PlatformStatus struct {
+						Type string `json:"type"`
+					} `json:"platformStatus"`
+				} `json:"status"`
+			}
+			if err := json.Unmarshal([]byte(infrastructureJSON), &infrastructure); err != nil {
+				return false, "", fmt.Errorf("parsing infrastructure/cluster: %w", err)
+			}
+			if infrastructure.Status.PlatformStatus.Type == "" {
+				return false, "", fmt.Errorf("infrastructure/cluster has no status.platformStatus.type")
 			}
 
 			args := append([]string{"clusteroperator"}, tlsRecoveryClusterOperators...)
@@ -2001,20 +2037,58 @@ func waitForProxyOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[stri
 }
 
 func readyWMCOPodName(podJSON string) (string, error) {
-	pods := gjson.Parse(podJSON).Get("items").Array()
+	var podList struct {
+		Items []struct {
+			Metadata struct {
+				Name              string `json:"name"`
+				CreationTimestamp string `json:"creationTimestamp"`
+				DeletionTimestamp string `json:"deletionTimestamp"`
+			} `json:"metadata"`
+			Status struct {
+				Phase      string `json:"phase"`
+				Conditions []struct {
+					Type   string `json:"type"`
+					Status string `json:"status"`
+				} `json:"conditions"`
+				ContainerStatuses []struct {
+					Name  string `json:"name"`
+					Ready bool   `json:"ready"`
+				} `json:"containerStatuses"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(podJSON), &podList); err != nil {
+		return "", fmt.Errorf("parsing WMCO pod list: %w", err)
+	}
+	if podList.Items == nil {
+		return "", fmt.Errorf("parsing WMCO pod list: response has no items array")
+	}
+
 	var newestPodName string
 	var newestCreationTime string
-	for _, pod := range pods {
-		if pod.Get("metadata.deletionTimestamp").Exists() || pod.Get("status.phase").String() != "Running" {
+	for _, pod := range podList.Items {
+		if pod.Metadata.DeletionTimestamp != "" || pod.Status.Phase != "Running" {
 			continue
 		}
-		readyCondition := pod.Get(`status.conditions.#(type=="Ready")`)
-		managerStatus := pod.Get(`status.containerStatuses.#(name=="manager")`)
-		if readyCondition.Get("status").String() != "True" || !managerStatus.Get("ready").Bool() {
+		ready := false
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == "Ready" && condition.Status == "True" {
+				ready = true
+				break
+			}
+		}
+		managerReady := false
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.Name == "manager" && status.Ready {
+				managerReady = true
+				break
+			}
+		}
+		if !ready || !managerReady {
 			continue
 		}
-		podName := pod.Get("metadata.name").String()
-		creationTime := pod.Get("metadata.creationTimestamp").String()
+		podName := pod.Metadata.Name
+		creationTime := pod.Metadata.CreationTimestamp
 		if podName != "" && (newestPodName == "" || creationTime > newestCreationTime) {
 			newestPodName = podName
 			newestCreationTime = creationTime
@@ -2041,18 +2115,23 @@ func fetchReadyWMCOManagerLogs(oc *exutil.CLI) (string, error) {
 	logs, err := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
 		podName, "-c", "manager", "-n", wmcoNamespace, "--request-timeout=10s").Output()
 	if err != nil {
+		message := strings.ToLower(err.Error())
+		quotedPodName := `"` + strings.ToLower(podName) + `"`
+		if strings.Contains(message, quotedPodName) &&
+			(strings.Contains(message, "not found") || strings.Contains(message, "(notfound)")) {
+			return "", fmt.Errorf("%w: %v", errWMCOPodDisappeared, err)
+		}
 		return "", fmt.Errorf("fetching manager logs from ready WMCO pod %s: %w", podName, err)
 	}
 	return logs, nil
 }
 
 func isTransientWMCOLogError(err error) bool {
-	if errors.Is(err, errNoReadyWMCOPod) {
+	if errors.Is(err, errNoReadyWMCOPod) || errors.Is(err, errWMCOPodDisappeared) {
 		return true
 	}
 	message := strings.ToLower(err.Error())
 	for _, transientMessage := range []string{
-		"not found",
 		"server is currently unable to handle the request",
 		"service unavailable",
 		"connection refused",

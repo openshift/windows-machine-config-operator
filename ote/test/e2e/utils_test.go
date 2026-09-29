@@ -145,6 +145,10 @@ func TestPollForTLSRecovery(t *testing.T) {
 }
 
 func TestTLSRecoveryAfterRestore(t *testing.T) {
+	if tlsRestorationTimeout != 22*time.Minute {
+		t.Fatalf("expected shared TLS restoration deadline to be 22m, got %v", tlsRestorationTimeout)
+	}
+
 	t.Run("waits for rollout before control-plane stability", func(t *testing.T) {
 		var calls []string
 		err := waitForTLSRecoveryAfterRestore(time.Now().Add(time.Minute), 2, tlsRecoveryWaitOperations{
@@ -188,6 +192,36 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 				stabilityCalled, err)
 		}
 	})
+
+	t.Run("shared deadline caps each phase", func(t *testing.T) {
+		deadline := time.Now().Add(50 * time.Millisecond)
+		timeout, err := tlsRecoveryPhaseTimeout(deadline, time.Minute)
+		if err != nil {
+			t.Fatalf("expected remaining shared budget, got %v", err)
+		}
+		if timeout <= 0 || timeout > 50*time.Millisecond {
+			t.Fatalf("expected phase timeout capped by shared deadline, got %v", timeout)
+		}
+
+		if _, err := tlsRecoveryPhaseTimeout(time.Now().Add(-time.Millisecond), time.Minute); err == nil {
+			t.Fatal("expected expired shared deadline to fail")
+		}
+	})
+
+	t.Run("stops when restart is not observed", func(t *testing.T) {
+		deploymentCalled := false
+		err := waitForTLSRecoveryAfterRestore(time.Now().Add(time.Minute), 0, tlsRecoveryWaitOperations{
+			waitForRestart: func(timeout time.Duration) (bool, error) { return false, nil },
+			waitForDeployment: func(timeout time.Duration) error {
+				deploymentCalled = true
+				return nil
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "did not restart") || deploymentCalled {
+			t.Fatalf("expected missing restart to stop recovery, got deploymentCalled=%t err=%v",
+				deploymentCalled, err)
+		}
+	})
 }
 
 func TestReadyWMCOPodName(t *testing.T) {
@@ -216,6 +250,12 @@ func TestReadyWMCOPodName(t *testing.T) {
 	if _, err := readyWMCOPodName(`{"items":[]}`); !errors.Is(err, errNoReadyWMCOPod) {
 		t.Fatalf("expected no-ready-pod error, got %v", err)
 	}
+
+	for _, malformed := range []string{`{`, `{"items":{}}`, `{}`} {
+		if _, err := readyWMCOPodName(malformed); err == nil || errors.Is(err, errNoReadyWMCOPod) {
+			t.Fatalf("expected malformed pod list %q to fail permanently, got %v", malformed, err)
+		}
+	}
 }
 
 func TestPollForWMCOManagerTLSLogs(t *testing.T) {
@@ -226,7 +266,7 @@ func TestPollForWMCOManagerTLSLogs(t *testing.T) {
 				attempts++
 				switch attempts {
 				case 1:
-					return "", fmt.Errorf("pods \"wmco-old\" not found")
+					return "", fmt.Errorf("%w: pods \"wmco-old\" not found", errWMCOPodDisappeared)
 				case 2:
 					return "TLS configuration loaded with VersionTLS12", nil
 				default:
@@ -238,6 +278,31 @@ func TestPollForWMCOManagerTLSLogs(t *testing.T) {
 		}
 		if attempts != 3 || !strings.Contains(logs, "VersionTLS13") {
 			t.Fatalf("expected VersionTLS13 on third attempt, got attempts=%d logs=%q", attempts, logs)
+		}
+	})
+
+	t.Run("malformed pod response fails immediately", func(t *testing.T) {
+		attempts := 0
+		_, err := pollForWMCOManagerTLSLogs(time.Millisecond, 100*time.Millisecond, "VersionTLS13",
+			func() (string, error) {
+				attempts++
+				_, err := readyWMCOPodName("{")
+				return "", err
+			})
+		if err == nil || attempts != 1 || !strings.Contains(err.Error(), "parsing WMCO pod list") {
+			t.Fatalf("expected immediate malformed pod-list failure, got attempts=%d err=%v", attempts, err)
+		}
+	})
+
+	t.Run("permanent not found error fails immediately", func(t *testing.T) {
+		attempts := 0
+		_, err := pollForWMCOManagerTLSLogs(time.Millisecond, 100*time.Millisecond, "VersionTLS13",
+			func() (string, error) {
+				attempts++
+				return "", errors.New(`namespaces "openshift-windows-machine-config-operator" not found`)
+			})
+		if err == nil || attempts != 1 || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("expected immediate permanent not-found failure, got attempts=%d err=%v", attempts, err)
 		}
 	})
 

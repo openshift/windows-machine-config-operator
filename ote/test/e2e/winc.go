@@ -2066,6 +2066,8 @@ spec:
 	})
 
 	// author: rrasouli@redhat.com
+	// Timeout budget: 5m deployment readiness + the conservative 22m restoration deadline = 27m.
+	// The Origin runner reserves another 5m beyond Ginkgo for reporting and teardown.
 	g.It("Author:rrasouli-Medium-90117-[tls-adherence]-WMCO metrics endpoint uses default Intermediate TLS profile [Timeout:35m][Serial][Disruptive]",
 		g.SpecTimeout(30*time.Minute), func(ctx g.SpecContext) {
 
@@ -2111,8 +2113,10 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Critical-90118-[tls-adherence]-WMCO pod restarts when APIServer TLS security profile changes [Timeout:55m][Serial][Disruptive]",
-		g.SpecTimeout(50*time.Minute), func(ctx g.SpecContext) {
+	// Timeout budget: 11m optional alternate rollout + 15m target rollout/log/node checks +
+	// 22m restoration = 48m. Ginkgo has 12m command overhead; the runner has another 5m.
+	g.It("Author:rrasouli-Critical-90118-[tls-adherence]-WMCO pod restarts when APIServer TLS security profile changes [Timeout:65m][Serial][Disruptive]",
+		g.SpecTimeout(60*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
 			origTLSProfile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -2157,8 +2161,10 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Longduration-Critical-90119-[tls-adherence]-WMCO metrics endpoint enforces updated TLS profile after pod restart [Timeout:60m][Slow][Serial][Disruptive]",
-		g.SpecTimeout(55*time.Minute), func(ctx g.SpecContext) {
+	// Timeout budget: 2m checker + 11m optional alternate rollout + 11m Modern rollout +
+	// 11m Old rollout + 22m restoration = 57m. Ginkgo has 13m command overhead; the runner has another 5m.
+	g.It("Author:rrasouli-Longduration-Critical-90119-[tls-adherence]-WMCO metrics endpoint enforces updated TLS profile after pod restart [Timeout:75m][Slow][Serial][Disruptive]",
+		g.SpecTimeout(70*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
 			origTLSProfile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -2170,12 +2176,13 @@ spec:
 			if origAdherence != "StrictAllComponents" {
 				g.Skip("TLS adherence must be preconfigured as StrictAllComponents for this test")
 			}
+			windowsNodeCount := len(getWindowsHostNames(oc))
 
 			checkerPod := createTLSCheckerPod(oc)
 			defer deleteTLSCheckerPod(oc, checkerPod)
 
 			defer func() {
-				o.Expect(restoreAPIServerTLSAndWait(oc, origAdherence, origTLSProfile, 0)).NotTo(o.HaveOccurred())
+				o.Expect(restoreAPIServerTLSAndWait(oc, origAdherence, origTLSProfile, windowsNodeCount)).NotTo(o.HaveOccurred())
 			}()
 
 			g.By("Set Modern TLS profile with StrictAllComponents adherence")
@@ -2257,8 +2264,10 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("Author:rrasouli-Medium-90120-[tls-adherence]-WMCO metrics endpoint enforces Custom TLS profile with specific cipher suites [Timeout:50m][Serial][Disruptive]",
-		g.SpecTimeout(45*time.Minute), func(ctx g.SpecContext) {
+	// Timeout budget: 2m checker + 11m optional alternate rollout + 11m Custom rollout +
+	// 22m restoration = 46m. Ginkgo has 14m command overhead; the runner has another 5m.
+	g.It("Author:rrasouli-Medium-90120-[tls-adherence]-WMCO metrics endpoint enforces Custom TLS profile with specific cipher suites [Timeout:65m][Serial][Disruptive]",
+		g.SpecTimeout(60*time.Minute), func(ctx g.SpecContext) {
 
 			g.By("Save original apiserver TLS configuration")
 			origTLSProfile, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -2270,6 +2279,7 @@ spec:
 			if origAdherence != "StrictAllComponents" {
 				g.Skip("TLS adherence must be preconfigured as StrictAllComponents for this test")
 			}
+			windowsNodeCount := len(getWindowsHostNames(oc))
 
 			wmcoStartTime := getWMCORestartState(oc)
 
@@ -2277,7 +2287,7 @@ spec:
 			defer deleteTLSCheckerPod(oc, checkerPod)
 
 			defer func() {
-				o.Expect(restoreAPIServerTLSAndWait(oc, origAdherence, origTLSProfile, 0)).NotTo(o.HaveOccurred())
+				o.Expect(restoreAPIServerTLSAndWait(oc, origAdherence, origTLSProfile, windowsNodeCount)).NotTo(o.HaveOccurred())
 			}()
 
 			g.By("Set Custom TLS profile with StrictAllComponents adherence")
