@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -647,6 +648,218 @@ func runDebugNodePS(oc *exutil.CLI, nodeName, image, psCommand string) (string, 
 	return strings.Join(cleaned, "\n"), nil
 }
 
+const (
+	hostProcessLogMaxAttempts       = 5
+	hostProcessLogOverallTimeout    = 90 * time.Second
+	hostProcessLogPerRequestTimeout = 10 * time.Second
+	hostProcessLogRetryDelay        = time.Second
+)
+
+type hostProcessLogRunner func(context.Context, string) (string, error)
+
+type hostProcessLogRetryConfig struct {
+	maxAttempts       int
+	overallTimeout    time.Duration
+	perRequestTimeout time.Duration
+	retryDelay        time.Duration
+}
+
+type hostProcessLogRetrievalError struct {
+	attempts  int
+	elapsed   time.Duration
+	lastErr   error
+	exhausted bool
+}
+
+func (e *hostProcessLogRetrievalError) Error() string {
+	return fmt.Sprintf("log retrieval failed after %d attempt(s) over %s: %v",
+		e.attempts, e.elapsed.Round(time.Millisecond), e.lastErr)
+}
+
+func (e *hostProcessLogRetrievalError) Unwrap() error {
+	return e.lastErr
+}
+
+type hostProcessPodOperations struct {
+	create               func() error
+	cleanup              func()
+	waitForTerminalPhase func() (string, error)
+	retrieveLogs         hostProcessLogRunner
+	terminationDetails   func(context.Context) (string, string)
+}
+
+func defaultHostProcessLogRetryConfig() hostProcessLogRetryConfig {
+	return hostProcessLogRetryConfig{
+		maxAttempts:       hostProcessLogMaxAttempts,
+		overallTimeout:    hostProcessLogOverallTimeout,
+		perRequestTimeout: hostProcessLogPerRequestTimeout,
+		retryDelay:        hostProcessLogRetryDelay,
+	}
+}
+
+func isTransientHostProcessLogError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	errorText := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"connection reset",
+		"unexpected eof",
+		"request timeout",
+		"request timed out",
+		"timeout awaiting response headers",
+		"client.timeout exceeded",
+		"context deadline exceeded",
+		"i/o timeout",
+	} {
+		if strings.Contains(errorText, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func retrieveHostProcessLogs(ctx context.Context, podName string, runner hostProcessLogRunner,
+	config hostProcessLogRetryConfig) (string, error) {
+	start := time.Now()
+	retryCtx, cancel := context.WithTimeout(ctx, config.overallTimeout)
+	defer cancel()
+
+	var lastErr error
+	for attempt := 1; attempt <= config.maxAttempts; attempt++ {
+		if err := retryCtx.Err(); err != nil {
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			return "", &hostProcessLogRetrievalError{
+				attempts: attempt - 1, elapsed: time.Since(start), lastErr: lastErr, exhausted: true,
+			}
+		}
+
+		requestCtx, requestCancel := context.WithTimeout(retryCtx, config.perRequestTimeout)
+		output, err := runner(requestCtx, podName)
+		requestCancel()
+		if err == nil {
+			return output, nil
+		}
+		lastErr = err
+
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		if !isTransientHostProcessLogError(err) {
+			return "", &hostProcessLogRetrievalError{
+				attempts: attempt, elapsed: time.Since(start), lastErr: err,
+			}
+		}
+		if attempt == config.maxAttempts || retryCtx.Err() != nil {
+			return "", &hostProcessLogRetrievalError{
+				attempts: attempt, elapsed: time.Since(start), lastErr: err, exhausted: true,
+			}
+		}
+
+		timer := time.NewTimer(config.retryDelay)
+		select {
+		case <-retryCtx.Done():
+			timer.Stop()
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			return "", &hostProcessLogRetrievalError{
+				attempts: attempt, elapsed: time.Since(start), lastErr: err, exhausted: true,
+			}
+		case <-timer.C:
+		}
+	}
+
+	return "", &hostProcessLogRetrievalError{
+		attempts: config.maxAttempts, elapsed: time.Since(start), lastErr: lastErr, exhausted: true,
+	}
+}
+
+func safeHostProcessDiagnosticValue(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	const maxLength = 512
+	if len(value) > maxLength {
+		return value[:maxLength] + "..."
+	}
+	if value == "" {
+		return "unknown"
+	}
+	return value
+}
+
+func executeHostProcessPod(ctx context.Context, nodeName, podName string, waitForCompletion bool,
+	operations hostProcessPodOperations, retryConfig hostProcessLogRetryConfig) (string, error) {
+	if err := operations.create(); err != nil {
+		return "", err
+	}
+	defer operations.cleanup()
+
+	if !waitForCompletion {
+		return "", nil
+	}
+
+	phase, err := operations.waitForTerminalPhase()
+	if err != nil {
+		return "", err
+	}
+	if phase == "Failed" {
+		return "", fmt.Errorf("HostProcess command failed on %s (pod %s phase Failed)", nodeName, podName)
+	}
+
+	output, err := retrieveHostProcessLogs(ctx, podName, operations.retrieveLogs, retryConfig)
+	if err == nil {
+		return strings.TrimSpace(output), nil
+	}
+
+	var retrievalErr *hostProcessLogRetrievalError
+	if !errors.As(err, &retrievalErr) || !retrievalErr.exhausted {
+		return "", fmt.Errorf("failed to get HostProcess pod logs: %w", err)
+	}
+
+	exitCode, reason := operations.terminationDetails(ctx)
+	lastError := "unknown"
+	if retrievalErr.lastErr != nil {
+		lastError = retrievalErr.lastErr.Error()
+	}
+	diagnostics := fmt.Sprintf("phase=%s containerExitCode=%s containerReason=%s node=%s attempts=%d elapsed=%s lastError=%s",
+		phase,
+		safeHostProcessDiagnosticValue(exitCode),
+		safeHostProcessDiagnosticValue(reason),
+		safeHostProcessDiagnosticValue(nodeName),
+		retrievalErr.attempts,
+		retrievalErr.elapsed.Round(time.Millisecond),
+		safeHostProcessDiagnosticValue(lastError))
+	return "", fmt.Errorf("failed to get HostProcess pod logs: %s", diagnostics)
+}
+
+func runCLICommandWithContext(ctx context.Context, command *exutil.CLI) (string, error) {
+	cmd, stdout, stderr, err := command.Background()
+	if err != nil {
+		return "", err
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", safeHostProcessDiagnosticValue(stderr.String()), err)
+		}
+		return stdout.String(), nil
+	case <-ctx.Done():
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		<-done
+		return "", ctx.Err()
+	}
+}
+
 // runHostProcessPS runs a PowerShell command on a Windows node using a HostProcess container.
 // Unlike runDebugNodePS, this creates an explicit HostProcess pod with hostProcess=true and
 // runAsUserName="NT AUTHORITY\SYSTEM", giving the process full access to the host's Service
@@ -708,73 +921,90 @@ func runHostProcessPS(oc *exutil.CLI, nodeName, image, psCommand string, waitFor
 	e2e.Logf("[HostProcess] Command: %s", psCommand)
 	e2e.Logf("[HostProcess] Overrides: %s", string(overridesJSON))
 
-	createOutput, err := oc.AsAdmin().WithoutNamespace().Run("run").Args(
-		podName,
-		"-n", wmcoNamespace,
-		"--image="+image,
-		"--restart=Never",
-		"--override-type=merge",
-		"--overrides="+string(overridesJSON),
-	).Output()
+	shouldWait := len(waitForCompletion) == 0 || waitForCompletion[0]
+	operations := hostProcessPodOperations{
+		create: func() error {
+			createOutput, err := oc.AsAdmin().WithoutNamespace().Run("run").Args(
+				podName,
+				"-n", wmcoNamespace,
+				"--image="+image,
+				"--restart=Never",
+				"--override-type=merge",
+				"--overrides="+string(overridesJSON),
+			).Output()
+			if err != nil {
+				e2e.Logf("[HostProcess] Failed to create pod %s: %v, output: %s", podName, err, createOutput)
+				return fmt.Errorf("failed to create HostProcess pod on %s: %w", nodeName, err)
+			}
+			e2e.Logf("[HostProcess] Pod %s created successfully", podName)
+			return nil
+		},
+		cleanup: func() {
+			e2e.Logf("[HostProcess] Cleaning up pod %s", podName)
+			if delErr := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+				"pod", podName, "-n", wmcoNamespace, "--ignore-not-found", "--wait=false").Execute(); delErr != nil {
+				e2e.Logf("[HostProcess] Warning: failed to delete pod %s: %v", podName, delErr)
+			}
+		},
+		waitForTerminalPhase: func() (string, error) {
+			var terminalPhase string
+			pollErr := wait.Poll(1*time.Second, 10*time.Minute, func() (bool, error) {
+				phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"pod", podName, "-n", wmcoNamespace, "-o=jsonpath={.status.phase}").Output()
+				if err != nil {
+					e2e.Logf("[HostProcess] Poll: error getting phase for %s: %v", podName, err)
+					return false, nil
+				}
+				phase = strings.TrimSpace(phase)
+				e2e.Logf("[HostProcess] Poll: pod %s phase=%s", podName, phase)
+				if phase == "Succeeded" || phase == "Failed" {
+					terminalPhase = phase
+					return true, nil
+				}
+				return false, nil
+			})
+			if pollErr != nil {
+				describeOutput, _ := oc.AsAdmin().WithoutNamespace().Run("describe").Args(
+					"pod", podName, "-n", wmcoNamespace).Output()
+				e2e.Logf("[HostProcess] Pod %s timed out. Describe:\n%s", podName, describeOutput)
+				return "", fmt.Errorf("HostProcess pod %s did not complete: %w", podName, pollErr)
+			}
+			e2e.Logf("[HostProcess] Pod %s final phase: %s", podName, terminalPhase)
+			return terminalPhase, nil
+		},
+		retrieveLogs: func(ctx context.Context, podName string) (string, error) {
+			return runCLICommandWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("logs").Args(
+				podName, "-n", wmcoNamespace, "--request-timeout=10s"))
+		},
+		terminationDetails: func(ctx context.Context) (string, string) {
+			diagnosticCtx, cancel := context.WithTimeout(ctx, hostProcessLogPerRequestTimeout)
+			defer cancel()
+			output, err := runCLICommandWithContext(diagnosticCtx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"pod", podName, "-n", wmcoNamespace, "--request-timeout=10s",
+				`-o=jsonpath={.status.containerStatuses[0].state.terminated.exitCode}{"|"}{.status.containerStatuses[0].state.terminated.reason}`))
+			if err != nil {
+				return "unknown", "unavailable"
+			}
+			parts := strings.SplitN(strings.TrimSpace(output), "|", 2)
+			if len(parts) != 2 {
+				return "unknown", "unavailable"
+			}
+			return parts[0], parts[1]
+		},
+	}
+
+	if !shouldWait {
+		e2e.Logf("[HostProcess] Pod %s will return without waiting (fire-and-forget)", podName)
+	}
+	output, err := executeHostProcessPod(g.GinkgoT().Context(), nodeName, podName, shouldWait,
+		operations, defaultHostProcessLogRetryConfig())
 	if err != nil {
-		e2e.Logf("[HostProcess] Failed to create pod %s: %v, output: %s", podName, err, createOutput)
-		return "", fmt.Errorf("failed to create HostProcess pod on %s: %w", nodeName, err)
+		return "", err
 	}
-	e2e.Logf("[HostProcess] Pod %s created successfully", podName)
-
-	cleanupPod := func() {
-		e2e.Logf("[HostProcess] Cleaning up pod %s", podName)
-		if delErr := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
-			"pod", podName, "-n", wmcoNamespace, "--ignore-not-found", "--wait=false").Execute(); delErr != nil {
-			e2e.Logf("[HostProcess] Warning: failed to delete pod %s: %v", podName, delErr)
-		}
+	if shouldWait {
+		e2e.Logf("[HostProcess] Pod %s output: %s", podName, output)
 	}
-
-	if len(waitForCompletion) > 0 && !waitForCompletion[0] {
-		e2e.Logf("[HostProcess] Pod %s created, returning without waiting (fire-and-forget)", podName)
-		defer cleanupPod()
-		return "", nil
-	}
-
-	defer cleanupPod()
-
-	pollErr := wait.Poll(1*time.Second, 10*time.Minute, func() (bool, error) {
-		phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			"pod", podName, "-n", wmcoNamespace, "-o=jsonpath={.status.phase}").Output()
-		if err != nil {
-			e2e.Logf("[HostProcess] Poll: error getting phase for %s: %v", podName, err)
-			return false, nil
-		}
-		p := strings.TrimSpace(phase)
-		e2e.Logf("[HostProcess] Poll: pod %s phase=%s", podName, p)
-		return p == "Succeeded" || p == "Failed", nil
-	})
-	if pollErr != nil {
-		describeOutput, _ := oc.AsAdmin().WithoutNamespace().Run("describe").Args(
-			"pod", podName, "-n", wmcoNamespace).Output()
-		e2e.Logf("[HostProcess] Pod %s timed out. Describe:\n%s", podName, describeOutput)
-		return "", fmt.Errorf("HostProcess pod %s did not complete: %w", podName, pollErr)
-	}
-
-	phase, phaseErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"pod", podName, "-n", wmcoNamespace, "-o=jsonpath={.status.phase}").Output()
-	if phaseErr != nil {
-		return "", fmt.Errorf("failed to get HostProcess pod %s phase: %w", podName, phaseErr)
-	}
-	e2e.Logf("[HostProcess] Pod %s final phase: %s", podName, strings.TrimSpace(phase))
-
-	output, logErr := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
-		podName, "-n", wmcoNamespace).Output()
-	if logErr != nil {
-		return "", fmt.Errorf("failed to get HostProcess pod logs: %w", logErr)
-	}
-	e2e.Logf("[HostProcess] Pod %s output: %s", podName, strings.TrimSpace(output))
-
-	if strings.TrimSpace(phase) == "Failed" {
-		return "", fmt.Errorf("HostProcess command failed on %s: %s", nodeName, output)
-	}
-
-	return strings.TrimSpace(output), nil
+	return output, nil
 }
 
 // createResourceFromString writes a YAML manifest to a temp file and applies it via oc apply.
