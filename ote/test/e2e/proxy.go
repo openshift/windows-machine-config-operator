@@ -56,7 +56,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			o.Expect(err).NotTo(o.HaveOccurred(), "trusted-ca configmap not found")
 
 			g.By("Remove proxy trusted CA")
-			wmcoStartTime := getWMCOTimestamp(oc)
+			wmcoStartTime := getWMCORestartState(oc)
 			err = oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", `[{"op": "replace", "path": "/spec/trustedCA/name", "value": ""}]`).Execute()
 			o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove trusted CA from proxy spec")
 
@@ -80,7 +80,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 
 			g.By("Remove no_proxy vars and verify propagation to Windows nodes")
 			if getClusterProxy(oc, "spec.noProxy") != "" {
-				timeNoProxy := getWMCOTimestamp(oc)
+				timeNoProxy := getWMCORestartState(oc)
 				err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", `[{"op": "remove", "path": "/spec/noProxy"}]`).Execute()
 				o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove noProxy")
 				_, err = checkWMCORestarted(oc, timeNoProxy)
@@ -95,7 +95,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 
 			g.By("Remove https_proxy vars and verify propagation to Windows nodes")
 			if getClusterProxy(oc, "spec.httpsProxy") != "" {
-				timeNoHttps := getWMCOTimestamp(oc)
+				timeNoHttps := getWMCORestartState(oc)
 				err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", `[{"op": "remove", "path": "/spec/httpsProxy"}]`).Execute()
 				o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove httpsProxy")
 				_, err = checkWMCORestarted(oc, timeNoHttps)
@@ -117,7 +117,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 
 			g.By("Remove http_proxy vars and verify propagation to Windows nodes")
 			if getClusterProxy(oc, "spec.httpProxy") != "" {
-				timeNoHttp := getWMCOTimestamp(oc)
+				timeNoHttp := getWMCORestartState(oc)
 				err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", `[{"op": "remove", "path": "/spec/httpProxy"}]`).Execute()
 				o.Expect(err).NotTo(o.HaveOccurred(), "failed to remove httpProxy")
 				_, err = checkWMCORestarted(oc, timeNoHttp)
@@ -137,7 +137,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			defer restoreProxyEnvironment(oc, initialProxySpec)
 
 			g.By("Add another record to cluster proxy: example.com to no-proxy")
-			wmcoStartTime := getWMCOTimestamp(oc)
+			wmcoStartTime := getWMCORestartState(oc)
 			err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p",
 				`[{"op": "add", "path":"/spec/noProxy", "value":"test.no-proxy.com,example.com"}]`).Execute()
 			o.Expect(err).NotTo(o.HaveOccurred(), "could not patch proxy with new noProxy value")
@@ -262,7 +262,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 				updatedNoProxy = specNoProxy + ",myfakeaddress.com"
 			}
 
-			initialTimeStamp := getWMCOTimestamp(oc)
+			initialTimeStamp := getWMCORestartState(oc)
 			defer restoreProxyEnvironment(oc, initialProxySpec)
 			err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p",
 				"[{\"op\": \"add\", \"path\":\"/spec/noProxy\", \"value\":\""+updatedNoProxy+"\"}]").Execute()
