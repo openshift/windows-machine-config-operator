@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -25,7 +27,12 @@ import (
 	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	"github.com/tidwall/gjson"
 	"golang.org/x/crypto/ssh"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -40,6 +47,8 @@ var (
 	linuxNodeLabel     = "kubernetes.io/os=linux"
 
 	machineLabel      = "machine.openshift.io/os-id=Windows"
+	machinesGVR       = schema.GroupVersionResource{Group: "machine.openshift.io", Version: "v1beta1", Resource: "machines"}
+	pubKeyHashAnno    = "windowsmachineconfig.openshift.io/pub-key-hash"
 	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 	linuxDebugImage   = "registry.access.redhat.com/ubi9/ubi:latest"
 	defaultWindowsMS  = "windows"
@@ -1629,6 +1638,97 @@ func generateTestPrivateKey() (string, error) {
 
 	cleanup = false
 	return tmpFile.Name(), nil
+}
+
+func safePollErrorReason(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "request timed out"
+	case errors.Is(err, context.Canceled):
+		return "request canceled"
+	default:
+		return "API request failed"
+	}
+}
+
+// publicKeyHashFromPrivateKey returns the value WMCO places in the public key hash node annotation.
+func publicKeyHashFromPrivateKey(privateKeyPath string) (string, error) {
+	privateKey, err := os.ReadFile(privateKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("read private key: %w", err)
+	}
+	signer, err := ssh.ParsePrivateKey(privateKey)
+	if err != nil {
+		return "", fmt.Errorf("parse private key: %w", err)
+	}
+	authorizedKey := strings.TrimSuffix(string(ssh.MarshalAuthorizedKey(signer.PublicKey())), "\n")
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(authorizedKey))), nil
+}
+
+// getNodeNamesFromMachineSet is an error-aware form of Origin's MachineSet helper for use in a poll.
+func getNodeNamesFromMachineSet(ctx context.Context, oc *exutil.CLI, machineSetName string) ([]string, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	machines, err := oc.AdminDynamicClient().Resource(machinesGVR).Namespace(mcoNamespace).List(requestCtx,
+		metav1.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-machineset=" + machineSetName})
+	if err != nil {
+		return nil, fmt.Errorf("list MachineSet machines: %w", err)
+	}
+
+	nodeNames := make([]string, 0, len(machines.Items))
+	for _, machine := range machines.Items {
+		nodeName, found, err := unstructured.NestedString(machine.Object, "status", "nodeRef", "name")
+		if err != nil {
+			return nil, fmt.Errorf("read Machine node reference: %w", err)
+		}
+		if found && nodeName != "" {
+			nodeNames = append(nodeNames, nodeName)
+		}
+	}
+	return nodeNames, nil
+}
+
+// targetNodesReadyWithKeyHash checks whether the given nodes are Ready and use the replacement key.
+func targetNodesReadyWithKeyHash(ctx context.Context, nodeClient corev1client.NodeInterface, nodeNames []string,
+	expectedNodeCount int, expectedHash string) (bool, error) {
+	targetNodes := make(map[string]struct{}, len(nodeNames))
+	for _, nodeName := range nodeNames {
+		if nodeName != "" {
+			targetNodes[nodeName] = struct{}{}
+		}
+	}
+	if expectedNodeCount <= 0 || len(targetNodes) != expectedNodeCount || expectedHash == "" {
+		return false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	for nodeName := range targetNodes {
+		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		node, err := nodeClient.Get(requestCtx, nodeName, metav1.GetOptions{})
+		cancel()
+		if err != nil {
+			return false, fmt.Errorf("get target node: %w", err)
+		}
+		if !nodeReadyWithKeyHash(node, expectedHash) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func nodeReadyWithKeyHash(node *corev1.Node, expectedHash string) bool {
+	if node == nil || expectedHash == "" || node.Annotations[pubKeyHashAnno] != expectedHash {
+		return false
+	}
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
 }
 
 // waitForMachinesetReady polls until the MachineSet has the expected number of ready replicas.

@@ -2151,8 +2151,8 @@ spec:
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("OCP-39640 Replace private key during Windows machine configuration [Serial][Disruptive][Timeout:50m]",
-		g.SpecTimeout(45*time.Minute),
+	g.It("OCP-39640 Replace private key during Windows machine configuration [Serial][Disruptive][Timeout:55m]",
+		g.SpecTimeout(50*time.Minute),
 		func(ctx g.SpecContext) {
 			// vSphere contains a builtin private and public key with its template,
 			// currently changing its private key is super challenging
@@ -2189,6 +2189,8 @@ spec:
 			keyPath, err := generateTestPrivateKey()
 			o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate test private key")
 			defer os.Remove(keyPath)
+			expectedKeyHash, err := publicKeyHashFromPrivateKey(keyPath)
+			o.Expect(err).NotTo(o.HaveOccurred(), "failed to derive replacement public key hash")
 
 			g.By("Step 4: Replace the private key with a newly created key before machine scale up")
 			g.DeferCleanup(func() {
@@ -2217,8 +2219,29 @@ spec:
 			g.By("Step 6: Wait for nodes to be in a Ready status")
 			err = scaleDeployment(oc, wmcoDeploymentName, 1, wmcoNamespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			// A delay waiting for machine upgrade to be completed
-			waitUntilWMCOStatusChanged(oc, "\"unhealthy\":0", "1m")
+			pollErr := wait.PollUntilContextTimeout(ctx, 15*time.Second, 35*time.Minute, true,
+				func(pollCtx context.Context) (bool, error) {
+					targetNodes, err := getNodeNamesFromMachineSet(pollCtx, oc, msName)
+					if err != nil {
+						if pollCtx.Err() != nil {
+							return false, pollCtx.Err()
+						}
+						e2e.Logf("Unable to get target MachineSet nodes: %v", safePollErrorReason(err))
+						return false, nil
+					}
+					ready, err := targetNodesReadyWithKeyHash(pollCtx,
+						oc.AdminKubeClient().CoreV1().Nodes(), targetNodes, initialReplicas, expectedKeyHash)
+					if err != nil {
+						if pollCtx.Err() != nil {
+							return false, pollCtx.Err()
+						}
+						e2e.Logf("Unable to check target MachineSet nodes: %v", safePollErrorReason(err))
+						return false, nil
+					}
+					return ready, nil
+				})
+			o.Expect(pollErr).NotTo(o.HaveOccurred(),
+				"target MachineSet nodes did not become Ready with the replacement public key within 35 minutes")
 			waitWindowsNodesReady(oc, expectedNodes, 40*time.Minute)
 		})
 
