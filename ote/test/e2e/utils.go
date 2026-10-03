@@ -3,8 +3,13 @@ package winc
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -22,7 +27,12 @@ import (
 	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	"github.com/tidwall/gjson"
 	"golang.org/x/crypto/ssh"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 )
 
@@ -37,6 +47,8 @@ var (
 	linuxNodeLabel     = "kubernetes.io/os=linux"
 
 	machineLabel      = "machine.openshift.io/os-id=Windows"
+	machinesGVR       = schema.GroupVersionResource{Group: "machine.openshift.io", Version: "v1beta1", Resource: "machines"}
+	pubKeyHashAnno    = "windowsmachineconfig.openshift.io/pub-key-hash"
 	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
 	linuxDebugImage   = "registry.access.redhat.com/ubi9/ubi:latest"
 	defaultWindowsMS  = "windows"
@@ -1488,15 +1500,19 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 // getMachineSetReplicas returns the desired replica count of the given MachineSet. Tests that scale
 // a MachineSet must capture this before scaling so cleanup restores the cluster's original size
 // instead of assuming a fixed count.
-func getMachineSetReplicas(oc *exutil.CLI, machineSetName string) int {
+func getMachineSetReplicas(oc *exutil.CLI, machineSetName string) (int, error) {
 	replicas, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"machinesets.machine.openshift.io", machineSetName, "-n", mcoNamespace,
 		"-o=jsonpath={.spec.replicas}").Output()
-	o.Expect(err).NotTo(o.HaveOccurred(), "Failed to get replicas of MachineSet %s", machineSetName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get replicas of MachineSet %s: %w", machineSetName, err)
+	}
 
 	count, err := strconv.Atoi(strings.TrimSpace(replicas))
-	o.Expect(err).NotTo(o.HaveOccurred(), "Unexpected replica count %q for MachineSet %s", replicas, machineSetName)
-	return count
+	if err != nil {
+		return 0, fmt.Errorf("unexpected replica count %q for MachineSet %s: %w", replicas, machineSetName, err)
+	}
+	return count, nil
 }
 
 // scaleWindowsMachineSet scales the Windows MachineSet to the specified replica count.
@@ -1582,6 +1598,137 @@ func extractPrivateKeyToFile(oc *exutil.CLI) string {
 
 	e2e.Logf("Extracted private key to %s", tmpFile.Name())
 	return tmpFile.Name()
+}
+
+// generateTestPrivateKey generates an RSA private key and writes it to a temporary PEM file.
+// Returns the file path. Caller is responsible for cleanup.
+func generateTestPrivateKey() (string, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", fmt.Errorf("generate RSA private key: %w", err)
+	}
+
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	tmpFile, err := os.CreateTemp("", "winc-39640-key-*.pem")
+	if err != nil {
+		return "", fmt.Errorf("create temporary private key file: %w", err)
+	}
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = tmpFile.Close()
+			_ = os.Remove(tmpFile.Name())
+		}
+	}()
+
+	if err := tmpFile.Chmod(0600); err != nil {
+		return "", fmt.Errorf("set private key file permissions: %w", err)
+	}
+	if n, err := tmpFile.Write(privateKeyPEM); err != nil {
+		return "", fmt.Errorf("write private key file: %w", err)
+	} else if n != len(privateKeyPEM) {
+		return "", fmt.Errorf("write private key file: wrote %d of %d bytes", n, len(privateKeyPEM))
+	}
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("close private key file: %w", err)
+	}
+
+	cleanup = false
+	return tmpFile.Name(), nil
+}
+
+func safePollErrorReason(err error) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "request timed out"
+	case errors.Is(err, context.Canceled):
+		return "request canceled"
+	default:
+		return "API request failed"
+	}
+}
+
+// publicKeyHashFromPrivateKey returns the value WMCO places in the public key hash node annotation.
+func publicKeyHashFromPrivateKey(privateKeyPath string) (string, error) {
+	privateKey, err := os.ReadFile(privateKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("read private key: %w", err)
+	}
+	signer, err := ssh.ParsePrivateKey(privateKey)
+	if err != nil {
+		return "", fmt.Errorf("parse private key: %w", err)
+	}
+	authorizedKey := strings.TrimSuffix(string(ssh.MarshalAuthorizedKey(signer.PublicKey())), "\n")
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(authorizedKey))), nil
+}
+
+// getNodeNamesFromMachineSet is an error-aware form of Origin's MachineSet helper for use in a poll.
+func getNodeNamesFromMachineSet(ctx context.Context, oc *exutil.CLI, machineSetName string) ([]string, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	machines, err := oc.AdminDynamicClient().Resource(machinesGVR).Namespace(mcoNamespace).List(requestCtx,
+		metav1.ListOptions{LabelSelector: "machine.openshift.io/cluster-api-machineset=" + machineSetName})
+	if err != nil {
+		return nil, fmt.Errorf("list MachineSet machines: %w", err)
+	}
+
+	nodeNames := make([]string, 0, len(machines.Items))
+	for _, machine := range machines.Items {
+		nodeName, found, err := unstructured.NestedString(machine.Object, "status", "nodeRef", "name")
+		if err != nil {
+			return nil, fmt.Errorf("read Machine node reference: %w", err)
+		}
+		if found && nodeName != "" {
+			nodeNames = append(nodeNames, nodeName)
+		}
+	}
+	return nodeNames, nil
+}
+
+// targetNodesReadyWithKeyHash checks whether the given nodes are Ready and use the replacement key.
+func targetNodesReadyWithKeyHash(ctx context.Context, nodeClient corev1client.NodeInterface, nodeNames []string,
+	expectedNodeCount int, expectedHash string) (bool, error) {
+	targetNodes := make(map[string]struct{}, len(nodeNames))
+	for _, nodeName := range nodeNames {
+		if nodeName != "" {
+			targetNodes[nodeName] = struct{}{}
+		}
+	}
+	if expectedNodeCount <= 0 || len(targetNodes) != expectedNodeCount || expectedHash == "" {
+		return false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
+	for nodeName := range targetNodes {
+		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		node, err := nodeClient.Get(requestCtx, nodeName, metav1.GetOptions{})
+		cancel()
+		if err != nil {
+			return false, fmt.Errorf("get target node: %w", err)
+		}
+		if !nodeReadyWithKeyHash(node, expectedHash) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func nodeReadyWithKeyHash(node *corev1.Node, expectedHash string) bool {
+	if node == nil || expectedHash == "" || node.Annotations[pubKeyHashAnno] != expectedHash {
+		return false
+	}
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == corev1.NodeReady {
+			return condition.Status == corev1.ConditionTrue
+		}
+	}
+	return false
 }
 
 // waitForMachinesetReady polls until the MachineSet has the expected number of ready replicas.
@@ -2098,4 +2245,56 @@ func testTraffic(oc *exutil.CLI, testURL string, winNodes []string) {
 		statusCode := extractStatusCode(output)
 		o.Expect(statusCode).To(o.Equal(200), "expected status code 200 on %v from %v, but got %d", testURL, nodeName, statusCode)
 	}
+}
+
+// getNumNodesWithAnnotation returns the number of Windows nodes whose
+// windowsmachineconfig.openshift.io/version annotation matches annotationValue.
+func getNumNodesWithAnnotation(oc *exutil.CLI, annotationValue string) (int, error) {
+	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"nodes", "-l", windowsNodeLabel,
+		"-o=jsonpath={.items[*].metadata.annotations.windowsmachineconfig\\.openshift\\.io\\/version}").Output()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get node annotations: %w", err)
+	}
+	count := 0
+	for _, v := range strings.Fields(output) {
+		if v == annotationValue {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// generateClusterAutoscalerYAML returns a YAML manifest for a ClusterAutoscaler.
+func generateClusterAutoscalerYAML() string {
+	return `apiVersion: autoscaling.openshift.io/v1
+kind: ClusterAutoscaler
+metadata:
+  name: default
+spec:
+  podPriorityThreshold: -10
+  resourceLimits:
+    maxNodesTotal: 24
+  scaleDown:
+    enabled: true
+    delayAfterAdd: 10s
+    delayAfterDelete: 10s
+    delayAfterFailure: 10s
+    unneededTime: 10s`
+}
+
+// generateMachineAutoscalerYAML returns a YAML manifest for a MachineAutoscaler targeting a MachineSet.
+func generateMachineAutoscalerYAML(machineSetName string, minReplicas, maxReplicas int) string {
+	return fmt.Sprintf(`apiVersion: autoscaling.openshift.io/v1beta1
+kind: MachineAutoscaler
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  minReplicas: %d
+  maxReplicas: %d
+  scaleTargetRef:
+    apiVersion: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: %s`, machineSetName, mcoNamespace, minReplicas, maxReplicas, machineSetName)
 }
