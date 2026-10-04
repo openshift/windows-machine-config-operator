@@ -113,7 +113,7 @@ func registerSuites(ext *e.Extension) {
 		{
 			Name:       "windows-machine-config-operator/disruptive",
 			Parents:    []string{"openshift/disruptive"},
-			Qualifiers: []string{`name.contains("[Disruptive]")`},
+			Qualifiers: []string{`name.contains("[Disruptive]") && !name.contains("[BYOHPool]")`},
 		},
 		{
 			Name:       "windows-machine-config-operator/proxy",
@@ -122,7 +122,11 @@ func registerSuites(ext *e.Extension) {
 		},
 		{
 			Name:       "windows-machine-config-operator/non-disruptive",
-			Qualifiers: []string{`!name.contains("[Disruptive]")`},
+			Qualifiers: []string{`!name.contains("[Disruptive]") && !name.contains("[BYOHPool]")`},
+		},
+		{
+			Name:       "windows-machine-config-operator/byoh-pool",
+			Qualifiers: []string{`name.contains("[BYOHPool]")`},
 		},
 		{
 			Name: "windows-machine-config-operator/all",
