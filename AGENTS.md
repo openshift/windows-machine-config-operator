@@ -465,7 +465,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 **CSR Approval**
 - Validates node identity before approval (see `pkg/csr/csr.go`)
-- Checks node name against windows-instances ConfigMap or Machine objects
+- Checks node name against `windows-instances` ConfigMap entries: looks up instance addresses via DNS reverse resolution, then falls back to SSH hostname comparison (see `validateNodeName` in `pkg/csr/csr.go`)
 - Distinguishes kubelet client vs serving certificate types via separate validators
 - Validates certificate type and key usages (see `pkg/csr/validation/`)
 
@@ -478,7 +478,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 - Auto-rotate before expiry (80% lifetime)
 - Trust bundle changes require reboot
 - WICD certificate separate from kubelet
-- **Kubelet CA rotation**: WMCO detects new kubelet CA certificates (rotated by the kube-apiserver operator at ~80% of the 1-year CA lifetime), merges them into the trust bundle, and distributes to all Windows nodes. E2e tests poll with bounded timeouts (`pkg/retry.Timeout` = 10 min). See `test/e2e/certificates_test.go:testKubeletCARotation`
+- **Kubelet CA rotation**: The upstream ControllerConfig supplies the kubelet CA bundle (`KubeAPIServerServingCAData`), which includes rotation overlap during CA renewal. WMCO's `ControllerConfigReconciler` watches for changes and copies this bundle to `kubelet-ca.crt` on each Windows node via `UpdateKubeletClientCA` (see `controllers/controllerconfig_controller.go` and `pkg/nodeconfig/nodeconfig.go`). A separate `ca-bundle.crt` trust bundle — composed of image registry certificates and cluster-wide proxy CA data — is managed independently by `SyncTrustedCABundle`. E2e tests poll with bounded timeouts (`pkg/retry.Timeout` = 10 min). See `test/e2e/certificates_test.go:testKubeletCARotation`
 
 ---
 
