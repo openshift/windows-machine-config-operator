@@ -311,8 +311,9 @@ WICD reconciles services continuously
 
 When making code changes, keep your changeset focused on the task at hand.
 
+- **IMPORTANT:** Prioritize changes to files that are already modified in the working tree and relevant to your task before introducing changes to clean files. This prevents proposed solutions from spreading to unrelated parts of the codebase. Clean files may still be edited when genuinely required by the task.
 - Check `git status` and `git diff` to understand the current working tree state
-- Preserve any pre-existing uncommitted changes that are unrelated to your task
+- Preserve any pre-existing uncommitted changes that are unrelated to your task — do not overwrite, revert, stage, or commit them
 - Avoid opportunistic refactors or unrelated cleanups in the same changeset
 - This keeps PRs focused, easier to review, and simpler to revert if needed
 
