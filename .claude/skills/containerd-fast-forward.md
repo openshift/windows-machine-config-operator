@@ -22,6 +22,8 @@ an individual fix.
   request against `openshift/containerd:release-5.1`.
 - A full, clean clone of a writable fork of `openshift/containerd`. Never use a
   shallow, sparse, or partial clone for this workflow.
+- GitHub authentication configured through the environment's credential helper
+  or authorized SCM integration. Never put credentials in a remote URL.
 - Bash (which must execute the fenced shell commands), Git, the Go version
   selected by the target tree, GNU Make, and the tools required by the target
   tree's `Makefile` and public CI configuration.
@@ -106,12 +108,17 @@ not name the version. Do not rely on title search alone.
 
 ## Phase 2: Clone and Verify Remotes
 
-Use neutral local names. Replace `<fork-url>` with the writable public fork and
-choose an empty working directory.
+Use neutral local names. Set `FORK_REPOSITORY` to the writable public fork's
+`owner/repository` name, use the sanitized HTTPS URL below, and choose an empty
+working directory. Authentication must come from the configured credential
+helper or SCM integration, not URL userinfo.
 
 ```bash
 set -e
-git clone <fork-url> containerd-update
+FORK_REPOSITORY=${FORK_REPOSITORY:?set the writable owner/repository}
+printf '%s\n' "$FORK_REPOSITORY" | \
+  grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || exit 1
+git clone "https://github.com/$FORK_REPOSITORY.git" containerd-update
 cd containerd-update
 SHALLOW_STATE=$(git rev-parse --is-shallow-repository) || exit 1
 test "$SHALLOW_STATE" = false
@@ -120,18 +127,20 @@ test -z "$CLONE_STATUS"
 
 git remote add openshift https://github.com/openshift/containerd.git
 git remote add upstream https://github.com/containerd/containerd.git
-git remote -v
-git remote get-url origin
+ORIGIN_URL=$(git remote get-url origin) || exit 1
 OPENSHIFT_URL=$(git remote get-url openshift) || exit 1
 UPSTREAM_URL=$(git remote get-url upstream) || exit 1
+test "$ORIGIN_URL" = "https://github.com/$FORK_REPOSITORY.git"
 test "$OPENSHIFT_URL" = \
   "https://github.com/openshift/containerd.git"
 test "$UPSTREAM_URL" = \
   "https://github.com/containerd/containerd.git"
 ```
 
-Accept an equivalent read-only URL only after verifying that it resolves to the
-same public repository. Verify that `origin` is the intended writable fork.
+If an organization requires an equivalent remote form, first normalize
+`origin` to a credential-free URL for the same public repository, then update
+the exact comparison without printing the URL. Verify that `origin` is the
+intended writable fork.
 
 Fetch the downstream base and namespace upstream tags so same-named fork tags
 cannot hide an upstream object:
@@ -281,9 +290,11 @@ it and prove that the old upstream anchor is its ancestor:
 ```bash
 set -e
 MERGE_BASE_OUTPUT=$(git merge-base --all "$TARGET_SHA" "$BASE_SHA") || exit 1
-mapfile -t MERGE_BASES <<< "$MERGE_BASE_OUTPUT"
-test "${#MERGE_BASES[@]}" -eq 1
-MERGE_BASE_SHA=${MERGE_BASES[0]}
+MERGE_BASE_COUNT=$(printf '%s\n' "$MERGE_BASE_OUTPUT" |
+  awk 'NF { count++ } END { print count + 0 }')
+test "$MERGE_BASE_COUNT" -eq 1
+MERGE_BASE_SHA=$(printf '%s\n' "$MERGE_BASE_OUTPUT" |
+  awk 'NF { print; exit }')
 git merge-base --is-ancestor "$CURRENT_UPSTREAM_SHA" "$MERGE_BASE_SHA"
 ```
 
@@ -611,7 +622,19 @@ The empty lease permits creation only while the remote ref does not exist. If a
 competing branch appears, stop and repeat the PR search; do not overwrite it.
 Never use a bare `--force-with-lease` or `--force`.
 
-Use this title only for the ancestry-proven fast-forward path:
+Before preparing commit messages or pull-request text, inspect the selected
+target tree for its current repository-local contributor documents and links;
+do not assume a root `CONTRIBUTING.md` exists. In the current `release-5.1`
+tree, the `README.md` "Project details" section delegates contribution rules to
+`containerd/project`'s `CONTRIBUTING.md`. Read the current linked guide and any
+current repository-local pull-request template, follow their contribution,
+sign-off, title, and PR-body rules, and record the source paths and immutable
+revisions consulted. Stop if an applicable source cannot be read or if the
+instructions conflict or leave the required format ambiguous. Historical pull
+requests are evidence about prior updates, not contribution-policy authority.
+
+Use this title only for the ancestry-proven fast-forward path, subject to the
+current contributor guidance:
 
 ```text
 [release-5.1] Fast forward to <LATEST_TAG>
@@ -629,7 +652,8 @@ For a carry path, use a truthful title such as:
 [release-5.1] Update to <LATEST_TAG> with downstream carries
 ```
 
-Follow PR #10's body structure and add immutable evidence:
+Follow the current applicable contributor guidance for PR format. In addition,
+include this workflow's required immutable update evidence:
 
 ```markdown
 ## Summary
@@ -689,7 +713,12 @@ Stop and report the recorded SHAs plus the action needed to continue when:
 
 ## Public References
 
-- PR #10 precedent: https://github.com/openshift/containerd/pull/10
+- Target-tree contributor-document pointer:
+  https://github.com/openshift/containerd/blob/release-5.1/README.md#project-details
+- Current containerd contributor guide:
+  https://github.com/containerd/project/blob/main/CONTRIBUTING.md
+- Historical PR #10 update precedent:
+  https://github.com/openshift/containerd/pull/10
 - OpenShift containerd fork: https://github.com/openshift/containerd
 - Upstream 1.7 releases: https://github.com/containerd/containerd/releases
 - Historical PR #10 Prow configuration:
