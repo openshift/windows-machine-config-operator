@@ -428,6 +428,9 @@ func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
 // debugWindowsNodesNotReady captures comprehensive debug information when Windows nodes fail to become Ready
 func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
 	e2e.Logf("===== DEBUG: Windows Nodes Not Ready - Capturing Diagnostic Information (cancellable) =====")
+	if windowsDebugCaptureCanceled(ctx) {
+		return
+	}
 
 	// 1. Get detailed status for all Windows nodes
 	e2e.Logf("=== Windows Node Status ===")
@@ -439,6 +442,9 @@ func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
 	} else {
 		e2e.Logf("Node status:\n%s", nodeOutput)
 	}
+	if windowsDebugCaptureCanceled(ctx) {
+		return
+	}
 
 	// 2. Get all node conditions for each Windows node (summary only, no sensitive data)
 	e2e.Logf("=== Windows Node Conditions ===")
@@ -447,6 +453,9 @@ func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
 		"-o=jsonpath={.items[*].metadata.name}").Output()
 	if err == nil {
 		for _, nodeName := range strings.Fields(nodeNames) {
+			if windowsDebugCaptureCanceled(ctx) {
+				return
+			}
 			e2e.Logf("--- Node: %s ---", nodeName)
 			conditionsOutput, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"node", nodeName,
@@ -455,6 +464,9 @@ func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
 				e2e.Logf("Condition types: %s", conditionsOutput)
 			}
 		}
+	}
+	if windowsDebugCaptureCanceled(ctx) {
+		return
 	}
 
 	// 3. Get WMCO operator pod status (not logs, to avoid sensitive data)
@@ -468,11 +480,17 @@ func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
 	} else {
 		e2e.Logf("WMCO pods:\n%s", wmcoPods)
 	}
+	if windowsDebugCaptureCanceled(ctx) {
+		return
+	}
 
 	// 4. Get event counts for Windows nodes (avoid raw messages with sensitive data)
 	e2e.Logf("=== Events for Windows Nodes (summary) ===")
 	if nodeNames != "" {
 		for _, nodeName := range strings.Fields(nodeNames) {
+			if windowsDebugCaptureCanceled(ctx) {
+				return
+			}
 			events, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 				"events", "--all-namespaces",
 				"--field-selector", fmt.Sprintf("involvedObject.name=%s", nodeName),
@@ -482,6 +500,9 @@ func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
 				e2e.Logf("Events for %s:\n%s", nodeName, events)
 			}
 		}
+	}
+	if windowsDebugCaptureCanceled(ctx) {
+		return
 	}
 
 	// 5. Get WICD pod status (if running)
@@ -495,6 +516,9 @@ func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
 	} else {
 		e2e.Logf("WICD pods:\n%s", wicdPods)
 	}
+	if windowsDebugCaptureCanceled(ctx) {
+		return
+	}
 
 	// 6. Check Machine status (if using Machine API)
 	e2e.Logf("=== Machine Status ===")
@@ -506,39 +530,60 @@ func debugWindowsNodesNotReady(ctx context.Context, oc *exutil.CLI) {
 	} else {
 		e2e.Logf("Machines:\n%s", machineOutput)
 	}
+	if windowsDebugCaptureCanceled(ctx) {
+		return
+	}
 
 	// 7. Get Windows service status from NotReady nodes (avoid raw logs with sensitive data)
 	e2e.Logf("=== Windows Node Service Status ===")
 	if nodeNames != "" {
-		for _, nodeName := range strings.Fields(nodeNames) {
-			// Check context cancellation before each node capture
-			select {
-			case <-ctx.Done():
-				e2e.Logf("Diagnostic timeout reached, stopping node captures")
-				break
-			default:
-			}
-
-			// Check if node is NotReady
-			nodeReady, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"node", nodeName,
-				"-o=jsonpath={.status.conditions[?(@.type==\"Ready\")].status}").Output()
-			if err == nil && strings.TrimSpace(nodeReady) != "True" {
-				e2e.Logf("--- Service status from NotReady node: %s ---", nodeName)
-
-				// Get Windows service status (from host, not container)
-				serviceStatus, err := runHostProcessPS(oc, nodeName, windowsDebugImage,
+		captureWindowsServiceStatus(ctx, strings.Fields(nodeNames),
+			func(nodeName string) (bool, error) {
+				nodeReady, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+					"node", nodeName,
+					"-o=jsonpath={.status.conditions[?(@.type==\"Ready\")].status}").Output()
+				return strings.TrimSpace(nodeReady) == "True", err
+			},
+			func(ctx context.Context, nodeName string) (string, error) {
+				return runHostProcessPSWithContext(ctx, oc, nodeName, windowsDebugImage,
 					"Get-Service kubelet,windows-instance-config-daemon,containerd | Format-Table -AutoSize | Out-String -Width 200")
-				if err != nil {
-					e2e.Logf("ERROR: Failed to get service status from %s: %v", nodeName, err)
-				} else {
-					e2e.Logf("Windows service status on %s:\n%s", nodeName, serviceStatus)
-				}
-			}
-		}
+			})
 	}
 
 	e2e.Logf("===== END DEBUG =====")
+}
+
+func windowsDebugCaptureCanceled(ctx context.Context) bool {
+	if ctx.Err() == nil {
+		return false
+	}
+	e2e.Logf("Diagnostic timeout reached, stopping debug capture: %v", ctx.Err())
+	return true
+}
+
+func captureWindowsServiceStatus(ctx context.Context, nodeNames []string,
+	isNodeReady func(string) (bool, error), getServiceStatus func(context.Context, string) (string, error)) {
+	for _, nodeName := range nodeNames {
+		if windowsDebugCaptureCanceled(ctx) {
+			return
+		}
+
+		nodeReady, err := isNodeReady(nodeName)
+		if windowsDebugCaptureCanceled(ctx) {
+			return
+		}
+		if err != nil || nodeReady {
+			continue
+		}
+
+		e2e.Logf("--- Service status from NotReady node: %s ---", nodeName)
+		serviceStatus, err := getServiceStatus(ctx, nodeName)
+		if err != nil {
+			e2e.Logf("ERROR: Failed to get service status from %s: %v", nodeName, err)
+		} else {
+			e2e.Logf("Windows service status on %s:\n%s", nodeName, serviceStatus)
+		}
+	}
 }
 
 // waitWindowsNodesReady polls until the expected number of Windows nodes report Ready status.
@@ -657,136 +702,6 @@ func runDebugNodePS(oc *exutil.CLI, nodeName, image, psCommand string) (string, 
 		cleaned = append(cleaned, line)
 	}
 	return strings.Join(cleaned, "\n"), nil
-}
-
-// runHostProcessPS runs a PowerShell command on a Windows node using a HostProcess container.
-// Unlike runDebugNodePS, this creates an explicit HostProcess pod with hostProcess=true and
-// runAsUserName="NT AUTHORITY\SYSTEM", giving the process full access to the host's Service
-// Control Manager, processes, and registry. Required for Get-Service, sc.exe, Stop-Service,
-// Get-CimInstance, and any other command that needs to interact with host-level Windows
-// services or WMI. The pod is created via oc run with JSON overrides that set both pod-level
-// and container-level securityContext for HostProcess, polled until completion, and cleaned
-// up on exit. Pass waitForCompletion=false for fire-and-forget operations where the pod is
-// expected to self-destruct (e.g. stopping containerd).
-func runHostProcessPS(oc *exutil.CLI, nodeName, image, psCommand string, waitForCompletion ...bool) (string, error) {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate random suffix: %w", err)
-	}
-	suffix := fmt.Sprintf("%x", b)
-	nodeSafe := strings.ReplaceAll(nodeName, ".", "-")
-	if len(nodeSafe) > 20 {
-		nodeSafe = nodeSafe[:20]
-	}
-	podName := fmt.Sprintf("hpc-%s-%s", nodeSafe, suffix)
-
-	hostProcess := true
-	runAsUser := "NT AUTHORITY\\SYSTEM"
-	winOpts := map[string]interface{}{
-		"hostProcess":   hostProcess,
-		"runAsUserName": runAsUser,
-	}
-	overrides := map[string]interface{}{
-		"spec": map[string]interface{}{
-			"hostNetwork": true,
-			"os":          map[string]string{"name": "windows"},
-			"nodeSelector": map[string]string{
-				"kubernetes.io/hostname": nodeName,
-			},
-			"tolerations": []map[string]string{
-				{"key": "os", "operator": "Equal", "value": "Windows", "effect": "NoSchedule"},
-			},
-			"securityContext": map[string]interface{}{
-				"windowsOptions": winOpts,
-			},
-			"containers": []map[string]interface{}{
-				{
-					"name":    podName,
-					"image":   image,
-					"command": []string{"powershell.exe", "-Command", psCommand},
-					"securityContext": map[string]interface{}{
-						"windowsOptions": winOpts,
-					},
-				},
-			},
-		},
-	}
-	overridesJSON, err := json.Marshal(overrides)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal HostProcess pod overrides: %w", err)
-	}
-
-	e2e.Logf("[HostProcess] Creating pod %s on node %s", podName, nodeName)
-	e2e.Logf("[HostProcess] Command: %s", psCommand)
-	e2e.Logf("[HostProcess] Overrides: %s", string(overridesJSON))
-
-	createOutput, err := oc.AsAdmin().WithoutNamespace().Run("run").Args(
-		podName,
-		"-n", wmcoNamespace,
-		"--image="+image,
-		"--restart=Never",
-		"--override-type=merge",
-		"--overrides="+string(overridesJSON),
-	).Output()
-	if err != nil {
-		e2e.Logf("[HostProcess] Failed to create pod %s: %v, output: %s", podName, err, createOutput)
-		return "", fmt.Errorf("failed to create HostProcess pod on %s: %w", nodeName, err)
-	}
-	e2e.Logf("[HostProcess] Pod %s created successfully", podName)
-
-	cleanupPod := func() {
-		e2e.Logf("[HostProcess] Cleaning up pod %s", podName)
-		if delErr := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
-			"pod", podName, "-n", wmcoNamespace, "--ignore-not-found", "--wait=false").Execute(); delErr != nil {
-			e2e.Logf("[HostProcess] Warning: failed to delete pod %s: %v", podName, delErr)
-		}
-	}
-
-	if len(waitForCompletion) > 0 && !waitForCompletion[0] {
-		e2e.Logf("[HostProcess] Pod %s created, returning without waiting (fire-and-forget)", podName)
-		defer cleanupPod()
-		return "", nil
-	}
-
-	defer cleanupPod()
-
-	pollErr := wait.Poll(1*time.Second, 10*time.Minute, func() (bool, error) {
-		phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-			"pod", podName, "-n", wmcoNamespace, "-o=jsonpath={.status.phase}").Output()
-		if err != nil {
-			e2e.Logf("[HostProcess] Poll: error getting phase for %s: %v", podName, err)
-			return false, nil
-		}
-		p := strings.TrimSpace(phase)
-		e2e.Logf("[HostProcess] Poll: pod %s phase=%s", podName, p)
-		return p == "Succeeded" || p == "Failed", nil
-	})
-	if pollErr != nil {
-		describeOutput, _ := oc.AsAdmin().WithoutNamespace().Run("describe").Args(
-			"pod", podName, "-n", wmcoNamespace).Output()
-		e2e.Logf("[HostProcess] Pod %s timed out. Describe:\n%s", podName, describeOutput)
-		return "", fmt.Errorf("HostProcess pod %s did not complete: %w", podName, pollErr)
-	}
-
-	phase, phaseErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-		"pod", podName, "-n", wmcoNamespace, "-o=jsonpath={.status.phase}").Output()
-	if phaseErr != nil {
-		return "", fmt.Errorf("failed to get HostProcess pod %s phase: %w", podName, phaseErr)
-	}
-	e2e.Logf("[HostProcess] Pod %s final phase: %s", podName, strings.TrimSpace(phase))
-
-	output, logErr := oc.AsAdmin().WithoutNamespace().Run("logs").Args(
-		podName, "-n", wmcoNamespace).Output()
-	if logErr != nil {
-		return "", fmt.Errorf("failed to get HostProcess pod logs: %w", logErr)
-	}
-	e2e.Logf("[HostProcess] Pod %s output: %s", podName, strings.TrimSpace(output))
-
-	if strings.TrimSpace(phase) == "Failed" {
-		return "", fmt.Errorf("HostProcess command failed on %s: %s", nodeName, output)
-	}
-
-	return strings.TrimSpace(output), nil
 }
 
 // createResourceFromString writes a YAML manifest to a temp file and applies it via oc apply.

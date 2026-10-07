@@ -12,10 +12,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -250,5 +254,78 @@ func newNodeWithKeyHash(hash string, conditions ...corev1.NodeCondition) *corev1
 	return &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{pubKeyHashAnno: hash}},
 		Status:     corev1.NodeStatus{Conditions: conditions},
+	}
+}
+
+func TestCaptureWindowsServiceStatusUsesDiagnosticContext(t *testing.T) {
+	parentCtx, cancelParent := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer cancelParent()
+	diagnosticCtx, cancelDiagnostic := context.WithTimeout(parentCtx, time.Hour)
+	defer cancelDiagnostic()
+	diagnosticDeadline, hasDiagnosticDeadline := diagnosticCtx.Deadline()
+	require.True(t, hasDiagnosticDeadline)
+
+	calls := 0
+	captureWindowsServiceStatus(diagnosticCtx, []string{"windows-node"},
+		func(string) (bool, error) { return false, nil },
+		func(ctx context.Context, nodeName string) (string, error) {
+			calls++
+			assert.Equal(t, "windows-node", nodeName)
+			receivedDeadline, hasDeadline := ctx.Deadline()
+			assert.True(t, hasDeadline)
+			assert.Equal(t, diagnosticDeadline, receivedDeadline,
+				"the diagnostic deadline, not the broader parent deadline, must own HostProcess work")
+			return "Running", nil
+		})
+
+	assert.Equal(t, 1, calls)
+}
+
+func TestCaptureWindowsServiceStatusPreCanceledContextStartsNoNodeWork(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	readyCalls := 0
+	hostProcessCalls := 0
+	captureWindowsServiceStatus(ctx, []string{"node-1", "node-2"},
+		func(string) (bool, error) {
+			readyCalls++
+			return false, nil
+		},
+		func(context.Context, string) (string, error) {
+			hostProcessCalls++
+			return "", nil
+		})
+
+	assert.Equal(t, 0, readyCalls)
+	assert.Equal(t, 0, hostProcessCalls)
+}
+
+func TestCaptureWindowsServiceStatusMidCallDeadlineStopsEnclosingNodeLoop(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	var readyNodes []string
+	var hostProcessNodes []string
+	captureWindowsServiceStatus(ctx, []string{"node-1", "node-2"},
+		func(nodeName string) (bool, error) {
+			readyNodes = append(readyNodes, nodeName)
+			return false, nil
+		},
+		func(callCtx context.Context, nodeName string) (string, error) {
+			hostProcessNodes = append(hostProcessNodes, nodeName)
+			<-callCtx.Done()
+			return "", callCtx.Err()
+		})
+
+	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+	assert.Equal(t, []string{"node-1"}, readyNodes)
+	assert.Equal(t, []string{"node-1"}, hostProcessNodes)
+}
+
+func testHostProcessPod(uid types.UID, phase corev1.PodPhase, createdAt time.Time) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "hostprocess-pod", UID: uid, CreationTimestamp: metav1.NewTime(createdAt)},
+		Status:     corev1.PodStatus{Phase: phase},
 	}
 }
