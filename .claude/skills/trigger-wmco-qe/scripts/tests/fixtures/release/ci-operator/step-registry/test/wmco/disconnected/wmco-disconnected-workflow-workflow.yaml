@@ -1,0 +1,7 @@
+workflow:
+  as: wmco-disconnected-workflow
+  steps:
+    env:
+      WINDOWS_NODE_REPLICAS: "2"
+    pre:
+    - chain: wmco-disconnected-provision

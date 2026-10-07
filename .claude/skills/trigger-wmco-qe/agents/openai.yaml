@@ -1,0 +1,4 @@
+interface:
+  display_name: "Trigger WMCO QE"
+  short_description: "Safely rehearse WMCO QE jobs on Prow"
+  default_prompt: "Use $trigger-wmco-qe to trigger WMCO QE rehearsals for an OCP minor release and stream."
