@@ -82,7 +82,7 @@ def commit_status(
     *,
     created_at: str,
     target_url: str | None,
-    creator: str = wmco.PROW_PUBLISHER_LOGIN,
+    creator: str = wmco.AUTHORITATIVE_PROW_ACCOUNT,
 ) -> dict[str, object]:
     return {
         "context": f"ci/rehearse/{job}",
@@ -795,6 +795,28 @@ class PlanningTests(unittest.TestCase):
         with self.assertRaisesRegex(wmco.SafetyError, "ambiguous YAML"):
             wmco.discover_wmco_jobs(config)
 
+    def test_unsafe_yaml_python_tag_fails_closed(self) -> None:
+        with self.assertRaisesRegex(wmco.SafetyError, "invalid or ambiguous YAML"):
+            wmco.strict_yaml_load(
+                "value: !!python/object/apply:os.system ['echo unsafe']\n",
+                context="test document",
+            )
+
+    def test_yaml_reader_errors_fail_closed_as_safety_errors(self) -> None:
+        with self.assertRaisesRegex(wmco.SafetyError, "invalid or ambiguous YAML"):
+            wmco.strict_yaml_load("value: \x00\n", context="test document")
+
+    def test_release_config_symlink_cannot_escape_checkout(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release(directory)
+            config = next(root.glob("**/*release-4.99__amd64-nightly.yaml"))
+            outside = Path(directory) / "outside.yaml"
+            outside.write_text(config.read_text())
+            config.unlink()
+            config.symlink_to(outside)
+            with self.assertRaisesRegex(wmco.SafetyError, "escapes"):
+                wmco.build_plan(root, "4.99", "z")
+
     def test_full_plan_rejects_inline_foreign_dependency(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release(directory)
@@ -1059,7 +1081,7 @@ class PlanningTests(unittest.TestCase):
             dataclasses.replace(plan, selected=jobs)
 
     def test_ocp_minor_input_rejects_wmco_and_patch_versions(self) -> None:
-        for value in ("10.21", "11.0", "4.21.1", "release-4.21"):
+        for value in ("10.21", "11.0", "4.21.1", "release-4.21", "4.021"):
             with self.subTest(value=value), self.assertRaises(wmco.SafetyError):
                 wmco.validate_ocp_version(value)
 
@@ -1453,6 +1475,8 @@ class RequestLifecycle(wmco.Lifecycle):
         self.body = (FIXTURES / "notifier-z.md").read_text()
         self.comments_value = [notifier_comment(self.body)]
         self.posted = False
+        self.post_calls = 0
+        self.readback_comment: dict[str, object] | None = None
         self.concurrent_comments: list[dict[str, object]] = []
 
     def current_pr(self, state):
@@ -1461,13 +1485,14 @@ class RequestLifecycle(wmco.Lifecycle):
     def comments(self, state):
         comments = list(self.comments_value)
         if self.posted and self.response.returncode == 0:
-            comments.append(json.loads(self.response.stdout))
+            comments.append(self.readback_comment or json.loads(self.response.stdout))
             comments.extend(self.concurrent_comments)
         return comments
 
     def gh(self, args, *, cwd=None, check=True):
         if args[:3] == ["api", "--method", "POST"]:
             self.posted = True
+            self.post_calls += 1
             return self.response
         raise AssertionError(args)
 
@@ -1708,6 +1733,89 @@ class LifecycleSafetyTests(unittest.TestCase):
             self.assertEqual(result["request_comment_id"], 2)
             self.assertEqual(result["request_author"], ACTOR)
             self.assertEqual(result["request_created_at"], REQUEST_TIME)
+
+    def test_post_response_urls_require_exact_literal_pr_identity(self) -> None:
+        lifecycle = wmco.Lifecycle(Path("."), wmco.Runner())
+        state = self.state()
+        valid_urls = (
+            f"https://github.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2",
+            f"https://github.com/openshift/release/issues/{PR_NUMBER}#issuecomment-2",
+        )
+        for url in valid_urls:
+            comment = request_comment()
+            comment["html_url"] = url
+            with self.subTest(valid_url=url):
+                lifecycle.validate_posted_request(comment, state, "/pj-rehearse")
+        invalid_urls = (
+            f"https://github.com.evil.test/openshift/release/pull/{PR_NUMBER}#issuecomment-2",
+            f"https://github.com/openshift/release/pull/{PR_NUMBER}/extra#issuecomment-2",
+            f"https://github.com/openshift/release/pull/{PR_NUMBER}?x=1#issuecomment-2",
+            f"https://github.com/openshift/release/pull/{PR_NUMBER}#issuecomment-3",
+            f"https://git\nhub.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2",
+            f"https://git\rhub.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2",
+            f"https://git\thub.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2",
+            f"https://github.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2\n",
+            f"https://github.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2\r",
+            f"https://github.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2\t",
+            f"https://[github.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2",
+        )
+        for url in invalid_urls:
+            comment = request_comment()
+            comment["html_url"] = url
+            with (
+                self.subTest(url=url),
+                self.assertRaisesRegex(wmco.SafetyError, "expected PR"),
+            ):
+                lifecycle.validate_posted_request(comment, state, "/pj-rehearse")
+        comment = request_comment()
+        comment["issue_url"] = (
+            f"https://evil.test/repos/openshift/release/issues/{PR_NUMBER}"
+        )
+        with self.assertRaisesRegex(wmco.SafetyError, "expected PR"):
+            lifecycle.validate_posted_request(comment, state, "/pj-rehearse")
+        for invalid_pr in (True, "12345", -1):
+            with (
+                self.subTest(pr_number=invalid_pr),
+                self.assertRaisesRegex(wmco.SafetyError, "numeric PR number"),
+            ):
+                lifecycle.validate_posted_request(
+                    request_comment(), state | {"pr_number": invalid_pr}, "/pj-rehearse"
+                )
+
+    def test_malformed_post_response_or_readback_persists_uncertain_without_retry(
+        self,
+    ) -> None:
+        malformed = request_comment()
+        malformed["html_url"] = (
+            f"https://[github.com/openshift/release/pull/{PR_NUMBER}#issuecomment-2"
+        )
+        for location in ("response", "readback"):
+            with (
+                self.subTest(location=location),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                response_comment = (
+                    malformed if location == "response" else request_comment()
+                )
+                lifecycle = RequestLifecycle(
+                    Path(directory),
+                    response=wmco.CommandResult(json.dumps(response_comment), "", 0),
+                )
+                if location == "readback":
+                    lifecycle.readback_comment = malformed
+                lifecycle.comments_value = [self.notifier_for_job()]
+                state = self.state()
+                state["phase"] = "notifier_verified"
+                state_path = Path(directory) / "state.json"
+                with self.assertRaisesRegex(wmco.SafetyError, "uncertain"):
+                    lifecycle.request_rehearsals(state_path, state)
+                persisted = wmco.load_state(state_path)
+                self.assertEqual(persisted["phase"], "uncertain")
+                self.assertEqual(persisted["pending_action"], "request_rehearsals")
+                self.assertEqual(lifecycle.post_calls, 1)
+                with self.assertRaisesRegex(wmco.SafetyError, "duplicate trigger"):
+                    lifecycle.request_rehearsals(state_path, persisted)
+                self.assertEqual(lifecycle.post_calls, 1)
 
     def test_concurrent_same_text_foreign_comment_makes_post_uncertain(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2155,6 +2263,71 @@ class OverLimitStartLifecycle(wmco.Lifecycle):
 
 
 class LifecyclePreparationTests(unittest.TestCase):
+    def test_public_prow_publisher_identity_is_exact_and_not_configurable(self) -> None:
+        self.assertEqual(wmco.AUTHORITATIVE_PROW_ACCOUNT, "openshift-ci[bot]")
+
+    def test_run_ids_are_canonical_and_idempotent_for_zero_padded_years(
+        self,
+    ) -> None:
+        current_year = wmco.dt.datetime.now(wmco.dt.timezone.utc).year
+        run_ids = (
+            "00010101t000000z-00000001",
+            "09991231t235959z-ffffffff",
+            f"{current_year:04d}1007t120000z-00000001",
+        )
+        for run_id in run_ids:
+            with self.subTest(run_id=run_id):
+                canonical = wmco.validate_run_id(run_id)
+                self.assertEqual(canonical, run_id)
+                self.assertIsNotNone(wmco.RUN_ID_RE.fullmatch(canonical))
+
+    def test_lifecycle_paths_revalidate_all_untrusted_components(self) -> None:
+        lifecycle = wmco.Lifecycle(Path("."), wmco.Runner())
+        for method in (
+            lifecycle.state_path,
+            lifecycle.branch_name,
+            lifecycle.worktree_path,
+        ):
+            for args in (
+                ("4.21/../../tmp", "z", RUN_ID_1),
+                ("4.21", "../../tmp", RUN_ID_1),
+                ("4.21", "z", "../../tmp"),
+            ):
+                with (
+                    self.subTest(method=method.__name__, args=args),
+                    self.assertRaises(wmco.SafetyError),
+                ):
+                    method(*args)
+
+    def test_lifecycle_path_symlinks_cannot_escape_intended_roots(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside_directory,
+        ):
+            parent = Path(directory)
+            repo = parent / "release"
+            common_dir = repo / ".git"
+            common_dir.mkdir(parents=True)
+            outside = Path(outside_directory)
+            (common_dir / "wmco-qe-trigger").symlink_to(
+                outside / "state", target_is_directory=True
+            )
+            (parent / ".wmco-qe-worktrees").symlink_to(
+                outside / "worktrees", target_is_directory=True
+            )
+            lifecycle = wmco.Lifecycle(repo, wmco.Runner())
+            with (
+                mock.patch.object(
+                    lifecycle,
+                    "git",
+                    return_value=wmco.CommandResult(str(common_dir), "", 0),
+                ),
+                self.assertRaisesRegex(wmco.SafetyError, "escapes"),
+            ):
+                lifecycle.state_path("4.21", "z", RUN_ID_1)
+            with self.assertRaisesRegex(wmco.SafetyError, "escapes"):
+                lifecycle.worktree_path("4.21", "z", RUN_ID_1)
+
     def test_https_and_ssh_origin_urls_resolve_to_exact_fork(self) -> None:
         remotes = (
             "https://github.com/qe-bot/release.git",

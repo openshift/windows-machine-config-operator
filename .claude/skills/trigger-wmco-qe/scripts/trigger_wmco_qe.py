@@ -223,7 +223,9 @@ PROW_HOSTS = {
 }
 NOTIFIER_LOGIN = "openshift-merge-bot[bot]"
 NOTIFIER_APP_SLUG = "openshift-merge-bot"
-PROW_PUBLISHER_LOGIN = "openshift-ci[bot]"
+# This is the public GitHub service account that publishes OpenShift CI status,
+# not a credential. Keep the identity literal so the trust boundary is explicit.
+AUTHORITATIVE_PROW_ACCOUNT = "openshift-ci[bot]"
 PROW_PUBLISHER_APP_SLUG = "openshift-ci"
 
 
@@ -277,7 +279,11 @@ StrictSafeLoader.add_constructor(
 def strict_yaml_load(text: str, *, context: str) -> Any:
     """Load safety-relevant YAML without duplicate or merge-key ambiguity."""
     try:
-        return yaml.load(text, Loader=StrictSafeLoader)
+        loader = StrictSafeLoader(text)
+        try:
+            return loader.get_single_data()
+        finally:
+            loader.dispose()
     except yaml.YAMLError as exc:
         raise SafetyError(f"{context} is invalid or ambiguous YAML") from exc
 
@@ -381,18 +387,25 @@ class JobPlan:
 
 
 def validate_ocp_version(version: str) -> str:
-    if not OCP_VERSION_RE.fullmatch(version):
+    match = OCP_VERSION_RE.fullmatch(version)
+    if match is None:
         raise SafetyError(
             f"invalid OCP minor release {version!r}; expected values such as 4.21 or 5.0"
         )
-    return version
+    major, minor = version.split(".", maxsplit=1)
+    canonical = f"{int(major)}.{int(minor)}"
+    if canonical != version:
+        raise SafetyError("OCP minor release must use canonical decimal notation")
+    return canonical
 
 
 def validate_stream(stream: str) -> str:
     normalized = stream.lower().removesuffix("-stream").removesuffix("stream")
-    if normalized not in {"y", "z"}:
-        raise SafetyError("stream must be 'z', 'z-stream', 'y', or 'y-stream'")
-    return normalized
+    if normalized == "y":
+        return "y"
+    if normalized == "z":
+        return "z"
+    raise SafetyError("stream must be 'z', 'z-stream', 'y', or 'y-stream'")
 
 
 def rehearsal_pr_title(version: str, stream: str) -> str:
@@ -403,9 +416,33 @@ def rehearsal_pr_title(version: str, stream: str) -> str:
 
 
 def validate_run_id(run_id: str) -> str:
-    if not RUN_ID_RE.fullmatch(run_id):
+    if RUN_ID_RE.fullmatch(run_id) is None:
         raise SafetyError("run ID is malformed")
-    return run_id
+    stamp, nonce = run_id.rsplit("-", maxsplit=1)
+    try:
+        parsed_stamp = dt.datetime.strptime(stamp, "%Y%m%dt%H%M%Sz").replace(
+            tzinfo=dt.timezone.utc
+        )
+    except ValueError as exc:
+        raise SafetyError("run ID is malformed") from exc
+    canonical_stamp = (
+        f"{parsed_stamp.year:04d}{parsed_stamp.month:02d}{parsed_stamp.day:02d}t"
+        f"{parsed_stamp.hour:02d}{parsed_stamp.minute:02d}{parsed_stamp.second:02d}z"
+    )
+    return f"{canonical_stamp}-{int(nonce, 16):08x}"
+
+
+def confined_path(root: Path, relative: Path, *, context: str) -> Path:
+    """Resolve a relative path and require it to remain below its intended root."""
+    if relative.is_absolute() or ".." in relative.parts:
+        raise SafetyError(f"{context} path is not relative to its intended root")
+    resolved_root = root.resolve()
+    resolved_path = (resolved_root / relative).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise SafetyError(f"{context} path escapes its intended root") from exc
+    return resolved_path
 
 
 def new_run_id() -> str:
@@ -1016,8 +1053,17 @@ def build_plan(
 ) -> JobPlan:
     version = validate_ocp_version(version)
     stream = validate_stream(stream)
-    config_path = root / CONFIG_RELATIVE.format(version=version)
-    generated_path = root / JOBS_RELATIVE.format(version=version)
+    root = root.resolve()
+    config_path = confined_path(
+        root,
+        Path(CONFIG_RELATIVE.format(version=version)),
+        context="release config",
+    )
+    generated_path = confined_path(
+        root,
+        Path(JOBS_RELATIVE.format(version=version)),
+        context="generated jobs",
+    )
     if not config_path.is_file():
         raise SafetyError(
             f"release config does not exist for OCP {version}: {config_path}"
@@ -1379,11 +1425,11 @@ def _publisher_is_authoritative(run: dict[str, Any]) -> bool:
     app = run.get("app")
     login = publisher.get("login") if isinstance(publisher, dict) else None
     slug = app.get("slug") if isinstance(app, dict) else None
-    if login is not None and login != PROW_PUBLISHER_LOGIN:
+    if login is not None and login != AUTHORITATIVE_PROW_ACCOUNT:
         return False
     if slug is not None and slug != PROW_PUBLISHER_APP_SLUG:
         return False
-    return login == PROW_PUBLISHER_LOGIN or slug == PROW_PUBLISHER_APP_SLUG
+    return login == AUTHORITATIVE_PROW_ACCOUNT or slug == PROW_PUBLISHER_APP_SLUG
 
 
 def _prow_build_identity(url: str, pr_number: int, job: str) -> str | None:
@@ -1986,26 +2032,36 @@ class Lifecycle:
         return fork_repo, actor
 
     def state_path(self, version: str, stream: str, run_id: str) -> Path:
+        version = validate_ocp_version(version)
+        stream = validate_stream(stream)
+        run_id = validate_run_id(run_id)
         common_dir_raw = self.git(["rev-parse", "--git-common-dir"]).stdout.strip()
         common_dir = Path(common_dir_raw)
         if not common_dir.is_absolute():
             common_dir = (self.release_repo / common_dir).resolve()
-        key = (
-            f"ocp-{version.replace('.', '-')}-{stream}stream-{validate_run_id(run_id)}"
+        key = f"ocp-{version.replace('.', '-')}-{stream}stream-{run_id}"
+        return confined_path(
+            common_dir,
+            Path("wmco-qe-trigger") / f"{key}.json",
+            context="lifecycle state",
         )
-        return common_dir / "wmco-qe-trigger" / f"{key}.json"
 
     def branch_name(self, version: str, stream: str, run_id: str) -> str:
-        return (
-            f"wmco-qe-ocp-{version.replace('.', '-')}-{stream}stream-"
-            f"{validate_run_id(run_id)}"
-        )
+        version = validate_ocp_version(version)
+        stream = validate_stream(stream)
+        run_id = validate_run_id(run_id)
+        return f"wmco-qe-ocp-{version.replace('.', '-')}-{stream}stream-{run_id}"
 
     def worktree_path(self, version: str, stream: str, run_id: str) -> Path:
-        key = (
-            f"ocp-{version.replace('.', '-')}-{stream}stream-{validate_run_id(run_id)}"
+        version = validate_ocp_version(version)
+        stream = validate_stream(stream)
+        run_id = validate_run_id(run_id)
+        key = f"ocp-{version.replace('.', '-')}-{stream}stream-{run_id}"
+        return confined_path(
+            self.release_repo.parent,
+            Path(".wmco-qe-worktrees") / key,
+            context="lifecycle worktree",
         )
-        return self.release_repo.parent / ".wmco-qe-worktrees" / key
 
     def save(self, path: Path, state: dict[str, Any], **changes: Any) -> dict[str, Any]:
         updated = dict(state)
@@ -2438,8 +2494,9 @@ class Lifecycle:
     ) -> tuple[str, str]:
         if str(comment.get("body") or "").strip() != command:
             raise SafetyError("rehearsal POST response body changed")
-        if not isinstance(comment.get("id"), int):
+        if type(comment.get("id")) is not int or comment["id"] <= 0:
             raise SafetyError("rehearsal POST response has no numeric comment ID")
+        comment_id = comment["id"]
         created_at = str(comment.get("created_at") or "")
         if parse_timestamp(created_at) is None:
             raise SafetyError("rehearsal POST response has no usable timestamp")
@@ -2450,13 +2507,23 @@ class Lifecycle:
             raise SafetyError("rehearsal POST response has a foreign author")
         url = str(comment.get("html_url") or "")
         issue_url = str(comment.get("issue_url") or "")
-        expected_pr = int(state["pr_number"])
-        if not re.fullmatch(
-            rf"https://github\.com/openshift/release/(?:pull|issues)/{expected_pr}#issuecomment-[0-9]+",
-            url,
-        ) or not issue_url.endswith(
-            f"/repos/{UPSTREAM_REPOSITORY}/issues/{expected_pr}"
-        ):
+        expected_pr = state.get("pr_number")
+        if type(expected_pr) is not int or expected_pr <= 0:
+            raise SafetyError("lifecycle state has no numeric PR number")
+        expected_urls = {
+            (
+                f"https://github.com/openshift/release/pull/{expected_pr}"
+                f"#issuecomment-{comment_id}"
+            ),
+            (
+                f"https://github.com/openshift/release/issues/{expected_pr}"
+                f"#issuecomment-{comment_id}"
+            ),
+        }
+        expected_issue_url = (
+            f"https://api.github.com/repos/{UPSTREAM_REPOSITORY}/issues/{expected_pr}"
+        )
+        if url not in expected_urls or issue_url != expected_issue_url:
             raise SafetyError(
                 "rehearsal POST response is not pinned to the expected PR"
             )
