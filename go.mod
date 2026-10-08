@@ -22,9 +22,9 @@ require (
 	github.com/coreos/ignition/v2 v2.22.0
 	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.4
-	github.com/openshift/api v0.0.0-20260716173118-05da40ea9855
+	github.com/openshift/api v0.0.0-20260923123119-b32f49f8a709
 	github.com/openshift/client-go v0.0.0-20250811163556-6193816ae379
-	github.com/openshift/library-go v0.0.0-20260521134016-2b64044b4a2a
+	github.com/openshift/library-go v0.0.0-20261006134514-6549fe928ffd
 	github.com/operator-framework/api v0.16.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.22.0
@@ -56,6 +56,7 @@ require (
 	cel.dev/expr v0.20.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
+	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
@@ -72,7 +73,7 @@ require (
 	github.com/exponent-io/jsonpath v0.0.0-20210407135951-1de76d718b3f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.6 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
@@ -106,8 +107,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
-	github.com/onsi/ginkgo/v2 v2.22.2 // indirect
-	github.com/onsi/gomega v1.36.2 // indirect
+	github.com/onsi/ginkgo/v2 v2.25.1 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -153,9 +153,9 @@ require (
 	k8s.io/cli-runtime v0.33.13 // indirect
 	k8s.io/component-base v0.33.13 // indirect
 	k8s.io/controller-manager v0.33.13 // indirect
-	k8s.io/kube-openapi v0.0.0-20260908163437-c4db2bdfbfe6 // indirect
+	k8s.io/kube-openapi v0.0.0-20261007072838-e2e80c32a35f // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 // indirect
-	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
+	sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5 // indirect
 	sigs.k8s.io/kustomize/api v0.19.0 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.19.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
