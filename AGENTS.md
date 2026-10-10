@@ -28,7 +28,7 @@ The Windows Machine Config Operator (WMCO) configures Windows Server instances a
 - **Machine API**: Create Windows VMs via MachineSets, auto-configured by WMCO
 - **BYOH**: Define existing instances in `windows-instances` ConfigMap
 
-**Tech Stack:** Go 1.24+, Kubernetes Operator (controller-runtime), OpenShift APIs, Windows Server 2019/2022
+**Tech Stack:** Go (see `go.mod` for current version), Kubernetes Operator (controller-runtime), OpenShift APIs, Windows Server 2019/2022
 
 ---
 
@@ -143,20 +143,26 @@ Do NOT use `@here` or `@everyone`
 ## Setup Commands
 
 ### Build
-- `make build` - Build operator binary
-- `GOOS=windows make build-daemon` - Build Windows daemon (WICD)
-- `make build-all` - Build everything
+- `make build` - Build operator binary (runs `fmt`, `vet`, then `build/build.sh`)
+- `make build-daemon` - Cross-compile Windows daemon (WICD); the target sets `GOOS=windows GOARCH=amd64` automatically
+- `make build-tests-ext` - Build the OTE (OpenShift Tests Extension) binary from the `ote/` nested module
+- `make all` - Runs `lint`, `build`, and `unit`
 
 ### Test
-- `make unit` - Run all unit tests
+- `make unit` - Run all unit tests (`hack/unit.sh` — covers `./pkg/...`, `./controllers/...`, `./cmd/...`)
 - `go test -v ./pkg/nodeconfig/...` - Test specific package
-- `make lint` - Run linter (golangci-lint)
-- `make verify` - All checks (lint, vet, unit, build)
+- `make wicd-unit` - Cross-compile and run daemon unit tests on a Windows VM (requires `INSTANCE_ADDRESS`, `INSTANCE_USERNAME`, `KUBE_SSH_KEY_PATH`)
+
+### Lint
+- `make lint` - Run format checks and vendor verification (`hack/lint-gofmt.sh` + `hack/verify-vendor.sh`). This checks `gofmt -s`, import ordering via `goio`, and `context.TODO()` usage outside e2e tests. It does **not** use golangci-lint.
+- `make imports` - Auto-fix import ordering with `goio`
 
 ### Code Generation
-- `make generate` - Generate RBAC manifests, mocks
-- `make vendor` - Update vendored dependencies
-- `make manifests` - Generate CRD/RBAC YAML
+- `make manifests` - Generate webhook, RBAC, and CRD manifests via controller-gen (processes `webhook`, `rbac`, and `crd` markers in source)
+- `make generate` - Generate DeepCopy method implementations (controller-gen). Run after adding or changing a CRD.
+
+### Dependency Management
+- `go mod tidy && go mod vendor` - Update vendored dependencies (no `make vendor` target exists). `make lint` runs `hack/verify-vendor.sh` which checks that vendor is in sync.
 
 ---
 
@@ -301,14 +307,15 @@ WICD reconciles services continuously
 
 # Project-Specific Guidelines
 
-## File Modification Priority
+## Preserving Unrelated Changes
 
-IMPORTANT: When making code changes, prioritize files that are already modified (dirty) in the git history before changing any clean files.
+When making code changes, keep your changeset focused on the task at hand.
 
-- First check `git status` to identify modified files
-- When implementing changes, prefer modifying already-dirty files over clean ones
-- Only modify clean files when absolutely necessary for the task
-- This helps keep changesets focused and easier to review
+- **IMPORTANT:** Prioritize changes to files that are already modified in the working tree and relevant to your task before introducing changes to clean files. This prevents proposed solutions from spreading to unrelated parts of the codebase. Clean files may still be edited when genuinely required by the task.
+- Check `git status` and `git diff` to understand the current working tree state
+- Preserve any pre-existing uncommitted changes that are unrelated to your task — do not overwrite, revert, stage, or commit them
+- Avoid opportunistic refactors or unrelated cleanups in the same changeset
+- This keeps PRs focused, easier to review, and simpler to revert if needed
 
 ### Version Annotations (Upgrade Flow)
 
@@ -359,7 +366,7 @@ require.NoError(t, err)
 ### Commands
 
 ```bash
-# All unit tests
+# All unit tests (covers pkg, controllers, cmd — excludes e2e and ote/)
 make unit
 
 # Specific package
@@ -374,20 +381,36 @@ go test -race ./pkg/...
 # Coverage
 go test -cover ./pkg/... -coverprofile=coverage.out
 go tool cover -html=coverage.out
+
+# Windows daemon unit tests (requires Windows VM access)
+make wicd-unit
 ```
+
+### OTE (OpenShift Tests Extension)
+The `ote/` directory is a **separate Go module** (`ote/go.mod`) with its own Go version and dependency tree. It contains the WMCO e2e test extension binary. `make unit` does not cover tests in `ote/`; run `cd ote && go test ./...` separately if needed.
+
+```bash
+# Build the OTE binary
+make build-tests-ext
+```
+
+The OTE module depends on `openshift-eng/openshift-tests-extension` and `openshift/origin`. It has its own `replace` directives and dependency versions, managed separately from the root module's `go.mod`.
 
 ### E2E Tests
 - Located in `test/e2e/`
 - Require running cluster with Windows nodes
 - See `docs/HACKING.md` for setup
 
+### CI System
+WMCO uses both **Prow** (via `.ci-operator.yaml` and configs in `openshift/release`) and **Tekton** (via `.tekton/` pipeline definitions) for CI. Prow job results are browsable at [prow.ci.openshift.org](https://prow.ci.openshift.org). Use the job name and build ID from CI status checks to navigate to logs and artifacts.
+
 ---
 
 ## Code Style
 
 ### Go Standards
-- `gofmt` for formatting
-- `make lint` before committing (golangci-lint)
+- `gofmt -s` for formatting
+- `make lint` before committing (runs `gofmt -s`, `goio` import checks, `context.TODO()` checks, and vendor verification — see `hack/lint-gofmt.sh` and `hack/verify-vendor.sh`)
 
 ### WMCO Conventions
 
@@ -434,15 +457,17 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 ## Security Considerations
 
 **Private Keys**
-- Stored in `cloud-private-key` Secret
+- Stored in `cloud-private-key` Secret under the `private-key.pem` key (see `pkg/secrets/secrets.go`)
 - Never log key content
-- Used for SSH authentication only
+- Used for SSH authentication to Windows instances
+- WMCO derives the SSH public key and generates a `windows-user-data` Secret for MachineSet provisioning
+- **Changing the private key**: update the `cloud-private-key` Secret contents. Machine-backed Windows nodes are destroyed and recreated one at a time with the new key. BYOH instances require manual `authorized_keys` update — WMCO cannot access BYOH nodes until the new public key is authorized (see `README.md` § "Changing the private key secret"; behavior verified by `test/e2e/secrets_test.go:testPrivateKeyChange`)
 
 **CSR Approval**
-- Validates node identity before approval
-- Checks against windows-instances ConfigMap or Machine
-- Validates certificate type and key usages
-- See `pkg/csr/validation/` for rules
+- Validates node identity before approval (see `pkg/csr/csr.go`)
+- Checks node name against `windows-instances` ConfigMap entries: looks up instance addresses via DNS reverse resolution, then falls back to SSH hostname comparison (see `validateNodeName` in `pkg/csr/csr.go`)
+- Distinguishes kubelet client vs serving certificate types via separate validators
+- Validates certificate type and key usages (see `pkg/csr/validation/`)
 
 **Credentials in Annotations**
 - Username encrypted with PGP (`pkg/crypto/`)
@@ -453,6 +478,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 - Auto-rotate before expiry (80% lifetime)
 - Trust bundle changes require reboot
 - WICD certificate separate from kubelet
+- **Kubelet CA rotation**: The upstream ControllerConfig supplies the kubelet CA bundle (`KubeAPIServerServingCAData`), which includes rotation overlap during CA renewal. WMCO's `ControllerConfigReconciler` watches for changes and copies this bundle to `kubelet-ca.crt` on each Windows node via `UpdateKubeletClientCA` (see `controllers/controllerconfig_controller.go` and `pkg/nodeconfig/nodeconfig.go`). A separate `ca-bundle.crt` trust bundle — composed of image registry certificates and cluster-wide proxy CA data — is managed independently by `SyncTrustedCABundle`. E2e tests poll with bounded timeouts (`pkg/retry.Timeout` = 10 min). See `test/e2e/certificates_test.go:testKubeletCARotation`
 
 ---
 
@@ -472,10 +498,11 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 - Node drain before reconfiguration (workloads rescheduled)
 
 ### Build & Development
-- Cannot build Windows daemon on Linux without `GOOS=windows`
-- Run `make vendor` after any go.mod changes
-- Run `make generate` after kubebuilder marker changes
-- Vendored cloud providers in separate directories
+- `make build-daemon` cross-compiles for Windows automatically (`GOOS=windows GOARCH=amd64`); manual `go build` of daemon code requires setting `GOOS=windows`
+- Run `go mod tidy && go mod vendor` after any `go.mod` changes; verify with `hack/verify-vendor.sh`
+- Run `make generate` after adding or changing CRD types; run `make manifests` after changing webhook, RBAC, or CRD markers
+- The `ote/` directory is a **separate Go module** (`ote/go.mod`) with its own Go version, `replace` directives, and dependencies. Use `make build-tests-ext` to build it and `cd ote && go test ./...` to run its tests. Root-module dependency commands (`go mod tidy`, `go mod vendor`) do not apply to `ote/`.
+- Git submodules (kubelet, containerd, ovn-kubernetes, etc.) are managed via `hack/update_submodules.sh` — see [Submodule Maintenance](#submodule-maintenance).
 
 ### Platform-Specific
 - **vSphere**: Machine name max 15 chars, MachineSet name max 9
@@ -490,13 +517,15 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 ### Build & Test
 
 ```bash
-make build                          # Operator binary
-GOOS=windows make build-daemon      # Windows daemon
-make unit                           # Unit tests
-make lint                           # Linting
-make verify                         # All checks
-make vendor                         # Update deps
-make generate                       # RBAC, code gen
+make build                          # Operator binary (fmt + vet + build/build.sh)
+make build-daemon                   # Windows daemon (WICD) — cross-compiles automatically
+make build-tests-ext                # OTE binary from ote/ nested module
+make unit                           # Unit tests (pkg, controllers, cmd)
+make lint                           # Format checks + vendor verification
+make imports                        # Auto-fix import ordering (goio)
+make manifests                      # Generate webhook/RBAC/CRD manifests (controller-gen)
+make generate                       # Generate DeepCopy methods (controller-gen)
+make all                            # lint + build + unit
 ```
 
 ### Cluster Operations
@@ -622,33 +651,36 @@ WINC|OCPBUGS-<number>: [<subsystem>] <title>
 **Examples:**
 - `WINC-959: [docs] reorganizes readme`
 - `OCPBUGS-1234: [csr] Fix validation for serving certificates`
-- `[nodeconfig] Add custom DNS support` (if no Jira issue)
+- `[nodeconfig] Add custom DNS support` (if no Jira issue or not a Red Hat employee)
+
+Note: the PR title prefix links to Jira tracking. The **commit message** subject uses `[subsystem]` only (no Jira prefix) — see [Commit Message Format](#commit-message-format) above.
 
 ### Before Opening a PR
 
 ```bash
 # Required checks
-make lint                    # Lint code
-make imports                 # Fix import issues
-make verify                  # All checks (lint + vet + unit + build)
+make lint                    # Format checks + vendor verification
+make imports                 # Fix import ordering
+make unit                    # Unit tests
+make build                   # Verify operator builds
 ```
 
 **Checklist:**
 - Fetched and rebased against upstream master
-- Tests pass locally (`make verify`)
 - Linted with `make lint`
 - Fixed imports with `make imports`
+- Unit tests pass (`make unit`)
 - Error messages are single line
 - Documentation updated if user-facing change
-- `make vendor` if dependencies changed
-- `make generate` if RBAC markers changed
+- `go mod tidy && go mod vendor` if dependencies changed
+- `make generate` if CRD types changed; `make manifests` if webhook, RBAC, or CRD markers changed
 
 ### PR Workflow
 
-1. **Open as Draft** - Always open PRs as drafts first to prevent tests from running immediately
+1. **Open as Draft** - Always open PRs as drafts first to prevent CI tests from running immediately
 2. **Get Reviews** - Need at least one `/lgtm` and one `/approve`
 3. **Mark Ready** - Click "Ready for review" to trigger CI tests
-4. **Auto-Merge** - PR merges automatically when tests pass
+4. **Auto-Merge** - PR merges automatically when CI tests pass
 
 ### Handling Test Failures
 
@@ -683,6 +715,44 @@ If cherry-pick bot fails, create manual PR and run:
 ### Reporting Issues
 
 Open a [GitHub issue](https://github.com/openshift/windows-machine-config-operator/issues) for bugs or documentation problems.
+
+---
+
+## Submodule Maintenance
+
+WMCO includes Git submodules for components that are built into the operator image. These are defined in `.gitmodules`:
+
+| Submodule | Upstream | Purpose |
+|-----------|----------|---------|
+| `kubelet` | openshift/kubernetes | Windows kubelet and kube-proxy binaries |
+| `containerd` | openshift/containerd | Windows container runtime |
+| `ovn-kubernetes` | openshift/ovn-kubernetes | OVN-Kubernetes hybrid networking |
+| `containernetworking-plugins` | openshift/containernetworking-plugins | CNI plugins |
+| `hcsshim` | openshift/hcsshim | Windows container shim |
+| `cloud-provider-aws` | openshift/cloud-provider-aws | AWS cloud provider |
+| `cloud-provider-azure` | openshift/cloud-provider-azure | Azure cloud provider |
+| `csi-proxy` | openshift/csi-proxy | Windows CSI proxy |
+| `windows_exporter` | openshift/prometheus-community-windows\_exporter | Prometheus metrics |
+| `promu` | openshift/prometheus-promu | Prometheus build tool |
+
+### Updating Submodules
+
+Use `hack/update_submodules.sh` to update submodule HEADs to their remote branch tips. The positional argument is the base branch to create a new working branch from. Options: `-m` selects specific submodules (space-separated, quoted); `-r` overrides a single submodule's remote tracking branch (requires `-m` with exactly one module). See `hack/update_submodules.sh -h` for full usage.
+
+```bash
+# Update all submodules, branching from master
+hack/update_submodules.sh master
+
+# Update only kubelet and containerd
+hack/update_submodules.sh -m "kubelet containerd" master
+
+# Point kubelet at a different remote branch (e.g. a release branch listed in .gitmodules)
+hack/update_submodules.sh -m kubelet -r <remote-branch> master
+```
+
+The script creates a new local branch with commits for each submodule update. For `kubelet` and `containerd`, it also generates a Makefile version commit (updating `*_GIT_VERSION` variables). For `kubelet` (unless `-r` is used), it additionally updates Go/OpenShift library dependencies and runs `go mod vendor`.
+
+After creating the branch, push to your fork and open a PR per the usual workflow.
 
 ---
 
