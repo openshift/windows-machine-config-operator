@@ -129,6 +129,10 @@ func registerSuites(ext *e.Extension) {
 			Qualifiers: []string{`name.contains("[BYOHPool]")`},
 		},
 		{
+			Name:       "windows-machine-config-operator/smokerun",
+			Qualifiers: []string{`name.contains("Smokerun")`},
+		},
+		{
 			Name: "windows-machine-config-operator/all",
 		},
 	}
