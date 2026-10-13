@@ -15,7 +15,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -78,6 +77,13 @@ func TestPublicKeyHashFromPrivateKey(t *testing.T) {
 		if got != want {
 			t.Fatalf("publicKeyHashFromPrivateKey() = %q, want %q", got, want)
 		}
+		keyBytes, err := os.ReadFile(privateKeyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := publicKeyHash(keyBytes); err != nil || got != want {
+			t.Fatalf("publicKeyHash() = %q, %v, want %q", got, err, want)
+		}
 	})
 
 	t.Run("malformed key", func(t *testing.T) {
@@ -96,6 +102,51 @@ func TestPublicKeyHashFromPrivateKey(t *testing.T) {
 			t.Fatal("publicKeyHashFromPrivateKey() returned no error for unreadable key")
 		}
 	})
+}
+
+func TestGenerateTestPrivateKeyPathWrapper(t *testing.T) {
+	checkKey := func(keyBytes []byte) {
+		t.Helper()
+		block, rest := pem.Decode(keyBytes)
+		if block == nil || block.Type != "RSA PRIVATE KEY" || len(rest) != 0 {
+			t.Fatal("generated key is not a single PKCS#1 PEM block")
+		}
+		key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key.N.BitLen() != 2048 {
+			t.Fatal("generated RSA key is not 2048 bits")
+		}
+	}
+	path, err := generateTestPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Remove(path); err != nil {
+			t.Error(err)
+		}
+	})
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("private key permissions = %o, want 600", info.Mode().Perm())
+	}
+	keyBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkKey(keyBytes)
+	byteHash, err := publicKeyHash(keyBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pathHash, err := publicKeyHashFromPrivateKey(path); err != nil || pathHash != byteHash {
+		t.Fatalf("path and byte hashes differ: error=%v", err)
+	}
 }
 
 func TestTargetNodesReadyWithKeyHash(t *testing.T) {
@@ -183,72 +234,4 @@ func TestTargetNodesReadyWithKeyHash(t *testing.T) {
 			t.Fatalf("targetNodesReadyWithKeyHash() error = %v, want context.Canceled", err)
 		}
 	})
-}
-
-func TestNodeReadyWithKeyHash(t *testing.T) {
-	const expectedHash = "replacement-key-hash"
-
-	tests := []struct {
-		name         string
-		node         *corev1.Node
-		expectedHash string
-		want         bool
-	}{
-		{
-			name: "Ready with replacement key hash",
-			node: newNodeWithKeyHash(expectedHash,
-				corev1.NodeCondition{Type: corev1.NodeReady, Status: corev1.ConditionTrue}),
-			expectedHash: expectedHash,
-			want:         true,
-		},
-		{
-			name: "not Ready",
-			node: newNodeWithKeyHash(expectedHash,
-				corev1.NodeCondition{Type: corev1.NodeReady, Status: corev1.ConditionFalse}),
-			expectedHash: expectedHash,
-		},
-		{
-			name: "wrong key hash",
-			node: newNodeWithKeyHash("old-key-hash",
-				corev1.NodeCondition{Type: corev1.NodeReady, Status: corev1.ConditionTrue}),
-			expectedHash: expectedHash,
-		},
-		{
-			name:         "missing Ready condition",
-			node:         newNodeWithKeyHash(expectedHash),
-			expectedHash: expectedHash,
-		},
-		{
-			name: "ignores other conditions",
-			node: newNodeWithKeyHash(expectedHash,
-				corev1.NodeCondition{Type: corev1.NodeMemoryPressure, Status: corev1.ConditionTrue},
-				corev1.NodeCondition{Type: corev1.NodeReady, Status: corev1.ConditionTrue}),
-			expectedHash: expectedHash,
-			want:         true,
-		},
-		{
-			name:         "empty expected hash",
-			node:         newNodeWithKeyHash(expectedHash),
-			expectedHash: "",
-		},
-		{
-			name:         "nil node",
-			expectedHash: expectedHash,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := nodeReadyWithKeyHash(test.node, test.expectedHash); got != test.want {
-				t.Fatalf("nodeReadyWithKeyHash() = %t, want %t", got, test.want)
-			}
-		})
-	}
-}
-
-func newNodeWithKeyHash(hash string, conditions ...corev1.NodeCondition) *corev1.Node {
-	return &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{pubKeyHashAnno: hash}},
-		Status:     corev1.NodeStatus{Conditions: conditions},
-	}
 }

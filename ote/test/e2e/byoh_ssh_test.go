@@ -202,7 +202,7 @@ func TestSSHHandshakeAndSessionCreationHonorCancellation(t *testing.T) {
 	})
 
 	t.Run("clearing handshake deadline failure closes established connection", func(t *testing.T) {
-		privateKey, err := generateTestPrivateKey()
+		privateKey, err := generateTestPrivateKeyPEM()
 		if err != nil {
 			t.Fatal(err)
 		}

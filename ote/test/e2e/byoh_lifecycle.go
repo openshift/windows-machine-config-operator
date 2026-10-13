@@ -1569,3 +1569,152 @@ func (f *byohTestFixture) cleanupWithBudget(total, reserved time.Duration) error
 func (f *byohTestFixture) cleanup() error {
 	return f.cleanupWithBudget(byohCleanupLimit, byohFallbackLimit)
 }
+
+func leaseNodeKeyAndUsernameConverged(ctx context.Context, nodes corev1client.NodeInterface,
+	lease *byohHostLease, expectedHash string, key []byte, previousCiphertext string,
+	requireCiphertextChange bool) (bool, error) {
+	if lease == nil || lease.NodeName == "" || lease.NodeUID == "" || expectedHash == "" || len(key) == 0 {
+		return false, nil
+	}
+	node, err := nodes.Get(ctx, lease.NodeName, metav1.GetOptions{})
+	if err != nil {
+		return false, err
+	}
+	if node.UID != lease.NodeUID || !nodeReadyWithKeyHash(node, expectedHash) || !nodeReadyAndConverged(node) {
+		return false, nil
+	}
+	ciphertext := node.Annotations[byohUsernameAnno]
+	if ciphertext == "" || (requireCiphertextChange && ciphertext == previousCiphertext) {
+		return false, nil
+	}
+	username, err := decryptWMCOUsername(ciphertext, key)
+	return err == nil && username == lease.Username, nil
+}
+
+func (f *byohTestFixture) rotateBYOHPrivateKey(lease *byohHostLease) error {
+	secret, err := f.coreClient.Secrets(wmcoNamespace).Get(f.ctx, byohPrivateKeySecret, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("snapshot cloud private key Secret: %w", err)
+	}
+	originalKey := secret.Data[byohPrivateKeyDataKey]
+	if len(originalKey) == 0 {
+		return fmt.Errorf("cloud private key Secret has no private key")
+	}
+	if secret.UID == "" {
+		return fmt.Errorf("cloud private key Secret has no object identity")
+	}
+	node, err := f.coreClient.Nodes().Get(f.ctx, lease.NodeName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	originalCiphertext := node.Annotations[byohUsernameAnno]
+	if originalCiphertext == "" {
+		return fmt.Errorf("selected BYOH Node has no encrypted username annotation")
+	}
+	originalHash := node.Annotations[byohPublicKeyHashAnno]
+	expectedOriginalHash, err := publicKeyHash(originalKey)
+	if err != nil {
+		return err
+	}
+	if node.UID != lease.NodeUID || originalHash == "" || originalHash != expectedOriginalHash ||
+		!nodeReadyWithKeyHash(node, expectedOriginalHash) || !nodeReadyAndConverged(node) {
+		return fmt.Errorf("selected BYOH Node does not have the expected original public key hash")
+	}
+	originalUsername, err := decryptWMCOUsername(originalCiphertext, originalKey)
+	if err != nil || originalUsername != lease.Username {
+		return fmt.Errorf("selected BYOH Node does not have the expected original encrypted username")
+	}
+	f.secretSnapshot, f.secretLease, f.secretRestored = secret.DeepCopy(), lease, false
+	f.originalKeyHash = originalHash
+	replacementKey, err := generateTestPrivateKeyPEM()
+	if err != nil {
+		return err
+	}
+	replacementHash, err := publicKeyHash(replacementKey)
+	if err != nil {
+		return err
+	}
+	signer, err := ssh.ParsePrivateKey(replacementKey)
+	if err != nil {
+		return err
+	}
+	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
+	// Retain the exact generated line before the mutation attempt. Cleanup can safely remove this
+	// one owned line idempotently even when the HostProcess response is lost.
+	f.replacementAuthorizedKey = authorizedKey
+	if err := f.placeAuthorizedKeyWithHostProcess(f.ctx, lease, authorizedKey); err != nil {
+		return fmt.Errorf("place replacement authorized key through owned HostProcess probe: %w", err)
+	}
+	if err := updatePrivateKeySecret(f.ctx, f.coreClient.Secrets(wmcoNamespace), byohPrivateKeySecret, byohPrivateKeyDataKey, f.secretSnapshot.UID,
+		replacementKey); err != nil {
+		return err
+	}
+	err = f.waitForKeyConvergence(f.ctx, lease, replacementHash, replacementKey, originalCiphertext, true)
+	if err != nil {
+		return fmt.Errorf("replacement key annotations did not converge: %w", err)
+	}
+	if err := f.verifyLeaseSSHAuthentication(f.ctx, lease, replacementKey); err != nil {
+		return err
+	}
+	return f.assertConfiguredServicesRunning(f.ctx, lease)
+}
+
+func (f *byohTestFixture) restoreBYOHPrivateKeyWithContext(ctx context.Context) error {
+	if f.secretSnapshot == nil || f.secretRestored {
+		return nil
+	}
+	originalKey := f.secretSnapshot.Data[byohPrivateKeyDataKey]
+	if len(originalKey) == 0 || f.secretLease == nil {
+		return fmt.Errorf("cloud private key restoration snapshot is incomplete")
+	}
+	originalHash, err := publicKeyHash(originalKey)
+	if err != nil {
+		return err
+	}
+	if f.originalKeyHash == "" || originalHash != f.originalKeyHash {
+		return fmt.Errorf("cloud private key restoration hash does not match the captured original hash")
+	}
+	if err := updatePrivateKeySecret(ctx, f.coreClient.Secrets(wmcoNamespace), byohPrivateKeySecret, byohPrivateKeyDataKey, f.secretSnapshot.UID,
+		originalKey); err != nil {
+		return err
+	}
+	err = f.waitForKeyConvergence(ctx, f.secretLease, originalHash, originalKey, "", false)
+	if err != nil {
+		return fmt.Errorf("original key annotations did not converge: %w", err)
+	}
+	if err := f.verifyLeaseSSHAuthentication(ctx, f.secretLease, originalKey); err != nil {
+		return err
+	}
+	if f.replacementAuthorizedKey != "" {
+		if err := f.removeAuthorizedKeyWithHostProcess(ctx, f.secretLease, f.replacementAuthorizedKey); err != nil {
+			return fmt.Errorf("remove replacement authorized key through owned HostProcess probe: %w", err)
+		}
+		f.replacementAuthorizedKey = ""
+	}
+	f.secretRestored = true
+	return nil
+}
+
+func (f *byohTestFixture) waitForKeyConvergence(ctx context.Context, lease *byohHostLease,
+	expectedHash string, key []byte, previousCiphertext string, requireCiphertextChange bool) error {
+	if f.keyConvergenceForTest != nil {
+		return f.keyConvergenceForTest(ctx, lease, expectedHash, key, previousCiphertext, requireCiphertextChange)
+	}
+	return wait.PollUntilContextTimeout(ctx, 15*time.Second, 15*time.Minute, true,
+		func(ctx context.Context) (bool, error) {
+			return leaseNodeKeyAndUsernameConverged(ctx, f.coreClient.Nodes(), lease, expectedHash, key,
+				previousCiphertext, requireCiphertextChange)
+		})
+}
+
+func (f *byohTestFixture) verifyLeaseSSHAuthentication(ctx context.Context, lease *byohHostLease,
+	privateKey []byte) error {
+	if f.verifySSHForTest != nil {
+		return f.verifySSHForTest(ctx, lease, privateKey)
+	}
+	return verifySSHAuthentication(ctx, lease, privateKey)
+}
+
+func (f *byohTestFixture) restoreBYOHPrivateKey() error {
+	return f.restoreBYOHPrivateKeyWithContext(f.ctx)
+}
