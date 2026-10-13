@@ -2207,7 +2207,8 @@ spec:
 
 	// author: rrasouli@redhat.com
 	// Timeout budget: 2m checker + 11m optional alternate rollout + 11m Modern rollout +
-	// 11m Old rollout + 22m restoration = 57m. Ginkgo has 13m command overhead; the runner has another 5m.
+	// 11m Old rollout + 22m restoration + 4m transport readiness = 61m.
+	// Ginkgo has 9m command overhead; the runner has another 5m.
 	g.It("Author:rrasouli-Longduration-Critical-90119-[tls-adherence]-WMCO metrics endpoint enforces updated TLS profile after pod restart [Timeout:75m][Slow][Serial][Disruptive]",
 		g.SpecTimeout(70*time.Minute), func(ctx g.SpecContext) {
 
@@ -2252,17 +2253,14 @@ spec:
 			err = waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
-			wmcoPodIP, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"pod", "-n", wmcoNamespace, "--selector", "name="+wmcoDeploymentName,
-				"--field-selector=status.phase=Running",
-				"-o=jsonpath={.items[0].status.podIP}").Output()
+			wmcoPodIP, err := readyWMCOTLSEndpoint(ctx, oc, checkerPod)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(wmcoPodIP).NotTo(o.BeEmpty(), "WMCO pod IP is empty")
 			e2e.Logf("WMCO pod IP: %s", wmcoPodIP)
 
 			g.By("Verify TLS 1.2 connection is refused with Modern profile (TLS 1.3 only)")
-			tls12Output, tlsErr := runTLSCheck(oc, checkerPod, wmcoPodIP, "9182", "-tls1_2")
+			tls12Output, tlsErr := runTLSCheck(ctx, oc, checkerPod, wmcoPodIP, "9182", "-tls1_2")
 			o.Expect(tlsErr).NotTo(o.HaveOccurred())
+			o.Expect(isTLSTransportFailure(tls12Output)).To(o.BeFalse(), "TLS transport failure is not a protocol rejection")
 			e2e.Logf("TLS 1.2 output: %s", tls12Output)
 			o.Expect(tls12Output).To(o.SatisfyAny(
 				o.ContainSubstring("wrong version number"),
@@ -2272,8 +2270,9 @@ spec:
 			), "TLS 1.2 connection should be refused when Modern profile is active")
 
 			g.By("Verify TLS 1.3 connection succeeds with Modern profile")
-			tls13Output, tlsErr := runTLSCheck(oc, checkerPod, wmcoPodIP, "9182", "-tls1_3")
+			tls13Output, tlsErr := runTLSCheck(ctx, oc, checkerPod, wmcoPodIP, "9182", "-tls1_3")
 			o.Expect(tlsErr).NotTo(o.HaveOccurred())
+			o.Expect(isTLSTransportFailure(tls13Output)).To(o.BeFalse())
 			e2e.Logf("TLS 1.3 output: %s", tls13Output)
 			o.Expect(tls13Output).To(o.ContainSubstring("TLSv1.3"),
 				"TLS 1.3 connection should succeed when Modern profile is active")
@@ -2292,15 +2291,13 @@ spec:
 			err = waitForDeploymentReady(oc, wmcoDeploymentName, wmcoNamespace, 5*time.Minute)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
-			wmcoPodIP, err = oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"pod", "-n", wmcoNamespace, "--selector", "name="+wmcoDeploymentName,
-				"--field-selector=status.phase=Running",
-				"-o=jsonpath={.items[0].status.podIP}").Output()
+			wmcoPodIP, err = readyWMCOTLSEndpoint(ctx, oc, checkerPod)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("Verify TLS 1.2 connection succeeds with Old profile")
-			tls12OldOutput, tlsErr := runTLSCheck(oc, checkerPod, wmcoPodIP, "9182", "-tls1_2")
+			tls12OldOutput, tlsErr := runTLSCheck(ctx, oc, checkerPod, wmcoPodIP, "9182", "-tls1_2")
 			o.Expect(tlsErr).NotTo(o.HaveOccurred())
+			o.Expect(isTLSTransportFailure(tls12OldOutput)).To(o.BeFalse())
 			e2e.Logf("TLS 1.2 (Old profile) output: %s", tls12OldOutput)
 			o.Expect(tls12OldOutput).To(o.SatisfyAny(
 				o.ContainSubstring("TLSv1.2"),
@@ -2310,7 +2307,8 @@ spec:
 
 	// author: rrasouli@redhat.com
 	// Timeout budget: 2m checker + 11m optional alternate rollout + 11m Custom rollout +
-	// 22m restoration = 46m. Ginkgo has 14m command overhead; the runner has another 5m.
+	// 22m restoration + 2m transport readiness = 48m. Ginkgo has 12m command overhead;
+	// the runner has another 5m.
 	g.It("Author:rrasouli-Medium-90120-[tls-adherence]-WMCO metrics endpoint enforces Custom TLS profile with specific cipher suites [Timeout:65m][Serial][Disruptive]",
 		g.SpecTimeout(60*time.Minute), func(ctx g.SpecContext) {
 
@@ -2364,22 +2362,16 @@ spec:
 			o.Expect(err).NotTo(o.HaveOccurred())
 			o.Expect(logs).To(o.ContainSubstring("TLS configuration loaded"))
 
-			wmcoPodIP, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
-				"pod", "-n", wmcoNamespace, "--selector", "name="+wmcoDeploymentName,
-				"--field-selector=status.phase=Running",
-				"-o=jsonpath={.items[0].status.podIP}").Output()
+			wmcoPodIP, err := readyWMCOTLSEndpoint(ctx, oc, checkerPod)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By("Verify the negotiated cipher is one of the two specified ciphers")
-			tlsOutput, tlsErr := runTLSCheck(oc, checkerPod, wmcoPodIP, "9182", "-tls1_2")
+			tlsOutput, tlsErr := runTLSCheck(ctx, oc, checkerPod, wmcoPodIP, "9182", "-tls1_2")
 			o.Expect(tlsErr).NotTo(o.HaveOccurred())
+			o.Expect(isTLSTransportFailure(tlsOutput)).To(o.BeFalse())
 			e2e.Logf("TLS check output: %s", tlsOutput)
-			o.Expect(tlsOutput).To(o.SatisfyAny(
-				o.ContainSubstring("ECDHE-RSA-AES128-GCM-SHA256"),
-				o.ContainSubstring("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"),
-				o.ContainSubstring("ECDHE-ECDSA-AES128-GCM-SHA256"),
-				o.ContainSubstring("TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"),
-			), "Negotiated cipher should be one of the two specified custom ciphers")
+			o.Expect(isAllowedCustomTLSCipher(tlsOutput)).To(o.BeTrue(),
+				"Negotiated cipher should be one of the two specified custom ciphers")
 
 			g.By("Check WMCO pod logs for any unsupported cipher warnings")
 			if strings.Contains(logs, "unsupportedCiphers") {

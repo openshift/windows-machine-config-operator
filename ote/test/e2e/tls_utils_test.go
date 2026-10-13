@@ -223,7 +223,7 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 
 	t.Run("waits for rollout before control-plane stability", func(t *testing.T) {
 		var calls []string
-		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(time.Minute), 2,
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(6*time.Minute), 2,
 			tlsRecoveryWaitOperations{
 				waitForRestart: func(context.Context, time.Duration) (bool, error) {
 					calls = append(calls, "restart")
@@ -250,9 +250,9 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 		}
 	})
 
-	t.Run("stops after a fatal rollout error", func(t *testing.T) {
+	t.Run("keeps deployment error and checks stability", func(t *testing.T) {
 		stabilityCalled := false
-		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(time.Minute), 0,
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(6*time.Minute), 0,
 			tlsRecoveryWaitOperations{
 				waitForRestart: func(context.Context, time.Duration) (bool, error) { return true, nil },
 				waitForDeployment: func(context.Context, time.Duration) error {
@@ -263,8 +263,8 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 					return nil
 				},
 			})
-		if err == nil || !strings.Contains(err.Error(), "deployment failed") || stabilityCalled {
-			t.Fatalf("expected deployment failure to stop recovery, got stabilityCalled=%t err=%v",
+		if err == nil || !strings.Contains(err.Error(), "deployment failed") || !stabilityCalled {
+			t.Fatalf("expected deployment failure retained with stability check, got stabilityCalled=%t err=%v",
 				stabilityCalled, err)
 		}
 	})
@@ -283,16 +283,28 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 			t.Fatal("expected expired shared deadline to fail")
 		}
 	})
+	t.Run("expired shared deadline calls no recovery phase", func(t *testing.T) {
+		calls := 0
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(-time.Second), 0,
+			tlsRecoveryWaitOperations{
+				waitForRestart:   func(context.Context, time.Duration) (bool, error) { calls++; return true, nil },
+				waitForStability: func(context.Context, time.Duration) error { calls++; return nil },
+			})
+		if err == nil || calls != 0 {
+			t.Fatalf("expired deadline must make no calls: calls=%d err=%v", calls, err)
+		}
+	})
 
 	t.Run("stops when restart is not observed", func(t *testing.T) {
 		deploymentCalled := false
-		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(time.Minute), 0,
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(6*time.Minute), 0,
 			tlsRecoveryWaitOperations{
 				waitForRestart: func(context.Context, time.Duration) (bool, error) { return false, nil },
 				waitForDeployment: func(context.Context, time.Duration) error {
 					deploymentCalled = true
 					return nil
 				},
+				waitForStability: func(context.Context, time.Duration) error { return nil },
 			})
 		if err == nil || !strings.Contains(err.Error(), "did not restart") || deploymentCalled {
 			t.Fatalf("expected missing restart to stop recovery, got deploymentCalled=%t err=%v",
@@ -300,11 +312,11 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 		}
 	})
 
-	t.Run("shared deadline cancels and reaps a blocked command", func(t *testing.T) {
+	t.Run("reserved deadline cancels and reaps a blocked command", func(t *testing.T) {
 		var blockedCommand *exec.Cmd
 		deploymentCalled := false
 		start := time.Now()
-		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(30*time.Millisecond), 0,
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(tlsRecoveryAPITimeout+150*time.Millisecond), 0,
 			tlsRecoveryWaitOperations{
 				waitForRestart: func(ctx context.Context, _ time.Duration) (bool, error) {
 					return false, func() error {
@@ -323,6 +335,7 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 					deploymentCalled = true
 					return nil
 				},
+				waitForStability: func(context.Context, time.Duration) error { return nil },
 			})
 		if err == nil || !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("expected blocked command to be canceled by the shared deadline, got %v", err)
@@ -331,12 +344,360 @@ func TestTLSRecoveryAfterRestore(t *testing.T) {
 			t.Fatalf("blocked command outlived the shared deadline: %v", elapsed)
 		}
 		if blockedCommand == nil || blockedCommand.ProcessState == nil {
-			t.Fatal("expected blocked command to be waited on and reaped")
+			t.Fatal("expected blocked command to be reaped")
 		}
 		if deploymentCalled {
 			t.Fatal("expected recovery to stop after the canceled restart check")
 		}
 	})
+}
+
+func TestWMCOTLSEndpointReadiness(t *testing.T) {
+	t.Run("refused then ready refreshes address", func(t *testing.T) {
+		addresses := []string{"10.0.0.1", "10.0.0.2"}
+		calls := 0
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		address, err := waitForWMCOTLSEndpoint(ctx, time.Millisecond,
+			func(context.Context) (string, error) {
+				result := addresses[calls]
+				calls++
+				return result, nil
+			}, func(_ context.Context, address string) (string, error) {
+				if address == addresses[0] {
+					return "BIO_connect:Connection refused; connect:errno=111", nil
+				}
+				return "CONNECTED(00000003)\nCipher: ECDHE-RSA-AES128-GCM-SHA256", nil
+			})
+		if err != nil || address != addresses[1] || calls != 2 {
+			t.Fatalf("expected refreshed ready endpoint, address=%q calls=%d error=%v", address, calls, err)
+		}
+	})
+	t.Run("API transport EOF during pod lookup retries", func(t *testing.T) {
+		calls := 0
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err := waitForWMCOTLSEndpoint(ctx, time.Millisecond,
+			func(context.Context) (string, error) {
+				calls++
+				if calls == 1 {
+					return "", errors.New("pod GET: unexpected EOF")
+				}
+				return "10.0.0.2", nil
+			}, func(context.Context, string) (string, error) { return "CONNECTED(1)", nil })
+		if err != nil || calls != 2 {
+			t.Fatalf("EOF from pod lookup should retry: calls=%d err=%v", calls, err)
+		}
+	})
+	for _, message := range []string{"Unauthorized", "malformed JSON"} {
+		t.Run(message, func(t *testing.T) {
+			calls := 0
+			_, err := waitForWMCOTLSEndpoint(context.Background(), time.Millisecond,
+				func(context.Context) (string, error) { calls++; return "", errors.New(message) },
+				func(context.Context, string) (string, error) { t.Fatal("unexpected probe"); return "", nil })
+			if err == nil || calls != 1 {
+				t.Fatalf("permanent error must fail immediately: calls=%d error=%v", calls, err)
+			}
+		})
+	}
+	t.Run("probe errors never expose openssl output", func(t *testing.T) {
+		_, err := waitForWMCOTLSEndpoint(context.Background(), time.Millisecond,
+			func(context.Context) (string, error) { return "10.0.0.1", nil },
+			func(context.Context, string) (string, error) {
+				return "", errors.New("certificate PRIVATE-CONTENT: Unauthorized")
+			})
+		if err == nil || !strings.Contains(err.Error(), "10.0.0.1") ||
+			strings.Contains(err.Error(), "PRIVATE-CONTENT") {
+			t.Fatalf("probe error must include endpoint and category but not output: %v", err)
+		}
+	})
+	t.Run("malformed probe result fails without retry", func(t *testing.T) {
+		calls := 0
+		_, err := waitForWMCOTLSEndpoint(context.Background(), time.Millisecond,
+			func(context.Context) (string, error) { return "10.0.0.1", nil },
+			func(context.Context, string) (string, error) { calls++; return "certificate PRIVATE-CONTENT", nil })
+		if err == nil || calls != 1 || strings.Contains(err.Error(), "PRIVATE-CONTENT") {
+			t.Fatalf("malformed probe must fail immediately: calls=%d err=%v", calls, err)
+		}
+	})
+	t.Run("refusal cannot count as negative TLS result", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		defer cancel()
+		calls := 0
+		_, err := waitForWMCOTLSEndpoint(ctx, time.Millisecond,
+			func(context.Context) (string, error) { return "10.0.0.1", nil },
+			func(context.Context, string) (string, error) {
+				calls++
+				return "connect:errno=111 connection refused", nil
+			})
+		if err == nil || calls < 2 {
+			t.Fatalf("refusal must remain unavailable: calls=%d error=%v", calls, err)
+		}
+	})
+	for _, output := range []string{"CONNECTED(1)\nSSL routines:alert protocol version", "CONNECTED(1)\nCipher: WRONG"} {
+		t.Run(output, func(t *testing.T) {
+			calls := 0
+			_, err := waitForWMCOTLSEndpoint(context.Background(), time.Millisecond,
+				func(context.Context) (string, error) { return "10.0.0.1", nil },
+				func(context.Context, string) (string, error) { calls++; return output, nil })
+			if err != nil || calls != 1 {
+				t.Fatalf("completed TLS response must not be retried: calls=%d error=%v", calls, err)
+			}
+		})
+	}
+	if isAllowedCustomTLSCipher("CONNECTED(1)\nCipher: WRONG") ||
+		!isAllowedCustomTLSCipher("CONNECTED(1)\nCipher: ECDHE-RSA-AES128-GCM-SHA256") {
+		t.Fatal("a completed handshake with the wrong cipher must fail immediately")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	calls := 0
+	_, err := waitForWMCOTLSEndpoint(ctx, time.Millisecond,
+		func(context.Context) (string, error) { calls++; return "", nil }, nil)
+	if err == nil || calls != 0 {
+		t.Fatalf("canceled readiness should make no calls: calls=%d error=%v", calls, err)
+	}
+}
+
+func TestRestoreTLSConfigurationAfterTransientReads(t *testing.T) {
+	reads, baselineReads, patches := 0, 0, 0
+	baseline, changed, err := restoreTLSConfigurationWithContext(context.Background(), time.Now().Add(tlsRestorationTimeout),
+		"StrictAllComponents", `{"type":"Intermediate"}`,
+		func(context.Context) (string, string, error) {
+			reads++
+			if reads == 1 {
+				return "", "", errors.New("connection refused")
+			}
+			return `{"type":"Custom"}`, "StrictAllComponents", nil
+		}, func(context.Context) (string, error) {
+			baselineReads++
+			if baselineReads == 1 {
+				return "", errors.New("connection refused")
+			}
+			return "podUID=original", nil
+		}, func(context.Context) error { patches++; return nil })
+	if err != nil || !changed || baseline != "podUID=original" || patches != 1 {
+		t.Fatalf("expected restoration after transient reads: baseline=%q changed=%t patches=%d err=%v",
+			baseline, changed, patches, err)
+	}
+}
+
+func TestRestoreTLSConfigurationErrors(t *testing.T) {
+	if isRetryableTLSRestorationError(errors.Join(errors.New("connection refused"), errors.New("Unauthorized"))) {
+		t.Fatal("permanent field error must not be retried despite another transient field error")
+	}
+	t.Run("permanent read error still attempts known restoration", func(t *testing.T) {
+		patches := 0
+		_, _, err := restoreTLSConfigurationWithContext(context.Background(), time.Now().Add(tlsRestorationTimeout),
+			"StrictAllComponents", `{"type":"Intermediate"}`,
+			func(context.Context) (string, string, error) { return "", "", errors.New("Unauthorized") },
+			func(context.Context) (string, error) { return "baseline", nil },
+			func(context.Context) error { patches++; return nil })
+		if err == nil || !strings.Contains(err.Error(), "Unauthorized") || patches != 1 {
+			t.Fatalf("read error must be retained after restoration: patches=%d err=%v", patches, err)
+		}
+	})
+	t.Run("baseline error cannot prevent restoration", func(t *testing.T) {
+		patches := 0
+		baseline, changed, err := restoreTLSConfigurationWithContext(context.Background(), time.Now().Add(tlsRestorationTimeout),
+			"StrictAllComponents", `{"type":"Intermediate"}`,
+			func(context.Context) (string, string, error) { return `{"type":"Custom"}`, "StrictAllComponents", nil },
+			func(context.Context) (string, error) { return "", errors.New("Forbidden") },
+			func(context.Context) error { patches++; return nil })
+		if err == nil || !strings.Contains(err.Error(), "Forbidden") || !changed || baseline != "" || patches != 1 {
+			t.Fatalf("baseline failure must preserve error and restore: baseline=%q changed=%t patches=%d err=%v",
+				baseline, changed, patches, err)
+		}
+	})
+	t.Run("transient patch error retries restoration", func(t *testing.T) {
+		patches := 0
+		_, changed, err := restoreTLSConfigurationWithContext(context.Background(), time.Now().Add(tlsRestorationTimeout),
+			"StrictAllComponents", `{"type":"Intermediate"}`,
+			func(context.Context) (string, string, error) { return `{"type":"Custom"}`, "StrictAllComponents", nil },
+			func(context.Context) (string, error) { return "baseline", nil },
+			func(context.Context) error {
+				patches++
+				if patches == 1 {
+					return errors.Join(errors.New("tlsAdherence: connection refused"), errors.New("tlsSecurityProfile: connection refused"))
+				}
+				return nil
+			})
+		if err != nil || !changed || patches != 2 {
+			t.Fatalf("transient patch should be retried: changed=%t patches=%d err=%v", changed, patches, err)
+		}
+	})
+	t.Run("partial permanent patch failure retains both fields and final gate", func(t *testing.T) {
+		fieldErrors := errors.Join(errors.New("tlsAdherence: forbidden"), errors.New("tlsSecurityProfile: invalid"))
+		patches := 0
+		baseline, attempted, err := restoreTLSConfigurationWithContext(context.Background(),
+			time.Now().Add(6*time.Minute), "StrictAllComponents", `{"type":"Intermediate"}`,
+			func(context.Context) (string, string, error) { return "", "", nil },
+			func(context.Context) (string, error) { return "baseline", nil },
+			func(context.Context) error { patches++; return fieldErrors })
+		if err == nil || !attempted || baseline != "baseline" || patches != 1 ||
+			!strings.Contains(err.Error(), "tlsAdherence") || !strings.Contains(err.Error(), "tlsSecurityProfile") {
+			t.Fatalf("retain both patch errors without claiming success: attempted=%t baseline=%q patches=%d err=%v",
+				attempted, baseline, patches, err)
+		}
+		gateCalls := 0
+		recoveryErr := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(6*time.Minute), 0,
+			tlsRecoveryWaitOperations{
+				waitForRestart:   func(context.Context, time.Duration) (bool, error) { return false, nil },
+				waitForStability: func(context.Context, time.Duration) error { gateCalls++; return nil },
+			})
+		if gateCalls != 1 || recoveryErr == nil || !strings.Contains(recoveryErr.Error(), "did not restart") {
+			t.Fatalf("partial restore must retain missing restart and run final gate: calls=%d err=%v", gateCalls, recoveryErr)
+		}
+	})
+	t.Run("expired deadline makes no calls", func(t *testing.T) {
+		calls := 0
+		ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+		defer cancel()
+		_, _, err := restoreTLSConfigurationWithContext(ctx, time.Now().Add(-time.Second), "", "",
+			func(context.Context) (string, string, error) { calls++; return "", "", nil },
+			func(context.Context) (string, error) { calls++; return "", nil },
+			func(context.Context) error { calls++; return nil })
+		if err == nil || calls != 0 {
+			t.Fatalf("expired deadline must make no calls: calls=%d err=%v", calls, err)
+		}
+	})
+	t.Run("expired patch allocation cannot report success", func(t *testing.T) {
+		calls := 0
+		_, _, err := restoreTLSConfigurationWithContext(context.Background(), time.Now().Add(time.Second), "original", "profile",
+			func(context.Context) (string, string, error) { calls++; return "", "", nil },
+			func(context.Context) (string, error) { calls++; return "", nil },
+			func(context.Context) error { calls++; return nil })
+		if err == nil || calls != 0 {
+			t.Fatalf("expired patch allocation cannot report success: calls=%d err=%v", calls, err)
+		}
+	})
+	t.Run("restart failure keeps final stability failure", func(t *testing.T) {
+		apiCalls := 0
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(6*time.Minute), 0,
+			tlsRecoveryWaitOperations{
+				waitForRestart: func(context.Context, time.Duration) (bool, error) {
+					return false, errors.New("restart query unauthorized")
+				},
+				waitForStability: func(context.Context, time.Duration) error {
+					apiCalls++
+					return errors.New("API unavailable")
+				},
+			})
+		if apiCalls != 1 || err == nil || !strings.Contains(err.Error(), "restart query unauthorized") ||
+			!strings.Contains(err.Error(), "API unavailable") {
+			t.Fatalf("expected both errors and stability call: apiCalls=%d err=%v", apiCalls, err)
+		}
+	})
+	t.Run("Windows node error still checks stability", func(t *testing.T) {
+		apiCalls := 0
+		err := waitForTLSRecoveryAfterRestore(context.Background(), time.Now().Add(6*time.Minute), 1,
+			tlsRecoveryWaitOperations{
+				waitForRestart:      func(context.Context, time.Duration) (bool, error) { return true, nil },
+				waitForDeployment:   func(context.Context, time.Duration) error { return nil },
+				waitForWindowsNodes: func(context.Context, time.Duration) error { return errors.New("node not ready") },
+				waitForStability:    func(context.Context, time.Duration) error { apiCalls++; return nil },
+			})
+		if apiCalls != 1 || err == nil || !strings.Contains(err.Error(), "node not ready") {
+			t.Fatalf("node error must survive final stability check: apiCalls=%d err=%v", apiCalls, err)
+		}
+	})
+}
+
+func TestTLSRestorationInflightPhaseDeadlines(t *testing.T) {
+	startBlockedCommand := func(ctx context.Context, command **exec.Cmd) error {
+		_, err := commandOutputWithContext(ctx, func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			*command = exec.Command("sleep", "30")
+			(*command).Stdout = stdout
+			(*command).Stderr = stderr
+			return *command, stdout, stderr, (*command).Start()
+		})
+		return err
+	}
+	for _, test := range []struct {
+		name     string
+		deadline time.Duration
+		block    string
+	}{
+		{"read phase", tlsRecoveryAPITimeout + tlsRecoveryRestartTimeout +
+			tlsRecoveryDeploymentTimeout + tlsRecoveryWindowsNodesTimeout + 300*time.Millisecond, "read"},
+		{"baseline phase", tlsRecoveryAPITimeout + tlsRecoveryRestartTimeout +
+			tlsRecoveryDeploymentTimeout + tlsRecoveryWindowsNodesTimeout + 300*time.Millisecond, "baseline"},
+		{"patch phase", tlsRecoveryAPITimeout + 300*time.Millisecond, "patch"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deadline := time.Now().Add(test.deadline)
+			var blockedCommand *exec.Cmd
+			patchCalls, stabilityCalls := 0, 0
+			start := time.Now()
+			_, attempted, err := restoreTLSConfigurationWithContext(context.Background(), deadline,
+				"StrictAllComponents", `{"type":"Intermediate"}`,
+				func(ctx context.Context) (string, string, error) {
+					if test.block == "read" {
+						return "", "", startBlockedCommand(ctx, &blockedCommand)
+					}
+					return `{"type":"Custom"}`, "StrictAllComponents", nil
+				}, func(ctx context.Context) (string, error) {
+					if test.block == "baseline" {
+						return "", startBlockedCommand(ctx, &blockedCommand)
+					}
+					return "baseline", nil
+				},
+				func(ctx context.Context) error {
+					patchCalls++
+					if test.block == "patch" {
+						return startBlockedCommand(ctx, &blockedCommand)
+					}
+					return nil
+				})
+			if err == nil || !attempted || time.Since(start) > 3*time.Second ||
+				blockedCommand == nil || blockedCommand.ProcessState == nil {
+				t.Fatalf("blocked %s must be canceled and reaped within phase: attempted=%t err=%v process=%v",
+					test.block, attempted, err, blockedCommand)
+			}
+			if (test.block == "read" || test.block == "baseline") && patchCalls != 1 {
+				t.Fatalf("failed in-flight read must still restore known values: patches=%d", patchCalls)
+			}
+			if test.block == "patch" && patchCalls != 1 {
+				t.Fatalf("failed in-flight patch must not be retried after phase deadline: patches=%d", patchCalls)
+			}
+			recoveryErr := waitForTLSRecoveryAfterRestore(context.Background(), deadline, 0,
+				tlsRecoveryWaitOperations{
+					waitForRestart: func(context.Context, time.Duration) (bool, error) {
+						return false, errors.New("restart not detected")
+					},
+					waitForStability: func(context.Context, time.Duration) error {
+						stabilityCalls++
+						return errors.New("API not stable")
+					},
+				})
+			restartFailure := "restart not detected"
+			if test.block == "patch" {
+				restartFailure = "no time for restart recovery"
+			}
+			if stabilityCalls != 1 || recoveryErr == nil ||
+				!strings.Contains(recoveryErr.Error(), restartFailure) ||
+				!strings.Contains(recoveryErr.Error(), "API not stable") {
+				t.Fatalf("final gate must run and preserve failures: calls=%d err=%v", stabilityCalls, recoveryErr)
+			}
+		})
+	}
+}
+
+func TestReadyWMCOPodIP(t *testing.T) {
+	input := `{"items":[
+		{"metadata":{"name":"old","creationTimestamp":"2026-01-01T00:00:00Z"},"status":{"phase":"Running","podIP":"10.0.0.1","conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"name":"manager","ready":true}]}},
+		{"metadata":{"name":"new","creationTimestamp":"2026-01-02T00:00:00Z"},"status":{"phase":"Running","podIP":"10.0.0.2","conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"name":"manager","ready":true}]}},
+		{"metadata":{"name":"terminating","deletionTimestamp":"2026-01-04T00:00:00Z","creationTimestamp":"2026-01-03T00:00:00Z"},"status":{"phase":"Running","podIP":"10.0.0.3","conditions":[{"type":"Ready","status":"True"}],"containerStatuses":[{"name":"manager","ready":true}]}}]}`
+	address, err := readyWMCOPodIP(input)
+	if err != nil || address != "10.0.0.2" {
+		t.Fatalf("newest ready nonterminating address: %q %v", address, err)
+	}
+	olderAddress, err := readyWMCOPodIP(strings.Replace(input, `"podIP":"10.0.0.2"`, `"podIP":"invalid"`, 1))
+	if err != nil || olderAddress != "10.0.0.1" {
+		t.Fatalf("older ready pod should remain reachable: %q %v", olderAddress, err)
+	}
 }
 
 func TestReadyWMCOPodName(t *testing.T) {
