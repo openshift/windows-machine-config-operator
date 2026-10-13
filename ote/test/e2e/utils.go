@@ -1,11 +1,9 @@
 package winc
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -62,12 +60,6 @@ const (
 	tlsRestorationTimeout = tlsRecoveryRestartTimeout + tlsRecoveryDeploymentTimeout +
 		tlsRecoveryWindowsNodesTimeout + tlsRecoveryAPITimeout + time.Minute
 )
-
-type cliCommandStarter func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error)
-
-func cliOutputWithContext(ctx context.Context, command *exutil.CLI) (string, error) {
-	return commandOutputWithContext(ctx, command.Background)
-}
 
 // Service represents a Windows service entry from the WICD windows-services ConfigMap.
 type Service struct {
@@ -861,7 +853,7 @@ func getRandomDNSLabel(length int) string {
 	buff := make([]byte, (length+1)/2)
 	_, err := rand.Read(buff)
 	o.Expect(err).NotTo(o.HaveOccurred(), "failed to generate random bytes")
-	return hex.EncodeToString(buff)[:length]
+	return fmt.Sprintf("%x", buff)[:length]
 }
 
 // createProject creates a namespace if it does not already exist and sets privileged SCC.
@@ -1639,7 +1631,7 @@ func restoreAPIServerTLS(ctx context.Context, oc *exutil.CLI, origAdherence, ori
 	var restoreErr error
 	if origAdherence == "" {
 		_, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("patch").Args(
-			"apiserver/cluster", "--type=json", "-p", `[{"op":"remove","path":"/spec/tlsAdherence"}]`))
+			"apiserver/cluster", "--type=merge", "-p", `{"spec":{"tlsAdherence":null}}`))
 		if err != nil {
 			restoreErr = fmt.Errorf("could not remove tlsAdherence: %w", err)
 		}
@@ -1660,7 +1652,7 @@ func restoreAPIServerTLS(ctx context.Context, oc *exutil.CLI, origAdherence, ori
 			"-p", `{"spec":{"tlsSecurityProfile":{"type":"Intermediate","intermediate":{}}}}`))
 		if err != nil {
 			if restoreErr != nil {
-				return fmt.Errorf("%v; could not restore default tlsSecurityProfile: %w", restoreErr, err)
+				return joinTLSRestorationErrors(restoreErr, fmt.Errorf("could not restore default tlsSecurityProfile: %w", err))
 			}
 			return fmt.Errorf("could not restore default tlsSecurityProfile: %w", err)
 		}
@@ -1670,7 +1662,7 @@ func restoreAPIServerTLS(ctx context.Context, oc *exutil.CLI, origAdherence, ori
 			"-p", fmt.Sprintf(`{"spec":{"tlsSecurityProfile":%s}}`, origTLSProfile)))
 		if err != nil {
 			if restoreErr != nil {
-				return fmt.Errorf("%v; could not restore tlsSecurityProfile: %w", restoreErr, err)
+				return joinTLSRestorationErrors(restoreErr, fmt.Errorf("could not restore tlsSecurityProfile: %w", err))
 			}
 			return fmt.Errorf("could not restore tlsSecurityProfile: %w", err)
 		}
@@ -1922,77 +1914,85 @@ func tlsRecoveryPhaseContext(parent context.Context, deadline time.Time,
 
 func waitForTLSRecoveryAfterRestore(ctx context.Context, deadline time.Time, windowsNodeCount int,
 	operations tlsRecoveryWaitOperations) error {
-	restartCtx, cancelRestart, restartTimeout, err := tlsRecoveryPhaseContext(ctx, deadline,
-		tlsRecoveryRestartTimeout)
-	if err != nil {
-		return err
-	}
-	restarted, err := operations.waitForRestart(restartCtx, restartTimeout)
-	cancelRestart()
-	if err != nil {
-		return err
-	}
-	if !restarted {
-		return fmt.Errorf("WMCO did not restart while restoring TLS configuration")
-	}
-
-	deploymentCtx, cancelDeployment, deploymentTimeout, err := tlsRecoveryPhaseContext(ctx, deadline,
-		tlsRecoveryDeploymentTimeout)
-	if err != nil {
-		return err
-	}
-	if err := operations.waitForDeployment(deploymentCtx, deploymentTimeout); err != nil {
-		cancelDeployment()
-		return err
-	}
-	cancelDeployment()
-
-	if windowsNodeCount > 0 {
-		nodesCtx, cancelNodes, nodesTimeout, err := tlsRecoveryPhaseContext(ctx, deadline,
-			tlsRecoveryWindowsNodesTimeout)
+	phaseDeadline := deadline.Add(-tlsRecoveryAPITimeout)
+	var phaseErr error
+	if ctx.Err() == nil && time.Until(phaseDeadline) > 0 {
+		restartCtx, cancelRestart, restartTimeout, err := tlsRecoveryPhaseContext(ctx, phaseDeadline,
+			tlsRecoveryRestartTimeout)
+		if err == nil {
+			var restarted bool
+			restarted, err = operations.waitForRestart(restartCtx, restartTimeout)
+			if err == nil && !restarted {
+				err = fmt.Errorf("WMCO did not restart while restoring TLS configuration")
+			}
+		}
+		if cancelRestart != nil {
+			cancelRestart()
+		}
 		if err != nil {
-			return err
+			phaseErr = fmt.Errorf("restart recovery: %w", err)
+			e2e.Logf("TLS restoration restart recovery failed: %v", phaseErr)
 		}
-		if err := operations.waitForWindowsNodes(nodesCtx, nodesTimeout); err != nil {
-			cancelNodes()
-			return err
+		if phaseErr == nil {
+			deploymentCtx, cancelDeployment, deploymentTimeout, err := tlsRecoveryPhaseContext(ctx, phaseDeadline,
+				tlsRecoveryDeploymentTimeout)
+			if err == nil {
+				err = operations.waitForDeployment(deploymentCtx, deploymentTimeout)
+				cancelDeployment()
+			}
+			if err != nil {
+				phaseErr = fmt.Errorf("deployment recovery: %w", err)
+				e2e.Logf("TLS restoration deployment recovery failed: %v", phaseErr)
+			}
 		}
-		cancelNodes()
+		if phaseErr == nil && windowsNodeCount > 0 {
+			nodesCtx, cancelNodes, nodesTimeout, err := tlsRecoveryPhaseContext(ctx, phaseDeadline,
+				tlsRecoveryWindowsNodesTimeout)
+			if err == nil {
+				err = operations.waitForWindowsNodes(nodesCtx, nodesTimeout)
+				cancelNodes()
+			}
+			if err != nil {
+				phaseErr = fmt.Errorf("Windows node recovery: %w", err)
+				e2e.Logf("TLS restoration Windows node recovery failed: %v", phaseErr)
+			}
+		}
+	} else {
+		phaseErr = fmt.Errorf("TLS restoration has no time for restart recovery (deadline %s): %v", phaseDeadline, ctx.Err())
 	}
-
-	stabilityCtx, cancelStability, stabilityTimeout, err := tlsRecoveryPhaseContext(ctx, deadline,
-		tlsRecoveryAPITimeout)
+	if err := ctx.Err(); err != nil {
+		return joinTLSRestorationErrors(phaseErr, err)
+	}
+	stabilityCtx, cancelStability, stabilityTimeout, err := tlsRecoveryPhaseContext(ctx, deadline, tlsRecoveryAPITimeout)
 	if err != nil {
-		return err
+		return joinTLSRestorationErrors(phaseErr, err)
 	}
 	defer cancelStability()
-	return operations.waitForStability(stabilityCtx, stabilityTimeout)
+	stabilityErr := operations.waitForStability(stabilityCtx, stabilityTimeout)
+	if stabilityErr != nil {
+		e2e.Logf("TLS restoration final control-plane recovery failed: %v", stabilityErr)
+	}
+	return joinTLSRestorationErrors(phaseErr, stabilityErr)
 }
 
 func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile string, windowsNodeCount int) error {
 	deadline := time.Now().Add(tlsRestorationTimeout)
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
-	currentProfile, currentAdherence, err := getAPIServerTLSConfigurationWithContext(ctx, oc)
-	if err != nil {
-		return err
-	}
-	configurationChanged := currentProfile != origTLSProfile || currentAdherence != origAdherence
-	if !configurationChanged {
+	baseline, changed, err := restoreTLSConfigurationWithContext(ctx, deadline, origAdherence, origTLSProfile,
+		func(ctx context.Context) (string, string, error) {
+			return getAPIServerTLSConfigurationWithContext(ctx, oc)
+		},
+		func(ctx context.Context) (string, error) { return getWMCORestartStateWithContext(ctx, oc) },
+		func(ctx context.Context) error { return restoreAPIServerTLS(ctx, oc, origAdherence, origTLSProfile) })
+	if !changed && err == nil {
 		return nil
 	}
-	baseline, err := getWMCORestartStateWithContext(ctx, oc)
-	if err != nil {
-		return err
-	}
-	if baseline == "" {
-		return fmt.Errorf("could not capture WMCO restart state before restoring TLS configuration")
-	}
-	if err := restoreAPIServerTLS(ctx, oc, origAdherence, origTLSProfile); err != nil {
-		return err
-	}
-	return waitForTLSRecoveryAfterRestore(ctx, deadline, windowsNodeCount, tlsRecoveryWaitOperations{
+	recoveryErr := waitForTLSRecoveryAfterRestore(ctx, deadline, windowsNodeCount, tlsRecoveryWaitOperations{
 		waitForRestart: func(ctx context.Context, timeout time.Duration) (bool, error) {
+			if baseline == "" {
+				return false, fmt.Errorf("WMCO restart baseline unavailable after TLS restoration attempt")
+			}
 			return checkWMCORestartedWithinContext(ctx, oc, baseline, timeout)
 		},
 		waitForDeployment: func(ctx context.Context, timeout time.Duration) error {
@@ -2005,6 +2005,107 @@ func restoreAPIServerTLSAndWait(oc *exutil.CLI, origAdherence, origTLSProfile st
 			return waitForOpenShiftAPIAndOperatorsWithContext(ctx, oc, timeout)
 		},
 	})
+	if recoveryErr != nil {
+		e2e.Logf("TLS restoration recovery phase failed: %v", recoveryErr)
+	}
+	return joinTLSRestorationErrors(err, recoveryErr)
+}
+
+func restoreTLSConfigurationWithContext(ctx context.Context, deadline time.Time, origAdherence, origTLSProfile string,
+	read func(context.Context) (string, string, error), baselineRead func(context.Context) (string, error),
+	restore func(context.Context) error) (string, bool, error) {
+	readDeadline := deadline.Add(-tlsRecoveryRestartTimeout - tlsRecoveryDeploymentTimeout -
+		tlsRecoveryWindowsNodesTimeout - tlsRecoveryAPITimeout)
+	if time.Until(readDeadline) > time.Minute {
+		readDeadline = time.Now().Add(time.Minute)
+	}
+	var baseline string
+	readCtx, cancelRead := context.WithDeadline(ctx, readDeadline)
+	defer cancelRead()
+	changed := true
+	var readErr error
+	for readCtx.Err() == nil {
+		profile, adherence, err := read(readCtx)
+		if err == nil {
+			changed = profile != origTLSProfile || adherence != origAdherence
+			readErr = nil
+			break
+		}
+		readErr = fmt.Errorf("reading TLS configuration before restoration: %w", err)
+		e2e.Logf("TLS restoration configuration read failed: %v", readErr)
+		if !isTransientTLSRecoveryError(err) {
+			break
+		}
+		select {
+		case <-readCtx.Done():
+		case <-time.After(time.Second):
+		}
+	}
+	if !changed && readErr == nil {
+		return "", false, nil
+	}
+	var baselineErr error
+	for readCtx.Err() == nil {
+		state, err := baselineRead(readCtx)
+		if err == nil && state != "" {
+			baseline = state
+			baselineErr = nil
+			break
+		}
+		if err != nil {
+			baselineErr = fmt.Errorf("reading WMCO restart baseline: %w", err)
+		}
+		if err != nil && !isTransientTLSRecoveryError(err) {
+			e2e.Logf("TLS restoration restart baseline failed: %v", err)
+			break
+		}
+		select {
+		case <-readCtx.Done():
+		case <-time.After(time.Second):
+		}
+	}
+	var restoreErr error
+	restored := false
+	patchCtx, cancelPatch := context.WithDeadline(ctx, deadline.Add(-tlsRecoveryAPITimeout))
+	defer cancelPatch()
+	for patchCtx.Err() == nil {
+		restoreErr = restore(patchCtx)
+		if restoreErr == nil {
+			restored = true
+			break
+		}
+		if !isRetryableTLSRestorationError(restoreErr) {
+			break
+		}
+		e2e.Logf("TLS restoration patch temporarily unavailable: %v", restoreErr)
+		select {
+		case <-patchCtx.Done():
+		case <-time.After(5 * time.Second):
+		}
+	}
+	if !restored && restoreErr == nil {
+		restoreErr = fmt.Errorf("TLS restoration patch deadline expired before it could start: %v", patchCtx.Err())
+	}
+	if restoreErr != nil || ctx.Err() != nil {
+		return baseline, true, joinTLSRestorationErrors(readErr, baselineErr, restoreErr, ctx.Err())
+	}
+	if baseline == "" {
+		return "", true, joinTLSRestorationErrors(readErr, baselineErr,
+			fmt.Errorf("could not capture WMCO restart state before restoring TLS configuration"))
+	}
+	return baseline, true, readErr
+}
+
+func isRetryableTLSRestorationError(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, fieldErr := range joined.Unwrap() {
+			if !isTransientTLSRecoveryError(fieldErr) {
+				return false
+			}
+		}
+		return true
+	}
+	return isTransientTLSRecoveryError(err)
 }
 
 // createTLSCheckerPod creates a temporary Linux pod for running openssl commands
@@ -2061,13 +2162,29 @@ func deleteTLSCheckerPod(oc *exutil.CLI, podName string) {
 
 // runTLSCheck runs openssl s_client from the checker pod against the given host:port.
 // tlsFlag can be "-tls1_2", "-tls1_3", or empty for default negotiation.
-func runTLSCheck(oc *exutil.CLI, checkerPod, host, port, tlsFlag string) (string, error) {
+func runTLSCheck(ctx context.Context, oc *exutil.CLI, checkerPod, host, port, tlsFlag string) (string, error) {
 	tlsArg := ""
 	if tlsFlag != "" {
 		tlsArg = " " + tlsFlag
 	}
 	cmd := fmt.Sprintf("echo | openssl s_client -connect %s%s 2>&1 || true", net.JoinHostPort(host, port), tlsArg)
-	return execInPod(oc, wmcoNamespace, "pod/"+checkerPod, "bash", "-c", cmd)
+	return cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("exec").Args(
+		"-n", wmcoNamespace, "pod/"+checkerPod, "--", "bash", "-c", cmd))
+}
+
+func readyWMCOTLSEndpoint(ctx context.Context, oc *exutil.CLI, checkerPod string) (string, error) {
+	readyCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	return waitForWMCOTLSEndpoint(readyCtx, 5*time.Second, func(ctx context.Context) (string, error) {
+		output, err := cliOutputWithContext(ctx, oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"pod", "-n", wmcoNamespace, "--selector", "name="+wmcoDeploymentName, "-o=json"))
+		if err != nil {
+			return "", err
+		}
+		return readyWMCOPodIP(output)
+	}, func(ctx context.Context, address string) (string, error) {
+		return runTLSCheck(ctx, oc, checkerPod, address, "9182", "-tls1_2")
+	})
 }
 
 // extractPrivateKeyToFile reads the cloud-private-key secret and writes it to a temp file.
@@ -2388,6 +2505,16 @@ func waitForProxyOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[stri
 }
 
 func readyWMCOPodName(podJSON string) (string, error) {
+	name, _, err := selectReadyWMCOPod(podJSON, false)
+	return name, err
+}
+
+func readyWMCOPodIP(podJSON string) (string, error) {
+	_, address, err := selectReadyWMCOPod(podJSON, true)
+	return address, err
+}
+
+func selectReadyWMCOPod(podJSON string, requireIP bool) (string, string, error) {
 	var podList struct {
 		Items []struct {
 			Metadata struct {
@@ -2397,6 +2524,7 @@ func readyWMCOPodName(podJSON string) (string, error) {
 			} `json:"metadata"`
 			Status struct {
 				Phase      string `json:"phase"`
+				PodIP      string `json:"podIP"`
 				Conditions []struct {
 					Type   string `json:"type"`
 					Status string `json:"status"`
@@ -2409,13 +2537,14 @@ func readyWMCOPodName(podJSON string) (string, error) {
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(podJSON), &podList); err != nil {
-		return "", fmt.Errorf("parsing WMCO pod list: %w", err)
+		return "", "", fmt.Errorf("parsing WMCO pod list: %w", err)
 	}
 	if podList.Items == nil {
-		return "", fmt.Errorf("parsing WMCO pod list: response has no items array")
+		return "", "", fmt.Errorf("parsing WMCO pod list: response has no items array")
 	}
 
 	var newestPodName string
+	var newestPodIP string
 	var newestCreationTime string
 	for _, pod := range podList.Items {
 		if pod.Metadata.DeletionTimestamp != "" || pod.Status.Phase != "Running" {
@@ -2435,20 +2564,21 @@ func readyWMCOPodName(podJSON string) (string, error) {
 				break
 			}
 		}
-		if !ready || !managerReady {
+		if !ready || !managerReady || (requireIP && net.ParseIP(pod.Status.PodIP) == nil) {
 			continue
 		}
 		podName := pod.Metadata.Name
 		creationTime := pod.Metadata.CreationTimestamp
 		if podName != "" && (newestPodName == "" || creationTime > newestCreationTime) {
 			newestPodName = podName
+			newestPodIP = pod.Status.PodIP
 			newestCreationTime = creationTime
 		}
 	}
 	if newestPodName == "" {
-		return "", errNoReadyWMCOPod
+		return "", "", errNoReadyWMCOPod
 	}
-	return newestPodName, nil
+	return newestPodName, newestPodIP, nil
 }
 
 func fetchReadyWMCOManagerLogs(oc *exutil.CLI) (string, error) {

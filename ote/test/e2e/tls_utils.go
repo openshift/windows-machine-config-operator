@@ -1,10 +1,12 @@
 package winc
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -17,6 +19,16 @@ var (
 	errNoReadyWMCOPod     = errors.New("no ready WMCO manager pod found")
 	errWMCOPodDisappeared = errors.New("ready WMCO pod disappeared before its logs could be read")
 )
+
+type cliCommandStarter func() (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error)
+
+func cliOutputWithContext(ctx context.Context, command *exutil.CLI) (string, error) {
+	return commandOutputWithContext(ctx, command.Background)
+}
+
+func joinTLSRestorationErrors(errs ...error) error {
+	return errors.Join(errs...)
+}
 
 // commandOutputWithContext runs an OTE CLI command until it completes or the
 // supplied context expires. On cancellation it kills the in-flight process and
@@ -125,6 +137,91 @@ func isTransientWMCOLogError(err error) bool {
 		"tls handshake timeout",
 	} {
 		if strings.Contains(message, transientMessage) {
+			return true
+		}
+	}
+	return false
+}
+
+// waitForWMCOTLSEndpoint waits for a transport connection, not a particular
+// TLS version. A completed handshake rejection is still a reachable endpoint.
+func waitForWMCOTLSEndpoint(ctx context.Context, interval time.Duration,
+	endpoint func(context.Context) (string, error), probe func(context.Context, string) (string, error)) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("waiting for WMCO TLS endpoint: %w", err)
+	}
+	var address string
+	var lastErr error
+	err := wait.PollUntilContextCancel(ctx, interval, true, func(ctx context.Context) (bool, error) {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		var fetchErr error
+		address, fetchErr = endpoint(ctx)
+		if fetchErr != nil {
+			if !isTransientWMCOTLSTransportError(fetchErr) {
+				return false, fmt.Errorf("WMCO TLS pod lookup: %s", tlsReadinessErrorCategory(fetchErr))
+			}
+			lastErr = fmt.Errorf("pod lookup transport unavailable")
+			return false, nil
+		}
+		if address == "" {
+			lastErr = errNoReadyWMCOPod
+			return false, nil
+		}
+		output, probeErr := probe(ctx, address)
+		if probeErr != nil {
+			if !isTransientWMCOTLSTransportError(probeErr) {
+				return false, fmt.Errorf("WMCO TLS endpoint %s probe: %s", address, tlsReadinessErrorCategory(probeErr))
+			}
+			lastErr = fmt.Errorf("endpoint %s probe transport unavailable", address)
+			return false, nil
+		}
+		if isTLSTransportFailure(output) {
+			lastErr = fmt.Errorf("WMCO TLS endpoint %s transport unavailable", address)
+			return false, nil
+		}
+		if !strings.Contains(output, "CONNECTED(") && !strings.Contains(output, "CONNECTED\n") {
+			return false, fmt.Errorf("WMCO TLS endpoint %s probe did not reach a TLS handshake", address)
+		}
+		return true, nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("waiting for WMCO TLS endpoint: %w (last transport error: %v)", err, lastErr)
+	}
+	return address, nil
+}
+
+func tlsReadinessErrorCategory(err error) string {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return "canceled or timed out"
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "unauthorized") || strings.Contains(message, "forbidden") {
+		return "authentication or authorization failure"
+	}
+	if strings.Contains(message, "json") || strings.Contains(message, "schema") {
+		return "invalid pod response"
+	}
+	return "permanent transport or configuration failure"
+}
+
+func isTLSTransportFailure(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "connection refused") || strings.Contains(lower, "connect:errno=") ||
+		strings.Contains(lower, "connection reset by peer")
+}
+
+func isTransientWMCOTLSTransportError(err error) bool {
+	return isTransientTLSRecoveryError(err) || strings.Contains(strings.ToLower(err.Error()), "unexpected eof")
+}
+
+func isAllowedCustomTLSCipher(output string) bool {
+	for _, cipher := range []string{
+		"ECDHE-RSA-AES128-GCM-SHA256", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"ECDHE-ECDSA-AES128-GCM-SHA256", "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+	} {
+		if strings.Contains(output, cipher) {
 			return true
 		}
 	}
