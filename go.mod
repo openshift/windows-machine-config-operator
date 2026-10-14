@@ -11,10 +11,10 @@ require (
 	github.com/coreos/ignition/v2 v2.27.0
 	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.4
-	github.com/openshift/api v0.0.0-20260923195035-c1bf12f5d048
+	github.com/openshift/api v0.0.0-20261012200732-0b9ac96a7763
 	github.com/openshift/client-go v0.0.0-20260810202730-ddca5e0b7146
 	github.com/openshift/controller-runtime-common v0.0.0-20260813135806-e1187ec555fc
-	github.com/openshift/library-go v0.0.0-20260814122159-7b930c0d20a6
+	github.com/openshift/library-go v0.0.0-20261001164550-3a828ca2a7e0
 	github.com/operator-framework/api v0.41.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.41.0
@@ -65,7 +65,7 @@ require (
 	github.com/exponent-io/jsonpath v0.0.0-20210407135951-1de76d718b3f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.6 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
@@ -142,7 +142,7 @@ require (
 	k8s.io/apiserver v0.36.5 // indirect
 	k8s.io/cli-runtime v0.36.5 // indirect
 	k8s.io/controller-manager v0.36.5 // indirect
-	k8s.io/kube-openapi v0.0.0-20260927153434-4ef312c1c17d // indirect
+	k8s.io/kube-openapi v0.0.0-20261014044854-ca3452a79603 // indirect
 	k8s.io/streaming v0.36.5 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.34.0 // indirect
 	sigs.k8s.io/json v0.0.0-20260909141634-11ed52e25bc5 // indirect
