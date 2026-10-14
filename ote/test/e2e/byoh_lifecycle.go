@@ -17,6 +17,7 @@ import (
 
 	exutil "github.com/openshift/origin/test/extended/util"
 	"golang.org/x/crypto/ssh"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -81,6 +82,7 @@ type byohTestFixture struct {
 	workloadNSUID               types.UID
 	workloadDeploymentAttempted bool
 	workloadDeploymentUID       types.UID
+	workloadDeploymentSpec      *appsv1.DeploymentSpec
 	workloadOwnershipNonce      string
 	idmsName                    string
 	idmsLeaseID                 string
@@ -702,6 +704,16 @@ func normalizeHostProcessPodDefaults(spec *corev1.PodSpec) {
 	if spec == nil {
 		return
 	}
+	if spec.PriorityClassName == "" && spec.Priority != nil && *spec.Priority == 0 {
+		spec.Priority = nil
+	}
+	if spec.PriorityClassName == "" && spec.PreemptionPolicy != nil &&
+		*spec.PreemptionPolicy == corev1.PreemptLowerPriority {
+		spec.PreemptionPolicy = nil
+	}
+	if reflect.DeepEqual(spec.SecurityContext, &corev1.PodSecurityContext{}) {
+		spec.SecurityContext = nil
+	}
 	if spec.ServiceAccountName == "default" {
 		spec.ServiceAccountName = ""
 	}
@@ -762,6 +774,26 @@ func hostProcessPodCriticalSpecMatches(current, attempted *corev1.Pod) bool {
 	normalizeHostProcessPodDefaults(currentSpec)
 	normalizeHostProcessPodDefaults(attemptedSpec)
 	return reflect.DeepEqual(currentSpec, attemptedSpec)
+}
+
+func hostProcessPodAdmittedSpecMatches(ctx context.Context, coreClient corev1client.CoreV1Interface,
+	current, attempted *corev1.Pod) bool {
+	if current == nil || attempted == nil {
+		return false
+	}
+	if reflect.DeepEqual(current.Spec.ImagePullSecrets, attempted.Spec.ImagePullSecrets) {
+		return hostProcessPodCriticalSpecMatches(current, attempted)
+	}
+	if len(attempted.Spec.ImagePullSecrets) != 0 || current.Spec.ServiceAccountName != "default" {
+		return false
+	}
+	serviceAccount, err := coreClient.ServiceAccounts(attempted.Namespace).Get(ctx, "default", metav1.GetOptions{})
+	if err != nil || !reflect.DeepEqual(current.Spec.ImagePullSecrets, serviceAccount.ImagePullSecrets) {
+		return false
+	}
+	expected := attempted.DeepCopy()
+	expected.Spec.ImagePullSecrets = append([]corev1.LocalObjectReference(nil), serviceAccount.ImagePullSecrets...)
+	return hostProcessPodCriticalSpecMatches(current, expected)
 }
 
 // sanitizedPodAPIError preserves only safe request classification. Pod API errors can echo a
@@ -882,7 +914,7 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 			retErr = errors.Join(retErr, sanitizedPodAPIError("read owned HostProcess Pod for cleanup", err))
 			return
 		}
-		if current.Name != podName || current.UID != podUID {
+		if current.Name != podName || current.UID != podUID || !hostProcessPodOwnedByAttempt(current, pod, nonce) {
 			lease.QuarantineRequired = true
 			retErr = errors.Join(retErr, fmt.Errorf("refusing to delete replacement HostProcess Pod"))
 			return
@@ -893,7 +925,7 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 			retErr = errors.Join(retErr, sanitizedPodAPIError("delete owned HostProcess Pod", err))
 		}
 	}()
-	if !hostProcessPodOwnedByAttempt(created, pod, nonce) || !hostProcessPodCriticalSpecMatches(created, pod) {
+	if !hostProcessPodOwnedByAttempt(created, pod, nonce) || !hostProcessPodAdmittedSpecMatches(ctx, coreClient, created, pod) {
 		lease.QuarantineRequired = true
 		return "", fmt.Errorf("created HostProcess Pod does not match the retained privileged attempt")
 	}
@@ -904,7 +936,7 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 			return false, sanitizedPodAPIError("read owned HostProcess Pod while running", err)
 		}
 		if current.UID != podUID || !hostProcessPodOwnedByAttempt(current, pod, nonce) ||
-			!hostProcessPodCriticalSpecMatches(current, pod) {
+			!hostProcessPodAdmittedSpecMatches(ctx, coreClient, current, pod) {
 			lease.QuarantineRequired = true
 			return false, fmt.Errorf("HostProcess Pod identity changed while running")
 		}
@@ -940,7 +972,7 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 	}
 	current, err := pods.Get(ctx, podName, metav1.GetOptions{})
 	if err != nil || current.UID != podUID || !hostProcessPodOwnedByAttempt(current, pod, nonce) ||
-		!hostProcessPodCriticalSpecMatches(current, pod) {
+		!hostProcessPodAdmittedSpecMatches(ctx, coreClient, current, pod) {
 		lease.QuarantineRequired = true
 		return "", errors.Join(fmt.Errorf("HostProcess Pod identity changed during log read"),
 			sanitizedPodAPIError("re-read HostProcess Pod after log retrieval", err))

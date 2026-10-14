@@ -32,7 +32,276 @@ import (
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	clienttesting "k8s.io/client-go/testing"
+	corev1defaults "k8s.io/kubernetes/pkg/apis/core/v1"
 )
+
+func TestHostProcessAdmissionProductionProtocol(t *testing.T) {
+	mutations := map[string]func(*corev1.Pod){
+		"admitted": func(*corev1.Pod) {},
+		"foreign nonce": func(pod *corev1.Pod) {
+			pod.Annotations["windowsmachineconfig.openshift.io/ownership-nonce"] = "foreign"
+		},
+		"untrusted pull secret": func(pod *corev1.Pod) { pod.Spec.ImagePullSecrets[0].Name = "foreign" },
+		"reordered pull secrets": func(pod *corev1.Pod) {
+			pod.Spec.ImagePullSecrets[0], pod.Spec.ImagePullSecrets[1] = pod.Spec.ImagePullSecrets[1], pod.Spec.ImagePullSecrets[0]
+		},
+		"missing pull secret": func(pod *corev1.Pod) { pod.Spec.ImagePullSecrets = pod.Spec.ImagePullSecrets[:1] },
+		"extra pull secret": func(pod *corev1.Pod) {
+			pod.Spec.ImagePullSecrets = append(pod.Spec.ImagePullSecrets, corev1.LocalObjectReference{Name: "extra"})
+		},
+		"account not found":             func(*corev1.Pod) {},
+		"account forbidden":             func(*corev1.Pod) {},
+		"account changes while polling": func(*corev1.Pod) {},
+		"account changes after logs":    func(*corev1.Pod) {},
+		"priority":                      func(pod *corev1.Pod) { *pod.Spec.Priority = 1 },
+		"priority class":                func(pod *corev1.Pod) { pod.Spec.PriorityClassName = "foreign" },
+		"preemption":                    func(pod *corev1.Pod) { *pod.Spec.PreemptionPolicy = corev1.PreemptNever },
+		"resources": func(pod *corev1.Pod) {
+			pod.Spec.Containers[0].Resources.Claims = []corev1.ResourceClaim{{Name: "foreign"}}
+		},
+		"capabilities": func(pod *corev1.Pod) {
+			pod.Spec.Containers[0].SecurityContext.Capabilities = &corev1.Capabilities{Add: []corev1.Capability{"SYS_ADMIN"}}
+		},
+		"security":  func(pod *corev1.Pod) { value := true; pod.Spec.Containers[0].SecurityContext.Privileged = &value },
+		"host PID":  func(pod *corev1.Pod) { pod.Spec.HostPID = true },
+		"runtime":   func(pod *corev1.Pod) { value := "foreign"; pod.Spec.RuntimeClassName = &value },
+		"stdin":     func(pod *corev1.Pod) { pod.Spec.Containers[0].Stdin = true },
+		"envFrom":   func(pod *corev1.Pod) { pod.Spec.Containers[0].EnvFrom = []corev1.EnvFromSource{{Prefix: "foreign"}} },
+		"init":      func(pod *corev1.Pod) { pod.Spec.InitContainers = []corev1.Container{{Name: "foreign"}} },
+		"ephemeral": func(pod *corev1.Pod) { pod.Spec.EphemeralContainers = []corev1.EphemeralContainer{{}} },
+		"volumes":   func(pod *corev1.Pod) { pod.Spec.Volumes = []corev1.Volume{{Name: "foreign"}} },
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			node := readyBYOHNode("node-a", "node-uid", "192.0.2.10")
+			pullSecrets := []corev1.LocalObjectReference{{Name: "default-dockercfg"}, {Name: "second-pull-reference"}}
+			client := fake.NewSimpleClientset(node, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
+				Name: "default", Namespace: wmcoNamespace}, ImagePullSecrets: pullSecrets})
+			accountGets := 0
+			client.PrependReactor("get", "serviceaccounts", func(clienttesting.Action) (bool, runtime.Object, error) {
+				accountGets++
+				if name == "account not found" {
+					return true, nil, apierrors.NewNotFound(schema.GroupResource{Resource: "serviceaccounts"}, "default")
+				}
+				if name == "account forbidden" {
+					return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "serviceaccounts"}, "default", errors.New("denied"))
+				}
+				if (name == "account changes while polling" && accountGets >= 2) ||
+					(name == "account changes after logs" && accountGets >= 3) {
+					return true, &corev1.ServiceAccount{ImagePullSecrets: []corev1.LocalObjectReference{{Name: "changed"}}}, nil
+				}
+				return false, nil, nil
+			})
+			resource := schema.GroupVersionResource{Version: "v1", Resource: "pods"}
+			client.PrependReactor("create", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+				pod := action.(clienttesting.CreateAction).GetObject().(*corev1.Pod).DeepCopy()
+				corev1defaults.SetObjectDefaults_Pod(pod)
+				priority, preemption := int32(0), corev1.PreemptLowerPriority
+				pod.Spec.Priority, pod.Spec.PreemptionPolicy = &priority, &preemption
+				pod.Spec.ServiceAccountName, pod.Spec.DeprecatedServiceAccount = "default", "default"
+				pod.Spec.ImagePullSecrets = append([]corev1.LocalObjectReference(nil), pullSecrets...)
+				pod.UID, pod.ResourceVersion, pod.Status.Phase = "pod-uid", "create-rv", corev1.PodSucceeded
+				mutate(pod)
+				if err := client.Tracker().Create(resource, pod, wmcoNamespace); err != nil {
+					t.Fatal(err)
+				}
+				return true, pod, nil
+			})
+			logs, deletes := 0, 0
+			client.PrependReactor("get", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+				object, err := client.Tracker().Get(resource, action.GetNamespace(), action.(clienttesting.GetAction).GetName())
+				if err != nil {
+					return true, nil, err
+				}
+				pod := object.(*corev1.Pod).DeepCopy()
+				pod.ResourceVersion = "latest-rv"
+				return true, pod, nil
+			})
+			client.PrependReactor("delete", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+				deletes++
+				options := action.(clienttesting.DeleteAction).GetDeleteOptions()
+				if options.Preconditions == nil || options.Preconditions.UID == nil || *options.Preconditions.UID != "pod-uid" ||
+					options.Preconditions.ResourceVersion == nil || *options.Preconditions.ResourceVersion != "latest-rv" {
+					t.Fatal("unguarded Pod delete")
+				}
+				return false, nil, nil
+			})
+			lease := &byohHostLease{NodeName: node.Name, NodeUID: node.UID, LeaseID: "lease-a", HostID: "host-a"}
+			output, err := runBYOHHostProcessPS(context.Background(), client.CoreV1(), lease, "safe",
+				func(context.Context, string, string, types.UID) ([]byte, error) {
+					logs++
+					return []byte("verified"), nil
+				})
+			for _, action := range client.Actions() {
+				if action.GetResource().Resource == "secrets" && (action.GetVerb() == "get" || action.GetVerb() == "list") {
+					t.Fatal("admission verification read Secret credentials")
+				}
+			}
+			if name == "admitted" {
+				if err != nil || output != "verified" || logs != 1 || deletes != 1 || accountGets != 3 || lease.QuarantineRequired {
+					t.Fatalf("admitted production path rejected: output=%q logs=%d deletes=%d quarantine=%t err=%v", output, logs, deletes, lease.QuarantineRequired, err)
+				}
+			} else if err == nil || output != "" || (name != "account changes after logs" && logs != 0) ||
+				(name == "account changes after logs" && (logs != 1 || accountGets != 3)) || !lease.QuarantineRequired ||
+				(name == "foreign nonce" && deletes != 0) || (name != "foreign nonce" && deletes != 1) {
+				t.Fatalf("tampering not rejected: logs=%d deletes=%d quarantine=%t err=%v", logs, deletes, lease.QuarantineRequired, err)
+			}
+		})
+	}
+}
+
+type byohRequestObserver func(*http.Request) (*http.Response, error)
+
+func (observer byohRequestObserver) RoundTrip(request *http.Request) (*http.Response, error) {
+	return observer(request)
+}
+
+func TestHostProcessServiceAccountRequestContext(t *testing.T) {
+	for _, mode := range []string{"cancel", "deadline"} {
+		t.Run(mode, func(t *testing.T) {
+			node := readyBYOHNode("node-a", "node-uid", "192.0.2.10")
+			started, stopped, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			accountDeadline := make(chan time.Time, 1)
+			var mutex sync.Mutex
+			var pod *corev1.Pod
+			deletes, secretReads, logReads := 0, 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				t.Logf("actual HostProcess HTTP request: %s %s", request.Method, request.URL.Path)
+				switch {
+				case request.Method == http.MethodGet && request.URL.Path == "/api/v1/nodes/node-a":
+					_ = json.NewEncoder(writer).Encode(node)
+				case request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/pods"):
+					var candidate corev1.Pod
+					if err := json.NewDecoder(request.Body).Decode(&candidate); err != nil {
+						t.Errorf("decode actual Pod create: %v", err)
+						writer.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					corev1defaults.SetObjectDefaults_Pod(&candidate)
+					candidate.UID, candidate.ResourceVersion, candidate.Status.Phase = "pod-uid", "create-rv", corev1.PodSucceeded
+					candidate.Spec.ServiceAccountName, candidate.Spec.DeprecatedServiceAccount = "default", "default"
+					candidate.Spec.ImagePullSecrets = []corev1.LocalObjectReference{{Name: "first"}, {Name: "second"}}
+					mutex.Lock()
+					pod = candidate.DeepCopy()
+					mutex.Unlock()
+					_ = json.NewEncoder(writer).Encode(&candidate)
+				case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/serviceaccounts/default"):
+					close(started)
+					select {
+					case <-request.Context().Done():
+						close(stopped)
+					case <-release:
+					}
+				case request.Method == http.MethodGet && strings.Contains(request.URL.Path, "/pods/"):
+					mutex.Lock()
+					current := pod.DeepCopy()
+					mutex.Unlock()
+					if current == nil {
+						writer.WriteHeader(http.StatusNotFound)
+						return
+					}
+					current.ResourceVersion = "latest-rv"
+					_ = json.NewEncoder(writer).Encode(current)
+				case request.Method == http.MethodDelete && strings.Contains(request.URL.Path, "/pods/"):
+					var options metav1.DeleteOptions
+					if err := json.NewDecoder(request.Body).Decode(&options); err != nil || options.Preconditions == nil ||
+						options.Preconditions.UID == nil || *options.Preconditions.UID != "pod-uid" ||
+						options.Preconditions.ResourceVersion == nil || *options.Preconditions.ResourceVersion != "latest-rv" {
+						t.Errorf("unguarded actual Pod cleanup: options=%+v err=%v", options, err)
+					}
+					mutex.Lock()
+					deletes++
+					mutex.Unlock()
+					_ = json.NewEncoder(writer).Encode(&metav1.Status{Status: metav1.StatusSuccess})
+				default:
+					if strings.Contains(request.URL.Path, "/secrets") {
+						mutex.Lock()
+						secretReads++
+						mutex.Unlock()
+					}
+					writer.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+			defer close(release)
+			config := &rest.Config{Host: server.URL, ContentConfig: rest.ContentConfig{ContentType: "application/json"}}
+			config.WrapTransport = func(transport http.RoundTripper) http.RoundTripper {
+				return byohRequestObserver(func(request *http.Request) (*http.Response, error) {
+					if strings.HasSuffix(request.URL.Path, "/serviceaccounts/default") {
+						deadline, _ := request.Context().Deadline()
+						accountDeadline <- deadline
+					}
+					if request.Method == http.MethodDelete {
+						deadline, ok := request.Context().Deadline()
+						if !ok || time.Until(deadline) > byohHostProcessCleanup || time.Until(deadline) <= 0 {
+							t.Error("Pod cleanup request lacks live bounded deadline")
+						}
+					}
+					return transport.RoundTrip(request)
+				})
+			}
+			client, err := kubernetes.NewForConfig(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			if mode == "deadline" {
+				cancel()
+				ctx, cancel = context.WithTimeout(context.Background(), 300*time.Millisecond)
+			}
+			defer cancel()
+			lease := &byohHostLease{NodeName: node.Name, NodeUID: node.UID, LeaseID: "lease-a", HostID: "host-a"}
+			done := make(chan struct{})
+			var output string
+			var operationErr error
+			go func() {
+				output, operationErr = runBYOHHostProcessPS(ctx, client.CoreV1(), lease, "safe",
+					func(context.Context, string, string, types.UID) ([]byte, error) {
+						logReads++
+						return []byte("unverified"), nil
+					})
+				close(done)
+			}()
+			select {
+			case <-started:
+			case <-time.After(2 * time.Second):
+				cancel()
+				t.Fatal("actual ServiceAccount GET never reached HTTP server")
+			}
+			observedDeadline := <-accountDeadline
+			if mode == "deadline" {
+				outerDeadline, _ := ctx.Deadline()
+				if !observedDeadline.Equal(outerDeadline) {
+					t.Errorf("ServiceAccount GET detached from outer deadline: got=%v want=%v", observedDeadline, outerDeadline)
+				}
+			} else {
+				cancel()
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("in-flight ServiceAccount GET did not return promptly")
+			}
+			select {
+			case <-stopped:
+			case <-time.After(time.Second):
+				t.Fatal("server-side ServiceAccount request context did not cancel")
+			}
+			mutex.Lock()
+			defer mutex.Unlock()
+			wantDeletes := 0
+			if mode == "cancel" {
+				wantDeletes = 1
+			}
+			if operationErr == nil || output != "" || logReads != 0 || !lease.QuarantineRequired || deletes != wantDeletes || secretReads != 0 {
+				t.Fatalf("unsafe in-flight account failure: output=%q logs=%d deletes=%d secrets=%d quarantine=%t err=%v",
+					output, logReads, deletes, secretReads, lease.QuarantineRequired, operationErr)
+			}
+			t.Logf("actual ServiceAccount GET reached server and canceled; output empty, logs=0, secrets=0, owned deletes=%d", deletes)
+		})
+	}
+}
 
 func TestRegisterBYOHInstancesPreservesUnrelatedEntries(t *testing.T) {
 	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: byohInstancesConfigMap, Namespace: wmcoNamespace,

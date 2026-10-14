@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	appsv1defaults "k8s.io/kubernetes/pkg/apis/apps/v1"
 )
 
 const byohWorkloadOwnershipAnnotation = "windowsmachineconfig.openshift.io/test-workload-owner"
@@ -90,6 +91,7 @@ func (f *byohTestFixture) createBYOHWebServer(namespace string, leases []*byohHo
 	}
 	attemptedDeployment := newBYOHWorkloadDeployment(byohWorkloadDeployment, namespace, 5, nodes)
 	attemptedDeployment.Annotations = map[string]string{byohWorkloadOwnershipAnnotation: nonce}
+	f.workloadDeploymentSpec = attemptedDeployment.Spec.DeepCopy()
 	f.workloadDeploymentAttempted = true
 	deployment, createErr := f.appsClient.Deployments(namespace).Create(f.ctx, attemptedDeployment,
 		metav1.CreateOptions{})
@@ -98,14 +100,14 @@ func (f *byohTestFixture) createBYOHWebServer(namespace string, leases []*byohHo
 		current, getErr := f.appsClient.Deployments(namespace).Get(reconcileCtx, byohWorkloadDeployment,
 			metav1.GetOptions{})
 		cancel()
-		if getErr != nil || current.UID == "" || !workloadObjectHasOwnership(current, nonce) {
+		if getErr != nil || !f.workloadDeploymentMatchesAttempt(current) {
 			return errors.Join(fmt.Errorf("create typed BYOH readiness Deployment: %w", createErr),
 				wrapOptionalError("reconcile ambiguous workload Deployment creation", getErr))
 		}
 		f.workloadDeploymentUID = current.UID
 		return fmt.Errorf("create typed BYOH readiness Deployment returned an ambiguous error: %w", createErr)
 	}
-	if deployment.UID == "" || !workloadObjectHasOwnership(deployment, nonce) {
+	if !f.workloadDeploymentMatchesAttempt(deployment) {
 		return fmt.Errorf("created BYOH readiness Deployment has incomplete ownership identity")
 	}
 	f.workloadDeploymentUID = deployment.UID
@@ -234,24 +236,70 @@ func currentBYOHWorkloadReady(ctx context.Context, nodes corev1client.NodeInterf
 	return true, nil
 }
 
+func (f *byohTestFixture) workloadDeploymentMatchesAttempt(deployment *appsv1.Deployment) bool {
+	if deployment == nil || deployment.UID == "" || deployment.Namespace != f.workloadNS ||
+		deployment.Name != byohWorkloadDeployment || f.workloadDeploymentSpec == nil ||
+		!workloadObjectHasOwnership(deployment, f.workloadOwnershipNonce) {
+		return false
+	}
+	expected := &appsv1.Deployment{Spec: *f.workloadDeploymentSpec.DeepCopy()}
+	current := deployment.DeepCopy()
+	appsv1defaults.SetObjectDefaults_Deployment(expected)
+	appsv1defaults.SetObjectDefaults_Deployment(current)
+	return reflect.DeepEqual(current.Spec, expected.Spec)
+}
+
 func (f *byohTestFixture) deleteWorkload(ctx context.Context) error {
 	if f.workloadNS == "" {
 		return nil
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	readCtx := ctx
+	if f.workloadDeploymentAttempted && f.workloadDeploymentUID == "" {
+		var cancel context.CancelFunc
+		readCtx, cancel = context.WithTimeout(ctx, byohHostProcessCleanup)
+		defer cancel()
+	}
+	namespace, err := f.coreClient.Namespaces().Get(readCtx, f.workloadNS, metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("read retained BYOH workload namespace before cleanup: %w", err)
+	}
+	if apierrors.IsNotFound(err) {
+		f.workloadNS, f.workloadNSUID, f.workloadDeploymentUID, f.workloadOwnershipNonce = "", "", "", ""
+		f.workloadDeploymentAttempted, f.workloadDeploymentSpec = false, nil
+		return nil
+	}
+	if err == nil && (f.workloadNSUID == "" || namespace.UID != f.workloadNSUID ||
+		!workloadObjectHasOwnership(namespace, f.workloadOwnershipNonce)) {
+		return fmt.Errorf("refusing cleanup in replacement BYOH workload namespace")
+	}
 	if f.workloadDeploymentAttempted {
-		if f.workloadDeploymentUID == "" {
-			return fmt.Errorf("refusing Namespace cleanup with uncertain BYOH workload Deployment ownership")
-		}
 		deployments := f.appsClient.Deployments(f.workloadNS)
-		deployment, err := deployments.Get(ctx, byohWorkloadDeployment, metav1.GetOptions{})
+		deployment, err := deployments.Get(readCtx, byohWorkloadDeployment, metav1.GetOptions{})
 		if err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("read retained BYOH workload Deployment: %w", err)
 		}
 		if err == nil {
-			if deployment.UID != f.workloadDeploymentUID ||
-				!workloadObjectHasOwnership(deployment, f.workloadOwnershipNonce) {
+			reconciled := f.workloadDeploymentUID == ""
+			candidateUID := f.workloadDeploymentUID
+			if f.workloadDeploymentUID == "" {
+				if namespace == nil || !f.workloadDeploymentMatchesAttempt(deployment) {
+					return fmt.Errorf("refusing cleanup with uncertain BYOH workload Deployment ownership")
+				}
+				candidateUID = deployment.UID
+				deployment, err = deployments.Get(readCtx, byohWorkloadDeployment, metav1.GetOptions{})
+				if err != nil {
+					return fmt.Errorf("refresh reconciled BYOH workload Deployment: %w", err)
+				}
+			}
+			if deployment.UID != candidateUID ||
+				!workloadObjectHasOwnership(deployment, f.workloadOwnershipNonce) ||
+				(reconciled && !f.workloadDeploymentMatchesAttempt(deployment)) {
 				return fmt.Errorf("refusing to delete replacement BYOH workload Deployment")
 			}
+			f.workloadDeploymentUID = candidateUID
 			uid, resourceVersion := deployment.UID, deployment.ResourceVersion
 			deleteErr := deployments.Delete(ctx, byohWorkloadDeployment, metav1.DeleteOptions{
 				Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &resourceVersion}})
@@ -293,7 +341,7 @@ func (f *byohTestFixture) deleteWorkload(ctx context.Context) error {
 	current, err := f.coreClient.Namespaces().Get(ctx, f.workloadNS, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		f.workloadNS, f.workloadNSUID, f.workloadDeploymentUID, f.workloadOwnershipNonce = "", "", "", ""
-		f.workloadDeploymentAttempted = false
+		f.workloadDeploymentAttempted, f.workloadDeploymentSpec = false, nil
 		return nil
 	}
 	if err != nil {
@@ -304,6 +352,15 @@ func (f *byohTestFixture) deleteWorkload(ctx context.Context) error {
 		return fmt.Errorf("refusing to delete replacement BYOH workload namespace")
 	}
 	uid, resourceVersion := current.UID, current.ResourceVersion
+	if f.workloadDeploymentSpec != nil {
+		_, err := f.appsClient.Deployments(f.workloadNS).Get(ctx, byohWorkloadDeployment, metav1.GetOptions{})
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("refusing Namespace cleanup without fresh BYOH workload Deployment absence")
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := f.coreClient.Namespaces().Delete(ctx, f.workloadNS, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{
 		UID: &uid, ResourceVersion: &resourceVersion}}); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("delete retained BYOH workload namespace: %w", err)
@@ -320,5 +377,6 @@ func (f *byohTestFixture) deleteWorkload(ctx context.Context) error {
 	}
 	f.workloadNS, f.workloadNSUID, f.workloadDeploymentUID, f.workloadOwnershipNonce = "", "", "", ""
 	f.workloadDeploymentAttempted = false
+	f.workloadDeploymentSpec = nil
 	return nil
 }
