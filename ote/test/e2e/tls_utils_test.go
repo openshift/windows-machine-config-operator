@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -124,6 +126,59 @@ func TestClusterOperatorsSettled(t *testing.T) {
 }
 
 func TestPollForTLSRecovery(t *testing.T) {
+	const cliRefusal = "The connection to the server api.example:6443 was refused - did you specify the right host or port?"
+	t.Run("CLI refusal recovers only after continuous healthy polls", func(t *testing.T) {
+		const stablePeriod = 8 * time.Millisecond
+		attempts := 0
+		var stableSince time.Time
+		err := pollForTLSRecovery(2*time.Millisecond, 100*time.Millisecond, stablePeriod,
+			func() (bool, string, error) {
+				attempts++
+				if attempts <= 2 {
+					return false, "", fmt.Errorf("querying the OpenShift user API: CLI command failed: stderr: %s: exit status 1", cliRefusal)
+				}
+				if stableSince.IsZero() {
+					stableSince = time.Now()
+				}
+				return true, "", nil
+			})
+		if err != nil || attempts < 3 || stableSince.IsZero() || time.Since(stableSince) < stablePeriod {
+			t.Fatalf("CLI refusal must recover only after continuous healthy checks: attempts=%d err=%v", attempts, err)
+		}
+	})
+
+	t.Run("persistent CLI refusal fails at bounded deadline", func(t *testing.T) {
+		attempts := 0
+		start := time.Now()
+		err := pollForTLSRecovery(time.Millisecond, 15*time.Millisecond, time.Millisecond,
+			func() (bool, string, error) {
+				attempts++
+				return false, "", errors.New(cliRefusal)
+			})
+		if err == nil || attempts < 2 || time.Since(start) > time.Second ||
+			!strings.Contains(err.Error(), "did not recover") {
+			t.Fatalf("persistent refusal must time out without passing: attempts=%d err=%v", attempts, err)
+		}
+	})
+
+	for _, failure := range []string{
+		"Forbidden: user cannot get apiserver", "Unauthorized: invalid token",
+		"parsing cluster operator status: invalid JSON", "TLS certificate verification failure",
+		"invalid tlsSecurityProfile configuration", "TLS configuration refused due to invalid cipher",
+	} {
+		t.Run("permanent "+failure, func(t *testing.T) {
+			attempts := 0
+			err := pollForTLSRecovery(time.Millisecond, 100*time.Millisecond, time.Millisecond,
+				func() (bool, string, error) {
+					attempts++
+					return false, "", errors.New(failure)
+				})
+			if attempts != 1 || err == nil || !strings.Contains(err.Error(), failure) {
+				t.Fatalf("permanent failure must fail immediately: attempts=%d err=%v", attempts, err)
+			}
+		})
+	}
+
 	t.Run("continuous stability resets after a transient error", func(t *testing.T) {
 		const stablePeriod = 5 * time.Millisecond
 		attempts := 0
@@ -214,6 +269,37 @@ func TestPollForTLSRecovery(t *testing.T) {
 			t.Fatalf("expected immediate schema failure, got attempts=%d err=%v", attempts, err)
 		}
 	})
+}
+
+func TestTLSRecoveryRefusalClassification(t *testing.T) {
+	const cliRefusal = "The connection to the server api.example:6443 was refused - did you specify the right host or port?"
+	wrapper := fmt.Errorf("querying the OpenShift user API: CLI command failed: stderr: %s: exit status 1", cliRefusal)
+	urlRefusal := fmt.Errorf("querying the OpenShift user API: %w", &url.Error{
+		Op: "Get", URL: "https://api.example:6443/",
+		Err: fmt.Errorf("dial tcp 192.0.2.1:6443: connect: %w", syscall.ECONNREFUSED),
+	})
+	for _, test := range []struct {
+		name      string
+		err       error
+		transient bool
+	}{
+		{"exact CLI refusal", errors.New(cliRefusal), true},
+		{"wrapped CLI refusal from logs", wrapper, true},
+		{"wrapped Go URL dial TCP refused", urlRefusal, true},
+		{"unrelated refused", errors.New("TLS configuration refused due to invalid cipher"), false},
+		{"incomplete CLI wording", errors.New("The connection to the server api.example:6443 was refused for invalid credentials"), false},
+		{"Forbidden", errors.New("Forbidden: user cannot get apiserver"), false},
+		{"Unauthorized", errors.New("Unauthorized: invalid token"), false},
+		{"schema", errors.New("parsing cluster operator status: invalid JSON"), false},
+		{"TLS", errors.New("TLS certificate verification failure"), false},
+		{"configuration", errors.New("invalid tlsSecurityProfile configuration"), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isTransientTLSRecoveryError(test.err); got != test.transient {
+				t.Fatalf("transient=%t, want %t for %v", got, test.transient, test.err)
+			}
+		})
+	}
 }
 
 func TestTLSRecoveryAfterRestore(t *testing.T) {
@@ -530,7 +616,7 @@ func TestRestoreTLSConfigurationErrors(t *testing.T) {
 		fieldErrors := errors.Join(errors.New("tlsAdherence: forbidden"), errors.New("tlsSecurityProfile: invalid"))
 		patches := 0
 		baseline, attempted, err := restoreTLSConfigurationWithContext(context.Background(),
-			time.Now().Add(6*time.Minute), "StrictAllComponents", `{"type":"Intermediate"}`,
+			time.Now().Add(tlsRestorationTimeout), "StrictAllComponents", `{"type":"Intermediate"}`,
 			func(context.Context) (string, string, error) { return "", "", nil },
 			func(context.Context) (string, error) { return "baseline", nil },
 			func(context.Context) error { patches++; return fieldErrors })
