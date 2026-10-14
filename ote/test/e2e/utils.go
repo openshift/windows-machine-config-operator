@@ -46,6 +46,7 @@ var (
 
 var (
 	podLogResourcePattern = regexp.MustCompile(`(?i)(?:^|[\s(])pods/log\s+(?:"([^"]+)"|([a-z0-9](?:[-a-z0-9.]*[a-z0-9])?))(?:[\s):]|$)`)
+	cliAPIRefusalPattern  = regexp.MustCompile(`(?i)the connection to the server \S+:\d+ was refused - did you specify the right host or port\?`)
 )
 
 const (
@@ -1731,6 +1732,9 @@ type tlsRecoveryContextCheck func(context.Context) (bool, string, error)
 
 func isTransientTLSRecoveryError(err error) bool {
 	message := strings.ToLower(err.Error())
+	if cliAPIRefusalPattern.MatchString(message) {
+		return true
+	}
 	for _, transientMessage := range []string{
 		"connection refused",
 		"connection reset by peer",
