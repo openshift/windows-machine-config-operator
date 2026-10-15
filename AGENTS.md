@@ -616,8 +616,6 @@ Follow-up to Id5e7cbb1.
 The bracketed `[subsystem]` prefix in a commit subject must identify a
 subsystem, never the target release branch name.
 
-- Avoid: `[release-4.19] Update version to 10.19.4`
-- Use: `[wmco] Update version to 10.19.4`
 
 ### PR Title Format
 
