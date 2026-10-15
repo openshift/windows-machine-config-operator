@@ -616,7 +616,6 @@ Follow-up to Id5e7cbb1.
 The bracketed `[subsystem]` prefix in a commit subject must identify a
 subsystem, never the target release branch name.
 
-
 ### PR Title Format
 
 ```
