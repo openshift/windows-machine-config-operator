@@ -613,6 +613,9 @@ Follow-up to Id5e7cbb1.
 - Body: max 80 characters per line
 - Subsystem examples: `docs`, `nodeconfig`, `csr`, `daemon/controller`, `services`
 
+The bracketed `[subsystem]` prefix in a commit subject must identify a
+subsystem, never the target release branch name.
+
 ### PR Title Format
 
 ```
