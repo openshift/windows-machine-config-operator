@@ -208,6 +208,6 @@ RUN  /usr/local/bin/user_setup
 ENTRYPOINT ["/usr/local/bin/entrypoint"]
 
 # Used to tag the released image. Should be a semver.
-LABEL version="v10.19.3"
+LABEL version="v10.19.4"
 
 USER ${USER_UID}
