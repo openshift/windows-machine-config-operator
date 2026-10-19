@@ -698,7 +698,7 @@ Open a [GitHub issue](https://github.com/openshift/windows-machine-config-operat
 - [BYOH Requirements](docs/byoh-instance-pre-requisites.md)
 
 ### OpenShift Docs
-- [Windows Containers Guide](https://docs.openshift.com/container-platform/latest/windows_containers/)
+- [Windows Containers Guide](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/index)
 - [Windows Node Upgrades](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/windows-node-upgrades)
 
 ### Platform-Specific

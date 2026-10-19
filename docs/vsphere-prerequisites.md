@@ -3,7 +3,7 @@
 In order to successfully use the Windows Machine Config Operator (WMCO) on a vSphere Platform, 
 the following pre-requisites are required:
 
-* The vSphere cluster must be configured with [hybrid OVN Kubernetes networking with a custom VXLAN port](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/ovn-kubernetes-network-plugin)
+* The vSphere cluster must be configured with [hybrid OVN Kubernetes networking with a custom VXLAN port](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/ovn-kubernetes_network_plugin/configuring-hybrid-networking)
   to work around the pod-to-pod connectivity between hosts [issue](https://docs.microsoft.com/en-us/virtualization/windowscontainers/kubernetes/common-problems#pod-to-pod-connectivity-between-hosts-is-broken-on-my-kubernetes-cluster-running-on-vsphere)
 * Set up a [VM golden image with a compatible Windows Server version](vsphere-golden-image.md#1-select-a-compatible-windows-server-version).
 * Add a [DNS entry](#adding-a-dns-entry-in-vsphere-environment) for the internal API endpoint in the vSphere environment
