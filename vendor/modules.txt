@@ -1264,7 +1264,7 @@ k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
 k8s.io/klog/v2/internal/verbosity
 k8s.io/klog/v2/textlogger
-# k8s.io/kube-openapi v0.0.0-20260908163437-c4db2bdfbfe6 => k8s.io/kube-openapi v0.0.0-20250628140032-d90c4fd18f59
+# k8s.io/kube-openapi v0.0.0-20261014044854-ca3452a79603 => k8s.io/kube-openapi v0.0.0-20250628140032-d90c4fd18f59
 ## explicit; go 1.22
 k8s.io/kube-openapi/pkg/cached
 k8s.io/kube-openapi/pkg/common
