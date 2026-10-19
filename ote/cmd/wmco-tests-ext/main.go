@@ -27,6 +27,8 @@ import (
 	_ "github.com/openshift/windows-machine-config-operator/ote/test/e2e"
 )
 
+const tlsAdherenceResourcePool = "wmco-tls-adherence"
+
 func main() {
 	util.InitStandardFlags()
 	framework.AfterReadingAllFlags(&framework.TestContext)
@@ -74,6 +76,12 @@ func main() {
 			spec.Include(et.PlatformEquals(match[1]))
 		}
 		spec.Lifecycle = et.LifecycleBlocking
+		if strings.Contains(spec.Name, "[tls-adherence]") {
+			if spec.Resources.ResourcePools == nil {
+				spec.Resources.ResourcePools = map[string]int{}
+			}
+			spec.Resources.ResourcePools[tlsAdherenceResourcePool] = 1
+		}
 	})
 
 	ext.AddSpecs(componentSpecs)
@@ -121,16 +129,18 @@ func registerSuites(ext *e.Extension) {
 			Qualifiers: []string{`name.contains("[node-proxy]")`},
 		},
 		{
-			Name:       "windows-machine-config-operator/tls-adherence",
-			Parents:    []string{"openshift/disruptive"},
-			Qualifiers: []string{`name.contains("[tls-adherence]")`},
+			Name:          "windows-machine-config-operator/tls-adherence",
+			Parents:       []string{"openshift/disruptive"},
+			Qualifiers:    []string{`name.contains("[tls-adherence]")`},
+			ResourcePools: map[string]int{tlsAdherenceResourcePool: 1},
 		},
 		{
 			Name:       "windows-machine-config-operator/non-disruptive",
 			Qualifiers: []string{`!name.contains("[Disruptive]")`},
 		},
 		{
-			Name: "windows-machine-config-operator/all",
+			Name:          "windows-machine-config-operator/all",
+			ResourcePools: map[string]int{tlsAdherenceResourcePool: 1},
 		},
 	}
 	for _, suite := range suites {
