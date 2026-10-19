@@ -139,8 +139,11 @@ func registerSuites(ext *e.Extension) {
 			Qualifiers: []string{`!name.contains("[Disruptive]")`},
 		},
 		{
-			Name:          "windows-machine-config-operator/all",
-			ResourcePools: map[string]int{tlsAdherenceResourcePool: 1},
+			Name:       "windows-machine-config-operator/smokerun",
+			Qualifiers: []string{`name.contains("Smokerun")`},
+		},
+		{
+			Name: "windows-machine-config-operator/all",
 		},
 	}
 	for _, suite := range suites {
