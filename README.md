@@ -2,7 +2,7 @@
 
 ## Introduction
 The Windows Machine Config Operator configures Windows instances into nodes, enabling Windows container workloads to
-be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_management/overview-of-machine-management#machine-mgmt-intro-managing-compute_overview-of-machine-management),
+be ran within OKD/OCP clusters. Windows instances can be added either by creating a [MachineSet](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/machine_management/overview-of-machine-management#machine-mgmt-intro-managing-compute_overview-of-machine-management),
 or by specifying existing instances through a ConfigMap. The operator will do all the necessary steps to configure the instance so that it
 can join the cluster as a worker node.
 
@@ -25,7 +25,7 @@ the private key that will be used to access the Windows instances:
 oc create secret generic cloud-private-key --from-file=private-key.pem=/path/to/key -n openshift-windows-machine-config-operator
 ```
 We strongly recommend not using the same
-[private key](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_azure/installer-provisioned-infrastructure#installing-azure-default)
+[private key](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/installing_on_azure/installer-provisioned-infrastructure#installing-azure-default)
 used when installing the cluster
 
 #### Changing the private key secret
@@ -223,25 +223,25 @@ in a healthy state with no disruptions.
 - The cluster must be running on a supported EUS version of OCP
 - All Windows nodes must be in a healthy state
 - All Windows nodes must be running on the same version of WMCO
-- All the of the [prerequisites of the Control Plane Only OCP upgrade](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/windows-node-upgrades#wmco-upgrades-eus_windows-node-upgrades)
+- All the of the [prerequisites of the Control Plane Only OCP upgrade](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/windows_container_support_for_openshift/windows-node-upgrades#wmco-upgrades-eus_windows-node-upgrades)
 
 ### Windows nodes EUS-to-EUS update using the web console
 
 **Procedure**
-1. Uninstall WMCO from the [cluster using the web console](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/operators/administrator-tasks#olm-deleting-operators-from-a-cluster-using-web-console_olm-deleting-operators-from-a-cluster) 
-2. Follow steps for [Control Plane Only update using the web console](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/windows-node-upgrades#wmco-upgrades-eus-using-web-console_windows-node-upgrades)
+1. Uninstall WMCO from the [cluster using the web console](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/operators/administrator-tasks#olm-deleting-operators-from-a-cluster-using-web-console_olm-deleting-operators-from-a-cluster)
+2. Follow steps for [Control Plane Only update using the web console](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/windows_container_support_for_openshift/windows-node-upgrades#wmco-upgrades-eus-using-web-console_windows-node-upgrades)
 3. Wait for the upgrade to complete towards the target EUS version
-4. Install the latest available WMCO version [from OperatorHub](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/operators/administrator-tasks#olm-adding-operators-to-a-cluster)
+4. Install the latest available WMCO version [from OperatorHub](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/operators/administrator-tasks#olm-adding-operators-to-a-cluster)
 
 5. Wait for the Windows nodes to be upgraded towards the corresponding EUS version
 
 ### Windows nodes EUS-to-EUS update using the CLI
 
 **Procedure**
-1. Uninstall WMCO from the [cluster using the CLI](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/operators/administrator-tasks#olm-deleting-operators-from-a-cluster)
-2. Follow the steps for [Control Plane Only update using the CLI](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/windows-node-upgrades#wmco-upgrades-eus-using-cli_windows-node-upgrades)
+1. Uninstall WMCO from the [cluster using the CLI](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/operators/administrator-tasks#olm-deleting-operators-from-a-cluster)
+2. Follow the steps for [Control Plane Only update using the CLI](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/windows_container_support_for_openshift/windows-node-upgrades#wmco-upgrades-eus-using-cli_windows-node-upgrades)
 3. Wait for the upgrade to complete towards the target EUS version
-4. Install the latest available WMCO version [using the CLI](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/enabling-windows-container-workloads#installing-wmco-using-cli_enabling-windows-container-workloads)
+4. Install the latest available WMCO version [using the CLI](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/windows_container_support_for_openshift/enabling-windows-container-workloads#installing-wmco-using-cli_enabling-windows-container-workloads)
 5. Wait for the Windows nodes to be upgraded towards the corresponding EUS version
 
 ## Enabled features
@@ -274,21 +274,21 @@ For instructions to enable, customize or disable log rotation refer to
 ### Autoscaling Windows nodes
 Cluster autoscaling is supported for Windows instances. 
 
-- Define and deploy a [ClusterAutoscaler](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_management/applying-autoscaling).
+- Define and deploy a [ClusterAutoscaler](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/machine_management/applying-autoscaling).
 - Create a Windows node through a MachineSet (see spec in [Usage section](https://github.com/openshift/windows-machine-config-operator#usage)).
-- Define and deploy a [MachineAutoscaler](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_management/applying-autoscaling#configuring-clusterautoscaler_applying-autoscaling), referencing a Windows MachineSet.
+- Define and deploy a [MachineAutoscaler](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/machine_management/applying-autoscaling#configuring-clusterautoscaler_applying-autoscaling), referencing a Windows MachineSet.
 
 ### Container Runtime
 Windows instances brought up with WMCO are set up with the containerd container runtime. As WMCO installs and manages the container runtime,
 it is recommended not to preinstall containerd in MachineSet or BYOH Windows instances.
 
 ### Cluster-wide proxy
-WMCO supports using a [cluster-wide proxy](https://docs.openshift.com/container-platform/latest/networking/enable-cluster-wide-proxy.html)
+WMCO supports using a [cluster-wide proxy](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/networking/enable-cluster-wide-proxy.html)
 to route egress traffic from Windows nodes on OpenShift Container Platform.
 
 ### Running in a disconnected/airgapped environment
 WMCO supports running in a disconnected environment.
-Please follow the [disconnected mirroring docs](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_an_on-premise_cluster_with_the_agent-based_installer/understanding-disconnected-installation-mirroring#agent-install-mirroring-images-disconnected_understanding-disconnected-installation-mirroring)
+Please follow the [disconnected mirroring docs](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/installing_an_on-premise_cluster_with_the_agent-based_installer/understanding-disconnected-installation-mirroring#agent-install-mirroring-images-disconnected_understanding-disconnected-installation-mirroring)
 in order to mirror and run WMCO on your cluster.
 
 Nodes can be added through both MachineSets and the windows-instances ConfigMap.
@@ -299,7 +299,7 @@ For AWS platform, the Windows AMI must have installed the EC2LaunchV2 agent with
 See install options in the [EC2LaunchV2 documentation](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2launch-v2-install.html#lv2-configure-install).
 
 In order to run Windows workloads on Nodes, the image `mcr.microsoft.com/oss/kubernetes/pause:3.9` must be mirrored.
-See [Image configuration resources](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/images/image-configuration) for general information on image mirroring.
+See [Image configuration resources](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/images/image-configuration) for general information on image mirroring.
 Using ImageDigestMirrorSets and ImageTagMirrorSets to mirror container images results in different behavior than Linux Nodes.
 Please account for the following differences when reading the above documentation.
 
@@ -322,7 +322,7 @@ Some valid values could be: `$mirrorRegistry/oss/kubernetes/pause:3.9`, `$mirror
 
 ### Horizontal Pod Autoscaling
 Horizontal Pod autoscaling is available for Windows workloads.
-Please follow the [Horizontal Pod autoscaling docs](https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html)
+Please follow the [Horizontal Pod autoscaling docs](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/nodes/pods/nodes-pods-autoscaling.html)
 to create a horizontal pod autoscaler object for CPU and memory utilization of Windows workloads.
 
 ## Limitations
@@ -338,18 +338,18 @@ must deploy the appropriate Windows CSI driver Daemonset. This should be done by
 by the chosen storage driver's provider. A list of drivers can be found [here](https://kubernetes-csi.github.io/docs/drivers.html#production-drivers).
 
 ### Pod Autoscaling
-[Vertical](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/nodes/working-with-pods#additional-resources-2) Pod
+[Vertical](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/nodes/working-with-pods#additional-resources-2) Pod
 autoscaling support is not available for Windows workloads.
 
 ### Other limitations
 WMCO / Windows nodes does not work with the following products:
-* [odo](https://docs.redhat.com/en/documentation/openshift_container_platform/4.8/html/cli_tools/developer-cli-odo)
+* [odo](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/cli_tools/developer-cli-odo)
 * [OpenShift Builds](https://docs.redhat.com/en/documentation/builds_for_red_hat_openshift/1.4/html/about_builds/overview-of-builds)
 * [OpenShift Pipelines](https://docs.redhat.com/en/documentation/red_hat_openshift_pipelines/1.17/html-single/about_openshift_pipelines/index)
-* [OpenShift Service Mesh](https://docs.redhat.com/en/documentation/openshift_container_platform/4.1/html/service_mesh/service-mesh-architecture#understanding-service-mesh)
+* [OpenShift Service Mesh](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/service_mesh/service-mesh-architecture#understanding-service-mesh)
 * [Red Hat Insights cost management](https://docs.redhat.com/en/documentation/cost_management_service/1-latest)
 * [Red Hat OpenShift Local](https://developers.redhat.com/products/openshift-local/overview)
-* [OpenShift monitoring of user defined project](https://docs.redhat.com/en/documentation/openshift_container_platform/4.10/html/monitoring/enabling-monitoring-for-user-defined-projects)
+* [OpenShift monitoring of user defined project](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/monitoring/enabling-monitoring-for-user-defined-projects)
 * [HugePages](https://kubernetes.io/docs/tasks/manage-hugepages/scheduling-hugepages/)
 
 ### Trunk port

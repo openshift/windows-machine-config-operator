@@ -8,7 +8,7 @@ Replace _\<infrastructure_id\>_ with the output:
  oc get -o jsonpath='{.status.infrastructureName}{"\n"}' infrastructure cluster
 ```
 
-For the general Nutanix MachineSet `providerSpec` configuration, refer to the OpenShift document [creating machineset nutanix](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/machine_management/managing-compute-machines-with-the-machine-api#creating-machineset-nutanix).
+For the general Nutanix MachineSet `providerSpec` configuration, refer to the OpenShift document [creating machineset nutanix](https://docs.redhat.com/en/documentation/openshift_container_platform/5.0/html/machine_management/managing-compute-machines-with-the-machine-api#creating-machineset-nutanix).
 ```
 apiVersion: machine.openshift.io/v1beta1
 kind: MachineSet
