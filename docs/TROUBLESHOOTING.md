@@ -23,7 +23,7 @@ oc logs -f deployment/windows-machine-config-operator -n openshift-windows-machi
 File a GitHub issue and attach the logs to the issue along with the *MachineSet* used.
 
 ## Windows Server 2019 LTSC (1809) nodes never become Ready
-Ensure that you have not [configured the cluster network](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/ovn-kubernetes-network-plugin) with a
+Ensure that you have not [configured the cluster network](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/ovn-kubernetes_network_plugin/configuring-hybrid-networking) with a
 custom VXLAN port, as that is not a supported feature in 1809.
 
 ## Accessing a Windows node
@@ -32,7 +32,7 @@ not yet supported for Windows. Instead, a Windows node can be accessed using SSH
 [SSH bastion](https://github.com/eparis/ssh-bastion) needs to be setup for both methods. The following information is
 common across both methods:
 * The key used in the *cloud-private-key* [secret](../README.md#Usage) and the key used when creating the cluster should
-  be added to the [ssh-agent](https://docs.redhat.com/en/documentation/openshift_container_platform/4.15/html/installing_on_azure/installing-azure-default#ssh-agent-using_installing-azure-default).
+  be added to the [ssh-agent](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_azure/installer-provisioned-infrastructure#ssh-agent-using_installing-azure-preparing-ipi).
   For [security reasons](https://manpages.debian.org/buster/openssh-client/ssh.1.en.html#A) we suggest removing the keys
   from the ssh-agent after use.
 * *\<username\>* is *Administrator* (AWS) or *capi* (Azure)
