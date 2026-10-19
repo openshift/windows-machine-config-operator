@@ -11,7 +11,8 @@ replace (
 	// fix CVE-2025-30204 transitive deps still using older v4. Remove once `go mod graph` shows only 4.5.2 or higher
 	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/golang-jwt/jwt/v5 => github.com/golang-jwt/jwt/v5 v5.2.2
-
+	// Security fixes while retaining the Go 1.23 dependency baseline.
+	golang.org/x/crypto => github.com/openshift-sustaining/crypto v0.41.0-sec.5
 	// pin kube-openapi to pre structured-merge-diff/v6 to resolve apimachinery type mismatch
 	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250628140032-d90c4fd18f59
 	// pin 1.23 versions
