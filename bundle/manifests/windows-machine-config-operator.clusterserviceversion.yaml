@@ -46,8 +46,8 @@ spec:
 
     ### Pre-requisites
     * A Red Hat OpenShift Container Platform for Windows Containers [subscription](https://access.redhat.com/support/policy/updates/openshift#windows)
-    * OCP 4.21 cluster running on Azure, AWS, GCP or vSphere configured with hybrid OVN Kubernetes networking
-    * [WMCO prerequisites](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/understanding-windows-container-workloads)
+    * OCP cluster running on a supported platform configured with hybrid OVN Kubernetes networking
+    * All [WMCO prerequisites](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/understanding-windows-container-workloads) met
 
     ### Usage
     Once the `openshift-windows-machine-config-operator` namespace has been created, a secret must be created containing
