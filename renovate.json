@@ -36,7 +36,6 @@
     "jsonnet-bundler",
     "kubernetes",
     "kustomize",
-    "asdf",
     "fvm",
     "git-submodules",
     "hermit",
@@ -137,7 +136,7 @@
     ]
   },
   "gomod": {
-    "enabled": false,
+    "enabled": true,
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/",
     "packageRules": [
@@ -165,7 +164,48 @@
           "!github.com/openshift/library-go",
           "!github.com/golang-jwt/jwt/v4",
           "!github.com/golang-jwt/jwt/v5"
+        ],
+        "matchUpdateTypes": [
+          "patch",
+          "minor"
+        ],
+        "schedule": [
+          "at any time"
         ]
+      },
+      {
+        "description": "Handle major Go updates separately",
+        "groupName": null,
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchBaseBranches": [
+          "master"
+        ],
+        "matchUpdateTypes": [
+          "major"
+        ],
+        "matchPackageNames": [
+          "!k8s.io/kubernetes",
+          "!github.com/openshift/api",
+          "!github.com/openshift/client-go",
+          "!github.com/openshift/library-go",
+          "!github.com/golang-jwt/jwt/v4",
+          "!github.com/golang-jwt/jwt/v5"
+        ]
+      },
+      {
+        "description": "Disable routine indirect Go dependency updates",
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchDepTypes": [
+          "indirect"
+        ],
+        "matchBaseBranches": [
+          "master"
+        ],
+        "enabled": false
       }
     ]
   },
@@ -219,10 +259,6 @@
     "branchPrefix": "konflux/mintmaker/"
   },
   "kustomize": {
-    "additionalBranchPrefix": "{{baseBranch}}/",
-    "branchPrefix": "konflux/mintmaker/"
-  },
-  "asdf": {
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/"
   },
