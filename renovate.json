@@ -137,35 +137,78 @@
     ]
   },
   "gomod": {
-    "enabled": false,
+    "enabled": true,
+    "recreateWhen": "always",
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/",
+    "commitMessagePrefix": "[vendor]",
+    "draftPR": true,
     "packageRules": [
       {
+        "description": "Keep root Go module and vendored dependencies consistent",
+        "matchManagers": ["gomod"],
+        "matchFileNames": ["/^go\\.mod$/"],
+        "postUpdateOptions": ["gomodTidy", "gomodVendor"]
+      },
+      {
+        "description": "Disable digest updates (commit SHA pins)",
         "matchManagers": [
           "gomod"
         ],
-        "matchBaseBranches": [
-          "!master"
+        "matchUpdateTypes": [
+          "digest",
+          "pin",
+          "pinDigest"
         ],
         "enabled": false
       },
       {
-        "groupName": "Go dependencies",
+        "description": "Disable updates for OpenShift and Kubernetes core packages",
         "matchManagers": [
           "gomod"
         ],
-        "matchBaseBranches": [
-          "master"
+        "matchPackageNames": [
+          "k8s.io/kubernetes",
+          "github.com/openshift/api",
+          "github.com/openshift/client-go",
+          "github.com/openshift/library-go",
+          "github.com/openshift/kubernetes",
+          "github.com/golang-jwt/jwt/v4",
+          "github.com/golang-jwt/jwt/v5"
+        ],
+        "enabled": false
+      },
+      {
+        "groupName": null,
+        "matchManagers": [
+          "gomod"
         ],
         "matchPackageNames": [
           "!k8s.io/kubernetes",
           "!github.com/openshift/api",
           "!github.com/openshift/client-go",
           "!github.com/openshift/library-go",
+          "!github.com/openshift/kubernetes",
           "!github.com/golang-jwt/jwt/v4",
           "!github.com/golang-jwt/jwt/v5"
+        ],
+        "matchUpdateTypes": [
+          "patch",
+          "minor"
+        ],
+        "schedule": [
+          "at any time"
         ]
+      },
+      {
+        "description": "Disable major Go updates",
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchUpdateTypes": [
+          "major"
+        ],
+        "enabled": false
       }
     ]
   },
