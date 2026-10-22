@@ -1,0 +1,9 @@
+workflow:
+  as: wmco-connected-workflow
+  steps:
+    env:
+      SUB_CHANNEL: stable
+      SUB_PACKAGE: windows-machine-config-operator
+      SUB_SOURCE: "wmco"
+    pre:
+    - chain: wmco-provision

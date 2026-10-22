@@ -1,0 +1,12 @@
+{
+  "id": 6020409359,
+  "body": "[REHEARSALNOTIFIER] \n@rrasouli: the `pj-rehearse` plugin accommodates running rehearsal tests for the changes in this PR.\n\nTest name | Repo | Type | Reason\n--- | --- | --- | ---\nperiodic-ci-openshift-openshift-tests-private-release-4.22-amd64-nightly-gcp-ipi-ovn-winc-zstream-f7 | N/A | periodic | Periodic changed\nperiodic-ci-openshift-openshift-tests-private-release-4.22-amd64-nightly-azure-ipi-ovn-winc-zstream-f7 | N/A | periodic | Periodic changed\nperiodic-ci-openshift-openshift-tests-private-release-4.22-amd64-nightly-aws-upi-ovn-winc-zstream-f7 | N/A | periodic | Periodic changed\nperiodic-ci-openshift-openshift-tests-private-release-4.22-amd64-nightly-aws-ipi-ovn-winc-zstream-f7 | N/A | periodic | Periodic changed\n",
+  "html_url": "https://github.com/openshift/release/pull/86553#issuecomment-6020409359",
+  "user": {
+    "login": "openshift-merge-bot[bot]",
+    "type": "Bot"
+  },
+  "performed_via_github_app": {
+    "slug": "openshift-merge-bot"
+  }
+}

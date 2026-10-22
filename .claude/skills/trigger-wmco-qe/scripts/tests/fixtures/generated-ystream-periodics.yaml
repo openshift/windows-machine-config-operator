@@ -1,0 +1,73 @@
+periodics:
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-aws-ipi-ovn-winc-ystream-f7
+  spec:
+    containers:
+    - args:
+      - --target=aws-ipi-ovn-winc-ystream-f7
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-aws-upi-ovn-winc-ystream-f7
+  spec:
+    containers:
+    - args:
+      - --target=aws-upi-ovn-winc-ystream-f7
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-gcp-ipi-ovn-winc-ystream-f7
+  spec:
+    containers:
+    - args:
+      - --target=gcp-ipi-ovn-winc-ystream-f7
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-azure-ipi-ovn-winc-ystream-f7
+  spec:
+    containers:
+    - args:
+      - --target=azure-ipi-ovn-winc-ystream-f7
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-vsphere-ipi-disconnected-ovn-winc-ystream-f14
+  spec:
+    containers:
+    - args:
+      - --target=vsphere-ipi-disconnected-ovn-winc-ystream-f14
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-gcp-ipi-ovn-winc-ystream-f14-compliance
+  spec:
+    containers:
+    - args:
+      - --target=gcp-ipi-ovn-winc-ystream-f14-compliance
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-gcp-ipi-ovn-winc-ystream-f14-compliance-destructive
+  spec:
+    containers:
+    - args:
+      - --target=gcp-ipi-ovn-winc-ystream-f14-compliance-destructive
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-gcp-ipi-ovn-winc-ystream-f999-file-integrity
+  spec:
+    containers:
+    - args:
+      - --target=gcp-ipi-ovn-winc-ystream-f999-file-integrity
+- labels:
+    job-release: "4.99"
+    pj-rehearse.openshift.io/can-be-rehearsed: "true"
+  name: periodic-ci-openshift-openshift-tests-private-release-4.99-amd64-nightly-nutanix-ipi-ovn-winc-ystream-f28
+  spec:
+    containers:
+    - args:
+      - --target=nutanix-ipi-ovn-winc-ystream-f28
