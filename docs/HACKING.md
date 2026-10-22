@@ -21,11 +21,11 @@ If you already have a configured cluster, move on to [Build](#build)
 - Verify push/pull access to [quay.io](<https://quay.io>)
 - Create an install-config.yaml
   - [AWS](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_aws/index)
-  - [GCP](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_gcp/index)
+  - [GCP](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_google_cloud/index)
   - [Azure](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_azure/index)
-  - [vSphere](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_vsphere/index)
+  - [vSphere](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_vmware_vsphere/index)
   - [None](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing_on_bare_metal/index)
-- [Set Up OVNKubernetes networking](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/networking/ovn-kubernetes-network-plugin)
+- [Set Up OVNKubernetes networking](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/ovn-kubernetes_network_plugin/configuring-hybrid-networking)
 
 ## Build
 
@@ -238,12 +238,12 @@ opm index rm --from-index $INDEX_IMAGE:$INDEX_TAG
 ```
 #### Create a CatalogSource using the index
 
-See the OpenShift docs for [adding a CatalogSource to a cluster](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/extensions/catalogs)
+See the OpenShift docs for [adding a CatalogSource to a cluster](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/operators/administrator-tasks#olm-creating-catalog-from-index_olm-managing-custom-catalogs)
 
 #### Create a subscription object 
 
 To use the custom CatalogSource you need to change the subscription object to reference the CatalogSource you are 
-introducing. See the docs for [Subscription objects](https://docs.redhat.com/en/documentation/openshift_container_platform/4.2/html/operators/understanding-the-operator-lifecycle-manager-olm#olm-upgrades_olm-understanding-olm)
+introducing. See the docs for [Subscription objects](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/operators/understanding-operators#olm-subscription_olm-understanding-olm)
 for an example.
 
 Edit your subscription yaml to match your CatalogSource. 

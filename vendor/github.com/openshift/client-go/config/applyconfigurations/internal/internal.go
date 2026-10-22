@@ -2146,6 +2146,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: controlPlaneTopology
       type:
         scalar: string
+    - name: infrastructureTopology
+      type:
+        scalar: string
     - name: platformSpec
       type:
         namedType: com.github.openshift.api.config.v1.PlatformSpec
@@ -4618,6 +4621,28 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: request
       type:
         namedType: io.k8s.apimachinery.pkg.api.resource.Quantity
+- name: com.github.openshift.api.config.v1alpha1.ControllerManager
+  map:
+    fields:
+    - name: apiVersion
+      type:
+        scalar: string
+    - name: kind
+      type:
+        scalar: string
+    - name: metadata
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.ObjectMeta
+      default: {}
+    - name: spec
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.ControllerManagerSpec
+- name: com.github.openshift.api.config.v1alpha1.ControllerManagerSpec
+  map:
+    fields:
+    - name: volumeForceDetach
+      type:
+        scalar: string
 - name: com.github.openshift.api.config.v1alpha1.CustomPKIPolicy
   map:
     fields:
@@ -6124,6 +6149,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: currentVolumeAttributesClassName
       type:
         scalar: string
+    - name: healthStatus
+      type:
+        namedType: io.k8s.api.core.v1.VolumeHealthStatus
     - name: modifyVolumeStatus
       type:
         namedType: io.k8s.api.core.v1.ModifyVolumeStatus
@@ -6273,6 +6301,35 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: namespace
       type:
         scalar: string
+- name: io.k8s.api.core.v1.VolumeHealthCondition
+  map:
+    fields:
+    - name: message
+      type:
+        scalar: string
+    - name: reason
+      type:
+        scalar: string
+      default: ""
+    - name: status
+      type:
+        scalar: string
+      default: ""
+- name: io.k8s.api.core.v1.VolumeHealthStatus
+  map:
+    fields:
+    - name: healthConditions
+      type:
+        list:
+          elementType:
+            namedType: io.k8s.api.core.v1.VolumeHealthCondition
+          elementRelationship: associative
+          keys:
+          - status
+          - reason
+    - name: lastTransitionTime
+      type:
+        namedType: io.k8s.apimachinery.pkg.apis.meta.v1.Time
 - name: io.k8s.api.core.v1.VolumeResourceRequirements
   map:
     fields:
