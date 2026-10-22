@@ -3,12 +3,8 @@ package winc
 import (
 	"context"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -27,7 +23,6 @@ import (
 	compat_otp "github.com/openshift/origin/test/extended/util/compat_otp"
 	"github.com/tidwall/gjson"
 	"golang.org/x/crypto/ssh"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -1543,15 +1538,10 @@ func extractPrivateKeyToFile(oc *exutil.CLI) string {
 // generateTestPrivateKey generates an RSA private key and writes it to a temporary PEM file.
 // Returns the file path. Caller is responsible for cleanup.
 func generateTestPrivateKey() (string, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKeyPEM, err := generateTestPrivateKeyPEM()
 	if err != nil {
-		return "", fmt.Errorf("generate RSA private key: %w", err)
+		return "", err
 	}
-
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(key),
-	})
 	tmpFile, err := os.CreateTemp("", "winc-39640-key-*.pem")
 	if err != nil {
 		return "", fmt.Errorf("create temporary private key file: %w", err)
@@ -1597,12 +1587,7 @@ func publicKeyHashFromPrivateKey(privateKeyPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read private key: %w", err)
 	}
-	signer, err := ssh.ParsePrivateKey(privateKey)
-	if err != nil {
-		return "", fmt.Errorf("parse private key: %w", err)
-	}
-	authorizedKey := strings.TrimSuffix(string(ssh.MarshalAuthorizedKey(signer.PublicKey())), "\n")
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(authorizedKey))), nil
+	return publicKeyHash(privateKey)
 }
 
 // getNodeNamesFromMachineSet is an error-aware form of Origin's MachineSet helper for use in a poll.
@@ -1657,18 +1642,6 @@ func targetNodesReadyWithKeyHash(ctx context.Context, nodeClient corev1client.No
 		}
 	}
 	return true, nil
-}
-
-func nodeReadyWithKeyHash(node *corev1.Node, expectedHash string) bool {
-	if node == nil || expectedHash == "" || node.Annotations[pubKeyHashAnno] != expectedHash {
-		return false
-	}
-	for _, condition := range node.Status.Conditions {
-		if condition.Type == corev1.NodeReady {
-			return condition.Status == corev1.ConditionTrue
-		}
-	}
-	return false
 }
 
 // waitForMachinesetReady polls until the MachineSet has the expected number of ready replicas.
