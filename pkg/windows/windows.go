@@ -233,7 +233,7 @@ func getFilesToTransfer(platform *config.PlatformType) map[string]string {
 		payload.ContainerdPath:                 ContainerdDir,
 		payload.HcsshimPath:                    ContainerdDir,
 		payload.ContainerdConfPath:             ContainerdDir,
-		payload.TLSConfPath:                    TLSDir,
+		payload.WindowsExporterWebConfigPath:   TLSDir,
 		payload.NetworkConfigurationScript:     remoteDir,
 	}
 
