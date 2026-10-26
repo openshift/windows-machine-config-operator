@@ -116,7 +116,7 @@
           "Containerfile",
           "Containerfile.bundle"
         ],
-        "pinDigests": true,
+        "pinDigests": false,
         "addLabels": [
           "approved",
           "lgtm"
