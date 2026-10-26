@@ -11,6 +11,8 @@ ENV GOTOOLCHAIN=local
 
 ENV GOEXPERIMENT=strictfipsruntime
 
+RUN go version
+
 # dos2unix is needed to build CNI plugins
 RUN yum install -y dos2unix
 
