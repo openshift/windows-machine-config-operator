@@ -12,6 +12,8 @@ ENV GOTOOLCHAIN=local
 
 ENV GOEXPERIMENT=strictfipsruntime
 
+RUN go version
+
 WORKDIR /build/windows-machine-config-operator/
 COPY .git .git
 
