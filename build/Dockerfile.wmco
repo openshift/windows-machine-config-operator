@@ -49,7 +49,7 @@ COPY --from=build /tmp/windows-instance-config-daemon.exe.tar.gz /payload/window
 COPY --from=build /tmp/wicd.sha256sum /tmp/wicd.sha256sum
 RUN cat /tmp/wicd.sha256sum >> /payload/sha256sum
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest
 LABEL stage=operator
 
 # This block contains standard Red Hat container labels
