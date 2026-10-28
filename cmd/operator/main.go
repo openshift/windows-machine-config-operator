@@ -145,7 +145,11 @@ func main() {
 	// it should only enforce when ShouldHonorClusterTLSProfile returns true.
 	var metricsServerTLSOpts []func(*tls.Config)
 	if libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence) {
-		tlsConfigFn, unsupportedCiphers := tlspkg.NewTLSConfigFromProfile(tlsProfile)
+		tlsConfigFn, unsupportedCiphers, err := tlspkg.NewTLSConfigFromProfile(tlsProfile)
+		if err != nil {
+			setupLog.Error(err, "failed to create TLS configuration from profile")
+			os.Exit(1)
+		}
 		if len(unsupportedCiphers) > 0 {
 			setupLog.Info("some cipher suites are not supported by Go and will be ignored",
 				"unsupportedCiphers", unsupportedCiphers)
