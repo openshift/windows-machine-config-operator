@@ -1,0 +1,47 @@
+releases:
+  latest:
+    candidate:
+      product: ocp
+      stream: nightly
+      version: "4.99"
+tests:
+- as: aws-ipi-ovn-winc-f7
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-connected-workflow
+- as: aws-upi-ovn-winc-f7
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-connected-workflow
+- as: gcp-ipi-ovn-winc-f7
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-connected-workflow
+- as: azure-ipi-ovn-winc-f7
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-connected-workflow
+- as: vsphere-ipi-disconnected-ovn-winc-f14
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-disconnected-workflow
+- as: gcp-ipi-ovn-winc-f14-compliance
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-connected-workflow
+- as: gcp-ipi-ovn-winc-f14-compliance-destructive
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-connected-workflow
+- as: gcp-ipi-ovn-winc-f999-file-integrity
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-connected-workflow
+- as: nutanix-ipi-ovn-winc-f28
+  cron: 0 0 31 2 *
+  steps:
+    workflow: wmco-connected-workflow
+- as: aws-ipi-ovn-unrelated-f7
+  cron: 0 0 31 2 *
+  steps:
+    workflow: unrelated-workflow
