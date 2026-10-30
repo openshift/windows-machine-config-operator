@@ -13,7 +13,7 @@ var _ = g.Describe("[OTP][sig-windows] BYOH node pool", func() {
 	g.BeforeEach(func() {
 		fixture = newBYOHTestFixture(oc)
 		g.DeferCleanup(fixture.cleanup)
-		o.Expect(fixture.requireBYOHPool()).To(o.Succeed(), "the dedicated BYOH inventory must be opted in and trusted before allocation")
+		o.Expect(fixture.attachBYOHSession()).To(o.Succeed(), "the prepared BYOH session must have fresh exclusive case ownership before allocation")
 	})
 
 	g.It("Longduration-High-42496-BYOH InternalDNS registration and deconfiguration [BYOHPool][Serial][Disruptive]", func() {

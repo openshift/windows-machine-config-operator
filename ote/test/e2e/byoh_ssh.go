@@ -71,6 +71,12 @@ func newWindowsSSHClient(ctx context.Context, lease *byohHostLease, privateKey [
 		HostKeyCallback: trustedHostKeyCallback(lease.TrustedHostKey),
 		Timeout:         30 * time.Second,
 	}
+	if lease.PhysicalUUID != "" {
+		config.HostKeyAlgorithms = []string{lease.TrustedHostKey.Type()}
+		if lease.TrustedHostKey.Type() == ssh.KeyAlgoRSA {
+			config.HostKeyAlgorithms = []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
+		}
+	}
 	connection, err := (&net.Dialer{Timeout: config.Timeout}).DialContext(ctx, "tcp",
 		net.JoinHostPort(lease.SSHAddress, "22"))
 	if err != nil {
@@ -320,7 +326,18 @@ func (f *byohTestFixture) sshClient(ctx context.Context, lease *byohHostLease) (
 	if err != nil {
 		return nil, err
 	}
-	return newWindowsSSHClient(ctx, lease, key)
+	client, err := newWindowsSSHClient(ctx, lease, key)
+	if err != nil {
+		return nil, err
+	}
+	if lease.PhysicalUUID != "" {
+		output, probeErr := runPowerShellOverSSH(ctx, client, byohIdentityScript)
+		facts, parseErr := decodeBYOHHostFacts(output, false)
+		if probeErr != nil || parseErr != nil || !sameBYOHPhysicalHost(byohHostFacts{UUID: lease.PhysicalUUID, GUID: lease.MachineGUID, Addresses: []string{lease.SSHAddress}}, facts) {
+			return nil, errors.Join(fmt.Errorf("pinned SSH host identity correlation failed"), client.close())
+		}
+	}
+	return client, nil
 }
 
 func (f *byohTestFixture) assertPostDeconfigurationPathAbsent(ctx context.Context, lease *byohHostLease,

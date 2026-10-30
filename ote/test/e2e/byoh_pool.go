@@ -56,6 +56,7 @@ type byohHostLease struct {
 	Address, Username, SSHAddress string
 	AddressType                   byohAddressType
 	HostID, LeaseID               string
+	PhysicalUUID, MachineGUID     string
 	Platform, ResetPolicy         string
 	AllocatedAt                   string
 	Disposable                    bool
@@ -71,7 +72,7 @@ type byohHostLease struct {
 	ResetVerified, CleanupDone    bool
 	PreserveInstancesConfigMap    bool
 	QuarantineRequired            bool
-	TrustedHostKey                ssh.PublicKey
+	TrustedHostKey                ssh.PublicKey `json:"-"`
 }
 
 // requireBYOHPool is deliberately the first operation in every Batch 9 case. Generic jobs opt out by
@@ -80,7 +81,7 @@ func (f *byohTestFixture) requireBYOHPool() error {
 	if os.Getenv(byohPoolRequiredEnv) != "true" {
 		g.Skip(fmt.Sprintf("%s is not true; the dedicated BYOH pool fixture is not enabled", byohPoolRequiredEnv))
 	}
-	cm, err := f.coreClient.ConfigMaps(wmcoNamespace).Get(f.ctx, byohPoolConfigMap, metav1.GetOptions{})
+	cm, err := f.poolClient().Get(f.ctx, byohPoolConfigMap, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("required BYOH node pool is unavailable: %w", err)
 	}
@@ -617,7 +618,17 @@ func quarantineBYOHHosts(ctx context.Context, configMaps corev1client.ConfigMapI
 }
 
 func (f *byohTestFixture) allocateBYOHHosts(requests ...byohHostRequest) ([]*byohHostLease, error) {
-	leases, err := updateBYOHPoolLeases(f.ctx, f.coreClient.ConfigMaps(wmcoNamespace), requests)
+	leases, err := updateBYOHPoolLeases(f.ctx, f.poolClient(), requests)
+	if f.session != nil {
+		for _, lease := range leases {
+			lease.PreserveInstancesConfigMap = true
+			for _, host := range f.session.Hosts {
+				if host.Lease.HostID == lease.HostID {
+					lease.PhysicalUUID, lease.MachineGUID = host.Facts.UUID, host.Facts.GUID
+				}
+			}
+		}
+	}
 	f.leases = append(f.leases, leases...)
 	return leases, err
 }

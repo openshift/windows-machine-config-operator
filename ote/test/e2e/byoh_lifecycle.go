@@ -62,15 +62,22 @@ var errBYOHRegistrationConflict = errors.New("registration address is already pr
 // byohInstancesState retains the exact windows-instances object identity and pre-test ownership
 // metadata so entry withdrawal cannot replace the object or erase concurrent unrelated state.
 type byohInstancesState struct {
-	observed          bool
-	initiallyExisted  bool
-	initialUID        types.UID
-	ownedUID          types.UID
-	originalOwnership map[string]*string
+	exclusive            bool
+	observed             bool
+	initiallyExisted     bool
+	initialUID           types.UID
+	ownedUID             types.UID
+	originalOwnership    map[string]*string
+	initialRegistrations map[string]string
 }
 
 // byohTestFixture owns the bounded lifetime and ordered cleanup state for one serial BYOH case.
 type byohTestFixture struct {
+	session                     *byohRunSession
+	caseID                      string
+	caseStartErr                error
+	preflightProbeForTest       func(context.Context, *byohHostLease) (byohHostFacts, error)
+	preflightLookupForTest      byohLookupIP
 	oc                          *exutil.CLI
 	coreClient                  corev1client.CoreV1Interface
 	appsClient                  appsv1client.AppsV1Interface
@@ -245,8 +252,18 @@ func inspectBYOHRegistrationConflict(ctx context.Context, configMaps corev1clien
 
 func registerBYOHInstances(ctx context.Context, configMaps corev1client.ConfigMapInterface,
 	leases []*byohHostLease, state *byohInstancesState) error {
+	return registerBYOHInstancesWithAuthority(ctx, configMaps, leases, state, nil)
+}
+
+func registerBYOHInstancesWithAuthority(ctx context.Context, configMaps corev1client.ConfigMapInterface,
+	leases []*byohHostLease, state *byohInstancesState, validateAuthority func(context.Context) error) error {
 	writeAttempted := false
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if validateAuthority != nil {
+			if err := validateAuthority(ctx); err != nil {
+				return err
+			}
+		}
 		cm, err := configMaps.Get(ctx, byohInstancesConfigMap, metav1.GetOptions{})
 		if state != nil && !state.observed {
 			state.observed = true
@@ -257,6 +274,9 @@ func registerBYOHInstances(ctx context.Context, configMaps corev1client.ConfigMa
 			}
 		}
 		if apierrors.IsNotFound(err) {
+			if state != nil && (state.initiallyExisted || state.initialUID != "" || state.ownedUID != "") {
+				return fmt.Errorf("%w: retained windows-instances object is missing", errBYOHRegistrationConflict)
+			}
 			data := map[string]string{}
 			for _, lease := range leases {
 				data[lease.Address] = "username=" + lease.Username
@@ -293,6 +313,9 @@ func registerBYOHInstances(ctx context.Context, configMaps corev1client.ConfigMa
 		if writeAttempted && registrationEntriesOwned(cm, leases, state) {
 			return markRegistrationOwned(cm, leases, state)
 		}
+		if state != nil && state.exclusive && len(cm.Data) != 0 {
+			return fmt.Errorf("%w: session registration state changed", errBYOHRegistrationConflict)
+		}
 		for _, lease := range leases {
 			if _, exists := cm.Data[lease.Address]; exists {
 				return errBYOHRegistrationConflict
@@ -328,12 +351,30 @@ func registerBYOHInstances(ctx context.Context, configMaps corev1client.ConfigMa
 }
 
 func (f *byohTestFixture) registerBYOHInstances(leases []*byohHostLease) error {
+	var validateAuthority func(context.Context) error
+	if f.session != nil {
+		if err := f.validateBYOHReservation(f.ctx); err != nil {
+			return err
+		}
+		for _, lease := range leases {
+			if err := f.verifyBYOHRegistrationEndpoint(f.ctx, lease); err != nil {
+				return err
+			}
+		}
+		validateAuthority = func(ctx context.Context) error {
+			if err := f.validateBYOHReservation(ctx); err != nil {
+				return err
+			}
+			return f.validateBYOHSessionAuthority(ctx, false, leases...)
+		}
+	}
 	started := time.Now().UTC()
 	for _, lease := range leases {
 		lease.RegistrationAttempted = true
+		lease.ResetVerified = false
 	}
-	if err := registerBYOHInstances(f.ctx, f.coreClient.ConfigMaps(wmcoNamespace), leases,
-		&f.instancesState); err != nil {
+	if err := registerBYOHInstancesWithAuthority(f.ctx, f.coreClient.ConfigMaps(wmcoNamespace), leases,
+		&f.instancesState, validateAuthority); err != nil {
 		for _, lease := range leases {
 			if !lease.RegistrationOwned {
 				lease.QuarantineRequired = true
@@ -364,6 +405,9 @@ func unregisterBYOHInstances(ctx context.Context, configMaps corev1client.Config
 		}
 		if state == nil || state.ownedUID == "" || cm.UID != state.ownedUID {
 			return fmt.Errorf("windows-instances object identity changed before unregister")
+		}
+		if state.initialRegistrations != nil && (cm.ResourceVersion == "" || !reflect.DeepEqual(cm.Data, state.initialRegistrations)) {
+			return fmt.Errorf("proved initial registration set changed before withdrawal")
 		}
 		for _, lease := range leases {
 			if !lease.RegistrationOwned {
@@ -413,6 +457,15 @@ func unregisterBYOHInstances(ctx context.Context, configMaps corev1client.Config
 			}
 		}
 		if removed {
+			if state.initialRegistrations != nil {
+				expected := copyStringMap(state.initialRegistrations)
+				for _, lease := range leases {
+					delete(expected, lease.Address)
+				}
+				if !reflect.DeepEqual(cm.Data, expected) {
+					return errors.Join(err, fmt.Errorf("proved registration set changed during withdrawal reconciliation"))
+				}
+			}
 			return nil
 		}
 		if registrationEntriesOwned(cm, leases, state) && mutationProvenUnapplied != nil {
@@ -551,6 +604,10 @@ func (f *byohTestFixture) waitForLeaseNodeReady(leases ...*byohHostLease) error 
 		if err := waitForLeaseNode(f.ctx, f.coreClient.Nodes(), lease, ""); err != nil {
 			lease.QuarantineRequired = true
 			return fmt.Errorf("selected BYOH host did not become Ready and converged: %w", err)
+		}
+		if err := f.validateBYOHCurrentNode(f.ctx, lease); err != nil {
+			lease.QuarantineRequired = true
+			return err
 		}
 	}
 	if err := distinctLeaseNodes(leases); err != nil {
@@ -842,7 +899,7 @@ func sanitizedPodAPIError(operation string, err error) error {
 // lease labels, Pod UID, and Node UID are verified around every state/log read and UID-preconditioned
 // deletion. Script and output content are never included in errors or test logs.
 func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Interface,
-	lease *byohHostLease, script string, readLogs byohPodLogs) (output string, retErr error) {
+	lease *byohHostLease, script string, readLogs byohPodLogs, requireGone ...bool) (output string, retErr error) {
 	if lease == nil || lease.NodeName == "" || lease.NodeUID == "" || lease.LeaseID == "" || readLogs == nil {
 		return "", fmt.Errorf("incomplete configured-host HostProcess identity")
 	}
@@ -923,6 +980,26 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 			UID: &podUID, ResourceVersion: &current.ResourceVersion}}); err != nil && !apierrors.IsNotFound(err) {
 			lease.QuarantineRequired = true
 			retErr = errors.Join(retErr, sanitizedPodAPIError("delete owned HostProcess Pod", err))
+			return
+		}
+		if len(requireGone) > 0 && requireGone[0] {
+			err := wait.PollUntilContextCancel(cleanupCtx, 100*time.Millisecond, true, func(ctx context.Context) (bool, error) {
+				remaining, err := pods.Get(ctx, podName, metav1.GetOptions{})
+				if apierrors.IsNotFound(err) {
+					return true, nil
+				}
+				if err != nil {
+					return false, sanitizedPodAPIError("observe owned HostProcess Pod removal", err)
+				}
+				if remaining.UID != podUID || !hostProcessPodOwnedByAttempt(remaining, pod, nonce) {
+					return false, fmt.Errorf("HostProcess Pod replaced during cleanup")
+				}
+				return false, nil
+			})
+			if err != nil {
+				lease.QuarantineRequired = true
+				retErr = errors.Join(retErr, fmt.Errorf("owned HostProcess Pod disappearance not proved: %w", err))
+			}
 		}
 	}()
 	if !hostProcessPodOwnedByAttempt(created, pod, nonce) || !hostProcessPodAdmittedSpecMatches(ctx, coreClient, created, pod) {
@@ -1005,12 +1082,12 @@ func (f *byohTestFixture) hostProcessLogs(ctx context.Context, namespace, podNam
 }
 
 func (f *byohTestFixture) runConfiguredHostProcessPS(ctx context.Context, lease *byohHostLease,
-	script string) (string, error) {
+	script string, requireGone ...bool) (string, error) {
 	readLogs := f.hostProcessLogs
 	if f.hostProcessLogsForTest != nil {
 		readLogs = f.hostProcessLogsForTest
 	}
-	return runBYOHHostProcessPS(ctx, f.coreClient, lease, script, readLogs)
+	return runBYOHHostProcessPS(ctx, f.coreClient, lease, script, readLogs, requireGone...)
 }
 
 func configuredManagedServicesRunningScript() string {
@@ -1266,7 +1343,7 @@ func (f *byohTestFixture) deleteNodeAndWaitForRecovery(lease *byohHostLease) err
 		lease.QuarantineRequired = true
 		return fmt.Errorf("replacement BYOH Node did not become Ready and converged: %w", err)
 	}
-	return nil
+	return f.validateBYOHCurrentNode(f.ctx, lease)
 }
 
 func deleteNodeByRetainedIdentity(ctx context.Context, nodes corev1client.NodeInterface, name string,
@@ -1430,7 +1507,7 @@ func (f *byohTestFixture) verifyLeaseDeconfigured(ctx context.Context, lease *by
 			return err
 		}
 	}
-	if err := waitForNodeDeleted(ctx, f.coreClient.Nodes(), lease.NodeName); err != nil {
+	if err := waitForBYOHOriginalNodeAbsent(ctx, f.coreClient.Nodes(), lease); err != nil {
 		return err
 	}
 	client, err := f.sshClient(ctx, lease)
@@ -1489,7 +1566,7 @@ func (f *byohTestFixture) deconfigureLease(lease *byohHostLease) error {
 }
 
 func (f *byohTestFixture) releaseVerified(leases ...*byohHostLease) error {
-	return releaseBYOHHosts(f.ctx, f.coreClient.ConfigMaps(wmcoNamespace), leases)
+	return releaseBYOHHosts(f.ctx, f.poolClient(), leases)
 }
 
 func runCleanupFallback(ctx context.Context, operation func(context.Context) error) error {
@@ -1534,6 +1611,12 @@ func (f *byohTestFixture) cleanupWithBudget(total, reserved time.Duration) error
 		if lease.CleanupDone {
 			continue
 		}
+		if f.session != nil && !lease.RegistrationAttempted {
+			if err := f.verifyBYOHUnusedReset(cleanupCtx, lease); err != nil {
+				lease.QuarantineRequired = true
+				cleanupErrors = append(cleanupErrors, err)
+			}
+		}
 		if lease.RegistrationOwned && !lease.ResetVerified {
 			if err := f.deconfigureLeaseWithContext(cleanupCtx, lease); err != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("prove BYOH host reset: %w", err))
@@ -1548,17 +1631,17 @@ func (f *byohTestFixture) cleanupWithBudget(total, reserved time.Duration) error
 		if lease.Disposable || lease.QuarantineRequired ||
 			(lease.RegistrationAttempted && (!lease.RegistrationOwned || !lease.ResetVerified)) {
 			if err := runCleanupFallback(fallbackCtx, func(ctx context.Context) error {
-				return quarantineBYOHHosts(ctx, f.coreClient.ConfigMaps(wmcoNamespace), []*byohHostLease{lease})
+				return quarantineBYOHHosts(ctx, f.poolClient(), []*byohHostLease{lease})
 			}); err != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("quarantine BYOH host: %w", err))
 			}
 		} else {
 			// A physical host allocated but never registered was not mutated by WMCO.
-			if !lease.RegistrationAttempted {
+			if !lease.RegistrationAttempted && f.session == nil {
 				lease.ResetVerified = true
 			}
 			if err := runCleanupFallback(fallbackCtx, func(ctx context.Context) error {
-				return releaseBYOHHosts(ctx, f.coreClient.ConfigMaps(wmcoNamespace), []*byohHostLease{lease})
+				return releaseBYOHHosts(ctx, f.poolClient(), []*byohHostLease{lease})
 			}); err != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("release BYOH host: %w", err))
 			}
@@ -1573,7 +1656,7 @@ func (f *byohTestFixture) cleanupWithBudget(total, reserved time.Duration) error
 		}
 		for _, lease := range settleAfterIDMS {
 			if quarantineErr := runCleanupFallback(fallbackCtx, func(ctx context.Context) error {
-				return quarantineBYOHHosts(ctx, f.coreClient.ConfigMaps(wmcoNamespace), []*byohHostLease{lease})
+				return quarantineBYOHHosts(ctx, f.poolClient(), []*byohHostLease{lease})
 			}); quarantineErr != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("quarantine host after IDMS cleanup failure: %w", quarantineErr))
 			}
@@ -1582,14 +1665,14 @@ func (f *byohTestFixture) cleanupWithBudget(total, reserved time.Duration) error
 		for _, lease := range settleAfterIDMS {
 			if lease.Disposable || lease.QuarantineRequired || !lease.ResetVerified {
 				if err := runCleanupFallback(fallbackCtx, func(ctx context.Context) error {
-					return quarantineBYOHHosts(ctx, f.coreClient.ConfigMaps(wmcoNamespace), []*byohHostLease{lease})
+					return quarantineBYOHHosts(ctx, f.poolClient(), []*byohHostLease{lease})
 				}); err != nil {
 					cleanupErrors = append(cleanupErrors, fmt.Errorf("quarantine host after IDMS cleanup: %w", err))
 				}
 				continue
 			}
 			if err := runCleanupFallback(fallbackCtx, func(ctx context.Context) error {
-				return releaseBYOHHosts(ctx, f.coreClient.ConfigMaps(wmcoNamespace), []*byohHostLease{lease})
+				return releaseBYOHHosts(ctx, f.poolClient(), []*byohHostLease{lease})
 			}); err != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("release BYOH host after IDMS cleanup: %w", err))
 			}
@@ -1599,7 +1682,15 @@ func (f *byohTestFixture) cleanupWithBudget(total, reserved time.Duration) error
 }
 
 func (f *byohTestFixture) cleanup() error {
-	return f.cleanupWithBudget(byohCleanupLimit, byohFallbackLimit)
+	started := time.Now()
+	err := errors.Join(f.caseStartErr, f.cleanupWithBudget(byohCleanupLimit, byohFallbackLimit))
+	remaining := byohCleanupLimit - time.Since(started)
+	if remaining <= 0 {
+		return errors.Join(err, fmt.Errorf("BYOH aggregate cleanup budget exhausted; retaining case ownership"))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), remaining)
+	defer cancel()
+	return f.settleBYOHCase(ctx, err)
 }
 
 func leaseNodeKeyAndUsernameConverged(ctx context.Context, nodes corev1client.NodeInterface,
@@ -1624,6 +1715,11 @@ func leaseNodeKeyAndUsernameConverged(ctx context.Context, nodes corev1client.No
 }
 
 func (f *byohTestFixture) rotateBYOHPrivateKey(lease *byohHostLease) error {
+	if f.session != nil {
+		if err := f.validateBYOHRotationIsolation(f.ctx, lease); err != nil {
+			return err
+		}
+	}
 	secret, err := f.coreClient.Secrets(wmcoNamespace).Get(f.ctx, byohPrivateKeySecret, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("snapshot cloud private key Secret: %w", err)
@@ -1647,6 +1743,9 @@ func (f *byohTestFixture) rotateBYOHPrivateKey(lease *byohHostLease) error {
 	expectedOriginalHash, err := publicKeyHash(originalKey)
 	if err != nil {
 		return err
+	}
+	if f.session != nil && (string(secret.UID) != f.session.SecretUID || expectedOriginalHash != f.session.KeyHash) {
+		return fmt.Errorf("original Secret identity changed before BYOH rotation")
 	}
 	if node.UID != lease.NodeUID || originalHash == "" || originalHash != expectedOriginalHash ||
 		!nodeReadyWithKeyHash(node, expectedOriginalHash) || !nodeReadyAndConverged(node) {
@@ -1674,11 +1773,15 @@ func (f *byohTestFixture) rotateBYOHPrivateKey(lease *byohHostLease) error {
 	// Retain the exact generated line before the mutation attempt. Cleanup can safely remove this
 	// one owned line idempotently even when the HostProcess response is lost.
 	f.replacementAuthorizedKey = authorizedKey
+	if f.session != nil {
+		if err := f.validateBYOHRotationIsolation(f.ctx, lease); err != nil {
+			return err
+		}
+	}
 	if err := f.placeAuthorizedKeyWithHostProcess(f.ctx, lease, authorizedKey); err != nil {
 		return fmt.Errorf("place replacement authorized key through owned HostProcess probe: %w", err)
 	}
-	if err := updatePrivateKeySecret(f.ctx, f.coreClient.Secrets(wmcoNamespace), byohPrivateKeySecret, byohPrivateKeyDataKey, f.secretSnapshot.UID,
-		replacementKey); err != nil {
+	if err := f.updateBYOHPrivateKey(f.ctx, replacementKey); err != nil {
 		return err
 	}
 	err = f.waitForKeyConvergence(f.ctx, lease, replacementHash, replacementKey, originalCiphertext, true)
@@ -1706,8 +1809,7 @@ func (f *byohTestFixture) restoreBYOHPrivateKeyWithContext(ctx context.Context) 
 	if f.originalKeyHash == "" || originalHash != f.originalKeyHash {
 		return fmt.Errorf("cloud private key restoration hash does not match the captured original hash")
 	}
-	if err := updatePrivateKeySecret(ctx, f.coreClient.Secrets(wmcoNamespace), byohPrivateKeySecret, byohPrivateKeyDataKey, f.secretSnapshot.UID,
-		originalKey); err != nil {
+	if err := f.updateBYOHPrivateKey(ctx, originalKey); err != nil {
 		return err
 	}
 	err = f.waitForKeyConvergence(ctx, f.secretLease, originalHash, originalKey, "", false)

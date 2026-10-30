@@ -24,7 +24,7 @@ import (
 	"k8s.io/component-base/logs"
 	framework "k8s.io/kubernetes/test/e2e/framework"
 
-	_ "github.com/openshift/windows-machine-config-operator/ote/test/e2e"
+	winc "github.com/openshift/windows-machine-config-operator/ote/test/e2e"
 )
 
 func main() {
@@ -60,6 +60,13 @@ func main() {
 			panic(err)
 		}
 		util.WithCleanup(func() {})
+	})
+	componentSpecs.Select(func(spec *et.ExtensionTestSpec) bool {
+		return strings.Contains(spec.Name, "[BYOHPool]")
+	}).AddBeforeAll(func() {
+		if err := winc.InitializeBYOHSession(); err != nil {
+			panic(err)
+		}
 	})
 
 	componentSpecs.Walk(func(spec *et.ExtensionTestSpec) {
