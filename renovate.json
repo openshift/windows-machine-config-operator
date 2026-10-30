@@ -17,8 +17,10 @@
   "platformCommit": "enabled",
   "autodiscover": false,
   "vulnerabilityAlerts": {
-    "enabled": false
+    "enabled": true,
+    "prConcurrentLimit": 2
   },
+  "osvVulnerabilityAlerts": true,
   "enabledManagers": [
     "gomod",
     "tekton",
@@ -137,7 +139,7 @@
     ]
   },
   "gomod": {
-    "enabled": true,
+    "enabled": false,
     "recreateWhen": "always",
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/",
