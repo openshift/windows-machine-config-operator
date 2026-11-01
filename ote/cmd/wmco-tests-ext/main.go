@@ -9,10 +9,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	e "github.com/openshift-eng/openshift-tests-extension/pkg/extension"
@@ -29,6 +31,10 @@ import (
 
 func main() {
 	util.InitStandardFlags()
+	if framework.TestContext.Provider == "" {
+		fmt.Fprintln(os.Stderr, "The --provider flag is not set. Continuing as if --provider=skeleton had been used.")
+		framework.TestContext.Provider = "skeleton"
+	}
 	framework.AfterReadingAllFlags(&framework.TestContext)
 
 	logs.InitLogs()
@@ -55,19 +61,13 @@ func main() {
 		return false
 	})
 
-	componentSpecs.AddBeforeAll(func() {
+	configureStartup(componentSpecs, func() error {
 		if err := compat_otp.InitTest(false); err != nil {
-			panic(err)
+			return err
 		}
 		util.WithCleanup(func() {})
-	})
-	componentSpecs.Select(func(spec *et.ExtensionTestSpec) bool {
-		return strings.Contains(spec.Name, "[BYOHPool]")
-	}).AddBeforeAll(func() {
-		if err := winc.InitializeBYOHSession(); err != nil {
-			panic(err)
-		}
-	})
+		return nil
+	}, winc.InitializeBYOHSession)
 
 	componentSpecs.Walk(func(spec *et.ExtensionTestSpec) {
 		for label := range spec.Labels {
@@ -99,6 +99,48 @@ func main() {
 		logs.FlushLogs()
 		os.Exit(1)
 	}
+}
+
+func configureStartup(specs et.ExtensionTestSpecs, initializeCompatibility, initializeBYOH func() error) {
+	var compatibilityOnce, preparationOnce sync.Once
+	var compatibilityErr, preparationErr error
+	initialize := func() error {
+		compatibilityOnce.Do(func() { compatibilityErr = initializeCompatibility() })
+		return compatibilityErr
+	}
+	specs.Select(func(spec *et.ExtensionTestSpec) bool {
+		return !strings.Contains(spec.Name, "[BYOHPool]")
+	}).AddBeforeAll(func() {
+		if err := initialize(); err != nil {
+			panic(err)
+		}
+	})
+	prepare := func() error {
+		preparationOnce.Do(func() {
+			if err := initialize(); err != nil {
+				preparationErr = fmt.Errorf("BYOH compatibility initialization failed")
+				return
+			}
+			preparationErr = initializeBYOH()
+		})
+		return preparationErr
+	}
+	guard := func(run func(context.Context) *et.ExtensionTestResult) func(context.Context) *et.ExtensionTestResult {
+		return func(ctx context.Context) *et.ExtensionTestResult {
+			if err := prepare(); err != nil {
+				return &et.ExtensionTestResult{Result: et.ResultFailed, Error: err.Error()}
+			}
+			return run(ctx)
+		}
+	}
+	specs.Select(func(spec *et.ExtensionTestSpec) bool {
+		return strings.Contains(spec.Name, "[BYOHPool]")
+	}).Walk(func(spec *et.ExtensionTestSpec) {
+		spec.Run = guard(spec.Run)
+		if spec.RunParallel != nil {
+			spec.RunParallel = guard(spec.RunParallel)
+		}
+	})
 }
 
 func registerSuites(ext *e.Extension) {

@@ -174,12 +174,20 @@ func TestBYOHPreflightBootstrapUsesOwnedPublicProbeWithoutSSH(t *testing.T) {
 				return []byte(mustBYOHJSON(facts)), nil
 			}}
 			lease := &byohHostLease{NodeName: node.Name, NodeUID: node.UID, LeaseID: "run-probe", HostID: string(node.UID)}
+			fixture.preparationDiagnostic = &byohPreparationDiagnostic{Host: 1, Phase: "validation", PodCreate: "not-attempted", PodDelete: "not-attempted"}
 			actual, err := fixture.probeBYOHHost(context.Background(), lease)
 			if (err != nil) != cleanupFailure || !deleted {
 				t.Fatalf("bootstrap err=%v deleted=%t", err, deleted)
 			}
 			if err == nil && actual.PublicKey != facts.PublicKey {
 				t.Fatal("captured public key was not retained")
+			}
+			expectedDelete := "confirmed"
+			if cleanupFailure {
+				expectedDelete = "unknown"
+			}
+			if fixture.preparationDiagnostic.PodCreate != "confirmed" || fixture.preparationDiagnostic.PodDelete != expectedDelete {
+				t.Fatalf("owned API side effects lost: %+v", fixture.preparationDiagnostic)
 			}
 			for _, action := range client.Actions() {
 				if action.GetResource().Resource == "secrets" {
@@ -587,6 +595,66 @@ func TestBYOHSessionPreparationResetsUnusedHosts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBYOHSessionFailureErrorIdentity(t *testing.T) {
+	for _, cause := range []error{context.DeadlineExceeded, context.Canceled} {
+		for _, saveFailed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/saveFailed=%t", cause, saveFailed), func(t *testing.T) {
+				fixture, client, _ := byohPreflightFixture(t)
+				unsafeCause := errors.New("hostile payload peer key script\nprivate diagnostic")
+				saveCause := errors.New("hostile persisted string")
+				probeCalls := 0
+				fixture.preflightProbeForTest = func(context.Context, *byohHostLease) (byohHostFacts, error) {
+					probeCalls++
+					return byohHostFacts{}, errors.Join(fmt.Errorf("%s: %w", unsafeCause, cause), unsafeCause)
+				}
+				client.PrependReactor("create", "configmaps", func(action clienttesting.Action) (bool, runtime.Object, error) {
+					created := action.(clienttesting.CreateAction).GetObject().(*corev1.ConfigMap).DeepCopy()
+					created.UID, created.ResourceVersion = "session", "1"
+					return true, created, client.Tracker().Create(corev1.SchemeGroupVersion.WithResource("configmaps"), created, wmcoNamespace)
+				})
+				if saveFailed {
+					client.PrependReactor("update", "configmaps", func(clienttesting.Action) (bool, runtime.Object, error) {
+						return true, nil, saveCause
+					})
+				}
+				scope := byohRunScope{Run: "run", PoolUID: "pool", ClusterUID: "cluster"}
+				_, err := fixture.ensureBYOHSession(context.Background(), scope)
+				if !errors.Is(err, cause) || !errors.Is(err, unsafeCause) || errors.Is(err, saveCause) != saveFailed {
+					t.Fatalf("in-process error identities not retained: %v", err)
+				}
+				summary := "BYOH preflight/preparation failed: " + fixture.preparationDiagnostic.summary()
+				if saveFailed {
+					summary += "; failed-session-save=unknown"
+				}
+				if err.Error() != summary || strings.Contains(err.Error(), "hostile") || strings.Contains(err.Error(), "\n") {
+					t.Fatalf("unsafe public error: %q", err.Error())
+				}
+				if saveFailed {
+					return
+				}
+				maps := fixture.coreClient.ConfigMaps(wmcoNamespace)
+				retained, err := maps.Get(context.Background(), byohSessionName(scope), metav1.GetOptions{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				annotation := retained.Annotations[byohSessionAnnotation]
+				owner, err := decodeBYOHSession(retained, scope)
+				if err != nil || owner.Phase != "Failed" || owner.Failure == nil || strings.Contains(annotation, "hostile") {
+					t.Fatalf("unsafe retained diagnostic: %v", err)
+				}
+				_, err = fixture.ensureBYOHSession(context.Background(), scope)
+				if err == nil || errors.Is(err, cause) || errors.Is(err, unsafeCause) || !strings.Contains(err.Error(), "restart prohibited") || !strings.Contains(err.Error(), owner.Failure.summary()) {
+					t.Fatalf("retained failure manufactured identity or lost safe cause: %v", err)
+				}
+				retained, err = maps.Get(context.Background(), byohSessionName(scope), metav1.GetOptions{})
+				if err != nil || probeCalls != 1 || retained.Annotations[byohSessionAnnotation] != annotation {
+					t.Fatalf("failed initializer restarted or retained cause changed: probes=%d err=%v", probeCalls, err)
+				}
+			})
+		}
 	}
 }
 

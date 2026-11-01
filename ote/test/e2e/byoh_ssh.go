@@ -59,6 +59,11 @@ func sshErrorClass(ctx context.Context, err error) string {
 }
 
 func newWindowsSSHClient(ctx context.Context, lease *byohHostLease, privateKey []byte) (*windowsSSHClient, error) {
+	return newWindowsSSHClientWithDial(ctx, lease, privateKey, nil)
+}
+
+func newWindowsSSHClientWithDial(ctx context.Context, lease *byohHostLease, privateKey []byte,
+	dial func(context.Context, string, string) (net.Conn, error)) (*windowsSSHClient, error) {
 	if lease == nil || lease.SSHAddress == "" || lease.Username == "" || lease.TrustedHostKey == nil {
 		return nil, fmt.Errorf("incomplete BYOH SSH fixture")
 	}
@@ -77,7 +82,10 @@ func newWindowsSSHClient(ctx context.Context, lease *byohHostLease, privateKey [
 			config.HostKeyAlgorithms = []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
 		}
 	}
-	connection, err := (&net.Dialer{Timeout: config.Timeout}).DialContext(ctx, "tcp",
+	if dial == nil {
+		dial = (&net.Dialer{Timeout: config.Timeout}).DialContext
+	}
+	connection, err := dial(ctx, "tcp",
 		net.JoinHostPort(lease.SSHAddress, "22"))
 	if err != nil {
 		return nil, fmt.Errorf("connect to selected BYOH host over SSH (%s)", sshErrorClass(ctx, err))
@@ -108,7 +116,7 @@ func newWindowsSSHClientFromConnection(ctx context.Context, connection net.Conn,
 	if err != nil {
 		_ = connection.Close()
 		class := sshErrorClass(ctx, err)
-		if class == "host-key" {
+		if errors.Is(err, errBYOHHostKeyMismatch) {
 			return nil, fmt.Errorf("establish selected BYOH SSH session (%s): %w", class, errBYOHHostKeyMismatch)
 		}
 		return nil, fmt.Errorf("establish selected BYOH SSH session (%s)", class)
@@ -322,17 +330,32 @@ func (f *byohTestFixture) sshClient(ctx context.Context, lease *byohHostLease) (
 	if f.sshClientForTest != nil {
 		return f.sshClientForTest(ctx, lease)
 	}
+	f.diagnosticStage("SSH", "api")
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Transport, f.preparationDiagnostic.Field = "SSH", ""
+	}
 	key, err := f.cloudPrivateKey(ctx)
 	if err != nil {
 		return nil, err
 	}
-	client, err := newWindowsSSHClient(ctx, lease, key)
+	client, err := newWindowsSSHClientWithDial(ctx, lease, key, f.sshDialForTest)
 	if err != nil {
+		if errors.Is(err, errBYOHHostKeyMismatch) {
+			f.diagnosticStage("host-key", "publicKey")
+		}
 		return nil, err
 	}
 	if lease.PhysicalUUID != "" {
+		f.diagnosticStage("SSH", "api")
 		output, probeErr := runPowerShellOverSSH(ctx, client, byohIdentityScript)
+		if probeErr != nil {
+			return nil, errors.Join(fmt.Errorf("pinned SSH identity probe failed"), client.close())
+		}
+		f.diagnosticStage("identity", "identity")
 		facts, parseErr := decodeBYOHHostFacts(output, false)
+		if parseErr != nil {
+			return nil, errors.Join(parseErr, client.close())
+		}
 		if probeErr != nil || parseErr != nil || !sameBYOHPhysicalHost(byohHostFacts{UUID: lease.PhysicalUUID, GUID: lease.MachineGUID, Addresses: []string{lease.SSHAddress}}, facts) {
 			return nil, errors.Join(fmt.Errorf("pinned SSH host identity correlation failed"), client.close())
 		}

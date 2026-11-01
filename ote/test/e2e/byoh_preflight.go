@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -44,6 +45,7 @@ type byohPreparedHost struct {
 }
 
 type byohPreflightProof struct {
+	Validated bool
 	Pool      *corev1.ConfigMap
 	Instances *corev1.ConfigMap
 	Records   map[string]byohProducerRecord
@@ -206,28 +208,32 @@ if(!(Test-Path -LiteralPath 'C:\k\containerd' -PathType Container)){throw 'conta
  @{failure=$reason} | ConvertTo-Json -Compress
 }`
 
-func decodeBYOHHostFacts(output string, requireKey bool) (byohHostFacts, error) {
+func decodeBYOHHostFacts(output string, requireKey bool) (result byohHostFacts, retErr error) {
+	defer func() { retErr = byohFactsDiagnostic(retErr) }()
 	var facts byohHostFacts
 	if len(output) > 32768 {
-		return facts, fmt.Errorf("host probe output exceeds bound")
+		return facts, fmt.Errorf("host probe output exceeds bound (size)")
 	}
 	decoder := json.NewDecoder(strings.NewReader(output))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&facts); err != nil {
-		return facts, fmt.Errorf("invalid public host facts")
+		return facts, classifyBYOHHostFactsDecodeError(err)
 	}
 	var trailing interface{}
-	if decoder.Decode(&trailing) != io.EOF {
-		return facts, fmt.Errorf("trailing host facts")
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return facts, fmt.Errorf("trailing host facts (json-trailing-value)")
+		}
+		return facts, fmt.Errorf("trailing host facts (json-trailing-syntax)")
 	}
 	if facts.Failure != "" {
 		allowed := []string{"sshd-not-running", "unsupported-sshd-service-command", "sshd-effective-config", "host-certificate-not-supported", "no-allowlisted-active-hostkey", "hostkey-reparse", "public-key-size", "public-key-syntax", "public-key-wire-size", "public-key-wire-type", "public-field-header", "public-field-size", "ed25519-public-size", "rsa-public-size", "ecdsa-public-shape", "trailing-nonpublic-data", "managed-service-not-running", "containerd-directory-missing", "public-host-probe"}
 		for _, reason := range allowed {
 			if facts.Failure == reason {
-				return facts, fmt.Errorf("host capability failed (%s)", reason)
+				return facts, fmt.Errorf("host capability failed (capability: %s)", reason)
 			}
 		}
-		return facts, fmt.Errorf("host capability returned an invalid failure class")
+		return facts, fmt.Errorf("host capability returned an invalid failure class (capability-unknown)")
 	}
 	if _, err := uuid.Parse(facts.UUID); err != nil {
 		return facts, fmt.Errorf("invalid host system UUID")
@@ -253,6 +259,28 @@ func decodeBYOHHostFacts(output string, requireKey bool) (byohHostFacts, error) 
 		}
 	}
 	return facts, nil
+}
+
+func classifyBYOHHostFactsDecodeError(err error) error {
+	var syntax *json.SyntaxError
+	var mismatch *json.UnmarshalTypeError
+	switch {
+	case errors.As(err, &syntax):
+		return fmt.Errorf("invalid public host facts (json-syntax, offset %d)", syntax.Offset)
+	case errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, io.EOF):
+		return fmt.Errorf("invalid public host facts (json-incomplete)")
+	case errors.As(err, &mismatch):
+		field := "schema"
+		switch mismatch.Field {
+		case "uuid", "guid", "addresses", "dns", "publicKey", "failure":
+			field = mismatch.Field
+		}
+		return fmt.Errorf("invalid public host facts (json-type, field %s)", field)
+	case strings.HasPrefix(err.Error(), "json: unknown field "):
+		return fmt.Errorf("invalid public host facts (json-unknown-field)")
+	default:
+		return fmt.Errorf("invalid public host facts (json-schema)")
+	}
 }
 
 func sameBYOHPhysicalHost(expected, actual byohHostFacts) bool {
@@ -301,6 +329,10 @@ func (f *byohTestFixture) byohResolver() byohLookupIP {
 }
 
 func (f *byohTestFixture) probeBYOHHost(ctx context.Context, lease *byohHostLease) (byohHostFacts, error) {
+	f.diagnosticStage("HostProcess", "api")
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Transport = "HostProcess"
+	}
 	if f.preflightProbeForTest != nil {
 		return f.preflightProbeForTest(ctx, lease)
 	}
@@ -311,7 +343,13 @@ func (f *byohTestFixture) probeBYOHHost(ctx context.Context, lease *byohHostLeas
 	return decodeBYOHHostFacts(output, true)
 }
 
-func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohPreflightProof, error) {
+func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (result *byohPreflightProof, retErr error) {
+	f.diagnosticStage("inventory", "inventory")
+	defer func() {
+		if retErr != nil {
+			f.diagnosticFailure(retErr)
+		}
+	}()
 	maps := f.coreClient.ConfigMaps(wmcoNamespace)
 	pool, err := maps.Get(ctx, byohPoolConfigMap, metav1.GetOptions{})
 	if err != nil {
@@ -357,7 +395,12 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 	}
 	resolver := f.byohResolver()
 	assigned := map[string]int{}
-	for _, node := range nodes.Items {
+	sort.Slice(nodes.Items, func(first, second int) bool { return nodes.Items[first].UID < nodes.Items[second].UID })
+	for nodeIndex, node := range nodes.Items {
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Host = nodeIndex + 1
+		}
+		f.diagnosticStage("identity", "identity")
 		if !nodeReadyAndConverged(&node) || node.UID == "" || node.ResourceVersion == "" || node.Annotations["machine.openshift.io/machine"] != "" || len(node.OwnerReferences) != 0 {
 			return nil, fmt.Errorf("initial Windows Node is not isolated converged BYOH")
 		}
@@ -370,6 +413,7 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 		}
 		matched := []string{}
 		for address, record := range proof.Records {
+			f.diagnosticStage("DNS", "dns")
 			resolved, err := resolveBYOHAddress(ctx, address, resolver)
 			if err != nil {
 				return nil, err
@@ -400,6 +444,7 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 		if _, err := decodeBYOHHostFacts(mustBYOHJSON(facts), true); err != nil {
 			return nil, err
 		}
+		f.diagnosticStage("identity", "identity")
 		for _, other := range proof.Hosts {
 			if other.Lease.NodeUID == node.UID || (node.Spec.ProviderID != "" && other.InitialProviderID == node.Spec.ProviderID) || strings.EqualFold(other.Facts.UUID, facts.UUID) || strings.EqualFold(other.Facts.GUID, facts.GUID) {
 				return nil, fmt.Errorf("duplicate physical host identity")
@@ -419,6 +464,7 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 		lease.PhysicalUUID, lease.MachineGUID = facts.UUID, facts.GUID
 		key, _ := parseTrustedHostKey(facts.PublicKey)
 		for _, address := range matched {
+			f.diagnosticStage("DNS", "dns")
 			record := proof.Records[address]
 			if !strings.EqualFold(record.Fields["platform"], proof.Records[matched[0]].Fields["platform"]) {
 				return nil, fmt.Errorf("aliases disagree on supplied platform")
@@ -450,6 +496,7 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 				}
 			}
 			if value := record.Fields["ssh-host-public-key"]; value != "" {
+				f.diagnosticStage("host-key", "publicKey")
 				provided, err := parseTrustedHostKey(value)
 				if err != nil || provided == nil || !bytes.Equal(provided.Marshal(), key.Marshal()) {
 					return nil, fmt.Errorf("supplied host public key disagrees with authenticated probe")
@@ -476,6 +523,10 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 				return nil, fmt.Errorf("contradictory disposable host rights")
 			}
 		}
+		f.diagnosticStage("SSH", "api")
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Transport = "SSH"
+		}
 		client, err := f.sshClient(ctx, &lease)
 		if err != nil {
 			return nil, fmt.Errorf("preflight direct pinned SSH: %w", err)
@@ -490,6 +541,10 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 	}
 	disposableCount := 0
 	for index := range proof.Hosts {
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Host = index + 1
+		}
+		f.diagnosticStage("DNS", "dns")
 		host := &proof.Hosts[index]
 		if host.Lease.Disposable {
 			disposableCount++
@@ -527,11 +582,24 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 		}
 		sort.Strings(host.Lease.ClaimedAliases)
 		host.Lease.ClaimedAliases = uniqueBYOHStrings(host.Lease.ClaimedAliases)
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Completed = index + 1
+			f.preparationDiagnostic.checkpoint()
+		}
 	}
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Host = 0
+	}
+	f.diagnosticStage("inventory", "inventory")
 	if disposableCount != 1 {
 		return nil, fmt.Errorf("expected exactly one authentically designated disposable physical host")
 	}
 	for address, value := range instances.Data {
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Host = 0
+			f.preparationDiagnostic.Field, f.preparationDiagnostic.Transport = "", ""
+		}
+		f.diagnosticStage("DNS", "dns")
 		resolved, err := resolveBYOHAddress(ctx, address, resolver)
 		if err != nil {
 			return nil, err
@@ -553,18 +621,35 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (*byohP
 			return nil, fmt.Errorf("unrelated or unproven registration prevents global-key isolation")
 		}
 		host := &proof.Hosts[owner]
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Host = owner + 1
+		}
 		if value != "username="+host.Lease.Username || instances.Annotations[registrationOwnershipAnnotation(address)] != "" {
 			return nil, fmt.Errorf("initial registration username or foreign ownership mismatch")
 		}
 		host.RegistrationAliases = append(host.RegistrationAliases, address)
 	}
-	for _, host := range proof.Hosts {
+	for index, host := range proof.Hosts {
 		if len(host.RegistrationAliases) == 0 {
+			if f.preparationDiagnostic != nil {
+				f.preparationDiagnostic.Host = index + 1
+			}
 			return nil, fmt.Errorf("initial host is not registered")
 		}
 	}
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Host = 0
+	}
+	f.diagnosticStage("inventory", "inventory")
 	if err := f.validateBYOHIsolation(ctx, proof.Hosts); err != nil {
 		return nil, err
+	}
+	proof.Validated = true
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Phase = "validated"
+		f.preparationDiagnostic.Completed = 3
+		f.preparationDiagnostic.Host = 0
+		f.preparationDiagnostic.checkpoint()
 	}
 	return proof, nil
 }

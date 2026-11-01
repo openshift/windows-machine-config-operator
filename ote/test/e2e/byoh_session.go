@@ -27,6 +27,19 @@ const byohSessionAnnotation = "windowsmachineconfig.openshift.io/byoh-session"
 
 var byohSessionTransportForTest func(*byohTestFixture)
 
+type byohPreparationError struct {
+	summary string
+	cause   error
+}
+
+func (err *byohPreparationError) Error() string {
+	return err.summary
+}
+
+func (err *byohPreparationError) Unwrap() error {
+	return err.cause
+}
+
 type byohRunScope struct {
 	Run        string
 	PoolUID    types.UID
@@ -43,8 +56,9 @@ type byohRunSession struct {
 	KeyHash      string
 	Reservations map[string]string
 	Hosts        []byohPreparedHost
-	UID          types.UID `json:"-"`
-	Name         string    `json:"-"`
+	Failure      *byohPreparationDiagnostic `json:",omitempty"`
+	UID          types.UID                  `json:"-"`
+	Name         string                     `json:"-"`
 }
 
 func byohSessionName(scope byohRunScope) string {
@@ -106,7 +120,7 @@ func (f *byohTestFixture) byohRunScope(ctx context.Context) (byohRunScope, error
 
 func decodeBYOHSession(cm *corev1.ConfigMap, scope byohRunScope) (*byohRunSession, error) {
 	var session byohRunSession
-	if cm == nil || cm.UID == "" || json.Unmarshal([]byte(cm.Annotations[byohSessionAnnotation]), &session) != nil || session.Scope != scope || session.Nonce == "" {
+	if cm == nil || cm.UID == "" || len(cm.Annotations[byohSessionAnnotation]) > 1048576 || json.Unmarshal([]byte(cm.Annotations[byohSessionAnnotation]), &session) != nil || session.Scope != scope || session.Nonce == "" {
 		return nil, fmt.Errorf("foreign, replaced or incomplete BYOH session")
 	}
 	session.UID, session.Name = cm.UID, cm.Name
@@ -114,6 +128,8 @@ func decodeBYOHSession(cm *corev1.ConfigMap, scope byohRunScope) (*byohRunSessio
 }
 
 func (f *byohTestFixture) ensureBYOHSession(ctx context.Context, scope byohRunScope) (*byohRunSession, error) {
+	f.preparationDiagnostic = &byohPreparationDiagnostic{Phase: "validation", Stage: "session", Fact: "api", SessionCreate: "not-attempted", SessionUpdate: "not-attempted", PodCreate: "not-attempted", PodDelete: "not-attempted", Reservation: "not-attempted", Adoption: "not-attempted", Withdrawal: "not-attempted", HostMutation: "not-attempted"}
+	diagnostic := f.preparationDiagnostic
 	maps := f.coreClient.ConfigMaps(wmcoNamespace)
 	name := byohSessionName(scope)
 	nonce, err := newBYOHNonce()
@@ -122,8 +138,12 @@ func (f *byohTestFixture) ensureBYOHSession(ctx context.Context, scope byohRunSc
 	}
 	session := &byohRunSession{Scope: scope, Nonce: nonce, Phase: "Initializing", Name: name}
 	attempt := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: wmcoNamespace, Annotations: map[string]string{byohSessionAnnotation: mustBYOHJSON(session)}}}
+	diagnostic.SessionCreate = "attempted"
+	diagnostic.checkpoint()
 	created, createErr := maps.Create(ctx, attempt, metav1.CreateOptions{})
 	if createErr != nil {
+		diagnostic.SessionCreate = "unknown"
+		diagnostic.checkpoint()
 		current, readErr := maps.Get(ctx, name, metav1.GetOptions{})
 		if readErr != nil {
 			return nil, errors.Join(fmt.Errorf("create/read BYOH session"), readErr)
@@ -150,7 +170,8 @@ func (f *byohTestFixture) ensureBYOHSession(ctx context.Context, scope byohRunSc
 				case "Prepared":
 					return true, nil
 				case "Failed":
-					return false, fmt.Errorf("BYOH preparation failed; retained evidence prohibits restart")
+					joined.Failure.checkpoint()
+					return false, fmt.Errorf("preparation previously failed: %s; restart prohibited by retained session", joined.Failure.summary())
 				}
 				return false, nil
 			})
@@ -158,6 +179,8 @@ func (f *byohTestFixture) ensureBYOHSession(ctx context.Context, scope byohRunSc
 		}
 		created = current
 	}
+	diagnostic.SessionCreate = "confirmed"
+	diagnostic.checkpoint()
 	if created.UID == "" {
 		return nil, fmt.Errorf("BYOH session create returned no UID")
 	}
@@ -172,9 +195,19 @@ func (f *byohTestFixture) ensureBYOHSession(ctx context.Context, scope byohRunSc
 		err = f.prepareBYOHHosts(ctx, proof, session)
 	}
 	if err != nil {
+		f.diagnosticFailure(err)
 		session.Phase = "Failed"
+		if session.Failure == nil {
+			snapshot := *diagnostic
+			snapshot.SessionUpdate = "attempted"
+			session.Failure = &snapshot
+		}
 		_, saveErr := f.writeBYOHSession(ctx, session, nil)
-		return nil, errors.Join(fmt.Errorf("BYOH preflight/preparation failed: %w", err), saveErr)
+		summary := fmt.Sprintf("BYOH preflight/preparation failed: %s", session.Failure.summary())
+		if saveErr != nil {
+			summary += "; failed-session-save=unknown"
+		}
+		return nil, &byohPreparationError{summary: summary, cause: errors.Join(err, saveErr)}
 	}
 	return session, nil
 }
@@ -198,14 +231,30 @@ func (f *byohTestFixture) writeBYOHSession(ctx context.Context, session *byohRun
 		if data != nil {
 			current.Data = data
 		}
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.SessionUpdate = "attempted"
+			f.preparationDiagnostic.checkpoint()
+		}
 		result, err = maps.Update(ctx, current, metav1.UpdateOptions{})
 		if err == nil {
+			if f.preparationDiagnostic != nil {
+				f.preparationDiagnostic.SessionUpdate = "confirmed"
+				f.preparationDiagnostic.checkpoint()
+			}
 			return nil
 		}
 		readback, readErr := maps.Get(ctx, session.Name, metav1.GetOptions{})
 		if readErr == nil && readback.UID == session.UID && readback.Annotations[byohSessionAnnotation] == current.Annotations[byohSessionAnnotation] && reflect.DeepEqual(readback.Data, current.Data) {
 			result = readback
+			if f.preparationDiagnostic != nil {
+				f.preparationDiagnostic.SessionUpdate = "confirmed"
+				f.preparationDiagnostic.checkpoint()
+			}
 			return nil
+		}
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.SessionUpdate = "unknown"
+			f.preparationDiagnostic.checkpoint()
 		}
 		return err
 	})
@@ -213,6 +262,14 @@ func (f *byohTestFixture) writeBYOHSession(ctx context.Context, session *byohRun
 }
 
 func (f *byohTestFixture) prepareBYOHHosts(ctx context.Context, proof *byohPreflightProof, session *byohRunSession) error {
+	if proof == nil || !proof.Validated || len(proof.Hosts) != 3 {
+		return fmt.Errorf("all three hosts must complete validation before preparation")
+	}
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Phase = "preparing"
+		f.preparationDiagnostic.Host = 0
+		f.preparationDiagnostic.checkpoint()
+	}
 	if err := revalidateBYOHPreflight(ctx, f, proof); err != nil {
 		return err
 	}
@@ -230,6 +287,7 @@ func (f *byohTestFixture) prepareBYOHHosts(ctx context.Context, proof *byohPrefl
 	if _, err := f.writeBYOHSession(ctx, session, nil); err != nil {
 		return err
 	}
+	f.diagnosticStage("reservation", "inventory")
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		pool, err := maps.Get(ctx, byohPoolConfigMap, metav1.GetOptions{})
 		if err != nil {
@@ -239,13 +297,29 @@ func (f *byohTestFixture) prepareBYOHHosts(ctx context.Context, proof *byohPrefl
 			return fmt.Errorf("producer inventory changed before run reservation")
 		}
 		pool.Data = copyStringMap(session.Reservations)
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Reservation = "attempted"
+			f.preparationDiagnostic.checkpoint()
+		}
 		_, err = maps.Update(ctx, pool, metav1.UpdateOptions{})
 		if err == nil {
+			if f.preparationDiagnostic != nil {
+				f.preparationDiagnostic.Reservation = "confirmed"
+				f.preparationDiagnostic.checkpoint()
+			}
 			return nil
 		}
 		observed, readErr := maps.Get(ctx, byohPoolConfigMap, metav1.GetOptions{})
 		if readErr == nil && observed.UID == pool.UID && reflect.DeepEqual(observed.Data, session.Reservations) {
+			if f.preparationDiagnostic != nil {
+				f.preparationDiagnostic.Reservation = "confirmed"
+				f.preparationDiagnostic.checkpoint()
+			}
 			return nil
+		}
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Reservation = "unknown"
+			f.preparationDiagnostic.checkpoint()
 		}
 		return err
 	}); err != nil {
@@ -264,14 +338,38 @@ func (f *byohTestFixture) prepareBYOHHosts(ctx context.Context, proof *byohPrefl
 	state := &byohInstancesState{observed: true, initiallyExisted: true, initialUID: proof.Instances.UID}
 	cleanupCtx, _, cancel := newBYOHCleanupContexts(byohCleanupLimit, byohFallbackLimit)
 	defer cancel()
+	f.diagnosticStage("adoption", "inventory")
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Adoption = "attempted"
+		f.preparationDiagnostic.checkpoint()
+	}
 	if err := adoptBYOHInitialRegistrations(ctx, maps, proof.Instances, preparation, state); err != nil {
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Adoption = "unknown"
+			f.preparationDiagnostic.checkpoint()
+		}
 		cleanupErr := cleanupBYOHPartialAdoption(cleanupCtx, maps, proof.Instances, preparation, state)
 		session.Phase = "Failed"
+		if f.preparationDiagnostic != nil && session.Failure == nil {
+			snapshot := *f.preparationDiagnostic
+			snapshot.SessionUpdate = "attempted"
+			session.Failure = &snapshot
+		}
 		_, saveErr := f.writeBYOHSession(cleanupCtx, session, nil)
 		return errors.Join(err, cleanupErr, saveErr)
 	}
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Adoption = "confirmed"
+		f.preparationDiagnostic.checkpoint()
+	}
 	for _, lease := range preparation {
 		captureDeconfigurationBoundary(lease)
+	}
+	f.diagnosticStage("withdrawal", "inventory")
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Withdrawal = "attempted"
+		f.preparationDiagnostic.HostMutation = "unknown"
+		f.preparationDiagnostic.checkpoint()
 	}
 	withdrawErr := unregisterBYOHInstances(cleanupCtx, maps, preparation, state, true, nil, nil)
 	var resetErrors []error
@@ -282,6 +380,14 @@ func (f *byohTestFixture) prepareBYOHHosts(ctx context.Context, proof *byohPrefl
 			resetErrors = append(resetErrors, withdrawErr)
 		}
 	}
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.Withdrawal = "unknown"
+		if withdrawErr == nil {
+			f.preparationDiagnostic.Withdrawal = "confirmed"
+		}
+		f.preparationDiagnostic.checkpoint()
+	}
+	f.diagnosticStage("reset", "identity")
 	for index := range proof.Hosts {
 		host := &proof.Hosts[index]
 		lease := host.Lease
@@ -295,6 +401,10 @@ func (f *byohTestFixture) prepareBYOHHosts(ctx context.Context, proof *byohPrefl
 	}
 	if len(resetErrors) > 0 {
 		return errors.Join(resetErrors...)
+	}
+	if f.preparationDiagnostic != nil {
+		f.preparationDiagnostic.HostMutation = "confirmed"
+		f.preparationDiagnostic.checkpoint()
 	}
 	session.Hosts = proof.Hosts
 	data := map[string]string{}

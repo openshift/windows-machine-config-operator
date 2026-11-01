@@ -108,7 +108,9 @@ type byohTestFixture struct {
 	verifySSHForTest            func(context.Context, *byohHostLease, []byte) error
 	configuredServicesForTest   func(context.Context, *byohHostLease) error
 	hostProcessLogsForTest      byohPodLogs
+	preparationDiagnostic       *byohPreparationDiagnostic
 	sshClientForTest            func(context.Context, *byohHostLease) (*windowsSSHClient, error)
+	sshDialForTest              func(context.Context, string, string) (net.Conn, error)
 	versionConvergenceForTest   func(context.Context, corev1client.NodeInterface, *byohHostLease) error
 	keyConvergenceForTest       func(context.Context, *byohHostLease, string, []byte, string, bool) error
 }
@@ -900,6 +902,14 @@ func sanitizedPodAPIError(operation string, err error) error {
 // deletion. Script and output content are never included in errors or test logs.
 func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Interface,
 	lease *byohHostLease, script string, readLogs byohPodLogs, requireGone ...bool) (output string, retErr error) {
+	return runBYOHHostProcessPSDiagnostic(ctx, coreClient, lease, script, readLogs, nil, requireGone...)
+}
+
+func runBYOHHostProcessPSDiagnostic(ctx context.Context, coreClient corev1client.CoreV1Interface,
+	lease *byohHostLease, script string, readLogs byohPodLogs, diagnostic *byohPreparationDiagnostic, requireGone ...bool) (output string, retErr error) {
+	if diagnostic != nil {
+		diagnostic.PodCreate, diagnostic.PodDelete = "not-attempted", "not-attempted"
+	}
 	if lease == nil || lease.NodeName == "" || lease.NodeUID == "" || lease.LeaseID == "" || readLogs == nil {
 		return "", fmt.Errorf("incomplete configured-host HostProcess identity")
 	}
@@ -946,8 +956,15 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 				SecurityContext: &corev1.SecurityContext{WindowsOptions: &corev1.WindowsSecurityContextOptions{
 					HostProcess: &hostProcess, RunAsUserName: &systemUser}}}},
 		}}
+	if diagnostic != nil {
+		diagnostic.PodCreate = "attempted"
+		diagnostic.checkpoint()
+	}
 	created, createErr := pods.Create(ctx, pod, metav1.CreateOptions{})
 	if createErr != nil {
+		if diagnostic != nil {
+			diagnostic.PodCreate = "unknown"
+		}
 		reconcileCtx, cancel := detachedContextWithin(ctx, byohHostProcessCleanup)
 		current, getErr := pods.Get(reconcileCtx, podName, metav1.GetOptions{})
 		cancel()
@@ -958,12 +975,21 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 		}
 		created = current
 	}
+	if diagnostic != nil {
+		diagnostic.PodCreate = "confirmed"
+		diagnostic.PodDelete = "not-attempted"
+		diagnostic.checkpoint()
+	}
 	podUID := created.UID
 	defer func() {
 		cleanupCtx, cancel := detachedContextWithin(ctx, byohHostProcessCleanup)
 		defer cancel()
 		current, err := pods.Get(cleanupCtx, podName, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
+			if diagnostic != nil {
+				diagnostic.PodDelete = "confirmed"
+				diagnostic.checkpoint()
+			}
 			return
 		}
 		if err != nil {
@@ -976,8 +1002,16 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 			retErr = errors.Join(retErr, fmt.Errorf("refusing to delete replacement HostProcess Pod"))
 			return
 		}
+		if diagnostic != nil {
+			diagnostic.PodDelete = "attempted"
+			diagnostic.checkpoint()
+		}
 		if err := pods.Delete(cleanupCtx, podName, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{
 			UID: &podUID, ResourceVersion: &current.ResourceVersion}}); err != nil && !apierrors.IsNotFound(err) {
+			if diagnostic != nil {
+				diagnostic.PodDelete = "unknown"
+				diagnostic.checkpoint()
+			}
 			lease.QuarantineRequired = true
 			retErr = errors.Join(retErr, sanitizedPodAPIError("delete owned HostProcess Pod", err))
 			return
@@ -986,6 +1020,10 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 			err := wait.PollUntilContextCancel(cleanupCtx, 100*time.Millisecond, true, func(ctx context.Context) (bool, error) {
 				remaining, err := pods.Get(ctx, podName, metav1.GetOptions{})
 				if apierrors.IsNotFound(err) {
+					if diagnostic != nil {
+						diagnostic.PodDelete = "confirmed"
+						diagnostic.checkpoint()
+					}
 					return true, nil
 				}
 				if err != nil {
@@ -999,6 +1037,10 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 			if err != nil {
 				lease.QuarantineRequired = true
 				retErr = errors.Join(retErr, fmt.Errorf("owned HostProcess Pod disappearance not proved: %w", err))
+				if diagnostic != nil {
+					diagnostic.PodDelete = "unknown"
+					diagnostic.checkpoint()
+				}
 			}
 		}
 	}()
@@ -1087,7 +1129,7 @@ func (f *byohTestFixture) runConfiguredHostProcessPS(ctx context.Context, lease 
 	if f.hostProcessLogsForTest != nil {
 		readLogs = f.hostProcessLogsForTest
 	}
-	return runBYOHHostProcessPS(ctx, f.coreClient, lease, script, readLogs, requireGone...)
+	return runBYOHHostProcessPSDiagnostic(ctx, f.coreClient, lease, script, readLogs, f.preparationDiagnostic, requireGone...)
 }
 
 func configuredManagedServicesRunningScript() string {
