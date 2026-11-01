@@ -267,8 +267,10 @@ func classifyBYOHHostFactsDecodeError(err error) error {
 	switch {
 	case errors.As(err, &syntax):
 		return fmt.Errorf("invalid public host facts (json-syntax, offset %d)", syntax.Offset)
-	case errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, io.EOF):
-		return fmt.Errorf("invalid public host facts (json-incomplete)")
+	case errors.Is(err, io.ErrUnexpectedEOF):
+		return fmt.Errorf("invalid public host facts (json-incomplete, unexpected-eof)")
+	case errors.Is(err, io.EOF):
+		return fmt.Errorf("invalid public host facts (json-incomplete, empty-eof)")
 	case errors.As(err, &mismatch):
 		field := "schema"
 		switch mismatch.Field {
@@ -332,15 +334,40 @@ func (f *byohTestFixture) probeBYOHHost(ctx context.Context, lease *byohHostLeas
 	f.diagnosticStage("HostProcess", "api")
 	if f.preparationDiagnostic != nil {
 		f.preparationDiagnostic.Transport = "HostProcess"
+		f.preparationDiagnostic.Collection = nil
+		f.preparationDiagnostic.Field = ""
 	}
 	if f.preflightProbeForTest != nil {
 		return f.preflightProbeForTest(ctx, lease)
 	}
-	output, err := f.runConfiguredHostProcessPS(ctx, lease, byohPublicHostKeyScript, true)
+	var facts byohHostFacts
+	_, err := f.runConfiguredHostProcessPSValidated(ctx, lease, byohPublicHostKeyScript,
+		func(logs []byte, pod *corev1.Pod, readErr error) error {
+			if readErr != nil {
+				if f.preparationDiagnostic != nil {
+					f.preparationDiagnostic.Collection = captureBYOHFactCollection(nil, pod, nil)
+					f.preparationDiagnostic.Collection.Read, f.preparationDiagnostic.Collection.Decode = "failed", "unknown"
+					f.preparationDiagnostic.Collection.RawBytes, f.preparationDiagnostic.Collection.TrimmedBytes = -1, -1
+					f.preparationDiagnostic.checkpoint()
+				}
+				return readErr
+			}
+			validated, decodeErr := decodeBYOHHostFacts(string(logs), true)
+			if f.preparationDiagnostic != nil {
+				f.preparationDiagnostic.Collection = captureBYOHFactCollection(logs, pod, decodeErr)
+				if decodeErr != nil {
+					f.diagnosticFailure(decodeErr)
+				}
+			}
+			if decodeErr == nil {
+				facts = validated
+			}
+			return decodeErr
+		}, true)
 	if err != nil {
 		return byohHostFacts{}, fmt.Errorf("authenticated public-key/capability probe: %w", err)
 	}
-	return decodeBYOHHostFacts(output, true)
+	return facts, nil
 }
 
 func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (result *byohPreflightProof, retErr error) {
@@ -399,6 +426,8 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (result
 	for nodeIndex, node := range nodes.Items {
 		if f.preparationDiagnostic != nil {
 			f.preparationDiagnostic.Host = nodeIndex + 1
+			f.preparationDiagnostic.Collection = nil
+			f.preparationDiagnostic.Field = ""
 		}
 		f.diagnosticStage("identity", "identity")
 		if !nodeReadyAndConverged(&node) || node.UID == "" || node.ResourceVersion == "" || node.Annotations["machine.openshift.io/machine"] != "" || len(node.OwnerReferences) != 0 {
@@ -535,6 +564,9 @@ func (f *byohTestFixture) preflightBYOH(ctx context.Context, run string) (result
 			return nil, fmt.Errorf("preflight SSH cleanup failed")
 		}
 		proof.Hosts = append(proof.Hosts, byohPreparedHost{Lease: lease, Facts: facts, Node: node, InitialProviderID: node.Spec.ProviderID})
+		if f.preparationDiagnostic != nil {
+			f.preparationDiagnostic.Collection = nil
+		}
 	}
 	if len(assigned) != len(proof.Records) {
 		return nil, fmt.Errorf("inventory contains unproven host aliases")

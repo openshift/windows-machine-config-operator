@@ -907,6 +907,12 @@ func runBYOHHostProcessPS(ctx context.Context, coreClient corev1client.CoreV1Int
 
 func runBYOHHostProcessPSDiagnostic(ctx context.Context, coreClient corev1client.CoreV1Interface,
 	lease *byohHostLease, script string, readLogs byohPodLogs, diagnostic *byohPreparationDiagnostic, requireGone ...bool) (output string, retErr error) {
+	return runBYOHHostProcessPSValidated(ctx, coreClient, lease, script, readLogs, diagnostic, nil, requireGone...)
+}
+
+func runBYOHHostProcessPSValidated(ctx context.Context, coreClient corev1client.CoreV1Interface,
+	lease *byohHostLease, script string, readLogs byohPodLogs, diagnostic *byohPreparationDiagnostic,
+	validate func([]byte, *corev1.Pod, error) error, requireGone ...bool) (output string, retErr error) {
 	if diagnostic != nil {
 		diagnostic.PodCreate, diagnostic.PodDelete = "not-attempted", "not-attempted"
 	}
@@ -1087,6 +1093,9 @@ func runBYOHHostProcessPSDiagnostic(ctx context.Context, coreClient corev1client
 	logs, err := readLogs(ctx, wmcoNamespace, podName, podUID)
 	if err != nil {
 		lease.QuarantineRequired = true
+		if validate != nil {
+			_ = validate(nil, completed, err)
+		}
 		return "", sanitizedPodAPIError("read owned HostProcess Pod output", err)
 	}
 	current, err := pods.Get(ctx, podName, metav1.GetOptions{})
@@ -1095,6 +1104,11 @@ func runBYOHHostProcessPSDiagnostic(ctx context.Context, coreClient corev1client
 		lease.QuarantineRequired = true
 		return "", errors.Join(fmt.Errorf("HostProcess Pod identity changed during log read"),
 			sanitizedPodAPIError("re-read HostProcess Pod after log retrieval", err))
+	}
+	if validate != nil {
+		if err := validate(logs, current, nil); err != nil {
+			return "", err
+		}
 	}
 	return strings.TrimSpace(string(logs)), nil
 }
@@ -1125,11 +1139,16 @@ func (f *byohTestFixture) hostProcessLogs(ctx context.Context, namespace, podNam
 
 func (f *byohTestFixture) runConfiguredHostProcessPS(ctx context.Context, lease *byohHostLease,
 	script string, requireGone ...bool) (string, error) {
+	return f.runConfiguredHostProcessPSValidated(ctx, lease, script, nil, requireGone...)
+}
+
+func (f *byohTestFixture) runConfiguredHostProcessPSValidated(ctx context.Context, lease *byohHostLease,
+	script string, validate func([]byte, *corev1.Pod, error) error, requireGone ...bool) (string, error) {
 	readLogs := f.hostProcessLogs
 	if f.hostProcessLogsForTest != nil {
 		readLogs = f.hostProcessLogsForTest
 	}
-	return runBYOHHostProcessPSDiagnostic(ctx, f.coreClient, lease, script, readLogs, f.preparationDiagnostic, requireGone...)
+	return runBYOHHostProcessPSValidated(ctx, f.coreClient, lease, script, readLogs, f.preparationDiagnostic, validate, requireGone...)
 }
 
 func configuredManagedServicesRunningScript() string {

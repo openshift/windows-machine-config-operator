@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 type byohPreparationDiagnostic struct {
@@ -12,6 +14,60 @@ type byohPreparationDiagnostic struct {
 	Phase, Stage, Fact, Field, Transport               string
 	SessionCreate, SessionUpdate, PodCreate, PodDelete string
 	Reservation, Adoption, Withdrawal, HostMutation    string
+	Collection                                         *byohFactCollectionDiagnostic `json:",omitempty"`
+}
+
+type byohFactCollectionDiagnostic struct {
+	RawBytes, TrimmedBytes               int
+	Read, Decode, Exit, Reason, Finished string
+}
+
+func captureBYOHFactCollection(logs []byte, pod *corev1.Pod, decodeErr error) *byohFactCollectionDiagnostic {
+	collection := &byohFactCollectionDiagnostic{RawBytes: min(len(logs), 32769),
+		TrimmedBytes: min(len(strings.TrimSpace(string(logs))), 32769), Read: "complete", Decode: "valid",
+		Exit: "unknown", Reason: "unknown", Finished: "unknown"}
+	if decodeErr != nil {
+		collection.Decode = "invalid"
+		for _, category := range []string{"empty-eof", "unexpected-eof"} {
+			if strings.Contains(decodeErr.Error(), ", "+category+")") {
+				collection.Decode = category
+			}
+		}
+	}
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name != "probe" || status.State.Terminated == nil {
+			continue
+		}
+		terminated := status.State.Terminated
+		collection.Exit = "nonzero"
+		if terminated.ExitCode == 0 {
+			collection.Exit = "zero"
+		}
+		collection.Reason = safeBYOHDiagnosticValue(terminated.Reason, "Completed|Error|OOMKilled|DeadlineExceeded")
+		if !terminated.FinishedAt.IsZero() {
+			collection.Finished = "observed"
+		}
+		break
+	}
+	return collection
+}
+
+func (collection *byohFactCollectionDiagnostic) summary() string {
+	if collection == nil {
+		return "collection=unknown"
+	}
+	count := func(value int) string {
+		if value < 0 || value > 32769 {
+			return "unknown"
+		}
+		return fmt.Sprintf("%d", value)
+	}
+	return fmt.Sprintf("collection-read=%s raw-bytes=%s trimmed-bytes=%s decode=%s exit=%s reason=%s finished=%s",
+		safeBYOHDiagnosticValue(collection.Read, "complete|failed"), count(collection.RawBytes), count(collection.TrimmedBytes),
+		safeBYOHDiagnosticValue(collection.Decode, "valid|invalid|empty-eof|unexpected-eof"),
+		safeBYOHDiagnosticValue(collection.Exit, "zero|nonzero"),
+		safeBYOHDiagnosticValue(collection.Reason, "Completed|Error|OOMKilled|DeadlineExceeded"),
+		safeBYOHDiagnosticValue(collection.Finished, "observed"))
 }
 
 func safeBYOHDiagnosticValue(value, allowed string) string {
@@ -55,7 +111,7 @@ func (diagnostic *byohPreparationDiagnostic) checkpoint() {
 	for index := range states {
 		states[index] = safeBYOHDiagnosticValue(states[index], "not-attempted|attempted|confirmed|unknown")
 	}
-	fmt.Fprintf(os.Stderr, "byoh-diagnostic: %s effects=session-create:%s,session-update:%s,pod-create:%s,pod-delete:%s,reservation:%s,adoption:%s,withdrawal:%s,host-mutation:%s\n", diagnostic.summary(), states[0], states[1], states[2], states[3], states[4], states[5], states[6], states[7])
+	fmt.Fprintf(os.Stderr, "byoh-diagnostic: %s effects=session-create:%s,session-update:%s,pod-create:%s,pod-delete:%s,reservation:%s,adoption:%s,withdrawal:%s,host-mutation:%s %s\n", diagnostic.summary(), states[0], states[1], states[2], states[3], states[4], states[5], states[6], states[7], diagnostic.Collection.summary())
 }
 
 func (f *byohTestFixture) diagnosticStage(stage, fact string) {
