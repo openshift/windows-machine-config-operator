@@ -1,5 +1,0 @@
-chain:
-  as: wmco-provision
-  steps:
-  - ref: openshift-windows-setup-wmco-konflux
-  - ref: operatorhub-subscribe

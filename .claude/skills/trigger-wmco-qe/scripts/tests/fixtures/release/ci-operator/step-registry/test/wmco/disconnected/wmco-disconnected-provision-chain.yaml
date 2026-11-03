@@ -1,5 +1,0 @@
-chain:
-  as: wmco-disconnected-provision
-  steps:
-  - ref: openshift-windows-setup-wmco-konflux-disconnected
-  - ref: openshift-windows-install-wmco

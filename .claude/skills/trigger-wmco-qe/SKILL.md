@@ -1,229 +1,163 @@
 ---
 name: trigger-wmco-qe
-description: Safely trigger and monitor temporary openshift/release Prow rehearsals for WMCO QE using an OCP minor release and z-stream or y-stream selection. Use for requests such as "trigger WMCO 4.21 z-stream" or "trigger WMCO 5.0 y-stream", including resuming an existing temporary rehearsal PR. Do not use WMCO version numbers or custom image overrides.
+description: Discover, confirm, trigger and monitor existing WMCO QE periodics through the OpenShift Gangway REST API using an OCP minor and z-stream or y-stream selection. Use for requests such as "trigger WMCO 4.21 z-stream" or "trigger WMCO 5.0 y-stream", or to resume polling recorded executions. Do not accept WMCO version numbers or image/payload overrides.
 ---
 
 # Trigger WMCO QE
 
-Use the bundled controller to discover WMCO QE periodics, verify that their
-workflows configure the OCP-specific latest WMCO catalog, create a temporary
-non-draft do-not-merge release PR, request Prow rehearsals, and close the PR
-without merging only after every expected rehearsal succeeds.
+Trigger existing, trusted public `openshift/release` periodics, not new jobs.
+Require approval of the exact job list before any POST. Keep installation and
+Slack command registration separate; this package does not register itself.
 
-This is an installable, reusable project skill. Its command-like phrases are
-not active Slack shorthand until a separate registration is completed. Do not
-claim registration or installation was performed by this repository change.
+## Prerequisites and authentication
 
-## Runtime prerequisites
+Require Python 3.11+, PyYAML, a POSIX filesystem supporting `flock` and atomic
+rename, read access to public GitHub source, and HTTPS access to Gangway for
+live operation. Planning requires no token, cluster access or writable clone.
+Do not require GitHub write access, a container engine or a generator.
 
-Require all of the following before live execution:
+For runtime only, use an **already approved app.ci OAuth token provider**.
+`--token-stdin` consumes its output in memory, without prompting or storing it.
+Never ask someone to paste a token into chat, put tokens in arguments/files,
+enable shell tracing, or assume development-pod credentials authorize Gangway.
+For example, outside development/tests, pipe an existing approved provider into
+the documented command. If using `oc whoami -t`, explicitly choose the authorized
+app.ci context, not whichever context happens to be current. This helper does
+not log in, locate credentials, mint permanent tokens or implement token renewal.
 
-- Python 3.10 or newer, with PyYAML importable by that interpreter.
-- `git`, `gh`, `make`, and either `podman` (the default) or Docker on
-  `PATH`. The selected engine must be running and able to pull every generator
-  image shown by `make -n update`.
-- Network access to the Git remotes, GitHub API, generator image registries,
-  and Prow. Allow substantial time and at least 5 GiB of free disk for the
-  full `make update`, generator images, and dedicated worktree.
-- An existing full clone of `openshift/release` with `upstream` pointing to
-  `openshift/release` and `origin` pointing to a writable fork. Its reviewed
-  checkout must be clean.
-- Authenticated `gh` access that can create, comment on, and close a temporary
-  pull request in `openshift/release`.
-- A clean understanding that the temporary PR must never merge.
+Bearer requests go only to
+`https://gangway-ci.apps.ci.l2s4.p1.openshiftapps.com/v1/executions`.
+Do not change this to an arbitrary host, use HTTP, disable certificate validation,
+follow redirects or add request/response tracing. Environment proxy settings are
+not used. Do not send a bearer token when opening returned Prow links.
 
-Never request credentials, print remote URLs containing credentials, or accept
-an operator/catalog image override.
+## Discover and approve
 
-Repository identity accepts only complete, credential-free Git remote forms:
-`https://github.com/<owner>/<repo>.git`, `git@github.com:<owner>/<repo>.git`,
-or `ssh://git@github.com/<owner>/<repo>.git` (standard SSH port only). The
-local Git transport proxy used by isolated development environments is limited
-to `http://localhost:<port>/github.com/<owner>/<repo>.git`. Query strings,
-fragments, extra path components, and other hosts are rejected.
+Interpret inputs as canonical **OCP major.minor**, not WMCO versions or patches.
+Normalize z/z-stream and y/y-stream:
 
-## Interpret the request
+- z: all available AWS/GCP/Azure/vSphere IPI/UPI WMCO ordinary-nightly jobs,
+  including suffix variants and disconnected vSphere; exclude Nutanix.
+- y: every matching ordinary-nightly WMCO job, including other platforms when
+  their trusted configuration satisfies the supported catalog contract.
 
-Treat the version as an OCP minor release. Accept `4.21` or `5.0`; reject WMCO
-versions such as `10.21` and `11.0`, patch versions, and arbitrary release
-strings.
+Use the ordinary `amd64-nightly` configuration. Separate upgrade-from-stable
+variants are not part of this request, even when their names contain `nightly`.
+Unavailable platforms are not invented. An impossible automatic cron date does
+not exclude an existing manually triggerable periodic.
 
-Normalize the stream to `z` or `y`:
-
-- For z-stream, select every discovered WMCO job on AWS, GCP, Azure, or
-  vSphere whose topology is IPI or UPI. Include all matching variants when
-  present. Never select Nutanix by default.
-- For y-stream, select every discovered matching WMCO QE job, including
-  Nutanix when present.
-
-Insert `zstream` or `ystream` immediately after the `winc` token in every
-selected `as` value. Never reuse a job already containing either marker.
-
-## Plan before writing
-
-Locate the controller relative to this file. From the WMCO repository root:
+Choose a reviewed full commit SHA from public `openshift/release` main:
 
 ```bash
 SKILL_DIR=.claude/skills/trigger-wmco-qe
-python3 "$SKILL_DIR/scripts/trigger_wmco_qe.py" plan \
-  <ocp-minor> <z-stream|y-stream> \
-  --release-repo /path/to/release
+python3 "$SKILL_DIR/scripts/trigger_wmco_qe.py" plan 5.0 z-stream \
+  --source-sha <reviewed-full-release-commit-sha>
 ```
 
-Review the printed selected jobs, renamed values, expected `ci/rehearse/...`
-checks, rehearsal command, reviewed base SHA, catalog paths, and plan digest.
-Planning is read-only. The release checkout's `HEAD` must be the exact
-`upstream/main` revision that `start` will use; any later upstream change
-requires a new plan review.
+Review every printed existing job name, OCP minor, stream, catalog refs, source
+SHA, source-content fingerprint and approval digest. Confirm this exact list
+with the requester. Discovery cross-checks config tests against actual generated
+periodics, cron, target and variant, rather than assuming constructed names exist.
+At public source `b0cb7d2854bb16b43bb855433869a11420693457`, 4.21 has three
+jobs (AWS IPI, GCP IPI, Azure IPI, `winc-f14`), while 5.0 has five (also AWS
+UPI and disconnected vSphere IPI, `winc-f7`). Discover again for other revisions.
 
-The plan prints the versioned closure-manifest identity/schema, typed topology
-digest, and complete normalized command-inventory digest for every selected
-workflow, plus the identity and digest of each trusted catalog role. The
-manifest was audited from read-only public `openshift/release` commit
-`0f72497967354022420becb86928c655a2b117c9`, which is the current source for
-the supported OCP 4.21 and 5.0 AWS, GCP, and Azure connected WMCO jobs. It also
-contains the public disconnected vSphere workflow. Every executable ref in
-those closures has one exact registry path and whole-script SHA-256 digest;
-normalization is limited to line endings and trailing horizontal whitespace.
+Trust upstream configuration, not arbitrary user-supplied shell. Support the
+`cucushift-installer-rehearse-<platform>-<ipi|upi>[-disconnected]-ovn-winc`
+workflow family with its direct first provision chain. Require configured
+connected `openshift-windows-setup-wmco-konflux` before `operatorhub-subscribe`,
+or disconnected `openshift-windows-setup-wmco-konflux-disconnected` before
+`openshift-windows-install-wmco`. Connected subscription must use package
+`windows-machine-config-operator`, source `wmco`, channel `stable`. Reject
+unsupported shapes and job-level image/catalog/subscription overrides.
+Permit configured infrastructure leases, including the disconnected vSphere
+bastion lease; leases do not change the catalog contract.
 
-Dependency YAML is parsed structurally with a finite workflow/chain/ref schema.
-The topology preserves pre/test/post phase, ancestry, list position, dependency
-kind, exact path, and explicitly allowed companion values. Both catalog roles
-must be in the pre/provision path with the producer before the consumer; no
-trusted role is accepted in test or post. Unknown nodes, scalar or ambiguous
-dependencies, paths, scripts, digests, and topology fail closed. No Bash parser
-or mutation regex is used as a fallback.
+The trusted producer scripts read the **actual cluster OCP minor** and select
+the release-specific WMCO FBC `:latest`; disconnected setup resolves and mirrors
+that tag by digest. Planning fingerprints these scripts for review; it does not
+prove arbitrary Bash dataflow or maintain a whole-workflow digest allowlist.
+This contract was source-reviewed at the revision above. Review producer changes
+when approving another revision. Latest is resolved at job runtime, not a digest
+pinned by this skill. Cluster profiles and CI build clusters do not establish
+payload/catalog version. Preserve configured OCP nightly payload selection;
+never inject image, environment, refs or payload overrides.
 
-Manifest maintenance is intentionally manual. When public registry YAML or any
-closure command changes, review the complete 4.21 and 5.0 selected closures,
-the disconnected closure, every changed command and embedded template, and the
-producer/consumer phase and order. Then bump the manifest identity, replace the
-literal path/digest inventory and topology digests from the audited source,
-refresh the four catalog-role fixtures, and rerun all offline regressions plus
-read-only plans for both supported releases. Never derive an accepted digest
-from the checkout being planned or accept a partial closure inventory.
+## Submit once and monitor
 
-The plan must prove that `releases.latest` selects the requested OCP minor and
-that each selected workflow resolves through exactly one supported registry
-path. Connected jobs use `openshift-windows-setup-wmco-konflux`; vSphere
-disconnected jobs use `openshift-windows-setup-wmco-konflux-disconnected`,
-including tag-to-digest resolution, mirroring, and a digest-backed `wmco`
-CatalogSource. Follow the OCP-derived `:latest` image into that CatalogSource
-and then into a WMCO subscription with channel `stable`, package
-`windows-machine-config-operator`, and source `wmco`. Reject job or closure
-overrides and competing setup paths. Report this only as "configured latest
-catalog verified"; do not claim registry freshness beyond configuration
-evidence.
-
-Stop if the plan is empty, ambiguous, already stream-renamed, contains an image
-override, lacks the catalog proof, or exceeds 25 rehearsals.
-
-## Start the live lifecycle
-
-Run live mode only when the user explicitly asks to trigger QE and the plan is
-accepted:
+Only after exact plan approval, have the approved provider pipe its token to:
 
 ```bash
-SKILL_DIR=.claude/skills/trigger-wmco-qe
-python3 "$SKILL_DIR/scripts/trigger_wmco_qe.py" start \
-  <ocp-minor> <z-stream|y-stream> \
-  --release-repo /path/to/release \
-  --approved-plan-digest <exact-digest-from-plan> \
-  --confirm-live-writes CREATE_TEMPORARY_DO_NOT_MERGE_PR
+python3 "$SKILL_DIR/scripts/trigger_wmco_qe.py" start 5.0 z-stream \
+  --source-sha <same-reviewed-full-sha> \
+  --approved-plan-digest <exact-reviewed-digest> \
+  --confirm-live TRIGGER_EXISTING_PERIODICS \
+  --state /private/run-directory/wmco-run.json --token-stdin
 ```
 
-Use `--container-engine docker` only when Docker was the reviewed runtime.
-`start` generates a collision-resistant run ID and prints its per-run state
-path. A previously unused `--run-id` is supported for deterministic
-automation. Never reuse or delete an older run's state, branch, worktree, or
-uncertain resources.
+The helper recomputes the plan before submission. The SHA/fingerprint identify
+reviewed source; they cannot transactionally pin Gangway's asynchronously synced
+server configuration. Do not claim otherwise. Each POST contains **only**
+`job_name` and `job_execution_type: "1"`. Persist submitting intent before POST
+and its returned execution ID before advancing. State is bounded, mode 0600,
+atomically replaced/fsynced and protected by an exclusive per-run lock. Keep the
+run directory private; preserve its state and lock file for inspection.
 
-The controller must perform these steps without shortcuts:
+A timeout, HTTP error, malformed reply or interrupted POST is **uncertain**.
+Halt submission; never retry automatically, create replacement state to retry,
+or adopt another execution by name/time. A crash leaving `submitting` has the
+same meaning. Report unsubmitted jobs as missing. An operator must reconcile
+uncertain creation separately before explicitly approving any new request.
 
-1. Recompute the read-only plan, require the exact approved digest, run the
-   Python/container-engine/image-pull/disk preflight, fetch current
-   `upstream/main`, and refuse if its SHA changed. Enforce 1–25 jobs before any
-   write.
-2. Persist `initializing` state with the exact origin fork, authenticated
-   author, reviewed base, plan digest, run ID, branch, and worktree before
-   creating the dedicated worktree and branch.
-   Never delete or force-reuse an existing worktree, branch, remote branch, PR,
-   or lifecycle state.
-3. Rename only the selected config `as` values and run `make update` with the
-   preflighted container engine.
-4. Inspect tracked and untracked status and require the exact semantic diff:
-   only the planned `as`, generated name, and generated target substitutions
-   in the two expected files.
-5. Commit and push without force, then create a non-draft PR against `main`
-   whose stored base is exactly `main` and whose exact stored full title is
-   `DEBUG Do not merge: OCP <version> <stream> stream WMCO QE rehearsals`.
-   Every create/readback through adoption, monitoring, close, and close
-   reconciliation must match that exact base, title, origin fork repository,
-   branch, head SHA, open
-   state when required, and non-draft state.
-6. Wait for exactly one strict `[REHEARSALNOTIFIER]` table from the public
-   `openshift-merge-bot[bot]` account and `openshift-merge-bot` GitHub App whose
-   job set exactly equals the expected generated jobs. Preserve that identity
-   for every later readback.
-7. Refuse every existing trigger-capable `pj-rehearse` form. Post exactly
-   `/pj-rehearse` for up to five jobs or `/pj-rehearse max` for six through
-   twenty-five jobs. Pin the successful POST response's ID, body, timestamp,
-   authenticated author, PR, and URL. Never adopt a same-text comment after an
-   uncertain POST.
-8. Monitor only exact `ci/rehearse/<expected-job>` evidence published by the
-   public `openshift-ci[bot]` account or `openshift-ci` GitHub App for the
-   current head and request. Accept only HTTPS Prow
-   `pr-logs/pull/openshift_release/<PR>/rehearse-<PR>-<job>/<build>` URLs on the
-   maintained host list. Collapse transitions and check/status duplicates by
-   numeric build identity; distinct builds remain ambiguous. Conflicting
-   maximum-timestamp transitions for one logical build are also ambiguous;
-   only semantically equivalent ties collapse. Print the PR link and each
-   available job link.
-9. Immediately before closing, refresh the PR, notifier, requests, and all job
-   evidence. Close via PR state PATCH without merging only when every expected
-   job still has one current logical build whose latest transition succeeded.
-
-Unrelated PR checks never satisfy expected QE coverage.
-
-## Fail closed and resume
-
-Leave the PR open and report evidence when any expected job is pending,
-missing, failed, cancelled, timed out, stale, skipped, neutral, duplicated,
-unrecognized, from a foreign publisher, or has an invalid build URL. Also
-leave it open on extra trigger comments, notifier gaps, changed PR heads or
-forks, draft or closed state, uncertain writes, malformed API responses, or
-monitoring timeout.
-Never merge, acknowledge rehearsals, or retry an uncertain write blindly.
-
-The controller stores lifecycle state under the release clone's Git common
-directory and preserves the dedicated worktree for inspection. Resume a safe,
-nonterminal state with:
+Resume **polling only**, using the same provider and original state:
 
 ```bash
-SKILL_DIR=.claude/skills/trigger-wmco-qe
 python3 "$SKILL_DIR/scripts/trigger_wmco_qe.py" resume \
-  <ocp-minor> <z-stream|y-stream> \
-  --release-repo /path/to/release \
-  --run-id <run-id-from-state-path> \
-  --confirm-live-writes CREATE_TEMPORARY_DO_NOT_MERGE_PR
+  --state /private/run-directory/wmco-run.json --token-stdin \
+  --wait-seconds 21600 --poll-seconds 30
 ```
 
-For a `blocked` or `uncertain` state, inspect and report the state file, PR,
-current head, notifier, request, and expected job links. Do not mutate external
-state automatically.
+Default monitoring performs one poll. Resume never submits, even for missing or
+uncertain jobs. GET errors report a safe diagnostic and never trigger POST.
+Check exact ID, job name and PERIODIC type. TRIGGERED/SCHEDULING/PENDING mean
+not complete. SUCCESS/FAILURE/ABORTED/ERROR are Prow outcomes. Retain validated
+terminal outcome, run URL and completion timestamp independently, even when other
+fields are missing. Require all three for successful completion. Contradictory
+evidence persists as CONFLICT and cannot be cleared by polling or resume; transport
+POLL_ERROR can recover through matching GET evidence. Missing/unknown/conflicting
+evidence never establishes success. Print every requested job and its Prow link
+when available; report overall SUCCESS only for complete, unambiguous success
+of **every** requested job. Return 2 for any incomplete/unsuccessful result.
 
-## Validate changes to this skill
+## API evidence and integration limits
 
-Use offline fixtures and mocked command responses only:
+Use the [OpenShift REST guide](https://docs.ci.openshift.org/how-tos/triggering-prowjobs-via-rest/)
+and [upstream Gangway documentation](https://docs.prow.k8s.io/docs/components/optional/gangway/).
+The deployed Prow revision `c06373a3e` defines the
+[proto](https://github.com/kubernetes-sigs/prow/blob/c06373a3e/pkg/gangway/gangway.proto)
+and [handler](https://github.com/kubernetes-sigs/prow/blob/c06373a3e/pkg/gangway/gangway.go).
+POST returns a JobExecution object with `id`, `job_name`, `job_type`,
+`job_status: "TRIGGERED"`; acceptance is not test success. `id` is the ProwJob
+metadata name, **not** a numeric build ID. GET `/v1/executions/{id}` returns
+snake_case `job_name`, `job_type`, `job_status`, `job_url`, and optional
+`create_time`/`completion_time`. GET does **not** populate `gcs_path`.
+`create_time` maps to Prow status startTime, and completion_time to completionTime.
+
+The [public OpenShift Envoy recipe](https://github.com/openshift/release/blob/b0cb7d2854bb16b43bb855433869a11420693457/clusters/app.ci/supplemental-ci-images/envoyproxy/envoyproxy.yaml)
+has a path-rewrite/body-handling discrepancy with documented GET. A source recipe
+is not proof of running-image behavior or production failure. Use documented GET,
+report unsupported/auth/proxy/malformed responses, and do not invent a POST-based
+GET workaround. Authenticated live GET/POST and end-to-end acceptance are **untested**.
+
+## Offline validation
 
 ```bash
-SKILL_DIR=.claude/skills/trigger-wmco-qe
 python3 -m unittest discover -s "$SKILL_DIR/scripts/tests" -p 'test_*.py' -v
 python3 -m py_compile "$SKILL_DIR/scripts/trigger_wmco_qe.py"
 ruff check "$SKILL_DIR"
 ruff format --check "$SKILL_DIR"
 ```
 
-Never exercise live mode as a test. Do not create a real PR, post a Prow
-command, launch a rehearsal, mutate a registry, or merge anything during skill
-development or validation.
+Use mocked HTTP only. Do not launch real jobs, request live API authentication,
+mutate clusters/registries, post Prow commands or write GitHub/Jira during tests.
+Keep the development PR draft. Installation and live authorization are separate.
