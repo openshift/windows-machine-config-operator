@@ -166,6 +166,11 @@ if [[ "$TEST" == "setup-only" ]]; then
 fi
 
 if [[ "$TEST" = "basic" ]]; then
+  # Deploy parallel upgrade checker before tests that trigger the MaxParallelUpgrades path
+  createParallelUpgradeCheckerResources
+  trap deleteParallelUpgradeCheckerResources EXIT
+  printf "\n####### Testing userdata tamper #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/userdata_tamper -v -timeout=30m -args $GO_TEST_ARGS
   printf "\n####### Testing image mirroring #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/image_mirroring -v -timeout=10m -args $GO_TEST_ARGS
   printf "\n####### Testing network #######\n" >> "$ARTIFACT_DIR"/wmco.log
@@ -180,6 +185,11 @@ if [[ "$TEST" = "basic" ]]; then
   go test ./test/e2e/... -run=TestWMCO/cluster-wide_proxy -v -timeout=20m -args $GO_TEST_ARGS
   printf "\n####### Testing reconfiguration #######\n" >> "$ARTIFACT_DIR"/wmco.log
   go test ./test/e2e/... -run=TestWMCO/reconfigure -v -timeout=40m -args $GO_TEST_ARGS
+  # Verify parallel upgrade checker results and clean up
+  printf "\n####### Testing parallel upgrades checker #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/parallel_upgrades_checker -v -timeout=10m -args $GO_TEST_ARGS
+  deleteParallelUpgradeCheckerResources
+  trap - EXIT
 fi
 
 if [[ "$TEST" = "upgrade-setup" ]]; then
