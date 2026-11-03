@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"net"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -30,6 +29,11 @@ const (
 	// MaxParallelUpgrades is the default maximum allowed number of nodes that can be upgraded in parallel.
 	// It is a positive integer and cannot be used to stop upgrades, only to limit the number of concurrent upgrades.
 	MaxParallelUpgrades = 1
+)
+
+const (
+	// SSHAddressAnnotation is the annotation key used to override the SSH connection address
+	SSHAddressAnnotation = "windowsmachineconfig.openshift.io/ssh-address"
 )
 
 var (
@@ -103,7 +107,7 @@ func (r *instanceReconciler) instanceFromNode(ctx context.Context, node *core.No
 	if usernameAnnotation == "" {
 		return nil, fmt.Errorf("node is missing valid username annotation")
 	}
-	addr, err := GetAddress(node.Status.Addresses)
+	addr, err := GetAddress(node)
 	if err != nil {
 		return nil, err
 	}
@@ -138,19 +142,30 @@ func (r *instanceReconciler) updateKubeletCA(ctx context.Context, node core.Node
 	return nodeConfig.UpdateKubeletClientCA(contents)
 }
 
-// GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
-// or dns address.
-func GetAddress(addresses []core.NodeAddress) (string, error) {
-	for _, addr := range addresses {
-		if addr.Type == core.NodeInternalIP || addr.Type == core.NodeInternalDNS {
-			// filter out ipv6
-			if net.ParseIP(addr.Address) != nil && net.ParseIP(addr.Address).To4() == nil {
-				continue
-			}
-			return addr.Address, nil
+// GetAddress returns the IP address or DNS name of the node to be used for SSH communication.
+// It prioritizes the explicit SSH address override annotation if present, then falls back
+// to the standard Node status addresses.
+func GetAddress(node *core.Node) (string, error) {
+	// 1. Check for the explicit SSH address override annotation
+	if addr, ok := node.Annotations[SSHAddressAnnotation]; ok && addr != "" {
+		return addr, nil
+	}
+
+	// 2. Fallback to standard NodeInternalIP
+	for _, address := range node.Status.Addresses {
+		if address.Type == core.NodeInternalIP {
+			return address.Address, nil
 		}
 	}
-	return "", fmt.Errorf("no usable address")
+
+	// 3. Fallback to NodeInternalDNS
+	for _, address := range node.Status.Addresses {
+		if address.Type == core.NodeInternalDNS {
+			return address.Address, nil
+		}
+	}
+
+	return "", fmt.Errorf("no internal IP or DNS address found for node %s", node.Name)
 }
 
 // deconfigureInstance deconfigures the instance associated with the given node, removing the node from the cluster.
