@@ -182,8 +182,11 @@ chmod -R 644 /payload && chmod -R +X /payload &&\
 # Create directory for generated files with open permissions, this allows WMCO to write to this directory
 mkdir -m 0777 /payload/generated
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:d235f607e1d6d833f031db107dc42206e4dd4d5aa9142c43d3771fb7f9bea76a
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest@sha256:72187ec58a94bd958ff48e41881d7c5d8bc0b49586cc1661da5ba4d92374c206
 LABEL stage=operator
+
+# Verify the final runtime image enables the PQC crypto policy required for ML-KEM support. See WINC-2049
+RUN test "$(cat /etc/crypto-policies/state/current)" = "DEFAULT:PQ"
 
 # This block contains standard Red Hat container labels
 LABEL name="openshift4-wincw/windows-machine-config-rhel9-operator" \

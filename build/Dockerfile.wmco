@@ -43,7 +43,7 @@ WORKDIR /payload/
 RUN pushd / && tar -cf - windows-instance-config-daemon.exe | gzip -9 > /payload/windows-instance-config-daemon.exe.tar.gz && popd && \
 sha256sum /windows-instance-config-daemon.exe >> sha256sum
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest
 LABEL stage=operator
 
 # This block contains standard Red Hat container labels
