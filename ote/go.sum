@@ -223,8 +223,8 @@ github.com/fxamacker/cbor/v2 v2.9.0 h1:NpKPmjDBgUfBms6tr6JZkTHtfFGcMKsw3eGcmD/sa
 github.com/fxamacker/cbor/v2 v2.9.0/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
 github.com/gabriel-vasile/mimetype v1.4.9 h1:5k+WDwEsD9eTLL8Tz3L0VnmVh9QxGjRmjBvAG7U/oYY=
 github.com/gabriel-vasile/mimetype v1.4.9/go.mod h1:WnSQhFKJuBlRyLiKohA/2DtIlPFAbguNaG7QCHcyGok=
-github.com/gebn/bmc v0.0.0-20250519231546-bf709e03fe3c h1:EIa2nx4hmRi1tayvnbw7++VVKN/pIIirmdvSh6DGR68=
-github.com/gebn/bmc v0.0.0-20250519231546-bf709e03fe3c/go.mod h1:7FfuX+OqHI+MyF1eUL5/HBoDhzHBfp6qfKMb87PHPtQ=
+github.com/gebn/bmc v0.0.0-20250802105219-95608a3160e1 h1:G5ncORpWwSmDGPI1OIE7GP5oNdiqUTyUSOY6OXNxIjA=
+github.com/gebn/bmc v0.0.0-20250802105219-95608a3160e1/go.mod h1:tNmx5ZU9QgZVPX/q9ou5U2pNl3G1842+dW3bm6gwaKo=
 github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32 h1:Mn26/9ZMNWSw9C9ERFA1PUxfmGpolnw2v0bKOREu5ew=
 github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32/go.mod h1:GIjDIg/heH5DOkXY3YJ/wNhfHsQHoXGjl8G8amsYQ1I=
 github.com/gkampitakis/ciinfo v0.3.2 h1:JcuOPk8ZU7nZQjdUhctuhQofk7BGHuIy0c9Ez8BNhXs=
