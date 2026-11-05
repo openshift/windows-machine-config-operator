@@ -105,7 +105,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fsouza/go-dockerclient v1.12.4 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/gebn/bmc v0.0.0-20250519231546-bf709e03fe3c // indirect
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
