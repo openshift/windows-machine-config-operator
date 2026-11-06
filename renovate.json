@@ -17,17 +17,8 @@
   "platformCommit": "enabled",
   "autodiscover": false,
   "vulnerabilityAlerts": {
-    "enabled": true,
-    "prConcurrentLimit": 2
+    "enabled": false
   },
-  "osvVulnerabilityAlerts": true,
-  "packageRules": [
-    {
-      "description": "Security-only: disable routine gomod updates; vulnerabilityAlerts overrides this for CVEs",
-      "matchManagers": ["gomod"],
-      "enabled": false
-    }
-  ],
   "enabledManagers": [
     "gomod",
     "tekton",
@@ -146,12 +137,37 @@
     ]
   },
   "gomod": {
-    "enabled": true,
+    "enabled": false,
     "additionalBranchPrefix": "{{baseBranch}}/",
     "branchPrefix": "konflux/mintmaker/",
-    "commitMessagePrefix": "[vendor]",
-    "draftPR": true,
-    "postUpdateOptions": ["gomodTidy", "gomodVendor"]
+    "packageRules": [
+      {
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchBaseBranches": [
+          "!master"
+        ],
+        "enabled": false
+      },
+      {
+        "groupName": "Go dependencies",
+        "matchManagers": [
+          "gomod"
+        ],
+        "matchBaseBranches": [
+          "master"
+        ],
+        "matchPackageNames": [
+          "!k8s.io/kubernetes",
+          "!github.com/openshift/api",
+          "!github.com/openshift/client-go",
+          "!github.com/openshift/library-go",
+          "!github.com/golang-jwt/jwt/v4",
+          "!github.com/golang-jwt/jwt/v5"
+        ]
+      }
+    ]
   },
   "git-submodules": {
     "enabled": false,
