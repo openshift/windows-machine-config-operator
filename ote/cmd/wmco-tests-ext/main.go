@@ -9,10 +9,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/openshift-eng/openshift-tests-extension/pkg/cmd"
 	e "github.com/openshift-eng/openshift-tests-extension/pkg/extension"
@@ -24,11 +26,15 @@ import (
 	"k8s.io/component-base/logs"
 	framework "k8s.io/kubernetes/test/e2e/framework"
 
-	_ "github.com/openshift/windows-machine-config-operator/ote/test/e2e"
+	winc "github.com/openshift/windows-machine-config-operator/ote/test/e2e"
 )
 
 func main() {
 	util.InitStandardFlags()
+	if framework.TestContext.Provider == "" {
+		fmt.Fprintln(os.Stderr, "The --provider flag is not set. Continuing as if --provider=skeleton had been used.")
+		framework.TestContext.Provider = "skeleton"
+	}
 	framework.AfterReadingAllFlags(&framework.TestContext)
 
 	logs.InitLogs()
@@ -55,12 +61,13 @@ func main() {
 		return false
 	})
 
-	componentSpecs.AddBeforeAll(func() {
+	configureStartup(componentSpecs, func() error {
 		if err := compat_otp.InitTest(false); err != nil {
-			panic(err)
+			return err
 		}
 		util.WithCleanup(func() {})
-	})
+		return nil
+	}, winc.InitializeBYOHSession)
 
 	componentSpecs.Walk(func(spec *et.ExtensionTestSpec) {
 		for label := range spec.Labels {
@@ -94,6 +101,48 @@ func main() {
 	}
 }
 
+func configureStartup(specs et.ExtensionTestSpecs, initializeCompatibility, initializeBYOH func() error) {
+	var compatibilityOnce, preparationOnce sync.Once
+	var compatibilityErr, preparationErr error
+	initialize := func() error {
+		compatibilityOnce.Do(func() { compatibilityErr = initializeCompatibility() })
+		return compatibilityErr
+	}
+	specs.Select(func(spec *et.ExtensionTestSpec) bool {
+		return !strings.Contains(spec.Name, "[BYOHPool]")
+	}).AddBeforeAll(func() {
+		if err := initialize(); err != nil {
+			panic(err)
+		}
+	})
+	prepare := func() error {
+		preparationOnce.Do(func() {
+			if err := initialize(); err != nil {
+				preparationErr = fmt.Errorf("BYOH compatibility initialization failed")
+				return
+			}
+			preparationErr = initializeBYOH()
+		})
+		return preparationErr
+	}
+	guard := func(run func(context.Context) *et.ExtensionTestResult) func(context.Context) *et.ExtensionTestResult {
+		return func(ctx context.Context) *et.ExtensionTestResult {
+			if err := prepare(); err != nil {
+				return &et.ExtensionTestResult{Result: et.ResultFailed, Error: err.Error()}
+			}
+			return run(ctx)
+		}
+	}
+	specs.Select(func(spec *et.ExtensionTestSpec) bool {
+		return strings.Contains(spec.Name, "[BYOHPool]")
+	}).Walk(func(spec *et.ExtensionTestSpec) {
+		spec.Run = guard(spec.Run)
+		if spec.RunParallel != nil {
+			spec.RunParallel = guard(spec.RunParallel)
+		}
+	})
+}
+
 func registerSuites(ext *e.Extension) {
 	suites := []e.Suite{
 		{
@@ -113,7 +162,7 @@ func registerSuites(ext *e.Extension) {
 		{
 			Name:       "windows-machine-config-operator/disruptive",
 			Parents:    []string{"openshift/disruptive"},
-			Qualifiers: []string{`name.contains("[Disruptive]")`},
+			Qualifiers: []string{`name.contains("[Disruptive]") && !name.contains("[BYOHPool]")`},
 		},
 		{
 			Name:       "windows-machine-config-operator/proxy",
@@ -122,7 +171,11 @@ func registerSuites(ext *e.Extension) {
 		},
 		{
 			Name:       "windows-machine-config-operator/non-disruptive",
-			Qualifiers: []string{`!name.contains("[Disruptive]")`},
+			Qualifiers: []string{`!name.contains("[Disruptive]") && !name.contains("[BYOHPool]")`},
+		},
+		{
+			Name:       "windows-machine-config-operator/byoh-pool",
+			Qualifiers: []string{`name.contains("[BYOHPool]")`},
 		},
 		{
 			Name:       "windows-machine-config-operator/smokerun",
