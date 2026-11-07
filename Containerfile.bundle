@@ -1,6 +1,6 @@
 FROM registry.redhat.io/openshift/golang-builder:golang-builder-v1.26-rhel9 as image-replacer
 COPY bundle/manifests /manifests
-RUN sed -i "s|REPLACE_IMAGE|registry.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator@sha256:ba62149b27f34af8f0360ce6a37535c7706a202d182dd9c17d06a164d9febccd|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
+RUN sed -i "s|REPLACE_IMAGE|registry.redhat.io/openshift4-wincw/windows-machine-config-rhel9-operator@sha256:e1d000b827fd1506a68dc5ce4fa2f8400d55437be194a03033b6cf3d76f8b48a|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
 RUN sed -i "s|REPLACE_DATE|$(date "+%Y-%m-%dT%H:%M:%SZ")|g" /manifests/windows-machine-config-operator.clusterserviceversion.yaml
 
 FROM scratch
