@@ -73,8 +73,11 @@ const (
 	// WindowsExporterPath contains the path of the windows_exporter binary. The container image should already have
 	// this binary mounted
 	WindowsExporterPath = payloadDirectory + WindowsExporterDirectory + WindowsExporterName
-	// TLSConfPath contains the path of the TLS config file
-	TLSConfPath = payloadDirectory + WindowsExporterDirectory + "windows-exporter-webconfig.yaml.tar.gz"
+	// WindowsExporterWebConfigPath contains the path of the runtime-generated
+	// windows-exporter TLS webconfig file. Written to /payload/generated/
+	// because the operator runs as a non-root UID (OpenShift SCC) and the
+	// static /payload/ directory is read-only.
+	WindowsExporterWebConfigPath = payloadDirectory + "/generated/windows-exporter-webconfig.yaml.tar.gz"
 	// ECRCredentialProviderPath is the path to ecr-credential-provider.exe
 	ECRCredentialProviderPath = payloadDirectory + "ecr-credential-provider.exe.tar.gz"
 	// AzureCloudNodeManager is the name of the cloud node manager for Azure platform
@@ -394,13 +397,37 @@ func generateNetworkConfigScript(clusterCIDR, hnsNetworkName, hnsPSModulePath,
 	return networkConfScript, nil
 }
 
-// Creates a .tar.gz archive from file data
+// GetWebConfigSHA returns the SHA256 hash of the current (uncompressed) webconfig
+// file from the global shaMap. This hash is computed by PopulateWebConfig and
+// reflects the content that will be transferred to Windows nodes. Returns an
+// empty string if the webconfig has not been populated yet.
+func GetWebConfigSHA() string {
+	fileName := strings.TrimSuffix(filepath.Base(WindowsExporterWebConfigPath), ".tar.gz")
+	return shaMap[fileName]
+}
+
+// SetWebConfigSHAForTest sets or clears the webconfig SHA in the global shaMap.
+// This is intended only for unit tests that need to exercise the webconfig
+// reconciliation path without invoking PopulateWindowsExporterWebConfig.
+func SetWebConfigSHAForTest(sha string) {
+	if shaMap == nil {
+		shaMap = make(map[string]string)
+	}
+	fileName := strings.TrimSuffix(filepath.Base(WindowsExporterWebConfigPath), ".tar.gz")
+	if sha == "" {
+		delete(shaMap, fileName)
+	} else {
+		shaMap[fileName] = sha
+	}
+}
+
+// createTarGzFile creates a .tar.gz archive containing a single file from data.
+// It explicitly closes the tar and gzip writers to ensure all buffered data is
+// flushed, returning any close error with contextual wrapping.
 func createTarGzFile(data []byte, fileName string, outWriter io.Writer) error {
 	// Chain writers: File -> Gzip -> Tar
 	gzipWriter := gzip.NewWriter(outWriter)
-	defer gzipWriter.Close()
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
 
 	header := &tar.Header{
 		Name:    fileName,
@@ -414,6 +441,12 @@ func createTarGzFile(data []byte, fileName string, outWriter io.Writer) error {
 	}
 	if _, err := tarWriter.Write(data); err != nil {
 		return fmt.Errorf("failed to write data to tar writer: %w", err)
+	}
+	if err := tarWriter.Close(); err != nil {
+		return fmt.Errorf("failed to finalize tar archive: %w", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return fmt.Errorf("failed to finalize gzip compression: %w", err)
 	}
 	return nil
 }
