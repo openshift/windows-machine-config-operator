@@ -11,6 +11,7 @@ import json
 import os
 import re
 import ssl
+import stat
 import sys
 import tempfile
 import time
@@ -71,7 +72,11 @@ UniqueLoader.add_constructor(
 
 def read_yaml(content):
     try:
-        value = yaml.load(content, Loader=UniqueLoader)
+        loader = UniqueLoader(content)
+        try:
+            value = loader.get_single_data()
+        finally:
+            loader.dispose()
     except (yaml.YAMLError, RecursionError, ValueError) as error:
         raise SafetyError("Unsupported YAML document") from error
     if not isinstance(value, dict):
@@ -371,9 +376,57 @@ class Gangway:
             ) from None
 
 
+def state_path(value):
+    path = Path(value)
+    if (
+        not path.is_absolute()
+        or ".." in path.parts
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\.json", path.name)
+    ):
+        raise SafetyError(
+            "State must be an absolute, traversal-free path to a named .json file"
+        )
+    directory = path.parent
+    if directory.resolve(strict=True) != directory:
+        raise SafetyError("State directory ancestors must not be symlinks")
+    for ancestor in (directory, *directory.parents):
+        info = ancestor.stat()
+        if info.st_uid not in {0, os.geteuid()} or (
+            info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX
+        ):
+            raise SafetyError(
+                "State directory ancestors must be trusted and protected from replacement"
+            )
+    info = directory.stat()
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or info.st_uid != os.geteuid()
+        or info.st_mode & 0o077
+    ):
+        raise SafetyError(
+            "State directory must already exist, be owned by this user and be private (0700)"
+        )
+    for target in (path, path.with_name(path.name + ".lock")):
+        try:
+            info = target.lstat()
+        except FileNotFoundError:
+            continue
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != os.geteuid()
+            or info.st_nlink != 1
+            or info.st_mode & 0o077
+            or not info.st_mode & 0o200
+        ):
+            raise SafetyError(
+                "Existing state/lock must be private, writable, single-link regular files owned by this user"
+            )
+    return path
+
+
 @contextlib.contextmanager
 def run_lock(path):
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = state_path(path)
     descriptor = os.open(
         str(path) + ".lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600
     )
@@ -388,6 +441,7 @@ def run_lock(path):
 
 
 def save(path, state):
+    path = state_path(path)
     content = json.dumps(state, sort_keys=True, indent=2).encode()
     if len(content) > MAX_STATE:
         raise SafetyError("Run state exceeds size limit")
@@ -397,7 +451,7 @@ def save(path, state):
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary, path)
+        os.replace(temporary, state_path(path))
         directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
             os.fsync(directory)
@@ -428,6 +482,7 @@ def new_state(plan):
 
 
 def load(path):
+    path = state_path(path)
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
         content = source.read(MAX_STATE + 1)
     if len(content) > MAX_STATE:
@@ -654,7 +709,11 @@ def main(argv=None):
                 help="reviewed openshift/release full commit SHA",
             )
         if action != "plan":
-            command.add_argument("--state", required=True, type=Path)
+            command.add_argument(
+                "--state",
+                required=True,
+                help="absolute .json path in an existing owned private directory; no traversal or symlinks",
+            )
             command.add_argument(
                 "--token-stdin",
                 required=True,
@@ -670,6 +729,8 @@ def main(argv=None):
             )
     args = parser.parse_args(argv)
     try:
+        if args.action != "plan":
+            args.state = state_path(args.state)
         if args.action != "resume":
             plan = build_plan(args.ocp_minor, args.stream, args.source_sha)
             if args.action == "plan":

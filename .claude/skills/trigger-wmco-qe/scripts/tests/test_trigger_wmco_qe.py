@@ -4,6 +4,7 @@ import http.client
 import importlib.util
 import io
 import json
+import os
 import tempfile
 import unittest
 import urllib.error
@@ -305,6 +306,23 @@ class DiscoveryTests(OfflineTest):
             with self.subTest(content=content), self.assertRaises(wmco.SafetyError):
                 wmco.read_yaml(content)
 
+    def test_explicit_safe_loader_preserves_strict_nested_mapping_rules(self):
+        self.assertTrue(issubclass(wmco.UniqueLoader, yaml.SafeLoader))
+        self.assertEqual(
+            wmco.read_yaml("nested: {value: safe}"), {"nested": {"value": "safe"}}
+        )
+        with mock.patch.object(os, "system") as system:
+            for content in (
+                '!!python/object/apply:os.system ["must-not-run"]',
+                "nested: {key: first, key: second}",
+                "nested: {1: nonstring}",
+                "base: &base {key: value}\nnested: {<<: *base}",
+                "first: document\n---\nsecond: document",
+            ):
+                with self.subTest(content=content), self.assertRaises(wmco.SafetyError):
+                    wmco.read_yaml(content)
+            system.assert_not_called()
+
     def test_configuration_mismatch_fails_closed(self):
         mutations = (
             (
@@ -591,6 +609,123 @@ class SubmissionTests(OfflineTest):
             self.client.request("GET", identifier="https://foreign/")
 
 
+class StatePathTests(OfflineTest):
+    def rejected_by_cli(self, path):
+        for action in ("start", "resume"):
+            args = [action]
+            if action == "start":
+                args += [
+                    "5.0",
+                    "z",
+                    "--source-sha",
+                    SHA,
+                    "--approved-plan-digest",
+                    wmco.digest(self.plan),
+                    "--confirm-live",
+                    "TRIGGER_EXISTING_PERIODICS",
+                ]
+            args += ["--state", str(path), "--token-stdin"]
+            code, output, errors = self.run_cli(args)
+            self.assertEqual(code, 2, str(path))
+            self.assertEqual(self.requests, [])
+            self.client.http.open.assert_not_called()
+            self.assertNotIn(TOKEN, output + errors)
+
+    def test_relative_traversal_missing_directory_and_names_rejected_before_post(self):
+        root = self.path.parent
+        for path in (
+            "run.json",
+            root / ".." / root.name / "run.json",
+            root / "missing" / "run.json",
+            root / "run.txt",
+            root / "-run.json",
+            root / ("x" * 97 + ".json"),
+        ):
+            with self.subTest(path=path):
+                self.rejected_by_cli(path)
+        self.assertFalse((root / "missing").exists())
+
+    def test_symlink_file_lock_and_directory_escapes_rejected(self):
+        root = self.path.parent
+        private = root / "private"
+        private.mkdir(mode=0o700)
+        alias = root / "alias"
+        alias.symlink_to(private, target_is_directory=True)
+        self.rejected_by_cli(alias / "run.json")
+        target = private / "target.json"
+        target.write_text("preserve")
+        target.chmod(0o600)
+        self.path.symlink_to(target)
+        self.rejected_by_cli(self.path)
+        self.path.unlink()
+        lock = self.path.with_name(self.path.name + ".lock")
+        lock.symlink_to(target)
+        self.rejected_by_cli(self.path)
+        self.assertEqual(target.read_text(), "preserve")
+        self.assertFalse((private / "run.json").exists())
+
+    def test_shared_wrong_owner_hardlink_and_nonregular_targets_rejected(self):
+        root = self.path.parent
+        shared = root / "shared"
+        shared.mkdir(mode=0o755)
+        self.rejected_by_cli(shared / "run.json")
+        shared.chmod(0o777)
+        private = shared / "private"
+        private.mkdir(mode=0o700)
+        self.rejected_by_cli(private / "run.json")
+        with mock.patch.object(wmco.os, "geteuid", return_value=os.geteuid() + 1):
+            self.rejected_by_cli(self.path)
+        target = root / "original.json"
+        target.write_text("preserve")
+        target.chmod(0o600)
+        self.path.hardlink_to(target)
+        self.rejected_by_cli(self.path)
+        self.path.unlink()
+        self.path.mkdir(mode=0o700)
+        self.rejected_by_cli(self.path)
+        self.path.rmdir()
+        self.path.write_text("preserve")
+        for mode in (0o644, 0o400):
+            self.path.chmod(mode)
+            self.rejected_by_cli(self.path)
+        self.assertEqual(target.read_text(), "preserve")
+
+    def test_unrelated_private_json_is_never_overwritten(self):
+        original = '{"unrelated": "preserve"}'
+        self.path.write_text(original)
+        self.path.chmod(0o600)
+        self.rejected_by_cli(self.path)
+        self.assertEqual(self.path.read_text(), original)
+
+    def test_rechecking_path_before_intent_blocks_post(self):
+        real_save = wmco.save
+
+        def change_permissions(path, state):
+            real_save(path, state)
+            if all(row["phase"] == "not_submitted" for row in state["jobs"].values()):
+                path.parent.chmod(0o755)
+
+        try:
+            with (
+                mock.patch.object(wmco, "save", side_effect=change_permissions),
+                self.assertRaises(wmco.SafetyError),
+            ):
+                self.submit()
+            self.assertEqual(self.requests, [])
+        finally:
+            self.path.parent.chmod(0o700)
+        state = wmco.load(self.path)
+        self.assertTrue(
+            all(row["phase"] == "not_submitted" for row in state["jobs"].values())
+        )
+        code, output, errors = self.run_cli(
+            ["resume", "--state", str(self.path), "--token-stdin"]
+        )
+        self.assertEqual(code, 2)
+        self.assertNotIn(TOKEN, output + errors)
+        self.assertEqual(self.requests, [])
+
+
 class MonitoringTests(OfflineTest):
     def prepare_resume(self):
         state = wmco.new_state(self.plan)
@@ -859,7 +994,7 @@ class MonitoringTests(OfflineTest):
             self.fail("Lock must be exclusive")
         link = self.path.with_name("symlink.json")
         link.symlink_to(self.path)
-        with self.assertRaises(OSError):
+        with self.assertRaises(wmco.SafetyError):
             wmco.load(link)
 
 

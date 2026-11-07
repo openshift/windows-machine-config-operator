@@ -103,6 +103,19 @@ and its returned execution ID before advancing. State is bounded, mode 0600,
 atomically replaced/fsynced and protected by an exclusive per-run lock. Keep the
 run directory private; preserve its state and lock file for inspection.
 
+Before start, create a dedicated run directory with `mkdir -m 700` as the current
+user. `--state` must be an absolute path in that existing private directory, with
+an alphanumeric-leading `.json` basename (up to 101 characters, using letters,
+digits, dots, underscores or hyphens). Relative paths, `..` traversal and symlinked
+directory ancestors are rejected. Existing state/lock files must be writable,
+owned by the current user, private, single-link regular files; symlinks, hardlinks
+and shared directories are rejected. Start never overwrites existing state;
+resume requires a valid recorded run. A missing directory is not created implicitly.
+This deliberately restricts CLI file output, not a network-provided state path.
+Ancestors must be owned by this user or root and not group/world-writable unless
+sticky (such as `/tmp`). Other processes running as the same user are outside
+this filesystem isolation boundary.
+
 A timeout, HTTP error, malformed reply or interrupted POST is **uncertain**.
 Halt submission; never retry automatically, create replacement state to retry,
 or adopt another execution by name/time. A crash leaving `submitting` has the
