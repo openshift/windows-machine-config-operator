@@ -147,6 +147,17 @@ MIRROR_REGISTRY_HOST=${MIRROR_REGISTRY_HOST:-}
 GO_TEST_ARGS="$BYOH_NODE_COUNT_OPTION $MACHINE_NODE_COUNT_OPTION --private-key-path=$KUBE_SSH_KEY_PATH --wmco-namespace=$WMCO_DEPLOY_NAMESPACE --windows-server-version=$WIN_VER --mirror-registry=$MIRROR_REGISTRY_HOST"
 echo "Running tests with arguments: $GO_TEST_ARGS"
 
+# setup-only exists to prepare Windows nodes for downstream suites; keep it
+# limited to provisioning and skip the broader WMCO validation suites.
+if [[ "$TEST" == "setup-only" ]]; then
+  printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run=TestWMCO/create/Creation -v -timeout=90m -args $GO_TEST_ARGS
+  printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
+  get_WMCO_logs
+  echo "Setup complete with Windows nodes provisioned. Skipping remaining e2e tests (-t setup-only)."
+  exit 0
+fi
+
 # Test that the operator is running when the private key secret is not present
 printf "\n####### Testing operator deployed without private key secret #######\n" >> "$ARTIFACT_DIR"/wmco.log
 go test ./test/e2e/... -run=TestWMCO/operator_deployed_without_private_key_secret -v -args $GO_TEST_ARGS
@@ -158,11 +169,6 @@ if [[ "$TEST" != "upgrade-setup" && "$TEST" != "upgrade-test" ]]; then
   # Get logs for the creation tests
   printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
   get_WMCO_logs
-fi
-
-if [[ "$TEST" == "setup-only" ]]; then
-  echo "Setup complete with Windows nodes provisioned. Skipping remaining e2e tests (-t setup-only)."
-  exit 0
 fi
 
 if [[ "$TEST" = "basic" ]]; then

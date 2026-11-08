@@ -138,6 +138,12 @@ func registerSuites(ext *e.Extension) {
 			Name:       "windows-machine-config-operator/non-disruptive",
 			Qualifiers: []string{`!name.contains("[Disruptive]")`},
 		},
+		// release-verification keeps release validation focused on stable Smokerun
+		// coverage while excluding upgrade/connected/disruptive/serial scopes.
+		{
+			Name:       "windows-machine-config-operator/release-verification",
+			Qualifiers: []string{`name.contains("Smokerun") && !name.contains("ChkUpgrade") && !name.contains("ConnectedOnly") && !name.contains("[Disruptive]") && !name.contains("[Serial]")`},
+		},
 		{
 			Name:       "windows-machine-config-operator/smokerun",
 			Qualifiers: []string{`name.contains("Smokerun")`},

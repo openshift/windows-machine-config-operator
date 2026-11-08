@@ -20,9 +20,11 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 	oc := compat_otp.NewCLIWithoutNamespace("default")
 
 	var initialProxySpec map[string]interface{}
+	var initialTrustedCAName string
 
 	g.BeforeEach(func() {
 		initialProxySpec = getEnvVarProxyMap(oc)
+		initialTrustedCAName = getClusterProxy(oc, "spec.trustedCA.name")
 	})
 
 	g.It("Smokerun-Author:rrasouli-Critical-65980-[node-proxy]-Cluster-wide proxy settings validation [Serial]", func() {
@@ -49,7 +51,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 	g.It("Smokerun-Author:rrasouli-Longduration-Critical-90290-[node-proxy]-Remove trusted CA from cluster proxy and verify propagation [Timeout:50m][Serial][Disruptive][Slow]",
 		g.SpecTimeout(45*time.Minute),
 		func(ctx g.SpecContext) {
-			defer restoreProxyEnvironment(oc, initialProxySpec)
+			defer restoreProxyEnvironment(oc, initialProxySpec, initialTrustedCAName)
 
 			g.By("Verify that trusted-ca ConfigMap exists before removal")
 			_, err := popItemFromList(oc, "cm", proxyCAConfigMap, wmcoNamespace)
@@ -76,7 +78,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 		g.SpecTimeout(60*time.Minute),
 		func(ctx g.SpecContext) {
 			winNodes := getWindowsNodeNames(oc)
-			defer restoreProxyEnvironment(oc, initialProxySpec)
+			defer restoreProxyEnvironment(oc, initialProxySpec, initialTrustedCAName)
 
 			g.By("Remove no_proxy vars and verify propagation to Windows nodes")
 			if getClusterProxy(oc, "spec.noProxy") != "" {
@@ -134,7 +136,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 	g.It("Smokerun-Author:rrasouli-Longduration-Critical-66670-[node-proxy]-Cluster-wide proxy trusted-ca configmap tests [Timeout:35m][Serial][Disruptive][Slow]",
 		g.SpecTimeout(30*time.Minute),
 		func(ctx g.SpecContext) {
-			defer restoreProxyEnvironment(oc, initialProxySpec)
+			defer restoreProxyEnvironment(oc, initialProxySpec, initialTrustedCAName)
 
 			g.By("Add another record to cluster proxy: example.com to no-proxy")
 			wmcoStartTime := getWMCORestartState(oc)
@@ -263,7 +265,7 @@ var _ = g.Describe("[OTP][sig-windows][apigroup:config.openshift.io] Windows_Con
 			}
 
 			initialRestartState := getWMCORestartState(oc)
-			defer restoreProxyEnvironment(oc, initialProxySpec)
+			defer restoreProxyEnvironment(oc, initialProxySpec, initialTrustedCAName)
 			err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p",
 				"[{\"op\": \"add\", \"path\":\"/spec/noProxy\", \"value\":\""+updatedNoProxy+"\"}]").Execute()
 			o.Expect(err).NotTo(o.HaveOccurred(), "could not patch proxy with new noProxy value")
