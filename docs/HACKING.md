@@ -255,6 +255,31 @@ For example:
 
 Apply the yaml to your cluster, which will deploy the WMCO. 
 
+## OTE release-verification suite
+
+Build the separate OTE module with `make build-tests-ext`. The extension advertises
+`windows-machine-config-operator/release-verification` for release verification.
+It selects the existing smokerun membership (case-sensitive `Smokerun` anywhere
+in the test name), excluding names containing `ChkUpgrade`, `ConnectedOnly`,
+`[Disruptive]`, or `[Serial]`. These exclusions form one combined CEL qualifier;
+the suite has no parents or child suites that could union other tests into it.
+The existing broad `windows-machine-config-operator/smokerun` suite is unchanged.
+
+Inspect membership without running tests or connecting to a cluster:
+
+```shell script
+KUBECONFIG=/dev/null build/_output/bin/wmco-tests-ext list suites
+KUBECONFIG=/dev/null build/_output/bin/wmco-tests-ext list tests \
+  --suite windows-machine-config-operator/release-verification -o names
+```
+
+Future CI consumers using the `openshift-e2e-test` step can select this suite with
+`TEST_SUITE: windows-machine-config-operator/release-verification`. This does not
+change existing jobs or test labels, or exclude lifecycle coverage from other
+suites, including BYOH coverage. Suite membership is distinct from environment
+filters and runtime platform prerequisites/skips; listing tests does not verify
+that they pass on AWS, BYOH, or a disconnected cluster.
+
 ## Running the e2e tests
 
 The e2e tests also automatically build and deploy the WMCO onto your cluster.

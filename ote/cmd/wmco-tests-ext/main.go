@@ -27,6 +27,8 @@ import (
 	_ "github.com/openshift/windows-machine-config-operator/ote/test/e2e"
 )
 
+const releaseVerificationSuite = "windows-machine-config-operator/release-verification"
+
 func main() {
 	util.InitStandardFlags()
 	framework.AfterReadingAllFlags(&framework.TestContext)
@@ -127,6 +129,12 @@ func registerSuites(ext *e.Extension) {
 		{
 			Name:       "windows-machine-config-operator/smokerun",
 			Qualifiers: []string{`name.contains("Smokerun")`},
+		},
+		{
+			Name: releaseVerificationSuite,
+			Qualifiers: []string{
+				`name.contains("Smokerun") && !(name.contains("ChkUpgrade") || name.contains("ConnectedOnly") || name.contains("[Disruptive]") || name.contains("[Serial]"))`,
+			},
 		},
 		{
 			Name: "windows-machine-config-operator/all",
