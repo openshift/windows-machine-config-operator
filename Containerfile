@@ -182,7 +182,7 @@ chmod -R 644 /payload && chmod -R +X /payload &&\
 # Create directory for generated files with open permissions, this allows WMCO to write to this directory
 mkdir -m 0777 /payload/generated
 
-FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest@sha256:ddaf8f8a845a39f7ab7d7caaed1bed0b9063eab6e22e52beece0924e91666c86
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest@sha256:d638f3b49b79575329aacdae2739f954effe2467c12147711e73445c4fc97819
 LABEL stage=operator
 
 # Verify the final runtime image enables the PQC crypto policy required for ML-KEM support. See WINC-2049
