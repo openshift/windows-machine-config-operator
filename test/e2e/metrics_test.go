@@ -2,11 +2,13 @@ package e2e
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	oconfig "github.com/openshift/api/config/v1"
+	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	auth "k8s.io/api/authentication/v1"
@@ -22,8 +26,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"github.com/openshift/windows-machine-config-operator/controllers"
+	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/metrics"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/retry"
+	"github.com/openshift/windows-machine-config-operator/pkg/windows"
 )
 
 const (
@@ -37,6 +45,7 @@ func (tc *testContext) testMetrics(t *testing.T) {
 	t.Run("Prometheus configuration validation", tc.testPrometheus)
 	t.Run("Windows Prometheus rules validation", tc.testWindowsPrometheusRules)
 	t.Run("Windows Node resource usage info validation", tc.testNodeResourceUsage)
+	t.Run("WebConfig TLS adherence", tc.testWebConfigTLSAdherence)
 }
 
 // testWindowsExporter deploys Linux pod and tests that it can communicate with Windows node's metrics port
@@ -323,4 +332,330 @@ func makePrometheusQuery(address, query, token string) ([]Result, error) {
 		return nil, fmt.Errorf("query had status %s, expected 'success'", promQuery.Status)
 	}
 	return promQuery.Data.Result, nil
+}
+
+// tlsVersionToGoVersion maps OpenShift TLSProtocolVersion to Go crypto/tls version constants
+var tlsVersionToGoVersion = map[oconfig.TLSProtocolVersion]uint16{
+	oconfig.VersionTLS10: tls.VersionTLS10,
+	oconfig.VersionTLS11: tls.VersionTLS11,
+	oconfig.VersionTLS12: tls.VersionTLS12,
+	oconfig.VersionTLS13: tls.VersionTLS13,
+}
+
+// getEffectiveTLSProfile fetches the cluster APIServer resource and resolves the effective TLS profile spec
+func (tc *testContext) getEffectiveTLSProfile() (*oconfig.TLSSecurityProfile, oconfig.TLSProfileSpec, error) {
+	apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	if err != nil {
+		return nil, oconfig.TLSProfileSpec{}, fmt.Errorf("error getting APIServer resource: %w", err)
+	}
+	profileSpec, err := tlspkg.GetTLSProfileSpec(apiServer.Spec.TLSSecurityProfile)
+	if err != nil {
+		return nil, oconfig.TLSProfileSpec{}, fmt.Errorf("error resolving TLS profile spec: %w", err)
+	}
+	return apiServer.Spec.TLSSecurityProfile, profileSpec, nil
+}
+
+// getWebConfigContent retrieves the content of the windows-exporter webconfig YAML file from a Windows node
+func (tc *testContext) getWebConfigContent(addr string) (string, error) {
+	command := fmt.Sprintf("Get-Content -Raw -Path %s", windows.TLSConfPath)
+	out, err := tc.runPowerShellSSHJob("webconfig-content", command, addr)
+	if err != nil {
+		return "", fmt.Errorf("error running SSH job to get webconfig: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// testWebConfigTLSAdherence is the top-level test group for webconfig TLS profile tests.
+// All sub-tests run serially and the original TLS profile is restored in cleanup.
+func (tc *testContext) testWebConfigTLSAdherence(t *testing.T) {
+	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node")
+
+	// Save the original TLS security profile to restore after tests
+	apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.NoError(t, err, "error getting APIServer resource")
+	originalProfile := apiServer.Spec.TLSSecurityProfile
+
+	t.Cleanup(func() {
+		// Restore the original TLS security profile
+		apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
+		if err != nil {
+			t.Logf("cleanup: error getting APIServer resource: %v", err)
+			return
+		}
+		apiServer.Spec.TLSSecurityProfile = originalProfile
+		_, err = tc.client.Config.ConfigV1().APIServers().Update(context.TODO(), apiServer, metav1.UpdateOptions{})
+		if err != nil {
+			t.Logf("cleanup: error restoring original TLS profile: %v", err)
+		}
+	})
+
+	t.Run("TLS profile reflected in webconfig", tc.testWebConfigMatchesTLSProfile)
+	t.Run("TLS profile change updates node without reconfigure", tc.testWebConfigProfileChangeWithoutReconfigure)
+	t.Run("Exporter enforces TLS profile", tc.testWebConfigTLSHandshakeEnforcement)
+}
+
+// testWebConfigMatchesTLSProfile verifies that each Windows node's webconfig file matches
+// the cluster's effective TLS profile and that the SHA annotation matches the file content.
+func (tc *testContext) testWebConfigMatchesTLSProfile(t *testing.T) {
+	_, profileSpec, err := tc.getEffectiveTLSProfile()
+	require.NoError(t, err)
+
+	// Generate the expected webconfig from the effective TLS profile.
+	// honorTLSProfile is true because we are testing the TLS-aware webconfig.
+	expectedContent, _ := payload.GenerateWebConfig(profileSpec, true)
+	expectedSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(expectedContent)))
+
+	for _, node := range gc.allNodes() {
+		t.Run(node.GetName(), func(t *testing.T) {
+			addr, err := controllers.GetAddress(node.Status.Addresses)
+			require.NoError(t, err, "error getting node address")
+
+			t.Run("webconfig content matches TLS profile", func(t *testing.T) {
+				err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+					content, err := tc.getWebConfigContent(addr)
+					if err != nil {
+						log.Printf("error fetching webconfig from node %s: %v, retrying...",
+							node.GetName(), err)
+						return false, nil
+					}
+					if content != expectedContent {
+						log.Printf("webconfig mismatch on node %s, retrying...", node.GetName())
+						return false, nil
+					}
+					return true, nil
+				})
+				assert.NoError(t, err, "webconfig content does not match expected TLS profile on node %s",
+					node.GetName())
+			})
+
+			t.Run("SHA annotation matches file content", func(t *testing.T) {
+				err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+					// Re-fetch node to get the latest annotations
+					freshNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(),
+						node.GetName(), metav1.GetOptions{})
+					if err != nil {
+						log.Printf("error fetching node %s: %v, retrying...", node.GetName(), err)
+						return false, nil
+					}
+					content, err := tc.getWebConfigContent(addr)
+					if err != nil {
+						log.Printf("error fetching webconfig from node %s: %v, retrying...",
+							node.GetName(), err)
+						return false, nil
+					}
+					actualSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+					annotationSHA, exists := freshNode.Annotations[metadata.WindowsExporterWebConfigSHAAnnotation]
+					if !exists {
+						log.Printf("node %s missing webconfig SHA annotation, retrying...",
+							node.GetName())
+						return false, nil
+					}
+					if annotationSHA != actualSHA {
+						log.Printf("SHA mismatch on node %s: annotation=%s, actual=%s, retrying...",
+							node.GetName(), annotationSHA, actualSHA)
+						return false, nil
+					}
+					if annotationSHA != expectedSHA {
+						log.Printf("SHA does not match expected value on node %s: annotation=%s, expected=%s, retrying...",
+							node.GetName(), annotationSHA, expectedSHA)
+						return false, nil
+					}
+					return true, nil
+				})
+				assert.NoError(t, err, "webconfig SHA annotation mismatch on node %s", node.GetName())
+			})
+		})
+	}
+}
+
+// testWebConfigProfileChangeWithoutReconfigure verifies that changing the cluster TLS profile
+// updates the webconfig on Windows nodes via lightweight reconciliation (without a full
+// deconfigure+reconfigure cycle). This is confirmed by verifying the WMCO version annotation
+// remains unchanged.
+func (tc *testContext) testWebConfigProfileChangeWithoutReconfigure(t *testing.T) {
+	node := gc.allNodes()[0]
+	addr, err := controllers.GetAddress(node.Status.Addresses)
+	require.NoError(t, err, "error getting node address")
+
+	// Record the current version annotation
+	freshNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(), node.GetName(), metav1.GetOptions{})
+	require.NoError(t, err)
+	originalVersionAnnotation := freshNode.Annotations[metadata.VersionAnnotation]
+	require.NotEmpty(t, originalVersionAnnotation, "node %s missing version annotation", node.GetName())
+
+	// Record the current SHA annotation so we can detect when it changes
+	originalSHA := freshNode.Annotations[metadata.WindowsExporterWebConfigSHAAnnotation]
+
+	// Change the TLS profile to Modern (TLS 1.3 only)
+	apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
+	require.NoError(t, err)
+	apiServer.Spec.TLSSecurityProfile = &oconfig.TLSSecurityProfile{
+		Type: oconfig.TLSProfileModernType,
+	}
+	_, err = tc.client.Config.ConfigV1().APIServers().Update(context.TODO(), apiServer, metav1.UpdateOptions{})
+	require.NoError(t, err, "error updating TLS profile to Modern")
+
+	// Compute the expected new webconfig
+	newProfileSpec, err := tlspkg.GetTLSProfileSpec(apiServer.Spec.TLSSecurityProfile)
+	require.NoError(t, err)
+	newExpectedContent, _ := payload.GenerateWebConfig(newProfileSpec, true)
+	newExpectedSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(newExpectedContent)))
+
+	// Wait for the node's SHA annotation and remote webconfig to converge to the new values
+	t.Run("webconfig converges to new profile", func(t *testing.T) {
+		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+			freshNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(),
+				node.GetName(), metav1.GetOptions{})
+			if err != nil {
+				log.Printf("error fetching node %s: %v, retrying...", node.GetName(), err)
+				return false, nil
+			}
+			annotationSHA := freshNode.Annotations[metadata.WindowsExporterWebConfigSHAAnnotation]
+			if annotationSHA == originalSHA {
+				log.Printf("node %s SHA annotation has not changed yet, retrying...", node.GetName())
+				return false, nil
+			}
+			content, err := tc.getWebConfigContent(addr)
+			if err != nil {
+				log.Printf("error fetching webconfig from node %s: %v, retrying...",
+					node.GetName(), err)
+				return false, nil
+			}
+			if content != newExpectedContent {
+				log.Printf("webconfig content has not converged on node %s, retrying...",
+					node.GetName())
+				return false, nil
+			}
+			if annotationSHA != newExpectedSHA {
+				log.Printf("SHA annotation has not converged on node %s: got=%s, expected=%s, retrying...",
+					node.GetName(), annotationSHA, newExpectedSHA)
+				return false, nil
+			}
+			return true, nil
+		})
+		assert.NoError(t, err, "webconfig did not converge to new TLS profile on node %s", node.GetName())
+	})
+
+	// Verify the version annotation is unchanged, proving lightweight reconciliation
+	t.Run("version annotation unchanged", func(t *testing.T) {
+		freshNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(),
+			node.GetName(), metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, originalVersionAnnotation, freshNode.Annotations[metadata.VersionAnnotation],
+			"version annotation changed on node %s, indicating a full reconfigure occurred", node.GetName())
+	})
+}
+
+// testWebConfigTLSHandshakeEnforcement verifies that the windows-exporter actually enforces
+// the TLS profile during real TLS handshakes: connections with allowed TLS versions succeed,
+// connections with disallowed versions fail, and valid HTTPS requests return metrics.
+func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
+	_, profileSpec, err := tc.getEffectiveTLSProfile()
+	require.NoError(t, err)
+
+	node := gc.allNodes()[0]
+	nodeIP := ""
+	for _, address := range node.Status.Addresses {
+		if address.Type == core.NodeInternalIP {
+			nodeIP = address.Address
+		}
+	}
+	require.NotEmpty(t, nodeIP, "test requires Windows node %s to have internal IP", node.GetName())
+
+	exporterAddr := fmt.Sprintf("%s:%d", nodeIP, metrics.Port)
+	minVersion := tlsVersionToGoVersion[profileSpec.MinTLSVersion]
+
+	t.Run("allowed TLS version succeeds", func(t *testing.T) {
+		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+			conn, err := tls.DialWithDialer(
+				&net.Dialer{Timeout: 10 * time.Second},
+				"tcp", exporterAddr,
+				&tls.Config{
+					InsecureSkipVerify: true,
+					MinVersion:         minVersion,
+					MaxVersion:         minVersion,
+				},
+			)
+			if err != nil {
+				log.Printf("TLS handshake with allowed version failed on %s: %v, retrying...",
+					node.GetName(), err)
+				return false, nil
+			}
+			conn.Close()
+			return true, nil
+		})
+		assert.NoError(t, err,
+			"TLS handshake with allowed version (0x%04x) should succeed on node %s",
+			minVersion, node.GetName())
+	})
+
+	t.Run("disallowed TLS version fails", func(t *testing.T) {
+		// Only test this when the min version is above TLS 1.0, otherwise there is
+		// no lower version to test rejection with
+		if minVersion <= tls.VersionTLS10 {
+			t.Skip("minimum TLS version is TLS 1.0; no lower version to test rejection")
+		}
+		disallowedVersion := minVersion - 1
+		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+			conn, err := tls.DialWithDialer(
+				&net.Dialer{Timeout: 10 * time.Second},
+				"tcp", exporterAddr,
+				&tls.Config{
+					InsecureSkipVerify: true,
+					MinVersion:         disallowedVersion,
+					MaxVersion:         disallowedVersion,
+				},
+			)
+			if err != nil {
+				// Expected: the connection should fail
+				return true, nil
+			}
+			conn.Close()
+			log.Printf("TLS handshake with disallowed version unexpectedly succeeded on %s, retrying...",
+				node.GetName())
+			return false, nil
+		})
+		assert.NoError(t, err,
+			"TLS handshake with disallowed version (0x%04x) should fail on node %s",
+			disallowedVersion, node.GetName())
+	})
+
+	t.Run("HTTPS metrics request succeeds", func(t *testing.T) {
+		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+					MinVersion:         minVersion,
+				},
+			}
+			client := &http.Client{Transport: tr, Timeout: 15 * time.Second}
+			metricsURL := fmt.Sprintf("https://%s/%s", exporterAddr, metrics.PortName)
+			resp, err := client.Get(metricsURL)
+			if err != nil {
+				log.Printf("HTTPS metrics request failed on %s: %v, retrying...",
+					node.GetName(), err)
+				return false, nil
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				log.Printf("HTTPS metrics request returned status %d on %s, retrying...",
+					resp.StatusCode, node.GetName())
+				return false, nil
+			}
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Printf("error reading metrics response body from %s: %v, retrying...",
+					node.GetName(), err)
+				return false, nil
+			}
+			// Verify the response contains Prometheus-style metrics
+			if !strings.Contains(string(body), "# HELP") || !strings.Contains(string(body), "# TYPE") {
+				log.Printf("metrics response does not contain valid Prometheus metrics on %s, retrying...",
+					node.GetName())
+				return false, nil
+			}
+			return true, nil
+		})
+		assert.NoError(t, err, "HTTPS metrics request should succeed on node %s", node.GetName())
+	})
 }
