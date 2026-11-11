@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	oconfig "github.com/openshift/api/config/v1"
+	config "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +15,7 @@ import (
 func TestGenerateWebConfig(t *testing.T) {
 	tests := []struct {
 		name              string
-		tlsProfileSpec    oconfig.TLSProfileSpec
+		tlsProfileSpec    config.TLSProfileSpec
 		honorTLSProfile   bool
 		wantContains      []string
 		wantNotContains   []string
@@ -24,7 +24,7 @@ func TestGenerateWebConfig(t *testing.T) {
 	}{
 		{
 			name:            "honor disabled returns base config",
-			tlsProfileSpec:  *oconfig.TLSProfiles[oconfig.TLSProfileIntermediateType],
+			tlsProfileSpec:  *config.TLSProfiles[config.TLSProfileIntermediateType],
 			honorTLSProfile: false,
 			wantContains: []string{
 				"tls_server_config:",
@@ -40,7 +40,7 @@ func TestGenerateWebConfig(t *testing.T) {
 		},
 		{
 			name:            "intermediate profile",
-			tlsProfileSpec:  *oconfig.TLSProfiles[oconfig.TLSProfileIntermediateType],
+			tlsProfileSpec:  *config.TLSProfiles[config.TLSProfileIntermediateType],
 			honorTLSProfile: true,
 			wantContains: []string{
 				"tls_server_config:",
@@ -62,7 +62,7 @@ func TestGenerateWebConfig(t *testing.T) {
 		},
 		{
 			name:            "old profile includes TLS10 and filters weak ciphers",
-			tlsProfileSpec:  *oconfig.TLSProfiles[oconfig.TLSProfileOldType],
+			tlsProfileSpec:  *config.TLSProfiles[config.TLSProfileOldType],
 			honorTLSProfile: true,
 			wantContains: []string{
 				"min_version: TLS10",
@@ -84,7 +84,7 @@ func TestGenerateWebConfig(t *testing.T) {
 		},
 		{
 			name:            "modern profile (TLS 1.3) omits cipher_suites",
-			tlsProfileSpec:  *oconfig.TLSProfiles[oconfig.TLSProfileModernType],
+			tlsProfileSpec:  *config.TLSProfiles[config.TLSProfileModernType],
 			honorTLSProfile: true,
 			wantContains: []string{
 				"min_version: TLS13",
@@ -96,15 +96,15 @@ func TestGenerateWebConfig(t *testing.T) {
 		},
 		{
 			name: "custom profile with specific settings",
-			tlsProfileSpec: oconfig.TLSProfileSpec{
-				MinTLSVersion: oconfig.VersionTLS12,
+			tlsProfileSpec: config.TLSProfileSpec{
+				MinTLSVersion: config.VersionTLS12,
 				Ciphers: []string{
 					"ECDHE-ECDSA-AES128-GCM-SHA256",
 					"ECDHE-RSA-AES256-GCM-SHA384",
 				},
-				Groups: []oconfig.TLSGroup{
-					oconfig.TLSGroupX25519,
-					oconfig.TLSGroupSecP256r1,
+				Groups: []config.TLSGroup{
+					config.TLSGroupX25519,
+					config.TLSGroupSecP256r1,
 				},
 			},
 			honorTLSProfile: true,
@@ -121,8 +121,8 @@ func TestGenerateWebConfig(t *testing.T) {
 		},
 		{
 			name: "custom profile with only TLS 1.3 ciphers",
-			tlsProfileSpec: oconfig.TLSProfileSpec{
-				MinTLSVersion: oconfig.VersionTLS12,
+			tlsProfileSpec: config.TLSProfileSpec{
+				MinTLSVersion: config.VersionTLS12,
 				Ciphers: []string{
 					"TLS_AES_128_GCM_SHA256",
 					"TLS_AES_256_GCM_SHA384",
@@ -138,8 +138,8 @@ func TestGenerateWebConfig(t *testing.T) {
 		},
 		{
 			name: "profile with unsupported ciphers",
-			tlsProfileSpec: oconfig.TLSProfileSpec{
-				MinTLSVersion: oconfig.VersionTLS12,
+			tlsProfileSpec: config.TLSProfileSpec{
+				MinTLSVersion: config.VersionTLS12,
 				Ciphers: []string{
 					"ECDHE-ECDSA-AES128-GCM-SHA256",
 					"UNSUPPORTED-CIPHER",
@@ -153,8 +153,8 @@ func TestGenerateWebConfig(t *testing.T) {
 		},
 		{
 			name: "profile with no groups",
-			tlsProfileSpec: oconfig.TLSProfileSpec{
-				MinTLSVersion: oconfig.VersionTLS12,
+			tlsProfileSpec: config.TLSProfileSpec{
+				MinTLSVersion: config.VersionTLS12,
 				Ciphers: []string{
 					"ECDHE-RSA-AES128-GCM-SHA256",
 				},
@@ -170,13 +170,13 @@ func TestGenerateWebConfig(t *testing.T) {
 		},
 		{
 			name: "profile with unsupported groups only",
-			tlsProfileSpec: oconfig.TLSProfileSpec{
-				MinTLSVersion: oconfig.VersionTLS12,
+			tlsProfileSpec: config.TLSProfileSpec{
+				MinTLSVersion: config.VersionTLS12,
 				Ciphers: []string{
 					"ECDHE-RSA-AES128-GCM-SHA256",
 				},
-				Groups: []oconfig.TLSGroup{
-					oconfig.TLSGroupX25519MLKEM768,
+				Groups: []config.TLSGroup{
+					config.TLSGroupX25519MLKEM768,
 				},
 			},
 			honorTLSProfile: true,
@@ -243,13 +243,13 @@ func TestGetWebConfigSHA(t *testing.T) {
 // to the short form used by the exporter-toolkit webconfig.
 func TestMapTLSVersion(t *testing.T) {
 	tests := []struct {
-		input    oconfig.TLSProtocolVersion
+		input    config.TLSProtocolVersion
 		expected string
 	}{
-		{oconfig.VersionTLS10, "TLS10"},
-		{oconfig.VersionTLS11, "TLS11"},
-		{oconfig.VersionTLS12, "TLS12"},
-		{oconfig.VersionTLS13, "TLS13"},
+		{config.VersionTLS10, "TLS10"},
+		{config.VersionTLS11, "TLS11"},
+		{config.VersionTLS12, "TLS12"},
+		{config.VersionTLS13, "TLS13"},
 		{"UnknownVersion", "TLS12"}, // unknown defaults to TLS12
 	}
 
@@ -400,29 +400,29 @@ func TestMapCipherSuites(t *testing.T) {
 func TestMapCurvePreferences(t *testing.T) {
 	tests := []struct {
 		name            string
-		input           []oconfig.TLSGroup
+		input           []config.TLSGroup
 		expected        []string
 		wantUnsupported []string
 	}{
 		{
 			name:     "standard groups mapped",
-			input:    []oconfig.TLSGroup{oconfig.TLSGroupX25519, oconfig.TLSGroupSecP256r1, oconfig.TLSGroupSecP384r1},
+			input:    []config.TLSGroup{config.TLSGroupX25519, config.TLSGroupSecP256r1, config.TLSGroupSecP384r1},
 			expected: []string{"X25519", "CurveP256", "CurveP384"},
 		},
 		{
 			name:            "unsupported post-quantum groups returned",
-			input:           []oconfig.TLSGroup{oconfig.TLSGroupX25519MLKEM768, oconfig.TLSGroupX25519, oconfig.TLSGroupSecP256r1},
+			input:           []config.TLSGroup{config.TLSGroupX25519MLKEM768, config.TLSGroupX25519, config.TLSGroupSecP256r1},
 			expected:        []string{"X25519", "CurveP256"},
-			wantUnsupported: []string{string(oconfig.TLSGroupX25519MLKEM768)},
+			wantUnsupported: []string{string(config.TLSGroupX25519MLKEM768)},
 		},
 		{
 			name:     "all groups including P521",
-			input:    []oconfig.TLSGroup{oconfig.TLSGroupX25519, oconfig.TLSGroupSecP256r1, oconfig.TLSGroupSecP384r1, oconfig.TLSGroupSecP521r1},
+			input:    []config.TLSGroup{config.TLSGroupX25519, config.TLSGroupSecP256r1, config.TLSGroupSecP384r1, config.TLSGroupSecP521r1},
 			expected: []string{"X25519", "CurveP256", "CurveP384", "CurveP521"},
 		},
 		{
 			name:     "empty input",
-			input:    []oconfig.TLSGroup{},
+			input:    []config.TLSGroup{},
 			expected: nil,
 		},
 		{
@@ -432,9 +432,9 @@ func TestMapCurvePreferences(t *testing.T) {
 		},
 		{
 			name:            "only unsupported groups",
-			input:           []oconfig.TLSGroup{oconfig.TLSGroupX25519MLKEM768},
+			input:           []config.TLSGroup{config.TLSGroupX25519MLKEM768},
 			expected:        nil,
-			wantUnsupported: []string{string(oconfig.TLSGroupX25519MLKEM768)},
+			wantUnsupported: []string{string(config.TLSGroupX25519MLKEM768)},
 		},
 	}
 
@@ -455,7 +455,7 @@ func TestMapCurvePreferences(t *testing.T) {
 // structure, indentation, and line endings.
 func TestGenerateWebConfigYAMLValidity(t *testing.T) {
 	// Verify the generated YAML starts and ends correctly
-	intermediateProfile := *oconfig.TLSProfiles[oconfig.TLSProfileIntermediateType]
+	intermediateProfile := *config.TLSProfiles[config.TLSProfileIntermediateType]
 	content, _ := GenerateWebConfig(intermediateProfile, true)
 
 	// Check starts with expected header
@@ -517,7 +517,7 @@ func TestIsWeakCipher(t *testing.T) {
 func TestOldProfileNoWeakCiphersInOutput(t *testing.T) {
 	// The Old TLS profile includes weak ciphers (DES-CBC3-SHA, *-SHA, etc.)
 	// that must be filtered from the generated webconfig.
-	oldProfile := *oconfig.TLSProfiles[oconfig.TLSProfileOldType]
+	oldProfile := *config.TLSProfiles[config.TLSProfileOldType]
 	content, unsupported := GenerateWebConfig(oldProfile, true)
 
 	// Weak cipher IANA names that must NOT appear in the output.
@@ -623,7 +623,7 @@ func TestOldProfileCiphersAreGoSupported(t *testing.T) {
 		goSupported[cs.Name] = true
 	}
 
-	oldProfile := *oconfig.TLSProfiles[oconfig.TLSProfileOldType]
+	oldProfile := *config.TLSProfiles[config.TLSProfileOldType]
 	ciphers, _ := mapCipherSuites(oldProfile.Ciphers)
 
 	require.NotEmpty(t, ciphers,

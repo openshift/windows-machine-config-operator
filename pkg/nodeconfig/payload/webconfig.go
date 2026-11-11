@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	oconfig "github.com/openshift/api/config/v1"
+	config "github.com/openshift/api/config/v1"
 	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -40,20 +40,20 @@ var weakCipherPatterns = []string{
 
 // tlsVersionMap maps OpenShift TLS protocol version identifiers to the short
 // form expected by the Prometheus exporter-toolkit webconfig (Go crypto/tls).
-var tlsVersionMap = map[oconfig.TLSProtocolVersion]string{
-	oconfig.VersionTLS10: "TLS10",
-	oconfig.VersionTLS11: "TLS11",
-	oconfig.VersionTLS12: "TLS12",
-	oconfig.VersionTLS13: "TLS13",
+var tlsVersionMap = map[config.TLSProtocolVersion]string{
+	config.VersionTLS10: "TLS10",
+	config.VersionTLS11: "TLS11",
+	config.VersionTLS12: "TLS12",
+	config.VersionTLS13: "TLS13",
 }
 
 // groupToCurve maps OpenShift TLSGroup identifiers to the Go tls.CurveID
 // string names accepted by the exporter-toolkit webconfig.
-var groupToCurve = map[oconfig.TLSGroup]string{
-	oconfig.TLSGroupX25519:    "X25519",
-	oconfig.TLSGroupSecP256r1: "CurveP256",
-	oconfig.TLSGroupSecP384r1: "CurveP384",
-	oconfig.TLSGroupSecP521r1: "CurveP521",
+var groupToCurve = map[config.TLSGroup]string{
+	config.TLSGroupX25519:    "X25519",
+	config.TLSGroupSecP256r1: "CurveP256",
+	config.TLSGroupSecP384r1: "CurveP384",
+	config.TLSGroupSecP521r1: "CurveP521",
 }
 
 // webConfigCertFile is the Windows path to the TLS certificate used by windows-exporter
@@ -75,7 +75,7 @@ const webConfigKeyFile = `C:\\k\\tls\\certs\\tls.key`
 // CipherSuites, and CurvePreferences from the file on disk. Pre-existing
 // keep-alive connections retain the old TLS parameters until the client
 // reconnects.
-func PopulateWindowsExporterWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, honorTLSProfile bool) ([]string, error) {
+func PopulateWindowsExporterWebConfig(tlsProfileSpec config.TLSProfileSpec, honorTLSProfile bool) ([]string, error) {
 	content, unsupported := GenerateWebConfig(tlsProfileSpec, honorTLSProfile)
 	fileName := strings.TrimSuffix(filepath.Base(WindowsExporterWebConfigPath), ".tar.gz")
 	shaMap[fileName] = fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -98,7 +98,7 @@ func PopulateWindowsExporterWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, hon
 
 // GenerateWebConfig returns the windows-exporter webconfig YAML content and a
 // list of cipher suite names that were not supported by Go (for logging).
-func GenerateWebConfig(tlsProfileSpec oconfig.TLSProfileSpec, honorTLSProfile bool) (string, []string) {
+func GenerateWebConfig(tlsProfileSpec config.TLSProfileSpec, honorTLSProfile bool) (string, []string) {
 	if !honorTLSProfile {
 		return generateBaseWebConfig(), nil
 	}
@@ -170,7 +170,7 @@ func generateFullWebConfig(minVersion string, cipherSuites, curvePrefs []string,
 // minimum of TLS 1.2 regardless of the configured min_version value.
 // Setting TLS10 or TLS11 here will not actually lower the TLS floor on the
 // node.
-func mapTLSVersion(v oconfig.TLSProtocolVersion) string {
+func mapTLSVersion(v config.TLSProtocolVersion) string {
 	if mapped, ok := tlsVersionMap[v]; ok {
 		return mapped
 	}
@@ -272,7 +272,7 @@ func isSupportedCipher(ianaName string) bool {
 // tls.CurveID string names accepted by the exporter-toolkit webconfig.
 // Unsupported groups (e.g. post-quantum X25519MLKEM768) are collected and
 // returned separately for logging.
-func mapCurvePreferences(groups []oconfig.TLSGroup) ([]string, []string) {
+func mapCurvePreferences(groups []config.TLSGroup) ([]string, []string) {
 	var result []string
 	var unsupported []string
 	for _, g := range groups {

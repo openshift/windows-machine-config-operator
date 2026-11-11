@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	oconfig "github.com/openshift/api/config/v1"
+	config "github.com/openshift/api/config/v1"
 	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -335,22 +335,22 @@ func makePrometheusQuery(address, query, token string) ([]Result, error) {
 }
 
 // tlsVersionToGoVersion maps OpenShift TLSProtocolVersion to Go crypto/tls version constants
-var tlsVersionToGoVersion = map[oconfig.TLSProtocolVersion]uint16{
-	oconfig.VersionTLS10: tls.VersionTLS10,
-	oconfig.VersionTLS11: tls.VersionTLS11,
-	oconfig.VersionTLS12: tls.VersionTLS12,
-	oconfig.VersionTLS13: tls.VersionTLS13,
+var tlsVersionToGoVersion = map[config.TLSProtocolVersion]uint16{
+	config.VersionTLS10: tls.VersionTLS10,
+	config.VersionTLS11: tls.VersionTLS11,
+	config.VersionTLS12: tls.VersionTLS12,
+	config.VersionTLS13: tls.VersionTLS13,
 }
 
 // getEffectiveTLSProfile fetches the cluster APIServer resource and resolves the effective TLS profile spec
-func (tc *testContext) getEffectiveTLSProfile() (*oconfig.TLSSecurityProfile, oconfig.TLSProfileSpec, error) {
+func (tc *testContext) getEffectiveTLSProfile() (*config.TLSSecurityProfile, config.TLSProfileSpec, error) {
 	apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	if err != nil {
-		return nil, oconfig.TLSProfileSpec{}, fmt.Errorf("error getting APIServer resource: %w", err)
+		return nil, config.TLSProfileSpec{}, fmt.Errorf("error getting APIServer resource: %w", err)
 	}
 	profileSpec, err := tlspkg.GetTLSProfileSpec(apiServer.Spec.TLSSecurityProfile)
 	if err != nil {
-		return nil, oconfig.TLSProfileSpec{}, fmt.Errorf("error resolving TLS profile spec: %w", err)
+		return nil, config.TLSProfileSpec{}, fmt.Errorf("error resolving TLS profile spec: %w", err)
 	}
 	return apiServer.Spec.TLSSecurityProfile, profileSpec, nil
 }
@@ -489,8 +489,8 @@ func (tc *testContext) testWebConfigProfileChangeWithoutReconfigure(t *testing.T
 	// Change the TLS profile to Modern (TLS 1.3 only)
 	apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	require.NoError(t, err)
-	apiServer.Spec.TLSSecurityProfile = &oconfig.TLSSecurityProfile{
-		Type: oconfig.TLSProfileModernType,
+	apiServer.Spec.TLSSecurityProfile = &config.TLSSecurityProfile{
+		Type: config.TLSProfileModernType,
 	}
 	_, err = tc.client.Config.ConfigV1().APIServers().Update(context.TODO(), apiServer, metav1.UpdateOptions{})
 	require.NoError(t, err, "error updating TLS profile to Modern")
@@ -571,6 +571,7 @@ func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
 				&net.Dialer{Timeout: 10 * time.Second},
 				"tcp", exporterAddr,
 				&tls.Config{
+					// InsecureSkipVerify: windows-exporter uses a self-signed certificate
 					InsecureSkipVerify: true,
 					MinVersion:         minVersion,
 					MaxVersion:         minVersion,
@@ -595,12 +596,14 @@ func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
 		if minVersion <= tls.VersionTLS10 {
 			t.Skip("minimum TLS version is TLS 1.0; no lower version to test rejection")
 		}
+		// Go's tls.VersionTLS* constants are sequential (0x0301–0x0304), so subtracting 1 yields the previous version
 		disallowedVersion := minVersion - 1
 		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 			conn, err := tls.DialWithDialer(
 				&net.Dialer{Timeout: 10 * time.Second},
 				"tcp", exporterAddr,
 				&tls.Config{
+					// InsecureSkipVerify: windows-exporter uses a self-signed certificate
 					InsecureSkipVerify: true,
 					MinVersion:         disallowedVersion,
 					MaxVersion:         disallowedVersion,
@@ -624,6 +627,7 @@ func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
 		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
 			tr := &http.Transport{
 				TLSClientConfig: &tls.Config{
+					// InsecureSkipVerify: windows-exporter uses a self-signed certificate
 					InsecureSkipVerify: true,
 					MinVersion:         minVersion,
 				},
