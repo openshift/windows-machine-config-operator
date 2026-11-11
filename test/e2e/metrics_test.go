@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
@@ -18,10 +21,12 @@ import (
 
 	config "github.com/openshift/api/config/v1"
 	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	auth "k8s.io/api/authentication/v1"
 	core "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -357,12 +362,20 @@ func (tc *testContext) getEffectiveTLSProfile() (*config.TLSSecurityProfile, con
 
 // getWebConfigContent retrieves the content of the windows-exporter webconfig YAML file from a Windows node
 func (tc *testContext) getWebConfigContent(addr string) (string, error) {
-	command := fmt.Sprintf("Get-Content -Raw -Path %s", windows.TLSConfPath)
-	out, err := tc.runPowerShellSSHJob("webconfig-content", command, addr)
+	return tc.getWebConfigContentWithContext(context.Background(), addr)
+}
+
+func (tc *testContext) getWebConfigContentWithContext(ctx context.Context, addr string) (string, error) {
+	command := fmt.Sprintf("[Convert]::ToBase64String([IO.File]::ReadAllBytes(\\\"%s\\\"))", windows.TLSConfPath)
+	out, err := tc.runPowerShellSSHJobWithContext(ctx, "webconfig-content", command, addr)
 	if err != nil {
 		return "", fmt.Errorf("error running SSH job to get webconfig: %w", err)
 	}
-	return strings.TrimSpace(out), nil
+	content, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out))
+	if err != nil {
+		return "", fmt.Errorf("error decoding webconfig bytes: %w", err)
+	}
+	return string(content), nil
 }
 
 // testWebConfigTLSAdherence is the top-level test group for webconfig TLS profile tests.
@@ -370,28 +383,16 @@ func (tc *testContext) getWebConfigContent(addr string) (string, error) {
 func (tc *testContext) testWebConfigTLSAdherence(t *testing.T) {
 	require.Greater(t, len(gc.allNodes()), 0, "test requires at least one Windows node")
 
-	// Save the original TLS security profile to restore after tests
 	apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
 	require.NoError(t, err, "error getting APIServer resource")
-	originalProfile := apiServer.Spec.TLSSecurityProfile
+	if !libgocrypto.ShouldHonorClusterTLSProfile(apiServer.Spec.TLSAdherence) {
+		t.Skip("WMCO does not honor the cluster TLS profile under the current adherence policy")
+	}
 
-	t.Cleanup(func() {
-		// Restore the original TLS security profile
-		apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
-		if err != nil {
-			t.Logf("cleanup: error getting APIServer resource: %v", err)
-			return
-		}
-		apiServer.Spec.TLSSecurityProfile = originalProfile
-		_, err = tc.client.Config.ConfigV1().APIServers().Update(context.TODO(), apiServer, metav1.UpdateOptions{})
-		if err != nil {
-			t.Logf("cleanup: error restoring original TLS profile: %v", err)
-		}
-	})
-
-	t.Run("TLS profile reflected in webconfig", tc.testWebConfigMatchesTLSProfile)
+	if !t.Run("TLS profile reflected in webconfig", tc.testWebConfigMatchesTLSProfile) {
+		return
+	}
 	t.Run("TLS profile change updates node without reconfigure", tc.testWebConfigProfileChangeWithoutReconfigure)
-	t.Run("Exporter enforces TLS profile", tc.testWebConfigTLSHandshakeEnforcement)
 }
 
 // testWebConfigMatchesTLSProfile verifies that each Windows node's webconfig file matches
@@ -473,87 +474,122 @@ func (tc *testContext) testWebConfigMatchesTLSProfile(t *testing.T) {
 // deconfigure+reconfigure cycle). This is confirmed by verifying the WMCO version annotation
 // remains unchanged.
 func (tc *testContext) testWebConfigProfileChangeWithoutReconfigure(t *testing.T) {
-	node := gc.allNodes()[0]
+	nodes, err := tc.listFullyConfiguredWindowsNodes(false)
+	require.NoError(t, err)
+	if len(nodes) == 0 {
+		t.Skip("test requires a configured Machine-API Windows node")
+	}
+	operatorVersion, err := getWMCOVersion()
+	require.NoError(t, err)
+	var node *core.Node
+	for _, candidate := range nodes {
+		if candidate.Annotations[metadata.VersionAnnotation] == operatorVersion {
+			node = candidate.DeepCopy()
+			break
+		}
+	}
+	if node == nil {
+		t.Skip("test requires a current-version Machine-API Windows node")
+	}
 	addr, err := controllers.GetAddress(node.Status.Addresses)
 	require.NoError(t, err, "error getting node address")
-
-	// Record the current version annotation
-	freshNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(), node.GetName(), metav1.GetOptions{})
+	originalProfile, originalSpec, err := tc.getEffectiveTLSProfile()
 	require.NoError(t, err)
-	originalVersionAnnotation := freshNode.Annotations[metadata.VersionAnnotation]
-	require.NotEmpty(t, originalVersionAnnotation, "node %s missing version annotation", node.GetName())
-
-	// Record the current SHA annotation so we can detect when it changes
-	originalSHA := freshNode.Annotations[metadata.WindowsExporterWebConfigSHAAnnotation]
-
-	// Change the TLS profile to Modern (TLS 1.3 only)
-	apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(context.TODO(), "cluster", metav1.GetOptions{})
-	require.NoError(t, err)
-	apiServer.Spec.TLSSecurityProfile = &config.TLSSecurityProfile{
-		Type: config.TLSProfileModernType,
+	originalContent, _ := payload.GenerateWebConfig(originalSpec, true)
+	originalSHA := sha256.Sum256([]byte(originalContent))
+	if node.Status.NodeInfo.BootID == "" {
+		t.Log("node does not report a boot ID; only UID and WMCO version can be checked")
 	}
-	_, err = tc.client.Config.ConfigV1().APIServers().Update(context.TODO(), apiServer, metav1.UpdateOptions{})
-	require.NoError(t, err, "error updating TLS profile to Modern")
-
-	// Compute the expected new webconfig
-	newProfileSpec, err := tlspkg.GetTLSProfileSpec(apiServer.Spec.TLSSecurityProfile)
-	require.NoError(t, err)
-	newExpectedContent, _ := payload.GenerateWebConfig(newProfileSpec, true)
-	newExpectedSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(newExpectedContent)))
-
-	// Wait for the node's SHA annotation and remote webconfig to converge to the new values
-	t.Run("webconfig converges to new profile", func(t *testing.T) {
-		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
-			freshNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(),
-				node.GetName(), metav1.GetOptions{})
-			if err != nil {
-				log.Printf("error fetching node %s: %v, retrying...", node.GetName(), err)
-				return false, nil
-			}
-			annotationSHA := freshNode.Annotations[metadata.WindowsExporterWebConfigSHAAnnotation]
-			if annotationSHA == originalSHA {
-				log.Printf("node %s SHA annotation has not changed yet, retrying...", node.GetName())
-				return false, nil
-			}
-			content, err := tc.getWebConfigContent(addr)
-			if err != nil {
-				log.Printf("error fetching webconfig from node %s: %v, retrying...",
-					node.GetName(), err)
-				return false, nil
-			}
-			if content != newExpectedContent {
-				log.Printf("webconfig content has not converged on node %s, retrying...",
-					node.GetName())
-				return false, nil
-			}
-			if annotationSHA != newExpectedSHA {
-				log.Printf("SHA annotation has not converged on node %s: got=%s, expected=%s, retrying...",
-					node.GetName(), annotationSHA, newExpectedSHA)
-				return false, nil
-			}
-			return true, nil
-		})
-		assert.NoError(t, err, "webconfig did not converge to new TLS profile on node %s", node.GetName())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*retry.Timeout)
+		defer cancel()
+		err := tc.updateWebConfigTLSProfile(ctx, originalProfile)
+		if originalProfile == nil && apierrors.IsInvalid(err) {
+			t.Log("API requires an explicit TLS profile; restoring Intermediate, the effective default for an unset profile")
+			err = tc.updateWebConfigTLSProfile(ctx, &config.TLSSecurityProfile{
+				Type: config.TLSProfileIntermediateType, Intermediate: &config.IntermediateTLSProfile{},
+			})
+		}
+		require.NoError(t, err, "cleanup: failed to restore original effective TLS profile")
+		require.NoError(t, tc.waitForWebConfig(ctx, *node, addr, originalContent),
+			"cleanup: original webconfig and SHA did not converge on the same node")
 	})
-
-	// Verify the version annotation is unchanged, proving lightweight reconciliation
-	t.Run("version annotation unchanged", func(t *testing.T) {
-		freshNode, err := tc.client.K8s.CoreV1().Nodes().Get(context.TODO(),
-			node.GetName(), metav1.GetOptions{})
+	previousContent := originalContent
+	for _, profileType := range []config.TLSProfileType{config.TLSProfileIntermediateType, config.TLSProfileModernType} {
+		profile := &config.TLSSecurityProfile{Type: profileType}
+		if profileType == config.TLSProfileIntermediateType {
+			profile.Intermediate = &config.IntermediateTLSProfile{}
+		} else {
+			profile.Modern = &config.ModernTLSProfile{}
+		}
+		profileSpec, err := tlspkg.GetTLSProfileSpec(profile)
 		require.NoError(t, err)
-		assert.Equal(t, originalVersionAnnotation, freshNode.Annotations[metadata.VersionAnnotation],
-			"version annotation changed on node %s, indicating a full reconfigure occurred", node.GetName())
+		expectedContent, _ := payload.GenerateWebConfig(profileSpec, true)
+		if profileSpec.MinTLSVersion != originalSpec.MinTLSVersion {
+			require.NotEqual(t, originalContent, expectedContent)
+			require.NotEqual(t, originalSHA, sha256.Sum256([]byte(expectedContent)))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*retry.Timeout)
+		if expectedContent != previousContent {
+			require.NotEqual(t, sha256.Sum256([]byte(previousContent)), sha256.Sum256([]byte(expectedContent)))
+			err = tc.updateWebConfigTLSProfile(ctx, profile)
+		}
+		if err == nil {
+			err = tc.waitForWebConfig(ctx, *node, addr, expectedContent)
+		}
+		cancel()
+		require.NoError(t, err, "webconfig did not converge to %s on the same current-version node", profileType)
+		if !t.Run(string(profileType)+" TLS handshakes", func(t *testing.T) {
+			tc.testWebConfigTLSHandshakeEnforcement(t, *node, profileSpec.MinTLSVersion)
+		}) {
+			return
+		}
+		previousContent = expectedContent
+	}
+}
+
+func (tc *testContext) updateWebConfigTLSProfile(ctx context.Context, profile *config.TLSSecurityProfile) error {
+	return wait.PollUntilContextCancel(ctx, retry.Interval, true, func(ctx context.Context) (bool, error) {
+		apiServer, err := tc.client.Config.ConfigV1().APIServers().Get(ctx, "cluster", metav1.GetOptions{})
+		if err == nil {
+			apiServer.Spec.TLSSecurityProfile = profile
+			_, err = tc.client.Config.ConfigV1().APIServers().Update(ctx, apiServer, metav1.UpdateOptions{})
+		}
+		if apierrors.IsInvalid(err) || apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+			return false, err
+		}
+		if err != nil {
+			log.Printf("error updating TLS security profile, retrying: %v", err)
+		}
+		return err == nil, nil
+	})
+}
+
+func (tc *testContext) waitForWebConfig(ctx context.Context, originalNode core.Node, addr, expectedContent string) error {
+	expectedSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(expectedContent)))
+	return wait.PollUntilContextCancel(ctx, retry.Interval, true, func(ctx context.Context) (bool, error) {
+		node, err := tc.client.K8s.CoreV1().Nodes().Get(ctx, originalNode.Name, metav1.GetOptions{})
+		if err != nil {
+			log.Printf("error fetching node %s, retrying: %v", originalNode.Name, err)
+			return false, nil
+		}
+		if node.UID != originalNode.UID || node.Annotations[metadata.VersionAnnotation] != originalNode.Annotations[metadata.VersionAnnotation] ||
+			(originalNode.Status.NodeInfo.BootID != "" && node.Status.NodeInfo.BootID != originalNode.Status.NodeInfo.BootID) {
+			return false, fmt.Errorf("node %s UID, boot ID, or WMCO version changed", node.Name)
+		}
+		content, err := tc.getWebConfigContentWithContext(ctx, addr)
+		if err != nil {
+			log.Printf("error reading webconfig on %s, retrying: %v", node.Name, err)
+			return false, nil
+		}
+		return content == expectedContent && node.Annotations[metadata.WindowsExporterWebConfigSHAAnnotation] == expectedSHA, nil
 	})
 }
 
 // testWebConfigTLSHandshakeEnforcement verifies that the windows-exporter actually enforces
 // the TLS profile during real TLS handshakes: connections with allowed TLS versions succeed,
 // connections with disallowed versions fail, and valid HTTPS requests return metrics.
-func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
-	_, profileSpec, err := tc.getEffectiveTLSProfile()
-	require.NoError(t, err)
-
-	node := gc.allNodes()[0]
+func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T, node core.Node, minTLSVersion config.TLSProtocolVersion) {
 	nodeIP := ""
 	for _, address := range node.Status.Addresses {
 		if address.Type == core.NodeInternalIP {
@@ -562,27 +598,18 @@ func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
 	}
 	require.NotEmpty(t, nodeIP, "test requires Windows node %s to have internal IP", node.GetName())
 
-	exporterAddr := fmt.Sprintf("%s:%d", nodeIP, metrics.Port)
-	minVersion := tlsVersionToGoVersion[profileSpec.MinTLSVersion]
+	exporterAddr := net.JoinHostPort(nodeIP, strconv.Itoa(int(metrics.Port)))
+	minVersion, supported := tlsVersionToGoVersion[minTLSVersion]
+	require.True(t, supported, "unsupported TLS version %s", minTLSVersion)
 
 	t.Run("allowed TLS version succeeds", func(t *testing.T) {
 		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
-			conn, err := tls.DialWithDialer(
-				&net.Dialer{Timeout: 10 * time.Second},
-				"tcp", exporterAddr,
-				&tls.Config{
-					// InsecureSkipVerify: windows-exporter uses a self-signed certificate
-					InsecureSkipVerify: true,
-					MinVersion:         minVersion,
-					MaxVersion:         minVersion,
-				},
-			)
+			err := dialWebConfigTLS(exporterAddr, minVersion)
 			if err != nil {
 				log.Printf("TLS handshake with allowed version failed on %s: %v, retrying...",
 					node.GetName(), err)
 				return false, nil
 			}
-			conn.Close()
 			return true, nil
 		})
 		assert.NoError(t, err,
@@ -591,29 +618,18 @@ func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
 	})
 
 	t.Run("disallowed TLS version fails", func(t *testing.T) {
-		// Only test this when the min version is above TLS 1.0, otherwise there is
-		// no lower version to test rejection with
-		if minVersion <= tls.VersionTLS10 {
-			t.Skip("minimum TLS version is TLS 1.0; no lower version to test rejection")
+		if minVersion != tls.VersionTLS13 {
+			t.Skip("TLS 1.2 is the compatibility control; rejection is tested after switching to TLS 1.3")
 		}
-		// Go's tls.VersionTLS* constants are sequential (0x0301–0x0304), so subtracting 1 yields the previous version
-		disallowedVersion := minVersion - 1
+		disallowedVersion := uint16(tls.VersionTLS12)
 		err := wait.Poll(retry.Interval, retry.Timeout, func() (bool, error) {
-			conn, err := tls.DialWithDialer(
-				&net.Dialer{Timeout: 10 * time.Second},
-				"tcp", exporterAddr,
-				&tls.Config{
-					// InsecureSkipVerify: windows-exporter uses a self-signed certificate
-					InsecureSkipVerify: true,
-					MinVersion:         disallowedVersion,
-					MaxVersion:         disallowedVersion,
-				},
-			)
+			err := dialWebConfigTLS(exporterAddr, disallowedVersion)
 			if err != nil {
-				// Expected: the connection should fail
-				return true, nil
+				if isWebConfigProtocolRejection(err) {
+					return true, nil
+				}
+				return false, fmt.Errorf("expected remote protocol-version rejection, got: %w", err)
 			}
-			conn.Close()
 			log.Printf("TLS handshake with disallowed version unexpectedly succeeded on %s, retrying...",
 				node.GetName())
 			return false, nil
@@ -633,6 +649,7 @@ func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
 				},
 			}
 			client := &http.Client{Transport: tr, Timeout: 15 * time.Second}
+			defer tr.CloseIdleConnections()
 			metricsURL := fmt.Sprintf("https://%s/%s", exporterAddr, metrics.PortName)
 			resp, err := client.Get(metricsURL)
 			if err != nil {
@@ -662,4 +679,53 @@ func (tc *testContext) testWebConfigTLSHandshakeEnforcement(t *testing.T) {
 		})
 		assert.NoError(t, err, "HTTPS metrics request should succeed on node %s", node.GetName())
 	})
+}
+
+func dialWebConfigTLS(address string, version uint16) error {
+	connection, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", address,
+		&tls.Config{InsecureSkipVerify: true, MinVersion: version, MaxVersion: version})
+	if err != nil {
+		return err
+	}
+	return connection.Close()
+}
+
+func isWebConfigProtocolRejection(err error) bool {
+	var operationError *net.OpError
+	return errors.As(err, &operationError) && operationError.Op == "remote error" && operationError.Err != nil &&
+		operationError.Err.Error() == "tls: protocol version not supported"
+}
+
+func TestWebConfigTLSHelpers(t *testing.T) {
+	for _, minimumVersion := range []uint16{tls.VersionTLS12, tls.VersionTLS13} {
+		t.Run(fmt.Sprintf("TLS_%x", minimumVersion), func(t *testing.T) {
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+			server.TLS = &tls.Config{MinVersion: minimumVersion, MaxVersion: minimumVersion}
+			server.StartTLS()
+			defer server.Close()
+			require.NoError(t, dialWebConfigTLS(server.Listener.Addr().String(), minimumVersion))
+			err := dialWebConfigTLS(server.Listener.Addr().String(), tls.VersionTLS12)
+			if minimumVersion == tls.VersionTLS12 {
+				require.NoError(t, err, "TLS 1.2 compatibility control must succeed")
+			} else {
+				require.Error(t, err)
+				assert.True(t, isWebConfigProtocolRejection(err), "unexpected rejection: %v", err)
+			}
+		})
+	}
+	for _, err := range []error{nil, context.DeadlineExceeded, io.EOF,
+		&net.OpError{Op: "dial", Err: errors.New("connection refused")},
+		&net.OpError{Op: "remote error", Err: errors.New("tls: handshake failure")},
+		&net.OpError{Op: "local error", Err: errors.New("tls: protocol version not supported")}} {
+		assert.False(t, isWebConfigProtocolRejection(err), "must not accept unrelated failure: %v", err)
+	}
+	intermediate, err := tlspkg.GetTLSProfileSpec(&config.TLSSecurityProfile{Type: config.TLSProfileIntermediateType})
+	require.NoError(t, err)
+	modern, err := tlspkg.GetTLSProfileSpec(&config.TLSSecurityProfile{Type: config.TLSProfileModernType})
+	require.NoError(t, err)
+	require.NotEqual(t, intermediate.MinTLSVersion, modern.MinTLSVersion)
+	intermediateContent, _ := payload.GenerateWebConfig(intermediate, true)
+	modernContent, _ := payload.GenerateWebConfig(modern, true)
+	assert.NotEqual(t, intermediateContent, modernContent)
+	assert.NotEqual(t, sha256.Sum256([]byte(intermediateContent)), sha256.Sum256([]byte(modernContent)))
 }

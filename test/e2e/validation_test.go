@@ -353,6 +353,10 @@ func (tc *testContext) ensureTestRunnerRBAC() error {
 // runPowerShellSSHJob creates and waits for a Kubernetes job to run. The command provided will be executed through
 // PowerShell, on the host specified by the provided IP.
 func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, error) {
+	return tc.runPowerShellSSHJobWithContext(context.Background(), name, command, ip)
+}
+
+func (tc *testContext) runPowerShellSSHJobWithContext(ctx context.Context, name, command, ip string) (string, error) {
 	// Modify command to work when default shell is the newer Powershell version present on Windows Server 2022 and
 	// later
 	powershellDefaultCommand := strings.ReplaceAll(command, "\\\"", "\"")
@@ -376,12 +380,16 @@ func (tc *testContext) runPowerShellSSHJob(name, command, ip string) (string, er
 			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip,
 			filepath.Join(keyMountDir, secrets.PrivateKeySecretKey), tc.vmUsername(), ip)}
 
-	return tc.runJob(name, sshCommand)
+	return tc.runJobWithContext(ctx, name, sshCommand)
 }
 
 // runJob creates and waits for a Kubernetes job to run. The command provided will be executed on a Linux worker,
 // using the tools image.
 func (tc *testContext) runJob(name string, command []string) (string, error) {
+	return tc.runJobWithContext(context.Background(), name, command)
+}
+
+func (tc *testContext) runJobWithContext(ctx context.Context, name string, command []string) (string, error) {
 	// Create a job which runs the provided command via SSH
 	keyMountDir := "/private-key"
 	keyMode := int32(0600)
@@ -420,13 +428,13 @@ func (tc *testContext) runJob(name string, command []string) (string, error) {
 	}
 
 	jobsClient := tc.client.K8s.BatchV1().Jobs(tc.workloadNamespace)
-	job, err := jobsClient.Create(context.TODO(), job, meta.CreateOptions{})
+	job, err := jobsClient.Create(ctx, job, meta.CreateOptions{})
 	if err != nil {
 		return "", fmt.Errorf("error creating job: %w", err)
 	}
 
 	// Wait for the job to complete then gather and return the pod output
-	logs, err := tc.waitUntilJobSucceeds(job.GetName())
+	logs, err := tc.waitUntilJobSucceedsWithContext(ctx, job.GetName())
 	if err != nil {
 		return "", fmt.Errorf("error waiting for job to succeed: %w", err)
 	}
