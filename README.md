@@ -68,7 +68,8 @@ data:
 
 #### Removing BYOH Windows instances
 BYOH instances that are attached to the cluster as a node can be removed by deleting the instance's entry in the
-ConfigMap. This process will revert instances back to the state they were in before, barring any logs and container
+ConfigMap. This process will revert instances back to the state they were in before, barring any 
+logs and container
 runtime artifacts.
 
 In order for an instance to be cleanly removed, it must be accessible with the current private key provided
@@ -260,10 +261,10 @@ The log rotation functionality is disabled by default, causing log files to grow
 Managed Windows services with log rotation capabilities:
 - kubelet
 - kube-proxy
+- csi-proxy
 
 Not yet supported:
 - containerd
-- csi-proxy
 - windows_exporter
 - hybrid-overlay-node
 - azure-cloud-node-manager
