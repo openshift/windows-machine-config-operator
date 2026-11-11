@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -38,6 +39,7 @@ func TestWebConfigReadContext(t *testing.T) {
 		{name: "cancel polling sleep", stage: "poll"},
 		{name: "cancel pod listing", stage: "list"},
 		{name: "cancel log stream", stage: "logs"},
+		{name: "cancel log body", stage: "log-body"},
 		{name: "deadline during job request", stage: "get", deadline: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -58,6 +60,12 @@ func TestWebConfigReadContext(t *testing.T) {
 					stage = "list"
 				case strings.HasSuffix(request.URL.Path, "/log"):
 					stage = "logs"
+					if testCase.stage == "log-body" {
+						stage = "log-body"
+						writer.Header().Set("Content-Type", "text/plain")
+						writer.WriteHeader(http.StatusOK)
+						writer.(http.Flusher).Flush()
+					}
 				}
 				if stage == testCase.stage {
 					close(reached)
@@ -128,4 +136,44 @@ func TestSSHJobPreCanceledContext(t *testing.T) {
 	tc := &testContext{}
 	_, err := tc.waitUntilJobSucceedsWithContext(ctx, "ssh-job")
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestWebConfigReadSuccess(t *testing.T) {
+	content := "tls_server_config:\r\n  min_version: TLS13\r\n"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodPost:
+			fmt.Fprint(writer, `{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"ssh-job"}}`)
+		case strings.HasSuffix(request.URL.Path, "/pods"):
+			fmt.Fprint(writer, `{"apiVersion":"v1","kind":"PodList","items":[{"metadata":{"name":"ssh-pod"},"status":{"startTime":"2026-01-01T00:00:00Z"}}]}`)
+		case strings.HasSuffix(request.URL.Path, "/log"):
+			writer.Header().Set("Content-Type", "text/plain")
+			fmt.Fprintln(writer, base64.StdEncoding.EncodeToString([]byte(content)))
+		default:
+			fmt.Fprint(writer, `{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"ssh-job"},"status":{"conditions":[{"type":"Complete","status":"True"},{"type":"SuccessCriteriaMet","status":"True"}]}}`)
+		}
+	}))
+	defer server.Close()
+	client, err := kubernetes.NewForConfig(&rest.Config{Host: server.URL})
+	require.NoError(t, err)
+	tc := &testContext{
+		client: &clusterinfo.OpenShift{K8s: client}, CloudProvider: sshJobTestProvider{},
+		workloadNamespace: "test", artifactDir: t.TempDir(),
+	}
+	for _, contextual := range []bool{false, true} {
+		t.Run(fmt.Sprintf("context=%t", contextual), func(t *testing.T) {
+			var actual string
+			var err error
+			if contextual {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				actual, err = tc.getWebConfigContentWithContext(ctx, "192.0.2.1")
+			} else {
+				actual, err = tc.getWebConfigContent("192.0.2.1")
+			}
+			require.NoError(t, err)
+			assert.Equal(t, content, actual)
+		})
+	}
 }

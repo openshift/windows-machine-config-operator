@@ -371,7 +371,11 @@ func (tc *testContext) getWebConfigContentWithContext(ctx context.Context, addr 
 	if err != nil {
 		return "", fmt.Errorf("error running SSH job to get webconfig: %w", err)
 	}
-	content, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out))
+	_, encodedContent, found := strings.Cut(out, ": ")
+	if !found {
+		return "", fmt.Errorf("missing pod name prefix in webconfig job output")
+	}
+	content, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedContent))
 	if err != nil {
 		return "", fmt.Errorf("error decoding webconfig bytes: %w", err)
 	}
