@@ -225,7 +225,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 	})
 
 	// author: rrasouli@redhat.com
-	g.It("Smokerun-Author:rrasouli-High-89616-Verify log rotation for kubelet and kube-proxy services [Slow][Disruptive]", func() {
+	g.It("Smokerun-Author:rrasouli-High-89616-Verify log rotation for kubelet, kube-proxy and csi-proxy services [Slow][Disruptive]", func() {
 		winNodeCount, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"nodes", "-l", windowsNodeLabel, "--no-headers").Output()
 		o.Expect(err).NotTo(o.HaveOccurred())
@@ -266,7 +266,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		servicesCMData, err := getLatestServicesCMData(oc)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
-		for _, svcName := range []string{"kubelet", "kube-proxy"} {
+		for _, svcName := range []string{"kubelet", "kube-proxy", "csi-proxy"} {
 			g.By(fmt.Sprintf("Verify %s service command includes kube-log-runner", svcName))
 			svcCmd := getServiceCommand(servicesCMData, svcName)
 			o.Expect(svcCmd).NotTo(o.BeEmpty(), "%s service not found in services ConfigMap", svcName)
@@ -276,6 +276,11 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 				"%s should have -log-file flag", svcName)
 			e2e.Logf("%s service command: %s", svcName, svcCmd)
 		}
+
+		g.By("Verify csi-proxy logs to stderr so kube-log-runner captures and rotates its output")
+		csiProxyArgs := strings.Fields(getServiceCommand(servicesCMData, "csi-proxy"))
+		o.Expect(csiProxyArgs).To(o.ContainElement("-logtostderr"),
+			"csi-proxy should log to stderr for kube-log-runner to rotate its output, not -logtostderr=false")
 	})
 
 	// author: jfrancoa@redhat.com
