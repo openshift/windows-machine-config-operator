@@ -190,7 +190,7 @@ func (r *instanceReconciler) updateWebConfig(ctx context.Context, node core.Node
 	}
 	defer r.nodeConfigCleanup(nc)
 	r.log.Info("pushing updated webconfig to node")
-	return nc.UpdateWebConfig()
+	return nc.UpdateWebConfig(ctx)
 }
 
 // GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4

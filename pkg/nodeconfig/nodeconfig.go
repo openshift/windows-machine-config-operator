@@ -642,12 +642,14 @@ func (nc *NodeConfig) UpdateKubeletClientCA(contents []byte) error {
 // if the remote file already matches. No service restart is required: the
 // exporter-toolkit in windows-exporter re-reads the webconfig on every TLS
 // handshake (GetConfigForClient reload).
-func (nc *NodeConfig) UpdateWebConfig() error {
+func (nc *NodeConfig) UpdateWebConfig(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, retry.Timeout)
+	defer cancel()
 	webConfigFileInfo, err := payload.NewCompressedFileInfo(payload.WindowsExporterWebConfigPath)
 	if err != nil {
 		return fmt.Errorf("error creating file info for webconfig: %w", err)
 	}
-	if err := nc.Windows.EnsureFile(webConfigFileInfo, windows.TLSDir); err != nil {
+	if err := nc.Windows.EnsureFileWithContext(ctx, webConfigFileInfo, windows.TLSDir); err != nil {
 		return fmt.Errorf("error transferring webconfig to node: %w", err)
 	}
 	return nil

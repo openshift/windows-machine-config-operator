@@ -270,6 +270,8 @@ type Windows interface {
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
 	EnsureFile(*payload.CompressedFileInfo, string) error
+	// EnsureFileWithContext closes this instance's connection if the context expires during EnsureFile.
+	EnsureFileWithContext(context.Context, *payload.CompressedFileInfo, string) error
 	// EnsureFileContent ensures the given filename and content exists within the specified directory on the Windows VM.
 	// The content will be copied to the Windows VM if the file is not present or has incorrect contents. The remote
 	// directory is created if it does not exist.
@@ -430,6 +432,29 @@ func (vm *windows) EnsureFileContent(contents []byte, filename string, remoteDir
 		return fmt.Errorf("unable to copy %s content to remote dir %s: %w", filename, remoteDir, err)
 	}
 	return nil
+}
+
+func (vm *windows) EnsureFileWithContext(ctx context.Context, file *payload.CompressedFileInfo, remoteDir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	closed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		defer close(closed)
+		if err := vm.Close(); err != nil {
+			vm.log.Error(err, "error closing canceled file transfer connection")
+		}
+	})
+	defer func() {
+		if !stop() {
+			<-closed
+		}
+	}()
+	err := vm.EnsureFile(file, remoteDir)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
 func (vm *windows) EnsureFile(file *payload.CompressedFileInfo, remoteDir string) error {
