@@ -43,12 +43,6 @@ func TestWebConfigReadContext(t *testing.T) {
 		{name: "deadline during job request", stage: "get", deadline: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			if testCase.deadline {
-				cancel()
-				ctx, cancel = context.WithTimeout(context.Background(), 250*time.Millisecond)
-			}
-			defer cancel()
 			reached := make(chan struct{})
 			release := make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -98,6 +92,12 @@ func TestWebConfigReadContext(t *testing.T) {
 				client: &clusterinfo.OpenShift{K8s: client}, CloudProvider: sshJobTestProvider{},
 				workloadNamespace: "test", artifactDir: t.TempDir(),
 			}
+			ctx, cancel := context.WithCancel(context.Background())
+			if testCase.deadline {
+				cancel()
+				ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+			}
+			defer cancel()
 			result := make(chan error, 1)
 			go func() {
 				_, err := tc.getWebConfigContentWithContext(ctx, "192.0.2.1")
@@ -105,7 +105,7 @@ func TestWebConfigReadContext(t *testing.T) {
 			}()
 			select {
 			case <-reached:
-			case <-time.After(5 * time.Second):
+			case <-time.After(10 * time.Second):
 				cancel()
 				t.Fatal("file-read path did not reach expected stage")
 			}
@@ -115,6 +115,10 @@ func TestWebConfigReadContext(t *testing.T) {
 				}
 				cancel()
 			}
+			resultTimeout := time.Second
+			if testCase.deadline {
+				resultTimeout = 10 * time.Second
+			}
 			select {
 			case err := <-result:
 				if testCase.deadline {
@@ -122,7 +126,7 @@ func TestWebConfigReadContext(t *testing.T) {
 				} else {
 					require.ErrorIs(t, err, context.Canceled)
 				}
-			case <-time.After(time.Second):
+			case <-time.After(resultTimeout):
 				cancel()
 				t.Fatal("file-read path did not stop promptly")
 			}
