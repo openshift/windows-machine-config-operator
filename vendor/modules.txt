@@ -1324,8 +1324,8 @@ k8s.io/kubelet/config/v1beta1
 ## explicit; go 1.25.0
 k8s.io/kubernetes/pkg/credentialprovider
 k8s.io/kubernetes/pkg/features
-# k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
-## explicit; go 1.25
+# k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3 => k8s.io/utils v0.0.0-20260507154919-ff6756f316d2
+## explicit; go 1.23
 k8s.io/utils/buffer
 k8s.io/utils/clock
 k8s.io/utils/exec
@@ -1491,3 +1491,4 @@ sigs.k8s.io/structured-merge-diff/v6/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/kyaml
 # k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20260624041617-8f3fa4921821
+# k8s.io/utils => k8s.io/utils v0.0.0-20260507154919-ff6756f316d2
