@@ -20,6 +20,7 @@ func TestGenerateWebConfig(t *testing.T) {
 		wantContains      []string
 		wantNotContains   []string
 		wantUnsupported   int
+		wantError         bool
 		wantBaseConfigLen bool // true if we expect the short base config
 	}{
 		{
@@ -129,12 +130,7 @@ func TestGenerateWebConfig(t *testing.T) {
 				},
 			},
 			honorTLSProfile: true,
-			wantContains: []string{
-				"min_version: TLS12",
-			},
-			wantNotContains: []string{
-				"cipher_suites:",
-			},
+			wantError:       true,
 		},
 		{
 			name: "profile with unsupported ciphers",
@@ -193,7 +189,13 @@ func TestGenerateWebConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			content, unsupported := GenerateWebConfig(tt.tlsProfileSpec, tt.honorTLSProfile)
+			content, unsupported, err := GenerateWebConfig(tt.tlsProfileSpec, tt.honorTLSProfile)
+			if tt.wantError {
+				require.ErrorContains(t, err, "no supported cipher suites")
+				assert.Empty(t, content)
+				return
+			}
+			require.NoError(t, err)
 
 			for _, want := range tt.wantContains {
 				assert.Contains(t, content, want,
@@ -218,6 +220,48 @@ func TestGenerateWebConfig(t *testing.T) {
 					"base config should have exactly 3 lines (header + cert + key)")
 			}
 		})
+	}
+}
+
+func TestGenerateWebConfigCipherIntersection(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		ciphers []string
+	}{
+		{name: "unsupported", ciphers: []string{"UNSUPPORTED-CIPHER"}},
+		{name: "weak", ciphers: []string{"ECDHE-RSA-AES128-SHA"}},
+		{name: "TLS13 only", ciphers: []string{"TLS_AES_128_GCM_SHA256"}},
+		{name: "mixed rejected", ciphers: []string{"UNSUPPORTED-CIPHER", "TLS_AES_128_GCM_SHA256"}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			for _, version := range []config.TLSProtocolVersion{config.VersionTLS10, config.VersionTLS11, config.VersionTLS12} {
+				spec := config.TLSProfileSpec{MinTLSVersion: version, Ciphers: testCase.ciphers}
+				content, _, err := GenerateWebConfig(spec, true)
+				require.ErrorContains(t, err, "no supported cipher suites")
+				assert.Empty(t, content)
+				content, _, err = GenerateWebConfig(spec, false)
+				require.NoError(t, err)
+				assert.NotContains(t, content, "cipher_suites:")
+				_, err = PopulateWindowsExporterWebConfig(spec, true)
+				require.ErrorContains(t, err, "no supported cipher suites")
+			}
+			for _, honor := range []bool{false, true} {
+				spec := config.TLSProfileSpec{MinTLSVersion: config.VersionTLS13, Ciphers: testCase.ciphers}
+				content, unsupported, err := GenerateWebConfig(spec, honor)
+				require.NoError(t, err)
+				assert.NotContains(t, content, "cipher_suites:")
+				assert.Empty(t, unsupported)
+			}
+		})
+	}
+	for _, ciphers := range [][]string{nil, {}, {"UNSUPPORTED-CIPHER", "ECDHE-RSA-AES128-GCM-SHA256"}} {
+		content, _, err := GenerateWebConfig(config.TLSProfileSpec{MinTLSVersion: config.VersionTLS12, Ciphers: ciphers}, true)
+		require.NoError(t, err)
+		if len(ciphers) > 0 {
+			assert.Contains(t, content, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256")
+		} else {
+			assert.NotContains(t, content, "cipher_suites:")
+		}
 	}
 }
 
@@ -456,7 +500,8 @@ func TestMapCurvePreferences(t *testing.T) {
 func TestGenerateWebConfigYAMLValidity(t *testing.T) {
 	// Verify the generated YAML starts and ends correctly
 	intermediateProfile := *config.TLSProfiles[config.TLSProfileIntermediateType]
-	content, _ := GenerateWebConfig(intermediateProfile, true)
+	content, _, err := GenerateWebConfig(intermediateProfile, true)
+	require.NoError(t, err)
 
 	// Check starts with expected header
 	require.True(t, strings.HasPrefix(content, "tls_server_config:\n"),
@@ -518,7 +563,8 @@ func TestOldProfileNoWeakCiphersInOutput(t *testing.T) {
 	// The Old TLS profile includes weak ciphers (DES-CBC3-SHA, *-SHA, etc.)
 	// that must be filtered from the generated webconfig.
 	oldProfile := *config.TLSProfiles[config.TLSProfileOldType]
-	content, unsupported := GenerateWebConfig(oldProfile, true)
+	content, unsupported, err := GenerateWebConfig(oldProfile, true)
+	require.NoError(t, err)
 
 	// Weak cipher IANA names that must NOT appear in the output.
 	// Use newline suffix to avoid substring matches (e.g. _CBC_SHA vs _CBC_SHA256).

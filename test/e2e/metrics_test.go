@@ -407,7 +407,8 @@ func (tc *testContext) testWebConfigMatchesTLSProfile(t *testing.T) {
 
 	// Generate the expected webconfig from the effective TLS profile.
 	// honorTLSProfile is true because we are testing the TLS-aware webconfig.
-	expectedContent, _ := payload.GenerateWebConfig(profileSpec, true)
+	expectedContent, _, err := payload.GenerateWebConfig(profileSpec, true)
+	require.NoError(t, err)
 	expectedSHA := fmt.Sprintf("%x", sha256.Sum256([]byte(expectedContent)))
 
 	for _, node := range gc.allNodes() {
@@ -499,7 +500,8 @@ func (tc *testContext) testWebConfigProfileChangeWithoutReconfigure(t *testing.T
 	require.NoError(t, err, "error getting node address")
 	originalProfile, originalSpec, err := tc.getEffectiveTLSProfile()
 	require.NoError(t, err)
-	originalContent, _ := payload.GenerateWebConfig(originalSpec, true)
+	originalContent, _, err := payload.GenerateWebConfig(originalSpec, true)
+	require.NoError(t, err)
 	originalSHA := sha256.Sum256([]byte(originalContent))
 	if node.Status.NodeInfo.BootID == "" {
 		t.Log("node does not report a boot ID; only UID and WMCO version can be checked")
@@ -528,7 +530,8 @@ func (tc *testContext) testWebConfigProfileChangeWithoutReconfigure(t *testing.T
 		}
 		profileSpec, err := tlspkg.GetTLSProfileSpec(profile)
 		require.NoError(t, err)
-		expectedContent, _ := payload.GenerateWebConfig(profileSpec, true)
+		expectedContent, _, err := payload.GenerateWebConfig(profileSpec, true)
+		require.NoError(t, err)
 		if profileSpec.MinTLSVersion != originalSpec.MinTLSVersion {
 			require.NotEqual(t, originalContent, expectedContent)
 			require.NotEqual(t, originalSHA, sha256.Sum256([]byte(expectedContent)))
@@ -728,8 +731,10 @@ func TestWebConfigTLSHelpers(t *testing.T) {
 	modern, err := tlspkg.GetTLSProfileSpec(&config.TLSSecurityProfile{Type: config.TLSProfileModernType})
 	require.NoError(t, err)
 	require.NotEqual(t, intermediate.MinTLSVersion, modern.MinTLSVersion)
-	intermediateContent, _ := payload.GenerateWebConfig(intermediate, true)
-	modernContent, _ := payload.GenerateWebConfig(modern, true)
+	intermediateContent, _, err := payload.GenerateWebConfig(intermediate, true)
+	require.NoError(t, err)
+	modernContent, _, err := payload.GenerateWebConfig(modern, true)
+	require.NoError(t, err)
 	assert.NotEqual(t, intermediateContent, modernContent)
 	assert.NotEqual(t, sha256.Sum256([]byte(intermediateContent)), sha256.Sum256([]byte(modernContent)))
 }

@@ -76,7 +76,10 @@ const webConfigKeyFile = `C:\\k\\tls\\certs\\tls.key`
 // keep-alive connections retain the old TLS parameters until the client
 // reconnects.
 func PopulateWindowsExporterWebConfig(tlsProfileSpec config.TLSProfileSpec, honorTLSProfile bool) ([]string, error) {
-	content, unsupported := GenerateWebConfig(tlsProfileSpec, honorTLSProfile)
+	content, unsupported, err := GenerateWebConfig(tlsProfileSpec, honorTLSProfile)
+	if err != nil {
+		return unsupported, err
+	}
 	fileName := strings.TrimSuffix(filepath.Base(WindowsExporterWebConfigPath), ".tar.gz")
 	shaMap[fileName] = fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 	compressedFile, err := os.Create(WindowsExporterWebConfigPath)
@@ -98,9 +101,9 @@ func PopulateWindowsExporterWebConfig(tlsProfileSpec config.TLSProfileSpec, hono
 
 // GenerateWebConfig returns the windows-exporter webconfig YAML content and a
 // list of cipher suite names that were not supported by Go (for logging).
-func GenerateWebConfig(tlsProfileSpec config.TLSProfileSpec, honorTLSProfile bool) (string, []string) {
+func GenerateWebConfig(tlsProfileSpec config.TLSProfileSpec, honorTLSProfile bool) (string, []string, error) {
 	if !honorTLSProfile {
-		return generateBaseWebConfig(), nil
+		return generateBaseWebConfig(), nil, nil
 	}
 
 	minVersion := mapTLSVersion(tlsProfileSpec.MinTLSVersion)
@@ -114,12 +117,15 @@ func GenerateWebConfig(tlsProfileSpec config.TLSProfileSpec, honorTLSProfile boo
 	includeCiphers := minVersion != "TLS13"
 	if includeCiphers {
 		cipherSuites, unsupported = mapCipherSuites(tlsProfileSpec.Ciphers)
+		if len(tlsProfileSpec.Ciphers) > 0 && len(cipherSuites) == 0 {
+			return "", unsupported, fmt.Errorf("TLS profile has no supported cipher suites for minimum version %s", minVersion)
+		}
 	}
 
 	curvePrefs, unsupportedGroups := mapCurvePreferences(tlsProfileSpec.Groups)
 	unsupported = append(unsupported, unsupportedGroups...)
 
-	return generateFullWebConfig(minVersion, cipherSuites, curvePrefs, includeCiphers), unsupported
+	return generateFullWebConfig(minVersion, cipherSuites, curvePrefs, includeCiphers), unsupported, nil
 }
 
 // writeWebConfigHeader writes the common YAML header shared by both the base
