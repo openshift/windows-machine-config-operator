@@ -38,17 +38,19 @@ var weakCipherPatterns = []string{
 	"NULL",
 }
 
-// tlsVersionMap maps OpenShift TLS protocol version identifiers to the short
-// form expected by the Prometheus exporter-toolkit webconfig (Go crypto/tls).
-var tlsVersionMap = map[config.TLSProtocolVersion]string{
-	config.VersionTLS10: "TLS10",
-	config.VersionTLS11: "TLS11",
-	config.VersionTLS12: "TLS12",
-	config.VersionTLS13: "TLS13",
-}
-
 // groupToCurve maps OpenShift TLSGroup identifiers to the Go tls.CurveID
 // string names accepted by the exporter-toolkit webconfig.
+//
+// This map intentionally does NOT include X25519MLKEM768 or other
+// post-quantum groups. The exporter-toolkit's webconfig parser maps curve
+// name strings to Go's tls.CurveID values, and the pinned toolkit version
+// does not recognize "X25519MLKEM768" as a valid name — passing it would
+// cause the windows_exporter to reject the webconfig and crash-loop.
+//
+// This mirrors library-go's TLSGroupsToCurveIDs behaviour, which silently
+// filters unrecognized groups and returns them to the caller for logging.
+// The OpenShift API permits dropping unsupported groups: this is a
+// compatibility constraint of the exporter runtime, not a security gap.
 var groupToCurve = map[config.TLSGroup]string{
 	config.TLSGroupX25519:    "X25519",
 	config.TLSGroupSecP256r1: "CurveP256",
@@ -70,11 +72,10 @@ const webConfigKeyFile = `C:\\k\\tls\\certs\\tls.key`
 // that could not be mapped to Go cipher suites.
 //
 // Live pickup of webconfig changes by a running windows-exporter relies on
-// exporter-toolkit's GetConfigForClient reload: exporter-toolkit ≥ 0.14.0
-// re-reads the entire webconfig on every TLS handshake, rebuilding MinVersion,
-// CipherSuites, and CurvePreferences from the file on disk. Pre-existing
-// keep-alive connections retain the old TLS parameters until the client
-// reconnects.
+// exporter-toolkit's GetConfigForClient callback, which re-reads the
+// webconfig on every TLS handshake, rebuilding MinVersion, CipherSuites,
+// and CurvePreferences from the file on disk. Pre-existing keep-alive
+// connections retain the old TLS parameters until the client reconnects.
 func PopulateWindowsExporterWebConfig(tlsProfileSpec config.TLSProfileSpec, honorTLSProfile bool) ([]string, error) {
 	content, unsupported, err := GenerateWebConfig(tlsProfileSpec, honorTLSProfile)
 	if err != nil {
@@ -120,6 +121,21 @@ func GenerateWebConfig(tlsProfileSpec config.TLSProfileSpec, honorTLSProfile boo
 		if len(tlsProfileSpec.Ciphers) > 0 && len(cipherSuites) == 0 {
 			return "", unsupported, fmt.Errorf("TLS profile has no supported cipher suites for minimum version %s", minVersion)
 		}
+	}
+
+	// Clamp effective minimum: the weak-cipher filter removes all cipher
+	// suites negotiable below TLS 1.2 (DES/3DES, SHA-1 MAC, etc.), so
+	// every surviving cipher requires TLS 1.2. While the API may specify
+	// VersionTLS10 (e.g. the Old profile), emitting min_version: TLS10
+	// would be misleading — the exporter cannot complete a TLS 1.0 or
+	// 1.1 handshake with the surviving cipher set. Additionally, in FIPS
+	// builds Go's crypto/tls enforces TLS 1.2 as the floor regardless.
+	if includeCiphers && len(cipherSuites) > 0 && (minVersion == "TLS10" || minVersion == "TLS11") {
+		ctrl.Log.WithName("webconfig").Info(
+			"clamping effective min_version to TLS12: "+
+				"all surviving ciphers require TLS 1.2+",
+			"apiMinVersion", string(tlsProfileSpec.MinTLSVersion))
+		minVersion = "TLS12"
 	}
 
 	curvePrefs, unsupportedGroups := mapCurvePreferences(tlsProfileSpec.Groups)
@@ -172,16 +188,23 @@ func generateFullWebConfig(minVersion string, cipherSuites, curvePrefs []string,
 // webconfig (e.g. "VersionTLS12" -> "TLS12"). Returns "TLS12" for unknown
 // values as a safe default.
 //
+// Validation is delegated to library-go's TLSVersion, which maintains the
+// canonical registry of Go-supported TLS versions. The short form is derived
+// by trimming the "Version" prefix that all OpenShift API TLS version
+// identifiers share.
+//
 // Note: In FIPS builds (X:strictfipsruntime), Go's crypto/tls enforces a
 // minimum of TLS 1.2 regardless of the configured min_version value.
 // Setting TLS10 or TLS11 here will not actually lower the TLS floor on the
 // node.
 func mapTLSVersion(v config.TLSProtocolVersion) string {
-	if mapped, ok := tlsVersionMap[v]; ok {
-		return mapped
+	// Validate via library-go's canonical TLS version registry.
+	if _, err := libgocrypto.TLSVersion(string(v)); err != nil {
+		ctrl.Log.WithName("webconfig").Info("unknown TLS version, defaulting to TLS12", "version", string(v))
+		return "TLS12"
 	}
-	ctrl.Log.WithName("webconfig").Info("unknown TLS version, defaulting to TLS12", "version", string(v))
-	return "TLS12"
+	// Derive the short form: "VersionTLS12" → "TLS12".
+	return strings.TrimPrefix(string(v), "Version")
 }
 
 // mapCipherSuites converts cipher names from the OpenShift TLS profile to
@@ -276,8 +299,9 @@ func isSupportedCipher(ianaName string) bool {
 
 // mapCurvePreferences converts OpenShift TLSGroup identifiers to the Go
 // tls.CurveID string names accepted by the exporter-toolkit webconfig.
-// Unsupported groups (e.g. post-quantum X25519MLKEM768) are collected and
-// returned separately for logging.
+// Groups not present in the groupToCurve map (e.g. X25519MLKEM768) are
+// collected and returned separately for logging. See the groupToCurve
+// comment for why post-quantum groups are intentionally excluded.
 func mapCurvePreferences(groups []config.TLSGroup) ([]string, []string) {
 	var result []string
 	var unsupported []string

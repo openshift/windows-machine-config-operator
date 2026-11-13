@@ -638,10 +638,10 @@ func (nc *NodeConfig) UpdateKubeletClientCA(contents []byte) error {
 
 // UpdateWebConfig pushes the current webconfig payload file to the Windows
 // node. The webconfig file is a compressed archive (.tar.gz) whose SHA is
-// already tracked in the payload shaMap, so EnsureFile will skip the transfer
-// if the remote file already matches. No service restart is required: the
-// exporter-toolkit in windows-exporter re-reads the webconfig on every TLS
-// handshake (GetConfigForClient reload).
+// already tracked in the payload shaMap, so EnsureFileWithContext will skip
+// the transfer if the remote file already matches. No service restart is
+// required: the exporter-toolkit in windows-exporter re-reads the webconfig
+// on every TLS handshake (GetConfigForClient callback).
 func (nc *NodeConfig) UpdateWebConfig(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, retry.Timeout)
 	defer cancel()

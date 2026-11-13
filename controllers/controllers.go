@@ -142,12 +142,16 @@ func (r *instanceReconciler) updateKubeletCA(ctx context.Context, node core.Node
 	return nodeConfig.UpdateKubeletClientCA(contents)
 }
 
-// ensureWebConfigIsUpToDate checks the webconfig SHA annotation on the node and
-// pushes the updated webconfig file if it differs from the current payload.
-// This is a lightweight update path — it does NOT drain, deconfigure, or
-// restart the node. The exporter-toolkit in windows-exporter re-reads the
-// webconfig on every TLS handshake, so the new TLS settings take effect on
-// the next client connection.
+// ensureWebConfigIsUpToDate checks the WindowsExporterWebConfigSHAAnnotation
+// on the node and pushes the updated webconfig file if it differs from the
+// current payload SHA (computed by PopulateWindowsExporterWebConfig at
+// operator startup).
+//
+// This is a lightweight, no-drain update path — it does NOT drain,
+// deconfigure, or restart the node. The exporter-toolkit in windows-exporter
+// re-reads the webconfig on every TLS handshake (GetConfigForClient
+// callback), so the new TLS settings take effect on the next client
+// connection without service interruption.
 func (r *instanceReconciler) ensureWebConfigIsUpToDate(ctx context.Context, instanceInfo *instance.Info) error {
 	if instanceInfo.Node == nil {
 		return fmt.Errorf("instance node is nil, cannot check webconfig")
@@ -155,11 +159,12 @@ func (r *instanceReconciler) ensureWebConfigIsUpToDate(ctx context.Context, inst
 	return r.ensureWebConfigForNode(ctx, *instanceInfo.Node)
 }
 
-// ensureWebConfigForNode compares the webconfig SHA annotation on the given
-// node with the current payload SHA. If they differ, it pushes the updated
-// webconfig and records the new SHA annotation. Returns nil immediately when
-// the webconfig is already up to date or when no webconfig SHA is available
-// (i.e. PopulateWebConfig has not been called yet).
+// ensureWebConfigForNode compares the WindowsExporterWebConfigSHAAnnotation
+// on the given node with the current payload SHA from GetWebConfigSHA. If
+// they differ, it pushes the updated webconfig via updateWebConfig, then
+// patches the node annotation to record the new SHA. Returns nil immediately
+// when the webconfig is already up to date or when no webconfig SHA is
+// available (i.e. PopulateWindowsExporterWebConfig has not been called yet).
 func (r *instanceReconciler) ensureWebConfigForNode(ctx context.Context, node core.Node) error {
 	expectedSHA := payload.GetWebConfigSHA()
 	nodeInfo := &instance.Info{Node: &node}

@@ -62,11 +62,11 @@ func TestGenerateWebConfig(t *testing.T) {
 			},
 		},
 		{
-			name:            "old profile includes TLS10 and filters weak ciphers",
+			name:            "old profile clamps to TLS12 and filters weak ciphers",
 			tlsProfileSpec:  *config.TLSProfiles[config.TLSProfileOldType],
 			honorTLSProfile: true,
 			wantContains: []string{
-				"min_version: TLS10",
+				"min_version: TLS12",
 				"cipher_suites:",
 				"curve_preferences:",
 			},
@@ -266,7 +266,7 @@ func TestGenerateWebConfigCipherIntersection(t *testing.T) {
 }
 
 // TestGetWebConfigSHA verifies that GetWebConfigSHA returns the correct SHA
-// from the global shaMap after being set by PopulateWebConfig.
+// from the global shaMap after being set by PopulateWindowsExporterWebConfig.
 func TestGetWebConfigSHA(t *testing.T) {
 	// Before any webconfig is populated, the SHA should be empty
 	origShaMap := shaMap
@@ -276,7 +276,7 @@ func TestGetWebConfigSHA(t *testing.T) {
 	assert.Equal(t, "", GetWebConfigSHA(),
 		"GetWebConfigSHA should return empty string when webconfig is not populated")
 
-	// Manually set the webconfig SHA as PopulateWebConfig would
+	// Manually set the webconfig SHA as PopulateWindowsExporterWebConfig would
 	fileName := strings.TrimSuffix("windows-exporter-webconfig.yaml.tar.gz", ".tar.gz")
 	shaMap[fileName] = "abc123def456"
 	assert.Equal(t, "abc123def456", GetWebConfigSHA(),
