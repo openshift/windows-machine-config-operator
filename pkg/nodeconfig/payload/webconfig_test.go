@@ -53,6 +53,8 @@ func TestGenerateWebConfig(t *testing.T) {
 				"X25519",
 				"CurveP256",
 				"CurveP384",
+				"http_server_config:",
+				"http2: false",
 			},
 			wantNotContains: []string{
 				// TLS 1.3 ciphers should be filtered out
@@ -90,6 +92,8 @@ func TestGenerateWebConfig(t *testing.T) {
 			wantContains: []string{
 				"min_version: TLS13",
 				"curve_preferences:",
+				"http_server_config:",
+				"http2: false",
 			},
 			wantNotContains: []string{
 				"cipher_suites:",
@@ -131,6 +135,35 @@ func TestGenerateWebConfig(t *testing.T) {
 			},
 			honorTLSProfile: true,
 			wantError:       true,
+		},
+		{
+			// A Custom profile with AES-256-GCM and ChaCha20 but no AES-128-GCM
+			// would cause the exporter to fail on cold startup because HTTP/2
+			// requires TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256. The webconfig
+			// must disable HTTP/2 to prevent this.
+			name: "custom profile without AES-128-GCM disables HTTP/2",
+			tlsProfileSpec: config.TLSProfileSpec{
+				MinTLSVersion: config.VersionTLS12,
+				Ciphers: []string{
+					"ECDHE-RSA-AES256-GCM-SHA384",
+					"ECDHE-RSA-CHACHA20-POLY1305",
+				},
+				Groups: []config.TLSGroup{
+					config.TLSGroupX25519,
+					config.TLSGroupSecP256r1,
+				},
+			},
+			honorTLSProfile: true,
+			wantContains: []string{
+				"cipher_suites:",
+				"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+				"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+				"http_server_config:",
+				"http2: false",
+			},
+			wantNotContains: []string{
+				"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+			},
 		},
 		{
 			name: "profile with unsupported ciphers",
@@ -511,18 +544,31 @@ func TestGenerateWebConfigYAMLValidity(t *testing.T) {
 	require.True(t, strings.HasSuffix(content, "\n"),
 		"webconfig should end with a newline")
 
-	// Verify indentation is consistent (2 spaces for keys under tls_server_config)
+	// Top-level keys in the webconfig YAML
+	topLevelKeys := map[string]bool{
+		"tls_server_config:":  true,
+		"http_server_config:": true,
+	}
+
+	// Verify indentation: top-level keys are unindented, all other lines
+	// are indented with at least 2 spaces under their parent key.
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 	for i, line := range lines {
-		if i == 0 {
-			// First line is the top-level key
-			assert.Equal(t, "tls_server_config:", line)
+		if topLevelKeys[line] {
 			continue
 		}
-		// All other lines should start with at least 2 spaces
+		// All non-top-level lines should start with at least 2 spaces
 		assert.True(t, strings.HasPrefix(line, "  "),
 			"line %d should be indented: %q", i+1, line)
 	}
+
+	// Full webconfig must include both top-level sections
+	assert.Contains(t, content, "tls_server_config:\n",
+		"webconfig should contain tls_server_config section")
+	assert.Contains(t, content, "http_server_config:\n",
+		"webconfig should contain http_server_config section")
+	assert.Contains(t, content, "  http2: false\n",
+		"webconfig should disable HTTP/2")
 }
 
 // TestIsWeakCipher verifies that isWeakCipher correctly identifies weak cipher

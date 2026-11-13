@@ -164,6 +164,13 @@ func generateBaseWebConfig() string {
 }
 
 // generateFullWebConfig returns the webconfig YAML with TLS profile settings.
+// HTTP/2 is unconditionally disabled because metrics scraping does not benefit
+// from it, and HTTP/2 requires TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 in the
+// cipher suite list (Go's net/http enforces this at startup). A Custom TLS
+// profile that excludes this cipher would cause the exporter to fail on cold
+// startup with "http2: TLSConfig.CipherSuites is missing an HTTP/2-required
+// AES_128_GCM_SHA256 cipher", even though hot-reload works because HTTP/2 is
+// already negotiated on pre-existing connections.
 func generateFullWebConfig(minVersion string, cipherSuites, curvePrefs []string, includeCiphers bool) string {
 	var b strings.Builder
 	writeWebConfigHeader(&b)
@@ -183,7 +190,16 @@ func generateFullWebConfig(minVersion string, cipherSuites, curvePrefs []string,
 		}
 	}
 
+	writeHTTP2Disabled(&b)
 	return b.String()
+}
+
+// writeHTTP2Disabled appends the http_server_config section that disables
+// HTTP/2. This is a top-level webconfig key, at the same level as
+// tls_server_config. See generateFullWebConfig for the rationale.
+func writeHTTP2Disabled(b *strings.Builder) {
+	b.WriteString("http_server_config:\n")
+	b.WriteString("  http2: false\n")
 }
 
 // mapTLSVersion converts an OpenShift TLSProtocolVersion to the short form
