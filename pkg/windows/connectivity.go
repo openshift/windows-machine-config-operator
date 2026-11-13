@@ -84,7 +84,10 @@ func newSshConnectivity(ctx context.Context, c client.Client, nodeName, username
 	return conn, nil
 }
 
-// init initialises the key based SSH client
+// init initialises the key based SSH client.
+// The provided context bounds all connection attempts: if the context is
+// cancelled or its deadline expires, the current TCP dial is interrupted and
+// no further retries are made.
 func (c *sshConnectivity) init(ctx context.Context) error {
 	var missingFields []string
 	if c.username == "" {
@@ -119,24 +122,42 @@ func (c *sshConnectivity) init(ctx context.Context) error {
 	// user-data scripts to complete SSH configuration on newly provisioned VMs
 	authRetryTimeout := 5 * time.Minute
 
-	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data
-	err = wait.PollImmediate(time.Minute, retry.Timeout, func() (bool, error) {
-		sshClient, err = ssh.Dial("tcp", c.ipAddress+":"+sshPort, config)
-		if err == nil {
-			return true, nil
-		}
-		c.log.V(1).Info("SSH dial", "IP Address", c.ipAddress, "error", err)
-		if strings.Contains(err.Error(), "unable to authenticate") {
-			// Retry authentication failure as the VM's user-data script may still be configuring SSH.
-			elapsed := time.Since(startTime)
-			if elapsed < authRetryTimeout {
-				c.log.V(1).Info("authentication failed, retrying as VM may still be executing user-data script",
-					"elapsed", elapsed, "timeout", authRetryTimeout)
-				return false, nil
+	addr := c.ipAddress + ":" + sshPort
+	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data.
+	// PollUntilContextTimeout respects ctx cancellation so callers can bound connection setup.
+	err = wait.PollUntilContextTimeout(ctx, time.Minute, retry.Timeout, true, func(ctx context.Context) (bool, error) {
+		// Use a context-aware dialer so each TCP dial is cancelled when ctx expires.
+		dialer := &net.Dialer{}
+		netConn, dialErr := dialer.DialContext(ctx, "tcp", addr)
+		if dialErr != nil {
+			c.log.V(1).Info("SSH dial", "IP Address", c.ipAddress, "error", dialErr)
+			// When the context has expired the dial error wraps the context
+			// error; surface it so the caller sees the cancellation reason.
+			if ctx.Err() != nil {
+				return false, ctx.Err()
 			}
-			return false, newAuthErr(err)
+			return false, nil
 		}
-		return false, nil
+		// Perform the SSH handshake over the already-connected TCP socket.
+		sshConn, chans, reqs, sshErr := ssh.NewClientConn(netConn, addr, config)
+		if sshErr != nil {
+			// Close the raw connection on handshake failure.
+			_ = netConn.Close()
+			c.log.V(1).Info("SSH handshake", "IP Address", c.ipAddress, "error", sshErr)
+			if strings.Contains(sshErr.Error(), "unable to authenticate") {
+				// Retry authentication failure as the VM's user-data script may still be configuring SSH.
+				elapsed := time.Since(startTime)
+				if elapsed < authRetryTimeout {
+					c.log.V(1).Info("authentication failed, retrying as VM may still be executing user-data script",
+						"elapsed", elapsed, "timeout", authRetryTimeout)
+					return false, nil
+				}
+				return false, newAuthErr(sshErr)
+			}
+			return false, nil
+		}
+		sshClient = ssh.NewClient(sshConn, chans, reqs)
+		return true, nil
 	})
 	if err != nil {
 		return fmt.Errorf("unable to connect to Windows VM %s: %w", c.ipAddress, err)
