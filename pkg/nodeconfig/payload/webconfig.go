@@ -58,10 +58,13 @@ var groupToCurve = map[config.TLSGroup]string{
 	config.TLSGroupSecP521r1: "CurveP521",
 }
 
-// webConfigCertFile is the Windows path to the TLS certificate used by windows-exporter
+// webConfigCertFile is the Windows path to the TLS certificate used by windows-exporter.
+// This path is under windows.TLSCertsPath (C:\k\tls\certs) but defined locally because
+// importing pkg/windows from pkg/nodeconfig/payload would create a circular dependency.
 const webConfigCertFile = `C:\\k\\tls\\certs\\tls.crt`
 
-// webConfigKeyFile is the Windows path to the TLS private key used by windows-exporter
+// webConfigKeyFile is the Windows path to the TLS private key used by windows-exporter.
+// See webConfigCertFile for why this is not derived from windows.TLSCertsPath.
 const webConfigKeyFile = `C:\\k\\tls\\certs\\tls.key`
 
 // PopulateWindowsExporterWebConfig generates the windows-exporter webconfig
@@ -188,10 +191,11 @@ func generateFullWebConfig(minVersion string, cipherSuites, curvePrefs []string,
 // webconfig (e.g. "VersionTLS12" -> "TLS12"). Returns "TLS12" for unknown
 // values as a safe default.
 //
-// Validation is delegated to library-go's TLSVersion, which maintains the
-// canonical registry of Go-supported TLS versions. The short form is derived
-// by trimming the "Version" prefix that all OpenShift API TLS version
-// identifiers share.
+// Validation is delegated to library-go's TLSVersion (not TLSVersionOrDie)
+// because TLSVersionOrDie panics on unknown input and returns a uint16, not
+// the string form required by the exporter-toolkit webconfig YAML. The short
+// form is derived by trimming the "Version" prefix that all OpenShift API
+// TLS version identifiers share.
 //
 // Note: In FIPS builds (X:strictfipsruntime), Go's crypto/tls enforces a
 // minimum of TLS 1.2 regardless of the configured min_version value.

@@ -165,6 +165,11 @@ func (r *instanceReconciler) ensureWebConfigIsUpToDate(ctx context.Context, inst
 // patches the node annotation to record the new SHA. Returns nil immediately
 // when the webconfig is already up to date or when no webconfig SHA is
 // available (i.e. PopulateWindowsExporterWebConfig has not been called yet).
+//
+// Cache staleness: the SHA annotation is read from and written through the
+// cache client, so a subsequent reconcile could see a stale value. This is
+// safe because WMCO controllers use MaxConcurrentReconciles:1, serializing
+// reconciles so that the annotation write completes before the next check.
 func (r *instanceReconciler) ensureWebConfigForNode(ctx context.Context, node core.Node) error {
 	expectedSHA := payload.GetWebConfigSHA()
 	nodeInfo := &instance.Info{Node: &node}
