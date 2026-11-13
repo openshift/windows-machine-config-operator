@@ -142,6 +142,65 @@ func TestSSHJobPreCanceledContext(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
+func TestExtractBase64Payload(t *testing.T) {
+	content := "tls_server_config:\r\n  min_version: TLS13\r\n"
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+
+	for _, testCase := range []struct {
+		name    string
+		input   string
+		want    string
+		wantErr string
+	}{
+		{
+			name:  "clean output",
+			input: "ssh-pod: " + encoded + "\n",
+			want:  content,
+		},
+		{
+			name: "noisy Get-Help preamble",
+			input: "ssh-pod: \r\n" +
+				"TOPIC\r\n" +
+				"    Windows PowerShell Help System\r\n" +
+				"\r\n" +
+				"SHORT DESCRIPTION\r\n" +
+				"    Displays help about PowerShell cmdlets and concepts.\r\n" +
+				"\r\n" +
+				"LONG DESCRIPTION\r\n" +
+				"    The Get-Help cmdlet displays information about PowerShell\r\n" +
+				"    concepts and commands.\r\n" +
+				"\r\n" +
+				encoded + "\r\n",
+			want: content,
+		},
+		{
+			name:    "missing pod name prefix",
+			input:   encoded,
+			wantErr: "missing pod name prefix",
+		},
+		{
+			name:    "garbled output",
+			input:   "ssh-pod: not-valid-base64!!!",
+			wantErr: "error decoding base64 payload",
+		},
+		{
+			name:    "empty payload after prefix",
+			input:   "ssh-pod: \n",
+			wantErr: "no payload line found",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := extractBase64Payload(testCase.input)
+			if testCase.wantErr != "" {
+				require.ErrorContains(t, err, testCase.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, testCase.want, string(got))
+		})
+	}
+}
+
 func TestWebConfigReadSuccess(t *testing.T) {
 	content := "tls_server_config:\r\n  min_version: TLS13\r\n"
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -180,4 +239,42 @@ func TestWebConfigReadSuccess(t *testing.T) {
 			assert.Equal(t, content, actual)
 		})
 	}
+}
+
+// TestWebConfigReadNoisyOutput verifies that getWebConfigContent correctly
+// extracts the base64 payload even when the SSH shell-detection probe emits
+// noisy preamble (e.g. Get-Help output) before the actual command result.
+func TestWebConfigReadNoisyOutput(t *testing.T) {
+	content := "tls_server_config:\r\n  min_version: TLS13\r\n"
+	getHelpPreamble := "TOPIC\r\n" +
+		"    Windows PowerShell Help System\r\n" +
+		"\r\n" +
+		"SHORT DESCRIPTION\r\n" +
+		"    Displays help about PowerShell cmdlets and concepts.\r\n" +
+		"\r\n"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodPost:
+			fmt.Fprint(writer, `{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"ssh-job"}}`)
+		case strings.HasSuffix(request.URL.Path, "/pods"):
+			fmt.Fprint(writer, `{"apiVersion":"v1","kind":"PodList","items":[{"metadata":{"name":"ssh-pod"},"status":{"startTime":"2026-01-01T00:00:00Z"}}]}`)
+		case strings.HasSuffix(request.URL.Path, "/log"):
+			writer.Header().Set("Content-Type", "text/plain")
+			// Simulate noisy output: Get-Help preamble followed by the actual base64 payload
+			fmt.Fprint(writer, getHelpPreamble+base64.StdEncoding.EncodeToString([]byte(content))+"\n")
+		default:
+			fmt.Fprint(writer, `{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"ssh-job"},"status":{"conditions":[{"type":"Complete","status":"True"},{"type":"SuccessCriteriaMet","status":"True"}]}}`)
+		}
+	}))
+	defer server.Close()
+	client, err := kubernetes.NewForConfig(&rest.Config{Host: server.URL})
+	require.NoError(t, err)
+	tc := &testContext{
+		client: &clusterinfo.OpenShift{K8s: client}, CloudProvider: sshJobTestProvider{},
+		workloadNamespace: "test", artifactDir: t.TempDir(),
+	}
+	actual, err := tc.getWebConfigContent("192.0.2.1")
+	require.NoError(t, err)
+	assert.Equal(t, content, actual)
 }

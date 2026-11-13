@@ -371,15 +371,39 @@ func (tc *testContext) getWebConfigContentWithContext(ctx context.Context, addr 
 	if err != nil {
 		return "", fmt.Errorf("error running SSH job to get webconfig: %w", err)
 	}
-	_, encodedContent, found := strings.Cut(out, ": ")
-	if !found {
-		return "", fmt.Errorf("missing pod name prefix in webconfig job output")
-	}
-	content, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedContent))
+	content, err := extractBase64Payload(out)
 	if err != nil {
-		return "", fmt.Errorf("error decoding webconfig bytes: %w", err)
+		return "", fmt.Errorf("error extracting webconfig content: %w", err)
 	}
 	return string(content), nil
+}
+
+// extractBase64Payload extracts and decodes a base64-encoded payload from SSH
+// job output. The output format is "<pod-name>: <stdout>\n" where stdout may
+// contain noisy preamble from the SSH shell-detection probe (e.g. Get-Help
+// output) before the actual base64 payload line. This function strips the pod
+// name prefix, then walks lines from the end to find the last non-empty line,
+// which is where the command's payload appears.
+func extractBase64Payload(out string) ([]byte, error) {
+	_, after, found := strings.Cut(out, ": ")
+	if !found {
+		return nil, fmt.Errorf("missing pod name prefix in job output")
+	}
+	lines := strings.Split(strings.TrimSpace(after), "\n")
+	// Walk backwards to find the last non-empty line — the actual payload.
+	// Earlier lines may contain noisy shell-detection output (e.g. Get-Help).
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		decoded, err := base64.StdEncoding.DecodeString(line)
+		if err != nil {
+			return nil, fmt.Errorf("error decoding base64 payload: %w", err)
+		}
+		return decoded, nil
+	}
+	return nil, fmt.Errorf("no payload line found in job output")
 }
 
 // testWebConfigTLSAdherence is the top-level test group for webconfig TLS profile tests.
