@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	auth "k8s.io/api/authentication/v1"
 	core "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -84,37 +85,49 @@ func (tc *testContext) testPrometheus(t *testing.T) {
 
 // testPrometheusEndpointSliceCleanup verifies that no Windows nodes remain in kubelet EndpointSlices
 func (tc *testContext) testPrometheusEndpointSliceCleanup(t *testing.T) {
-	// List all EndpointSlices for the kubelet service in kube-system namespace
-	endpointSlices, err := tc.client.K8s.DiscoveryV1().EndpointSlices("kube-system").List(
-		context.TODO(),
-		metav1.ListOptions{
-			LabelSelector: "kubernetes.io/service-name=kubelet",
-		},
-	)
-	require.NoError(t, err, "error listing EndpointSlices for kubelet service")
-
-	// Verify that no Windows node addresses appear in any EndpointSlice
-	var foundWindowsNodes []string
-	for _, slice := range endpointSlices.Items {
-		for _, endpoint := range slice.Endpoints {
-			// Check if this endpoint references a node
-			if endpoint.TargetRef == nil || endpoint.TargetRef.Kind != "Node" {
-				continue
+	// Node names are not logged, as they can carry internal hostnames.
+	var windowsNodeCount, staleNodeCount int
+	// A deleted node can still be referenced by an EndpointSlice until the endpoint slice controller
+	// reconciles it, so poll until a full sweep sees neither Windows nodes nor stale node references.
+	err := wait.PollUntilContextTimeout(context.TODO(), retry.Interval, retry.ResourceChangeTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			windowsNodeCount, staleNodeCount = 0, 0
+			// List all EndpointSlices for the kubelet service in kube-system namespace
+			endpointSlices, err := tc.client.K8s.DiscoveryV1().EndpointSlices("kube-system").List(ctx,
+				metav1.ListOptions{
+					LabelSelector: "kubernetes.io/service-name=kubelet",
+				},
+			)
+			if err != nil {
+				return false, fmt.Errorf("error listing EndpointSlices for kubelet service: %w", err)
 			}
-			// Try to get the node to check its OS
-			node, err := tc.client.K8s.CoreV1().Nodes().Get(context.Background(),
-				endpoint.TargetRef.Name, metav1.GetOptions{})
-			require.NoError(t, err, "node %s referenced in EndpointSlice not found - EndpointSlice not synced properly",
-				endpoint.TargetRef.Name)
-			// Check if this is a Windows node
-			if nodeOS, exists := node.Labels["kubernetes.io/os"]; exists && nodeOS == "windows" {
-				foundWindowsNodes = append(foundWindowsNodes, node.Name)
+			for _, slice := range endpointSlices.Items {
+				for _, endpoint := range slice.Endpoints {
+					// Check if this endpoint references a node
+					if endpoint.TargetRef == nil || endpoint.TargetRef.Kind != "Node" {
+						continue
+					}
+					// Try to get the node to check its OS
+					node, err := tc.client.K8s.CoreV1().Nodes().Get(ctx, endpoint.TargetRef.Name, metav1.GetOptions{})
+					if apierrors.IsNotFound(err) {
+						// The node is gone but the EndpointSlice has not caught up yet
+						staleNodeCount++
+						continue
+					}
+					if err != nil {
+						return false, fmt.Errorf("error getting node referenced by EndpointSlice %s/%s: %w",
+							slice.Namespace, slice.Name, err)
+					}
+					// Check if this is a Windows node
+					if nodeOS, exists := node.Labels["kubernetes.io/os"]; exists && nodeOS == "windows" {
+						windowsNodeCount++
+					}
+				}
 			}
-		}
-	}
-
-	require.Empty(t, foundWindowsNodes,
-		"Found Windows nodes in kubelet EndpointSlices after deletion: %v", foundWindowsNodes)
+			return windowsNodeCount == 0 && staleNodeCount == 0, nil
+		})
+	require.NoError(t, err, "EndpointSlices not synced: %d Windows node endpoints and %d stale node references remain",
+		windowsNodeCount, staleNodeCount)
 }
 
 // PrometheusQuery defines the result of the /query request
