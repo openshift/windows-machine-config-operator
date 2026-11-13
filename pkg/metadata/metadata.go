@@ -25,6 +25,14 @@ const (
 	RebootAnnotation = "windowsmachineconfig.openshift.io/reboot-required"
 	// UpgradingLabel indicates the node's underlying instance is performing an upgrade
 	UpgradingLabel = "windowsmachineconfig.openshift.io/upgrading"
+	// WindowsExporterWebConfigSHAAnnotation tracks the SHA256 of the
+	// windows-exporter webconfig file on the node. It is set by
+	// ensureWebConfigForNode after pushing an updated webconfig, and read
+	// by WebConfigUpToDate to compare against the current payload SHA.
+	// This enables the no-drain webconfig update path: when the TLS
+	// profile changes, the operator pushes the new file and patches this
+	// annotation without draining, deconfiguring, or restarting the node.
+	WindowsExporterWebConfigSHAAnnotation = "windowsmachineconfig.openshift.io/windows-exporter-webconfig-sha"
 )
 
 // generatePatch creates a patch applying the given operation onto each given annotation key and value

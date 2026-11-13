@@ -1,3 +1,0 @@
-tls_server_config:
-  cert_file: C:\\k\\tls\\certs\\tls.crt
-  key_file: C:\\k\\tls\\certs\\tls.key

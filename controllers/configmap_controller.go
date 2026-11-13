@@ -292,21 +292,27 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	}
 
 	r.log.Info("processing", "instances in", wiparser.InstanceConfigMap)
-	// For each instance, ensure that it is configured into a node
-	if err := r.ensureInstancesAreUpToDate(ctx, instances); err != nil {
-		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", "%s", err.Error())
-		return err
+	// For each instance, ensure that it is configured into a node.
+	// Per-node failures are collected but do not prevent cleanup of removed instances.
+	updateErr := r.ensureInstancesAreUpToDate(ctx, instances)
+	if updateErr != nil {
+		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", "%s", updateErr.Error())
 	}
 
-	// Ensure that only instances currently specified by the ConfigMap are joined to the cluster as nodes
+	// Ensure that only instances currently specified by the ConfigMap are joined to the cluster as nodes.
+	// This must run even when some instance updates failed, otherwise removed instances will never be
+	// deconfigured if a peer node is unreachable.
 	if err = r.deconfigureInstances(ctx, instances, nodes); err != nil {
-		return fmt.Errorf("error removing undesired nodes from cluster: %w", err)
+		return errors.Join(updateErr, fmt.Errorf("error removing undesired nodes from cluster: %w", err))
 	}
 
-	return nil
+	return updateErr
 }
 
-// ensureInstancesAreUpToDate configures all instances that require configuration
+// ensureInstancesAreUpToDate configures all instances that require configuration.
+// Per-node failures are logged and collected so that remaining instances are still
+// processed. This prevents an unreachable node from blocking the rest of the
+// reconcile loop and subsequent cleanup of removed instances.
 func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(ctx context.Context, instances []*instance.Info) error {
 	// Get private key to encrypt instance usernames
 	privateKeyBytes, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
@@ -316,27 +322,28 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(ctx context.Context, in
 	}
 	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
 		Namespace: r.watchNamespace}}
+	var errs []error
 	for _, instanceInfo := range instances {
 		// When platform type is none or Nutanix, kubelet will pick a random interface to use for the Node's IP. In that case we
 		// should override that with the IP that the user is providing via the ConfigMap.
 		instanceInfo.SetNodeIP = r.platform == oconfig.NonePlatformType || r.platform == oconfig.NutanixPlatformType
 		encryptedUsername, err := crypto.EncryptToJSONString(instanceInfo.Username, privateKeyBytes)
 		if err != nil {
-			return fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err)
+			errs = append(errs, fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err))
+			continue
 		}
 		err = r.ensureInstanceIsUpToDate(ctx, instanceInfo, map[string]string{BYOHLabel: "true", nodeconfig.WorkerLabel: ""},
 			map[string]string{UsernameAnnotation: encryptedUsername})
 		if err != nil {
-			// It is better to return early like this, instead of trying to configure as many instances as possible in a
-			// single reconcile call, as it simplifies error collection. The order the map is read from is
-			// psuedo-random, so the configuration effort for configurable hosts will not be blocked by a specific host
-			// that has issues with configuration.
-			return fmt.Errorf("error configuring host with address %s: %w", instanceInfo.Address, err)
+			r.log.Error(err, "error configuring host, will continue with remaining instances",
+				"address", instanceInfo.Address)
+			errs = append(errs, fmt.Errorf("error configuring host with address %s: %w", instanceInfo.Address, err))
+			continue
 		}
 		r.recorder.Eventf(windowsInstances, core.EventTypeNormal, "InstanceSetup",
 			"Configured instance with address %s as a worker node", instanceInfo.Address)
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // deconfigureInstances removes all BYOH nodes that are not specified in the given instances slice, and

@@ -118,8 +118,7 @@ RUN make build-daemon
 #│   ├── windows-defender-exclusion.ps1
 #│   └── hns.psm1
 #├── windows-exporter/
-#│   ├── windows_exporter.exe
-#│   └── windows-exporter-webconfig.yaml
+#│   └── windows_exporter.exe
 #├── windows-instance-config-daemon.exe
 #└── sha256sum
 
@@ -130,12 +129,10 @@ sha256sum /build/windows-machine-config-operator/build/_output/bin/windows-insta
 # Copy hybrid-overlay-node.exe
 pushd /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/ && tar -cf - hybrid-overlay-node.exe | gzip -9 > /payload/hybrid-overlay-node.exe.tar.gz && popd && \
 sha256sum /build/windows-machine-config-operator/ovn-kubernetes/go-controller/_output/go/bin/windows/hybrid-overlay-node.exe >> sha256sum && \
-# Copy windows_exporter.exe and TLS windows-exporter-webconfig.yaml
+# Copy windows_exporter.exe
 mkdir /payload/windows-exporter && \
 pushd /build/windows-machine-config-operator/windows_exporter/ && tar -cf - windows_exporter.exe | gzip -9 > /payload/windows-exporter/windows_exporter.exe.tar.gz && popd && \
 sha256sum /build/windows-machine-config-operator/windows_exporter/windows_exporter.exe >> sha256sum && \
-pushd /build/windows-machine-config-operator/pkg/internal/ && tar -cf - windows-exporter-webconfig.yaml | gzip -9 > /payload/windows-exporter/windows-exporter-webconfig.yaml.tar.gz && popd && \
-sha256sum /build/windows-machine-config-operator/pkg/internal/windows-exporter-webconfig.yaml >> sha256sum && \
 # Copy azure-cloud-node-manager.exe
 pushd /build/windows-machine-config-operator/cloud-provider-azure/ && tar -cf - azure-cloud-node-manager.exe | gzip -9 > /payload/azure-cloud-node-manager.exe.tar.gz && popd && \
 sha256sum /build/windows-machine-config-operator/cloud-provider-azure/azure-cloud-node-manager.exe >> sha256sum && \
