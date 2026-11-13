@@ -55,6 +55,11 @@ type instanceReconciler struct {
 	recorder record.EventRecorder
 	// platform indicates the cloud on which the cluster is running
 	platform config.PlatformType
+	// updateWebConfigOverride, when non-nil, replaces updateWebConfig in
+	// ensureWebConfigForNode. This allows unit tests to stub the SSH
+	// file-transfer dependency while still exercising the decision logic,
+	// update invocation, and annotation write.
+	updateWebConfigOverride func(ctx context.Context, node core.Node) error
 }
 
 // ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
@@ -178,7 +183,11 @@ func (r *instanceReconciler) ensureWebConfigForNode(ctx context.Context, node co
 	}
 	r.log.Info("webconfig change detected, pushing updated file",
 		"expectedSHA", expectedSHA)
-	if err := r.updateWebConfig(ctx, node); err != nil {
+	updateFn := r.updateWebConfig
+	if r.updateWebConfigOverride != nil {
+		updateFn = r.updateWebConfigOverride
+	}
+	if err := updateFn(ctx, node); err != nil {
 		return err
 	}
 	return metadata.ApplyLabelsAndAnnotations(ctx, r.client, node, nil,
