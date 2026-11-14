@@ -1261,3 +1261,14 @@ func TestRetrieveHostProcessLogsRejectsReplacementBeforeSecondLogRequest(t *test
 	assert.Equal(t, 2, getCalls)
 	assert.Equal(t, 1, logCalls, "replacement must be rejected before a second log request")
 }
+
+func TestNewHostProcessCommandPodPreservesEncodedCommand(t *testing.T) {
+	command := []string{"powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", "test-encoded-command"}
+	pod := newHostProcessCommandPod("hostprocess-pod", "windows-node", "test-image", command)
+	require.Len(t, pod.Spec.Containers, 1)
+	assert.Equal(t, command, pod.Spec.Containers[0].Command)
+	assert.Equal(t, "test-image", pod.Spec.Containers[0].Image)
+	assert.True(t, pod.Spec.HostNetwork)
+	require.NotNil(t, pod.Spec.SecurityContext.WindowsOptions)
+	assert.True(t, *pod.Spec.SecurityContext.WindowsOptions.HostProcess)
+}
