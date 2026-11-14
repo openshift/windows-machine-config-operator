@@ -2401,69 +2401,6 @@ type ConfigMapPayload struct {
 	} `json:"data"`
 }
 
-func isProxy(oc *exutil.CLI) bool {
-	if iaasPlatform == "nutanix" {
-		return false
-	}
-	spec := getProxySpec(oc)
-	for _, v := range spec {
-		if s, ok := v.(string); ok && s != "" {
-			if strings.Contains(s, "ci.devcluster.openshift.com") {
-				return false
-			}
-			return true
-		}
-	}
-	return false
-}
-
-func waitForProxyStatus(oc *exutil.CLI) {
-	e2e.Logf("Waiting for proxy status to be reconciled by cluster-network-operator")
-	waitErr := wait.Poll(10*time.Second, 4*time.Minute, func() (bool, error) {
-		statusMap := getEnvVarProxyMap(oc)
-		return len(statusMap) > 0, nil
-	})
-	o.Expect(waitErr).NotTo(o.HaveOccurred(), "proxy status was not reconciled within 4 minutes")
-}
-
-func getClusterProxy(oc *exutil.CLI, value string) string {
-	clusterProxy, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("proxies", "-o=jsonpath={.items[*]."+value+"}").Output()
-	o.Expect(err).NotTo(o.HaveOccurred())
-	return clusterProxy
-}
-
-func getProxySpec(oc *exutil.CLI) map[string]interface{} {
-	spec := make(map[string]interface{})
-	spec["HTTPS_PROXY"] = getClusterProxy(oc, "spec.httpsProxy")
-	spec["HTTP_PROXY"] = getClusterProxy(oc, "spec.httpProxy")
-	spec["NO_PROXY"] = getClusterProxy(oc, "spec.noProxy")
-	return spec
-}
-
-func getEnvVarProxyMap(oc *exutil.CLI, replacement ...map[string]string) map[string]interface{} {
-	clusterEnvVars := make(map[string]interface{})
-	if replacement == nil {
-		if v := getClusterProxy(oc, "status.httpsProxy"); v != "" {
-			clusterEnvVars["HTTPS_PROXY"] = v
-		}
-		if v := getClusterProxy(oc, "status.httpProxy"); v != "" {
-			clusterEnvVars["HTTP_PROXY"] = v
-		}
-		if v := getClusterProxy(oc, "status.noProxy"); v != "" {
-			clusterEnvVars["NO_PROXY"] = v
-		}
-	} else {
-		for _, m := range replacement {
-			for key, value := range m {
-				if v := getClusterProxy(oc, value); v != "" {
-					clusterEnvVars[key] = v
-				}
-			}
-		}
-	}
-	return clusterEnvVars
-}
-
 func getPayloadMap(payload string) map[string]interface{} {
 	var m map[string]interface{}
 	json.Unmarshal([]byte(payload), &m)
@@ -2508,52 +2445,6 @@ func waitForWICDConfigMapContains(oc *exutil.CLI, windowsServicesCM string, key 
 	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("WICD ConfigMap %s did not contain %s within 5 minutes", key, substring))
 }
 
-func compileEnvVars(pwshOutput string) string {
-	var valueLines []string
-	var value string
-	lines := strings.Split(pwshOutput, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) == 2 {
-			valueLine := strings.TrimSpace(strings.TrimPrefix(parts[1], "Value:"))
-			valueLines = []string{valueLine}
-		} else if line != "" {
-			valueLines = append(valueLines, line)
-		}
-		if len(valueLines) > 0 {
-			value = strings.Join(valueLines, "")
-		}
-	}
-	return value
-}
-
-// redactProxyURL redacts user:password credentials from proxy URLs for safe logging
-func redactProxyURL(proxyURL string) string {
-	if proxyURL == "" {
-		return ""
-	}
-	// Match http://user:pass@host or https://user:pass@host
-	re := regexp.MustCompile(`(https?://)([^:]+):([^@]+)@`)
-	return re.ReplaceAllString(proxyURL, "${1}***:***@")
-}
-
-func compareMaps(map1, map2 map[string]interface{}) bool {
-	if len(map1) != len(map2) {
-		return false
-	}
-	for key := range map1 {
-		val1 := compileEnvVars(fmt.Sprint(map1[key]))
-		val2 := compileEnvVars(fmt.Sprint(map2[key]))
-		value := strings.ReplaceAll(val2, ";", ",")
-		if val1 != value {
-			e2e.Logf("Proxy variable %s values differ: expected=%s actual=%s", key, redactProxyURL(val1), redactProxyURL(val2))
-			return false
-		}
-	}
-	return true
-}
-
 func getWindowsNodeNames(oc *exutil.CLI) []string {
 	output, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"nodes", "-l", windowsNodeLabel, "-o=jsonpath={.items[*].metadata.name}").Output()
@@ -2562,49 +2453,6 @@ func getWindowsNodeNames(oc *exutil.CLI) []string {
 		return nil
 	}
 	return strings.Split(strings.TrimSpace(output), " ")
-}
-
-func checkProxyVarsOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[string]interface{}) {
-	for _, nodeName := range winNodes {
-		for key, proxy := range wicdProxies {
-			proxyStr := fmt.Sprint(proxy)
-			if proxyStr == "" {
-				continue
-			}
-			e2e.Logf("Check %v proxy exists on worker %v", key, nodeName)
-			cmd := fmt.Sprintf("[System.Environment]::GetEnvironmentVariable('%v', 'Machine')", key)
-			msg, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
-			o.Expect(err).NotTo(o.HaveOccurred())
-			o.Expect(strings.TrimSpace(msg)).Should(o.ContainSubstring(proxyStr), "proxy %v not found on %v", key, nodeName)
-		}
-	}
-}
-
-func waitForProxyOnNodes(oc *exutil.CLI, winNodes []string, wicdProxies map[string]interface{}) {
-	pollErr := wait.Poll(20*time.Second, 5*time.Minute, func() (bool, error) {
-		for _, nodeName := range winNodes {
-			for key, proxy := range wicdProxies {
-				proxyStr := fmt.Sprint(proxy)
-				if proxyStr == "" {
-					continue
-				}
-				cmd := fmt.Sprintf("[System.Environment]::GetEnvironmentVariable('%v', 'Machine')", key)
-				msg, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
-				if err != nil {
-					e2e.Logf("Waiting for %v on %v: error: %v", key, nodeName, err)
-					return false, nil
-				}
-				if !strings.Contains(strings.TrimSpace(msg), proxyStr) {
-					e2e.Logf("Waiting for proxy variable %s on node %s: expected=%s actual=%s",
-						key, nodeName, redactProxyURL(proxyStr), redactProxyURL(strings.TrimSpace(msg)))
-					return false, nil
-				}
-			}
-		}
-		e2e.Logf("All proxy values propagated to all Windows nodes")
-		return true, nil
-	})
-	compat_otp.AssertWaitPollNoErr(pollErr, "proxy values did not propagate to all Windows nodes within 5 minutes")
 }
 
 func readyWMCOPodName(podJSON string) (string, error) {
@@ -2779,73 +2627,6 @@ func checkWMCORestartedWithin(oc *exutil.CLI, initialRestartState string, timeou
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return checkWMCORestartedWithinContext(ctx, oc, initialRestartState, timeout)
-}
-
-func generateClusterProxy(httpProxy, httpsProxy, noProxy string) string {
-	return fmt.Sprintf(`apiVersion: config.openshift.io/v1
-kind: Proxy
-metadata:
-  name: cluster
-spec:
-  httpProxy: %s
-  httpsProxy: %s
-  noProxy: %s
-  trustedCA:
-    name: user-ca-bundle
-`, httpProxy, httpsProxy, noProxy)
-}
-
-func restoreProxyEnvironment(oc *exutil.CLI, clusterEnvVars map[string]interface{}) {
-	e2e.Logf("Starting proxy environment restore")
-	wmcoStartTime := getWMCORestartState(oc)
-	httpProxy := fmt.Sprint(clusterEnvVars["HTTP_PROXY"])
-	httpsProxy := fmt.Sprint(clusterEnvVars["HTTPS_PROXY"])
-	noProxy := fmt.Sprint(clusterEnvVars["NO_PROXY"])
-
-	pollErr := wait.Poll(10*time.Second, 2*time.Minute, func() (bool, error) {
-		applyErr := createResourceFromString(oc, "", generateClusterProxy(httpProxy, httpsProxy, noProxy))
-		if applyErr != nil {
-			e2e.Logf("retrying proxy restore: %v", applyErr)
-			return false, nil
-		}
-		return true, nil
-	})
-	if pollErr != nil {
-		e2e.Logf("Warning: proxy restore did not complete within 2 minutes: %v", pollErr)
-		return
-	}
-
-	var patches []string
-	if noProxy == "" && getClusterProxy(oc, "spec.noProxy") != "" {
-		patches = append(patches, `{"op": "remove", "path": "/spec/noProxy"}`)
-	}
-	if httpsProxy == "" && getClusterProxy(oc, "spec.httpsProxy") != "" {
-		patches = append(patches, `{"op": "remove", "path": "/spec/httpsProxy"}`)
-	}
-	if httpProxy == "" && getClusterProxy(oc, "spec.httpProxy") != "" {
-		patches = append(patches, `{"op": "remove", "path": "/spec/httpProxy"}`)
-	}
-	if len(patches) > 0 {
-		patchJSON := "[" + strings.Join(patches, ",") + "]"
-		e2e.Logf("Removing empty proxy fields: %s", patchJSON)
-		err := oc.AsAdmin().WithoutNamespace().Run("patch").Args("proxy/cluster", "--type=json", "-p", patchJSON).Execute()
-		if err != nil {
-			e2e.Logf("Warning: failed to remove empty proxy fields: %v", err)
-		}
-	}
-
-	restarted, _ := checkWMCORestarted(oc, wmcoStartTime)
-	if restarted {
-		e2e.Logf("WMCO restarted after proxy restore, waiting for WICD propagation")
-	} else {
-		e2e.Logf("WMCO did not restart after proxy restore")
-	}
-	winNodes := getWindowsInternalIPs(oc)
-	waitWindowsNodesReady(oc, len(winNodes), 15*time.Minute)
-	expectedProxies := getEnvVarProxyMap(oc)
-	winNodeNames := getWindowsNodeNames(oc)
-	waitForProxyOnNodes(oc, winNodeNames, expectedProxies)
-	e2e.Logf("Proxy environment restored successfully")
 }
 
 func popItemFromList(oc *exutil.CLI, value string, keywordSearch string, namespace string) (string, error) {
