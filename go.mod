@@ -11,10 +11,10 @@ require (
 	github.com/coreos/ignition/v2 v2.28.0
 	github.com/go-imports-organizer/goio v1.5.0
 	github.com/go-logr/logr v1.4.4
-	github.com/openshift/api v0.0.0-20261107000926-248dd91956ce
-	github.com/openshift/client-go v0.0.0-20261027103500-48133ed95dad
+	github.com/openshift/api v0.0.0-20261116163413-d7527e5482cc
+	github.com/openshift/client-go v0.0.0-20261109191322-505de3dc15d7
 	github.com/openshift/controller-runtime-common v0.0.0-20261026124434-bdfc411d93cd
-	github.com/openshift/library-go v0.0.0-20261109153404-875016c9e2f8
+	github.com/openshift/library-go v0.0.0-20261116152229-66d935b53707
 	github.com/operator-framework/api v0.41.0
 	github.com/operator-framework/operator-lib v0.4.0
 	github.com/operator-framework/operator-lifecycle-manager v0.41.0
@@ -39,7 +39,7 @@ require (
 	k8s.io/kubelet v0.37.2
 	k8s.io/kubernetes v1.37.1
 	k8s.io/utils v0.0.0-20261023123148-ca04ba58ecab
-	sigs.k8s.io/controller-runtime v0.25.2
+	sigs.k8s.io/controller-runtime v0.25.3
 	sigs.k8s.io/yaml v1.6.0
 )
 
