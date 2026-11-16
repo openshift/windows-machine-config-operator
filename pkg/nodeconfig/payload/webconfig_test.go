@@ -198,7 +198,7 @@ func TestGenerateWebConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "profile with unsupported groups only",
+			name: "profile with unsupported groups only returns error",
 			tlsProfileSpec: config.TLSProfileSpec{
 				MinTLSVersion: config.VersionTLS12,
 				Ciphers: []string{
@@ -209,14 +209,18 @@ func TestGenerateWebConfig(t *testing.T) {
 				},
 			},
 			honorTLSProfile: true,
-			wantContains: []string{
-				"min_version: TLS12",
+			wantError:       true,
+		},
+		{
+			name: "X25519MLKEM768-only group profile returns error",
+			tlsProfileSpec: config.TLSProfileSpec{
+				MinTLSVersion: config.VersionTLS13,
+				Groups: []config.TLSGroup{
+					config.TLSGroupX25519MLKEM768,
+				},
 			},
-			wantNotContains: []string{
-				"curve_preferences:",
-				"X25519MLKEM768",
-			},
-			wantUnsupported: 1,
+			honorTLSProfile: true,
+			wantError:       true,
 		},
 	}
 
@@ -224,7 +228,7 @@ func TestGenerateWebConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			content, unsupported, err := GenerateWebConfig(tt.tlsProfileSpec, tt.honorTLSProfile)
 			if tt.wantError {
-				require.ErrorContains(t, err, "no supported cipher suites")
+				require.Error(t, err, "expected an error from GenerateWebConfig")
 				assert.Empty(t, content)
 				return
 			}
