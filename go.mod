@@ -1,6 +1,6 @@
 module github.com/openshift/windows-machine-config-operator
 
-go 1.26.5
+go 1.26.10
 
 // pin latest version compatible with go1.26
 replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098
