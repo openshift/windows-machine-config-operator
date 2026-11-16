@@ -13,6 +13,7 @@ import (
 	core "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -188,6 +189,7 @@ func TestEnsureInstancesAreUpToDateContinuesOnFailure(t *testing.T) {
 			client:         fakeClient,
 			log:            logr.Discard(),
 			watchNamespace: watchNamespace,
+			recorder:       record.NewFakeRecorder(10),
 			// clusterServiceCIDR is intentionally empty so each
 			// ensureInstanceIsUpToDate call fails at NewNodeConfig with
 			// a CIDR validation error. This gives predictable failures
@@ -259,6 +261,7 @@ func TestReconcileNodesDeconfiguresDespiteUpdateFailure(t *testing.T) {
 			client:         fakeClient,
 			log:            logr.Discard(),
 			watchNamespace: watchNamespace,
+			recorder:       record.NewFakeRecorder(10),
 		},
 	}
 
