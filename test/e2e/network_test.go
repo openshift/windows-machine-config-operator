@@ -63,6 +63,8 @@ var (
 	retryCount = 120
 	// retryInterval is the interval of time until we retry after a failure
 	retryInterval = 5 * time.Second
+	// podIPTimeout is the amount of time to wait for a pod to be assigned an IP
+	podIPTimeout = time.Minute
 )
 
 // operatingSystem is used to specify an operating system to run workloads on
@@ -845,20 +847,40 @@ func (tc *testContext) deleteDeployment(name string) error {
 }
 
 // getPodIP returns the IP of the pod that matches the label selector. If more than one pod match the
-// selector, the function will return an error
+// selector, the function will return an error. A pod can exist before its sandbox has been assigned an IP,
+// so the function polls until one is assigned and returns an error naming the pod and its phase if an IP is
+// not assigned within podIPTimeout.
 func (tc *testContext) getPodIP(selector metav1.LabelSelector) (string, error) {
 	selectorString := labels.Set(selector.MatchLabels).String()
-	podList, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(context.TODO(), metav1.ListOptions{
-		LabelSelector: selectorString})
+	var podIP string
+	var ipErr error
+	err := wait.PollUntilContextTimeout(context.TODO(), retryInterval, podIPTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			podList, err := tc.client.K8s.CoreV1().Pods(tc.workloadNamespace).List(ctx,
+				metav1.ListOptions{LabelSelector: selectorString})
+			if err != nil {
+				return false, err
+			}
+			if len(podList.Items) != 1 {
+				return false, fmt.Errorf("expected one pod matching %s, but found %d", selectorString,
+					len(podList.Items))
+			}
+			pod := podList.Items[0]
+			if pod.Status.PodIP == "" {
+				ipErr = fmt.Errorf("pod %s matching %s has no IP assigned, phase: %s", pod.Name,
+					selectorString, pod.Status.Phase)
+				return false, nil
+			}
+			podIP = pod.Status.PodIP
+			return true, nil
+		})
 	if err != nil {
+		if ipErr != nil && errors.Is(err, context.DeadlineExceeded) {
+			return "", ipErr
+		}
 		return "", err
 	}
-	if len(podList.Items) != 1 {
-		return "", fmt.Errorf("expected one pod matching %s, but found %d", selectorString,
-			len(podList.Items))
-	}
-
-	return podList.Items[0].Status.PodIP, nil
+	return podIP, nil
 }
 
 // getWindowsServerContainerImage gets the appropriate WindowsServer image based on the OS version
