@@ -50,8 +50,11 @@ var (
 	machinesGVR       = schema.GroupVersionResource{Group: "machine.openshift.io", Version: "v1beta1", Resource: "machines"}
 	pubKeyHashAnno    = "windowsmachineconfig.openshift.io/pub-key-hash"
 	windowsDebugImage = "mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"
-	linuxDebugImage   = "registry.access.redhat.com/ubi9/ubi:latest"
-	defaultWindowsMS  = "windows"
+	// TODO: add a Windows Server 2025 debug image (mcr.microsoft.com/powershell:lts-nanoserver-ltsc2025) once
+	// Microsoft publishes one. MCR currently has no PowerShell image for Windows Server 2025, so workloads on a
+	// 2025 node must be supplied with an image that ships pwsh.exe for that build.
+	linuxDebugImage  = "registry.access.redhat.com/ubi9/ubi:latest"
+	defaultWindowsMS = "windows"
 
 	tlsRecoveryClusterOperators = []string{"authentication", "kube-apiserver", "openshift-apiserver"}
 )
@@ -443,15 +446,24 @@ func isBYOH(oc *exutil.CLI, nodeName string) bool {
 }
 
 // getNodeNameFromIP resolves a node's hostname from its InternalIP address using a Go template query.
-func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
+// nodeNameForIP resolves the node that owns nodeIP without asserting, so a caller can poll for the
+// node while it is still registering.
+func nodeNameForIP(oc *exutil.CLI, nodeIP string) (string, error) {
 	goTpl := fmt.Sprintf(
 		`{{range .items}}{{$name := .metadata.name}}{{range .status.addresses}}`+
 			`{{if and (eq .type "InternalIP") (eq .address "%s")}}{{$name}}{{end}}`+
 			`{{end}}{{end}}`, nodeIP)
-	nodeName, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"nodes", "-o=go-template="+goTpl).Output()
-	o.Expect(err).NotTo(o.HaveOccurred(), "failed to resolve node name for IP %s", nodeIP)
-	nodeName = strings.TrimSpace(nodeName)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve node name for IP %s: %w", nodeIP, err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func getNodeNameFromIP(oc *exutil.CLI, nodeIP string) string {
+	nodeName, err := nodeNameForIP(oc, nodeIP)
+	o.Expect(err).NotTo(o.HaveOccurred())
 	o.Expect(nodeName).NotTo(o.BeEmpty(), "no node found with InternalIP %s", nodeIP)
 	return nodeName
 }
@@ -695,6 +707,89 @@ func waitWindowsNodesReady(oc *exutil.CLI, expectedCount int, timeout time.Durat
 	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("timed out waiting for %d Windows nodes to be Ready after %v", expectedCount, timeout))
 }
 
+// nodeReadinessQuery emits one "name=ReadyConditionStatus" pair per node.
+const nodeReadinessQuery = `-o=jsonpath={range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status} {end}`
+
+// nodeReadiness parses the pairs emitted by nodeReadinessQuery into a node name to Ready map.
+func nodeReadiness(output string) map[string]bool {
+	readiness := map[string]bool{}
+	for _, pair := range strings.Fields(output) {
+		name, status, found := strings.Cut(pair, "=")
+		if !found || name == "" {
+			continue
+		}
+		readiness[name] = status == "True"
+	}
+	return readiness
+}
+
+// readyMachineSetNodes returns the names in machineNodeNames that report Ready in readiness.
+// Only nodes registered by the Machines of the MachineSet are considered: waitWindowsNodesReady
+// counts every Windows node in the cluster, so a node belonging to another MachineSet or left over
+// from another test satisfies it even when no Machine of the set has joined.
+func readyMachineSetNodes(machineNodeNames []string, readiness map[string]bool) []string {
+	ready := []string{}
+	seen := make(map[string]struct{}, len(machineNodeNames))
+	for _, name := range machineNodeNames {
+		if name == "" {
+			continue
+		}
+		if _, duplicate := seen[name]; duplicate {
+			continue
+		}
+		seen[name] = struct{}{}
+		if readiness[name] {
+			ready = append(ready, name)
+		}
+	}
+	return ready
+}
+
+// machineSetNodeNames returns the node names registered by the Machines owned by machineSetName.
+// Machines that are being deleted are ignored so that a node from an earlier scale-up cannot
+// satisfy a later one.
+func machineSetNodeNames(oc *exutil.CLI, machineSetName string) ([]string, error) {
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"machines.machine.openshift.io", "-n", mcoNamespace,
+		"-l", "machine.openshift.io/cluster-api-machineset="+machineSetName,
+		"-o=go-template={{range .items}}{{if not .metadata.deletionTimestamp}}{{.status.nodeRef.name}} {{end}}{{end}}",
+	).Output()
+	if err != nil {
+		return nil, err
+	}
+	names := []string{}
+	for _, name := range strings.Fields(out) {
+		// A Machine whose node has not registered yet renders an empty value in the template.
+		if name != "" && name != "<no value>" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+// waitForMachineSetNodesReady waits until expectedCount nodes registered by the Machines of
+// machineSetName are Ready.
+func waitForMachineSetNodesReady(oc *exutil.CLI, machineSetName string, expectedCount int, timeout time.Duration) {
+	pollErr := wait.Poll(15*time.Second, timeout, func() (bool, error) {
+		nodeNames, err := machineSetNodeNames(oc, machineSetName)
+		if err != nil {
+			e2e.Logf("Error listing the machines of %s: %v", machineSetName, err)
+			return false, nil
+		}
+		out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("nodes", nodeReadinessQuery).Output()
+		if err != nil {
+			e2e.Logf("Error reading node readiness: %v", err)
+			return false, nil
+		}
+		ready := readyMachineSetNodes(nodeNames, nodeReadiness(out))
+		e2e.Logf("MachineSet %s nodes Ready: %d/%d (machine nodes: %v)", machineSetName, len(ready), expectedCount, nodeNames)
+		return len(ready) >= expectedCount, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf(
+		"MachineSet %s did not have %d Ready machine nodes within %v (%s)",
+		machineSetName, expectedCount, timeout, machinesetTimeoutDiagnostics(oc, machineSetName)))
+}
+
 // getLatestServicesCMData returns the services JSON data from the most recently created windows-services ConfigMap
 func getLatestServicesCMData(oc *exutil.CLI) (string, error) {
 	cmNames, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
@@ -820,24 +915,26 @@ func getRandomDNSLabel(length int) string {
 	return fmt.Sprintf("%x", buff)[:length]
 }
 
-// createProject creates a namespace if it does not already exist and sets privileged SCC.
-// A namespace left behind by a previous attempt may still be Terminating, and the API server
-// rejects every object created in one ("unable to create new content in namespace ... because it
-// is being terminated"). Such a namespace is not reusable, so wait for it to disappear first.
+// createProject creates the test namespace and sets privileged SCC. Tests use fixed namespace
+// names, so a namespace that already exists belongs to an earlier attempt on the same cluster.
+// Reusing it silently makes reruns fail in confusing ways (stale workloads, deleted StorageClasses)
+// and a Terminating namespace cannot be written to at all, so both cases are reported explicitly
+// instead of being ignored. The test does not delete a namespace it does not own.
 func createProject(oc *exutil.CLI, namespace string) {
 	phase, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 		"namespace", namespace, "-o=jsonpath={.status.phase}").Output()
 	if err == nil {
-		if strings.TrimSpace(phase) != "Terminating" {
-			e2e.Logf("Namespace %s already exists, skipping creation", namespace)
-			return
+		// Each test owns a fixed namespace named after its test case, so a namespace that is still
+		// there belongs to an earlier attempt of this same test. Reusing it would make the run depend
+		// on state left behind, so it is removed and recreated instead of failing and asking for a
+		// manual cleanup.
+		e2e.Logf("Namespace %s already exists (phase %s); deleting and recreating it", namespace, strings.TrimSpace(phase))
+		if _, deleteErr := oc.AsAdmin().WithoutNamespace().Run("delete").Args(
+			"namespace", namespace, "--wait=false").Output(); deleteErr != nil {
+			e2e.Failf("failed to delete the leftover namespace %s: %v", namespace, deleteErr)
 		}
-		e2e.Logf("Namespace %s is Terminating, waiting for deletion to complete before recreating it", namespace)
-		pollErr := wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
-			gone := oc.AsAdmin().WithoutNamespace().Run("get").Args("namespace", namespace).Execute() != nil
-			return gone, nil
-		})
-		compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf("namespace %s did not finish terminating", namespace))
+		o.Expect(waitForNamespaceDeleted(oc, namespace, 5*time.Minute)).To(o.BeTrue(),
+			"namespace %s did not disappear and cannot be recreated by this test; check its finalizers", namespace)
 	}
 	oc.CreateSpecifiedNamespaceAsAdmin(namespace)
 	err = compat_otp.SetNamespacePrivileged(oc, namespace)
@@ -849,12 +946,38 @@ func deleteProject(oc *exutil.CLI, namespace string) {
 	oc.DeleteSpecifiedNamespaceAsAdmin(namespace)
 }
 
+// windowsWebServerConfig configures the Windows web server manifest generated by
+// generateWindowsWebServerYAML. Zero values keep the plain web server workload.
+type windowsWebServerConfig struct {
+	Name             string
+	Namespace        string
+	Image            string
+	Replicas         int
+	IncludeService   bool
+	ResourceLimits   string
+	RuntimeClassName string
+	// NodeSelector adds extra node selector entries, one "key: value" per line.
+	NodeSelector string
+	// PVCName mounts the named PersistentVolumeClaim at C:/html/ and serves the web server
+	// content from it, so every replica sharing the claim serves the same page.
+	PVCName string
+	// ImagePullSecret references an existing image pull secret in the namespace.
+	ImagePullSecret string
+	// MultilineCommand renders the PowerShell command as a block scalar instead of a single
+	// long line, which keeps the manifest readable and safely quoted.
+	MultilineCommand bool
+}
+
 // generateWindowsWebServerYAML returns a YAML manifest for a Windows web server Deployment
-// (and optionally a LoadBalancer Service). Used to deploy Windows workloads for connectivity
-// and scaling tests.
-func generateWindowsWebServerYAML(name, namespace, image string, replicas int, includeService bool, resourceLimits, runtimeClassName string) string {
+// (and optionally a LoadBalancer Service). Used to deploy Windows workloads for connectivity,
+// scaling and storage tests.
+func generateWindowsWebServerYAML(cfg windowsWebServerConfig) string {
+	// A web server workload is single replica unless a test explicitly scales it.
+	if cfg.Replicas == 0 {
+		cfg.Replicas = 1
+	}
 	var sb strings.Builder
-	if includeService {
+	if cfg.IncludeService {
 		sb.WriteString(fmt.Sprintf(`apiVersion: v1
 kind: Service
 metadata:
@@ -869,7 +992,7 @@ spec:
     app: %s
   type: LoadBalancer
 ---
-`, name, name, name))
+`, cfg.Name, cfg.Name, cfg.Name))
 	}
 	sb.WriteString(fmt.Sprintf(`apiVersion: apps/v1
 kind: Deployment
@@ -888,9 +1011,9 @@ spec:
         app: %s
       name: %s
     spec:
-`, name, name, name, replicas, name, name))
-	if runtimeClassName != "" {
-		sb.WriteString(fmt.Sprintf("      runtimeClassName: %s\n", runtimeClassName))
+`, cfg.Name, cfg.Name, cfg.Name, cfg.Replicas, cfg.Name, cfg.Name))
+	if cfg.RuntimeClassName != "" {
+		sb.WriteString(fmt.Sprintf("      runtimeClassName: %s\n", cfg.RuntimeClassName))
 	}
 	sb.WriteString(`      tolerations:
       - key: "os"
@@ -901,16 +1024,31 @@ spec:
         value: "windows"
         operator: Equal
         effect: "NoSchedule"
-      containers:
+`)
+	if cfg.PVCName != "" {
+		sb.WriteString(fmt.Sprintf(`      volumes:
+      - name: test-volume
+        persistentVolumeClaim:
+          claimName: %s
+`, cfg.PVCName))
+	}
+	sb.WriteString(fmt.Sprintf(`      containers:
       - name: windowswebserver
-        image: ` + image + `
+        image: %s
         imagePullPolicy: IfNotPresent
-        securityContext:
+`, cfg.Image))
+	if cfg.PVCName != "" {
+		sb.WriteString(`        volumeMounts:
+        - mountPath: C:/html/
+          name: test-volume
+`)
+	}
+	sb.WriteString(`        securityContext:
           runAsNonRoot: false
           windowsOptions:
             runAsUserName: "ContainerAdministrator"
 `)
-	if resourceLimits != "" {
+	if cfg.ResourceLimits != "" {
 		sb.WriteString(fmt.Sprintf(`        resources:
           limits:
             cpu: %s
@@ -918,15 +1056,72 @@ spec:
           requests:
             cpu: %s
             memory: 512Mi
-`, resourceLimits, resourceLimits))
+`, cfg.ResourceLimits, cfg.ResourceLimits))
 	}
-	sb.WriteString(`        command:
+	if cfg.MultilineCommand {
+		sb.WriteString(`        command:
+        - pwsh.exe
+        - -command
+        - |
+`)
+		if cfg.PVCName != "" {
+			sb.WriteString(`          if (-not (Test-Path C:/html/index.html)) { echo '<html><body><H1>Windows Container Web Server</H1></body></html>' > C:/html/index.html; };
+          $listener = New-Object System.Net.HttpListener;
+          $listener.Prefixes.Add('http://*:80/');
+          $listener.Start();
+          Write-Host('Listening at http://*:80/');
+          while ($listener.IsListening) {
+            $context = $listener.GetContext();
+            $response = $context.Response;
+            $content=Get-Content C:/html/index.html -Raw;
+            $buffer = [System.Text.Encoding]::UTF8.GetBytes($content);
+            $response.ContentLength64 = $buffer.Length;
+            $response.OutputStream.Write($buffer, 0, $buffer.Length);
+            $response.Close();
+          };
+`)
+		} else {
+			sb.WriteString(`          $listener = New-Object System.Net.HttpListener;
+          $listener.Prefixes.Add('http://*:80/');
+          $listener.Start();
+          Write-Host('Listening at http://*:80/');
+          while ($listener.IsListening) {
+            $context = $listener.GetContext();
+            $response = $context.Response;
+            $content='<html><body><H1>Windows Container Web Server</H1></body></html>';
+            $buffer = [System.Text.Encoding]::UTF8.GetBytes($content);
+            $response.ContentLength64 = $buffer.Length;
+            $response.OutputStream.Write($buffer, 0, $buffer.Length);
+            $response.Close();
+          };
+`)
+		}
+	} else if cfg.PVCName != "" {
+		sb.WriteString(`        command:
+        - pwsh.exe
+        - -command
+        - if (-not (Test-Path C:/html/index.html)) { echo "<html><body><H1>Windows Container Web Server</H1></body></html>" > C:/html/index.html; };$listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start();Write-Host('Listening at http://*:80/'); while ($listener.IsListening) { $context = $listener.GetContext(); $response = $context.Response; $content=Get-Content C:/html/index.html -Raw; $buffer = [System.Text.Encoding]::UTF8.GetBytes($content); $response.ContentLength64 = $buffer.Length; $response.OutputStream.Write($buffer, 0, $buffer.Length); $response.Close(); };
+`)
+	} else {
+		sb.WriteString(`        command:
         - pwsh.exe
         - -command
         - $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add('http://*:80/'); $listener.Start();Write-Host('Listening at http://*:80/'); while ($listener.IsListening) { $context = $listener.GetContext(); $response = $context.Response; $content='<html><body><H1>Windows Container Web Server</H1></body></html>'; $buffer = [System.Text.Encoding]::UTF8.GetBytes($content); $response.ContentLength64 = $buffer.Length; $response.OutputStream.Write($buffer, 0, $buffer.Length); $response.Close(); };
-      nodeSelector:
+`)
+	}
+	if cfg.ImagePullSecret != "" {
+		sb.WriteString(fmt.Sprintf(`      imagePullSecrets:
+      - name: %s
+`, cfg.ImagePullSecret))
+	}
+	sb.WriteString(`      nodeSelector:
         kubernetes.io/os: windows
 `)
+	if cfg.NodeSelector != "" {
+		for _, selector := range strings.Split(strings.TrimSpace(cfg.NodeSelector), "\n") {
+			sb.WriteString("        " + strings.TrimSpace(selector) + "\n")
+		}
+	}
 	return sb.String()
 }
 
@@ -1280,6 +1475,17 @@ func getWorkloadsIP(oc *exutil.CLI, deploymentName string, namespace string) ([]
 	return ips, nil
 }
 
+// getWorkloadsHostIP returns the node IPs of all pods belonging to the given Deployment.
+func getWorkloadsHostIP(oc *exutil.CLI, deploymentName string, namespace string) ([]string, error) {
+	hostIPs, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"pod", "--selector", "app="+deploymentName, "--sort-by=.status.hostIP",
+		"-o=jsonpath={.items[*].status.hostIP}", "-n", namespace).Output()
+	if err != nil {
+		return nil, err
+	}
+	return strings.Fields(hostIPs), nil
+}
+
 // buildInvokeWebRequestCommand returns a PowerShell command that fetches a URL and decodes the response as UTF-8.
 func buildInvokeWebRequestCommand(url string) string {
 	return fmt.Sprintf(
@@ -1512,6 +1718,251 @@ func getWindowsMachineSetName(oc *exutil.CLI, name, platform, zone string) strin
 	}
 
 	return machinesetName
+}
+
+// fetchMachineAddresses returns the addresses of the given type reported by the machines of
+// machineSetName, ignoring machines that are being deleted.
+func fetchMachineAddresses(oc *exutil.CLI, addressType, machineSetName string) []string {
+	var raw string
+	pollErr := wait.Poll(5*time.Second, 10*time.Minute, func() (bool, error) {
+		out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"machines.machine.openshift.io", "-n", mcoNamespace,
+			"-o=go-template={{range .items}}{{if and (eq (index .metadata.labels \"machine.openshift.io/cluster-api-machineset\") \""+machineSetName+"\") (not .metadata.deletionTimestamp)}}{{range .status.addresses}}{{if eq .type \""+addressType+"\"}}{{.address}} {{end}}{{end}}{{end}}{{end}}",
+		).Output()
+		if err != nil || strings.TrimSpace(out) == "" {
+			e2e.Logf("No %s address reported yet for MachineSet %s, retrying", addressType, machineSetName)
+			return false, nil
+		}
+		raw = out
+		return true, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr,
+		fmt.Sprintf("MachineSet %s did not report a %s address within 10 minutes", machineSetName, addressType))
+
+	addresses := []string{}
+	for _, address := range strings.Fields(raw) {
+		// Windows machines also report IPv6 addresses; only DNS names are kept as-is.
+		if addressType == "InternalDNS" || !strings.Contains(address, ":") {
+			addresses = append(addresses, address)
+		}
+	}
+	return addresses
+}
+
+// generateAWSWindowsMachineSetYAML returns a Windows MachineSet that provisions one machine from
+// the given AMI. It mirrors the AWS Windows MachineSet created by hack/machineset.sh so the
+// secondary OS variant joins the cluster the same way as the primary one.
+func generateAWSWindowsMachineSetYAML(name, infrastructureID, zone, region, subnetID, imageID string) string {
+	return fmt.Sprintf(`apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  labels:
+    machine.openshift.io/cluster-api-cluster: %[2]s
+  name: %[1]s
+  namespace: %[7]s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: %[2]s
+      machine.openshift.io/cluster-api-machineset: %[1]s
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: %[2]s
+        machine.openshift.io/cluster-api-machine-role: worker
+        machine.openshift.io/cluster-api-machine-type: worker
+        machine.openshift.io/cluster-api-machineset: %[1]s
+        machine.openshift.io/os-id: Windows
+    spec:
+      metadata:
+        labels:
+          node-role.kubernetes.io/worker: ""
+          type: "winc"
+      providerSpec:
+        value:
+          ami:
+            id: %[6]s
+          apiVersion: awsproviderconfig.openshift.io/v1beta1
+          blockDevices:
+          - ebs:
+              iops: 0
+              volumeSize: 120
+              volumeType: gp2
+          credentialsSecret:
+            name: aws-cloud-credentials
+          deviceIndex: 0
+          iamInstanceProfile:
+            id: %[2]s-worker-profile
+          instanceType: m5a.large
+          kind: AWSMachineProviderConfig
+          placement:
+            availabilityZone: %[3]s
+            region: %[4]s
+          securityGroups:
+          - filters:
+            - name: tag:Name
+              values:
+              - %[2]s-node
+          - filters:
+            - name: tag:Name
+              values:
+              - %[2]s-lb
+          subnet:
+            filters:
+            - name: tag:Name
+              values:
+              - %[2]s-subnet-private-%[3]s
+            id: %[5]s
+          tags:
+          - name: kubernetes.io/cluster/%[2]s
+            value: owned
+          userDataSecret:
+            name: windows-user-data
+            namespace: %[7]s
+`, name, infrastructureID, zone, region, subnetID, imageID, mcoNamespace)
+}
+
+// generateAzureWindowsMachineSetYAML returns a Windows MachineSet that provisions one machine from
+// the given Azure image SKU.
+func generateAzureWindowsMachineSetYAML(name, infrastructureID, location, sku string) string {
+	return fmt.Sprintf(`apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  labels:
+    machine.openshift.io/cluster-api-cluster: %[2]s
+  name: %[1]s
+  namespace: %[5]s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: %[2]s
+      machine.openshift.io/cluster-api-machineset: %[1]s
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: %[2]s
+        machine.openshift.io/cluster-api-machine-role: worker
+        machine.openshift.io/cluster-api-machine-type: worker
+        machine.openshift.io/cluster-api-machineset: %[1]s
+        machine.openshift.io/os-id: Windows
+    spec:
+      metadata:
+        labels:
+          node-role.kubernetes.io/worker: ""
+          type: "winc"
+      providerSpec:
+        value:
+          apiVersion: azureproviderconfig.openshift.io/v1beta1
+          credentialsSecret:
+            name: azure-cloud-credentials
+            namespace: %[5]s
+          image:
+            offer: WindowsServer
+            publisher: MicrosoftWindowsServer
+            resourceID: ""
+            sku: %[4]s
+            version: latest
+          kind: AzureMachineProviderSpec
+          location: %[3]s
+          managedIdentity: %[2]s-identity
+          networkResourceGroup: %[2]s-rg
+          osDisk:
+            diskSizeGB: 128
+            managedDisk:
+              storageAccountType: Premium_LRS
+            osType: Windows
+          publicIP: false
+          resourceGroup: %[2]s-rg
+          subnet: %[2]s-worker-subnet
+          userDataSecret:
+            name: windows-user-data
+            namespace: %[5]s
+          vmSize: Standard_D2s_v3
+          vnet: %[2]s-vnet
+          zone: ""
+`, name, infrastructureID, location, sku, mcoNamespace)
+}
+
+// createWindowsMachineSetWithImage creates a Windows MachineSet that provisions one machine from
+// imageID and returns its name. Only AWS and Azure offer a second Windows OS variant, where the
+// image is an AMI ID and an Azure image SKU respectively. The caller deletes the MachineSet.
+func createWindowsMachineSetWithImage(oc *exutil.CLI, platform, name, imageID string) string {
+	infrastructureID, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"infrastructure", "cluster", "-o=jsonpath={.status.infrastructureName}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	infrastructureID = strings.TrimSpace(infrastructureID)
+
+	var manifest, machineSetName string
+	switch platform {
+	case "aws":
+		region, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"infrastructure", "cluster", "-o=jsonpath={.status.platformStatus.aws.region}").Output()
+		if err != nil || strings.TrimSpace(region) == "" {
+			region, err = oc.AsAdmin().WithoutNamespace().Run("get").Args(
+				"machines.machine.openshift.io", "-n", mcoNamespace, "-l", machineLabel,
+				"-o=jsonpath={.items[0].spec.providerSpec.value.placement.region}").Output()
+			o.Expect(err).NotTo(o.HaveOccurred(), "Could not fetch the AWS region from the existing MachineSet")
+		}
+		zone := getAvailabilityZone(oc)
+		subnetID, subnetErr := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"machinesets.machine.openshift.io", "-n", mcoNamespace,
+			"-o=jsonpath={.items[0].spec.template.spec.providerSpec.value.subnet.id}").Output()
+		// An empty subnet ID is expected when the MachineSet selects its subnet by tag; the generated
+		// manifest keeps that filter. A failed read is different and must not turn into a manifest
+		// that silently provisions into the default subnet.
+		o.Expect(subnetErr).NotTo(o.HaveOccurred(), "Could not fetch the AWS subnet from the existing MachineSet")
+		machineSetName = getWindowsMachineSetName(oc, name, platform, zone)
+		manifest = generateAWSWindowsMachineSetYAML(machineSetName, infrastructureID, zone,
+			strings.TrimSpace(region), strings.TrimSpace(subnetID), imageID)
+	case "azure":
+		location, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+			"nodes", "-o=jsonpath={.items[0].metadata.labels.topology\\.kubernetes\\.io/region}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Could not determine the Azure region from the cluster nodes")
+		o.Expect(strings.TrimSpace(location)).NotTo(o.BeEmpty(), "Azure region label is empty on the cluster nodes")
+		machineSetName = name
+		manifest = generateAzureWindowsMachineSetYAML(machineSetName, infrastructureID,
+			strings.TrimSpace(location), imageID)
+	default:
+		e2e.Failf("Platform %s does not support multiple Windows OS variants", platform)
+	}
+
+	o.Expect(createResourceFromString(oc, mcoNamespace, manifest)).NotTo(o.HaveOccurred(),
+		"Failed to create Windows MachineSet %s", machineSetName)
+	return machineSetName
+}
+
+// azureSecondaryWindowsImage returns the Azure image SKU of a Windows Server version other than
+// the one already running in the cluster, so a multi-OS test needs no CI-provided image input.
+// AWS AMIs are resolved by name against the account, so AWS keeps supplying the image through
+// winc-test-config.
+func azureSecondaryWindowsImage(oc *exutil.CLI, platform string) (string, bool) {
+	if platform != "azure" {
+		return "", false
+	}
+	for _, node := range getWindowsHostNames(oc) {
+		build, err := getWindowsBuildID(oc, node)
+		if err != nil {
+			continue
+		}
+		if sku, ok := azureSKUForOtherBuild(build); ok {
+			return sku, true
+		}
+	}
+	return "", false
+}
+
+// azureSKUForOtherBuild returns the Azure image SKU of the supported Windows Server version whose
+// build differs from currentBuild.
+func azureSKUForOtherBuild(currentBuild string) (string, bool) {
+	switch strings.TrimSpace(currentBuild) {
+	case "10.0.20348":
+		return "2025-datacenter-smalldisk", true
+	case "10.0.26100":
+		return "2022-datacenter-smalldisk", true
+	}
+	return "", false
 }
 
 // getMachineSetReplicas returns the desired replica count of the given MachineSet. Tests that scale
@@ -2328,8 +2779,77 @@ func waitForMachinesetReady(oc *exutil.CLI, machineSetName string, timeout, repl
 		return readyReplicasInt >= replicas, nil
 	})
 	if err != nil {
-		e2e.Failf("machineset %s did not reach %d ready replicas within %d minutes", machineSetName, replicas, timeout)
+		e2e.Failf("machineset %s did not reach %d ready replicas within %d minutes (%s)",
+			machineSetName, replicas, timeout, machinesetTimeoutDiagnostics(oc, machineSetName))
 	}
+}
+
+// machinesetTimeoutDiagnostics explains why a MachineSet may not have converged: the machine
+// phases it owns and any kubelet bootstrap CSR still waiting for approval. On a cluster whose
+// machine approver is not approving new machines, the CSR line is the actionable cause.
+func machinesetTimeoutDiagnostics(oc *exutil.CLI, machineSetName string) string {
+	machines, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"machines.machine.openshift.io", "-l",
+		"machine.openshift.io/cluster-api-machineset="+machineSetName, "-n", mcoNamespace,
+		"-o=jsonpath={range .items[*]}{.metadata.name}={.status.phase} {end}").Output()
+	if err != nil {
+		machines = "<unavailable: " + safePollErrorReason(err) + ">"
+	}
+	machines = strings.TrimSpace(machines)
+	if machines == "" {
+		machines = "none"
+	}
+
+	created, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("machineset", machineSetName, "-n", mcoNamespace,
+		"-o=jsonpath={.metadata.creationTimestamp}").Output()
+	since, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(created))
+	if err != nil || parseErr != nil {
+		since = time.Time{}
+	}
+
+	csrs, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("csr", "-o=json").Output()
+	pendingCSRs := "unknown"
+	if err == nil {
+		pending := pendingBootstrapCSRs(csrs, since)
+		pendingCSRs = "none"
+		if len(pending) > 0 {
+			pendingCSRs = strings.Join(pending, " ")
+		}
+	}
+
+	return fmt.Sprintf("machines: %s; unapproved node-bootstrapper CSRs: %s", machines, pendingCSRs)
+}
+
+// pendingBootstrapCSRs returns the name and creation time of every kubelet bootstrap CSR that has
+// not been approved or denied yet, formatted for a failure message.
+func pendingBootstrapCSRs(csrJSON string, since time.Time) []string {
+	pending := []string{}
+	for _, csr := range gjson.Get(csrJSON, "items").Array() {
+		if !strings.Contains(csr.Get("spec.username").String(), "node-bootstrapper") {
+			continue
+		}
+		// Ignore retries left behind by earlier test attempts on the same cluster.
+		if !since.IsZero() {
+			created, err := time.Parse(time.RFC3339, csr.Get("metadata.creationTimestamp").String())
+			if err != nil || created.Before(since) {
+				continue
+			}
+		}
+		decided := false
+		for _, condition := range gjson.Get(csr.Raw, "status.conditions").Array() {
+			conditionType := condition.Get("type").String()
+			if condition.Get("status").String() == "True" &&
+				(conditionType == "Approved" || conditionType == "Denied") {
+				decided = true
+				break
+			}
+		}
+		if decided {
+			continue
+		}
+		pending = append(pending, csr.Get("metadata.name").String()+"("+csr.Get("metadata.creationTimestamp").String()+")")
+	}
+	return pending
 }
 
 func getServiceClusterIP(oc *exutil.CLI, serviceName, namespace string) (string, error) {
@@ -2393,6 +2913,23 @@ const (
 	proxyCAConfigMap = "trusted-ca"
 	windowsWorkloads = "win-webserver"
 	defaultNamespace = "winc-test"
+
+	// wincTestCM carries optional CI inputs that are not part of a plain WMCO cluster,
+	// such as the images used by the multi-OS and disconnected tests. Tests that need
+	// these inputs skip when the ConfigMap or key is missing.
+	wincTestCM = "winc-test-config"
+	// marketplaceNamespace is the only namespace OLM serves to Subscriptions in other namespaces.
+	marketplaceNamespace = "openshift-marketplace"
+	// machineApproverNamespace and machineApproverDeployment locate the component that approves
+	// bootstrap CSRs for machine-backed Windows nodes.
+	machineApproverNamespace  = "openshift-cluster-machine-approver"
+	machineApproverDeployment = "machine-approver"
+	// reinstallCatalogSource is the CatalogSource the namespace reinstall test creates locally
+	// when the CI catalog is namespace scoped.
+	reinstallCatalogSource            = "wmco-catalog"
+	primaryDisconnectedImageKey       = "primary_windows_container_disconnected_image"
+	secondaryWindowsImageKey          = "secondary_windows_image"
+	secondaryWindowsContainerImageKey = "secondary_windows_container_image"
 )
 
 type ConfigMapPayload struct {
@@ -2695,6 +3232,80 @@ func getConfigMapData(oc *exutil.CLI, cm string, dataKey string, namespace strin
 		Args("configmap", cm, "-o=jsonpath={.data."+dataKey+"}", "-n", namespace).Output()
 	o.Expect(err).NotTo(o.HaveOccurred(), "failed to get cm %v data key %v", cm, dataKey)
 	return dataValue
+}
+
+// getConfigMapDataIfPresent returns the value of a ConfigMap key and reports whether it is
+// present and non-empty. Optional CI inputs must not fail a test that cannot run without them.
+func getConfigMapDataIfPresent(oc *exutil.CLI, cm string, dataKey string, namespace string) (string, bool) {
+	value, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"configmap", cm, "-n", namespace, "-o=jsonpath={.data."+dataKey+"}").Output()
+	if err != nil {
+		return "", false
+	}
+	value = strings.TrimSpace(value)
+	return value, value != ""
+}
+
+// waitForNamespaceDeleted waits for a namespace to disappear. Cleanup that must follow workload
+// removal, such as uninstalling a CSI node driver, uses this so it does not race the pods.
+func waitForNamespaceDeleted(oc *exutil.CLI, namespace string, timeout time.Duration) bool {
+	pollErr := wait.Poll(5*time.Second, timeout, func() (bool, error) {
+		_, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("namespace", namespace).Output()
+		if err != nil && strings.Contains(err.Error(), "NotFound") {
+			return true, nil
+		}
+		return false, nil
+	})
+	if pollErr != nil {
+		e2e.Logf("Warning: namespace %s still exists after %v", namespace, timeout)
+		return false
+	}
+	return true
+}
+
+// machineApproverAvailable reports whether the cluster machine approver has a ready replica. The
+// approver is scaled down on an idle cluster, and a Windows Machine created while it is down never
+// gets its node-bootstrapper CSR approved.
+func machineApproverAvailable(oc *exutil.CLI) bool {
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("deployment", machineApproverDeployment,
+		"-n", machineApproverNamespace, "-o=jsonpath={.status.availableReplicas}").Output()
+	if err != nil {
+		e2e.Logf("Could not read the machine approver deployment: %v", err)
+		return false
+	}
+	available, convErr := strconv.Atoi(strings.TrimSpace(out))
+	return convErr == nil && available > 0
+}
+
+// isDisconnectedCluster reports whether the cluster pulls Windows images from a mirror, which is
+// how the disconnected CI job provides them. Mirror sets also exist in some connected jobs, so this
+// checks that the Windows image registry is redirected instead of only that a mirror set exists.
+func isDisconnectedCluster(oc *exutil.CLI) bool {
+	mirrorSets, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"imagetagmirrorsets.config.openshift.io,imagedigestmirrorsets.config.openshift.io", "-o=json").Output()
+	if err != nil {
+		e2e.Logf("Could not read the cluster mirror sets, assuming a connected cluster: %v", err)
+		return false
+	}
+	return windowsImagesMirrored(mirrorSets)
+}
+
+// windowsImagesMirrored reports whether a mirror set redirects mcr.microsoft.com, the registry that
+// serves the Windows container images, to the cluster's mirror registry.
+func windowsImagesMirrored(mirrorSetsJSON string) bool {
+	for _, mirrorSet := range gjson.Get(mirrorSetsJSON, "items").Array() {
+		for _, path := range []string{"spec.imageTagMirrors.#.source", "spec.imageDigestMirrors.#.source"} {
+			for _, mirrorSource := range gjson.Get(mirrorSet.Raw, path).Array() {
+				src := mirrorSource.String()
+				// A source names a repository, or a whole registry when it carries no path. Both
+				// forms mirror every Windows image served by mcr.microsoft.com.
+				if src == "mcr.microsoft.com" || strings.HasPrefix(src, "mcr.microsoft.com/") {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func removeOuterQuotes(s string) string {

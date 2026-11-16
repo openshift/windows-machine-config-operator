@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	g "github.com/onsi/ginkgo/v2"
+	ginkgotypes "github.com/onsi/ginkgo/v2/types"
 	exutil "github.com/openshift/origin/test/extended/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -586,4 +588,432 @@ func testHostProcessPod(uid types.UID, phase corev1.PodPhase, createdAt time.Tim
 		ObjectMeta: metav1.ObjectMeta{Name: "hostprocess-pod", UID: uid, CreationTimestamp: metav1.NewTime(createdAt)},
 		Status:     corev1.PodStatus{Phase: phase},
 	}
+}
+
+func TestGenerateWindowsWebServerYAML(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      windowsWebServerConfig
+		contains []string
+		excludes []string
+	}{
+		{
+			name: "defaults to a single replica without a service",
+			cfg: windowsWebServerConfig{
+				Name:      "win-webserver",
+				Namespace: "winc-test",
+				Image:     "example.com/windows:latest",
+			},
+			contains: []string{
+				"  replicas: 1\n",
+				"        image: example.com/windows:latest\n",
+				"        kubernetes.io/os: windows\n",
+			},
+			excludes: []string{"kind: Service", "persistentVolumeClaim", "imagePullSecrets"},
+		},
+		{
+			name: "includes a LoadBalancer service and runtime class when requested",
+			cfg: windowsWebServerConfig{
+				Name:             "win-webserver",
+				Namespace:        "winc-test",
+				Image:            "example.com/windows:latest",
+				IncludeService:   true,
+				RuntimeClassName: "windows-2022",
+				ResourceLimits:   "200m",
+			},
+			contains: []string{
+				"kind: Service",
+				"  type: LoadBalancer",
+				"      runtimeClassName: windows-2022\n",
+				"            cpu: 200m\n",
+			},
+		},
+		{
+			name: "mounts a persistent volume claim and serves content from it",
+			cfg: windowsWebServerConfig{
+				Name:         "win-webserver-pvc1",
+				Namespace:    "winc-66352",
+				Image:        "example.com/windows:latest",
+				Replicas:     3,
+				PVCName:      "pvc1",
+				NodeSelector: "nodepvc: pvc1",
+			},
+			contains: []string{
+				"  replicas: 3\n",
+				"        persistentVolumeClaim:\n          claimName: pvc1\n",
+				"        - mountPath: C:/html/\n",
+				`> C:/html/index.html;`,
+				"        nodepvc: pvc1\n",
+			},
+		},
+		{
+			name: "pulls from a private registry with a block scalar command",
+			cfg: windowsWebServerConfig{
+				Name:             "win-webserver",
+				Namespace:        "winc-74760",
+				Image:            "mirror.example.com/windows:latest",
+				ImagePullSecret:  "pull-secret",
+				MultilineCommand: true,
+			},
+			contains: []string{
+				"      imagePullSecrets:\n      - name: pull-secret\n",
+				"        - -command\n        - |\n",
+				"          $listener = New-Object System.Net.HttpListener;\n",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manifest := generateWindowsWebServerYAML(tt.cfg)
+			for _, want := range tt.contains {
+				assert.Contains(t, manifest, want)
+			}
+			for _, unwanted := range tt.excludes {
+				assert.NotContains(t, manifest, unwanted)
+			}
+		})
+	}
+}
+
+func TestGeneratePVCYAML(t *testing.T) {
+	manifest := generatePVCYAML("pvc1", "winc-66352", "fast-66352", "ReadWriteOnce", "500Mi")
+	for _, want := range []string{
+		"kind: PersistentVolumeClaim",
+		"  name: pvc1\n",
+		"  namespace: winc-66352\n",
+		"  storageClassName: fast-66352\n",
+		"  - ReadWriteOnce\n",
+		"      storage: 500Mi\n",
+	} {
+		assert.Contains(t, manifest, want)
+	}
+}
+
+func TestGenerateStorageClassYAML(t *testing.T) {
+	tests := []struct {
+		platform    string
+		provisioner string
+	}{
+		{platform: "azure", provisioner: "file.csi.azure.com"},
+		{platform: "vsphere", provisioner: "csi.vsphere.vmware.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			manifest, err := generateStorageClassYAML(tt.platform, "fast-66352")
+			require.NoError(t, err)
+			assert.Contains(t, manifest, "kind: StorageClass")
+			assert.Contains(t, manifest, "  name: fast-66352\n")
+			assert.Contains(t, manifest, "provisioner: "+tt.provisioner+"\n")
+			assert.Contains(t, manifest, `csi.storage.k8s.io/fstype: "ntfs"`)
+		})
+	}
+
+	_, err := generateStorageClassYAML("aws", "fast-66352")
+	assert.Error(t, err)
+}
+
+func TestGenerateCatalogSourceYAML(t *testing.T) {
+	catalogSource := generateCatalogSourceYAML("wmco-catalog", "winc-namespace-test",
+		"wmco-registry.openshift-windows-machine-config-operator.svc:50051", "Windows Machine Config Operator")
+
+	assert.Contains(t, catalogSource, "kind: CatalogSource\n")
+	assert.Contains(t, catalogSource, "  name: wmco-catalog\n")
+	assert.Contains(t, catalogSource, "  namespace: winc-namespace-test\n")
+	assert.Contains(t, catalogSource, "  sourceType: grpc\n")
+	assert.Contains(t, catalogSource, "  address: wmco-registry.openshift-windows-machine-config-operator.svc:50051\n")
+}
+
+func TestGenerateCatalogSourceImageYAML(t *testing.T) {
+	catalogSource := generateCatalogSourceImageYAML("wmco-catalog", "winc-namespace-test",
+		"registry.example.com:5000/wmco-index:latest", "Windows Machine Config Operator")
+
+	assert.Contains(t, catalogSource, "kind: CatalogSource\n")
+	assert.Contains(t, catalogSource, "  name: wmco-catalog\n")
+	assert.Contains(t, catalogSource, "  namespace: winc-namespace-test\n")
+	assert.Contains(t, catalogSource, "  sourceType: grpc\n")
+	assert.Contains(t, catalogSource, "  image: registry.example.com:5000/wmco-index:latest\n")
+	// An image-backed catalog must not also carry an address.
+	assert.NotContains(t, catalogSource, "address:")
+}
+
+func TestGenerateOLMYAMLs(t *testing.T) {
+	subscription := generateSubscriptionYAML("winc-namespace-test", "certified-operators", "openshift-marketplace", "stable")
+	assert.Contains(t, subscription, "  channel: \"stable\"\n")
+	// A channel such as 4.19 must stay a YAML string, or the apiserver rejects the Subscription.
+	assert.Contains(t, generateSubscriptionYAML("ns", "src", "src-ns", "4.19"), "  channel: \"4.19\"\n")
+	// A packagemanifests catalog exposes its channel without a name; the Subscription must omit it.
+	assert.NotContains(t, generateSubscriptionYAML("ns", "src", "src-ns", ""), "channel:")
+	assert.Contains(t, subscription, "kind: Subscription")
+	assert.Contains(t, subscription, "  namespace: winc-namespace-test\n")
+	assert.Contains(t, subscription, "  name: windows-machine-config-operator\n")
+	assert.Contains(t, subscription, "  source: certified-operators\n")
+	assert.Contains(t, subscription, "  sourceNamespace: openshift-marketplace\n")
+
+	operatorGroup := generateOperatorGroupYAML("winc-namespace-test")
+	assert.Contains(t, operatorGroup, "kind: OperatorGroup")
+	assert.Contains(t, operatorGroup, "  name: windows-machine-config-operator\n")
+	assert.Contains(t, operatorGroup, "  targetNamespaces:\n  - winc-namespace-test\n")
+}
+
+func TestGenerateWindowsMachineSetYAML(t *testing.T) {
+	t.Run("aws uses the secondary AMI", func(t *testing.T) {
+		manifest := generateAWSWindowsMachineSetYAML(
+			"cluster-winsecond-worker-us-east-2a", "cluster", "us-east-2a", "us-east-2", "subnet-1234", "ami-5678")
+		for _, want := range []string{
+			"kind: MachineSet",
+			"  name: cluster-winsecond-worker-us-east-2a\n",
+			"  namespace: openshift-machine-api\n",
+			"      machine.openshift.io/cluster-api-machineset: cluster-winsecond-worker-us-east-2a\n",
+			"        machine.openshift.io/os-id: Windows\n",
+			"            id: ami-5678\n",
+			"            availabilityZone: us-east-2a\n",
+			"            region: us-east-2\n",
+			"            id: subnet-1234\n",
+			"            name: windows-user-data\n",
+		} {
+			assert.Contains(t, manifest, want)
+		}
+	})
+
+	t.Run("azure uses the secondary image SKU", func(t *testing.T) {
+		manifest := generateAzureWindowsMachineSetYAML("winsecond", "cluster", "eastus", "2019-Datacenter-Core-smalldisk")
+		for _, want := range []string{
+			"kind: MachineSet",
+			"  name: winsecond\n",
+			"  namespace: openshift-machine-api\n",
+			"            sku: 2019-Datacenter-Core-smalldisk\n",
+			"          location: eastus\n",
+			"          managedIdentity: cluster-identity\n",
+			"          vnet: cluster-vnet\n",
+		} {
+			assert.Contains(t, manifest, want)
+		}
+	})
+}
+
+func TestWindowsCSIDriverManifest(t *testing.T) {
+	tests := []struct {
+		platform   string
+		driverName string
+	}{
+		{platform: "azure", driverName: "azure-file-csi-driver-node-windows"},
+		{platform: "vsphere", driverName: "vmware-vsphere-csi-driver-node-windows"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			manifest, err := windowsCSIDriverManifest(tt.platform)
+			require.NoError(t, err)
+			assert.Contains(t, manifest, "kind: DaemonSet")
+			assert.Contains(t, manifest, "  name: "+tt.driverName+"\n")
+			assert.Contains(t, manifest, "  namespace: "+csiDriverNamespace+"\n")
+			assert.Contains(t, manifest, "        kubernetes.io/os: windows\n")
+		})
+	}
+
+	_, err := windowsCSIDriverManifest("aws")
+	assert.Error(t, err)
+}
+
+func TestWindowsImagesMirrored(t *testing.T) {
+	tests := []struct {
+		name       string
+		mirrorSets string
+		want       bool
+	}{
+		{
+			name:       "no mirror sets",
+			mirrorSets: `{"items":[]}`,
+			want:       false,
+		},
+		{
+			name: "mirror set for an unrelated registry",
+			mirrorSets: `{"items":[{"kind":"ImageTagMirrorSet","spec":{"imageTagMirrors":[
+				{"mirrors":["mirror.example.com:5000/ubi9/ubi"],"source":"registry.access.redhat.com/ubi9/ubi"}]}}]}`,
+			want: false,
+		},
+		{
+			name: "tag mirror set for the Windows image registry",
+			mirrorSets: `{"items":[{"kind":"ImageTagMirrorSet","spec":{"imageTagMirrors":[
+				{"mirrors":["mirror.example.com:5000/powershell:lts-nanoserver-ltsc2022"],
+				 "source":"mcr.microsoft.com/powershell:lts-nanoserver-ltsc2022"}]}}]}`,
+			want: true,
+		},
+		{
+			name: "digest mirror set for the Windows image registry",
+			mirrorSets: `{"items":[{"kind":"ImageDigestMirrorSet","spec":{"imageDigestMirrors":[
+				{"mirrors":["mirror.example.com:5000/windows"],"source":"mcr.microsoft.com/windows"}]}}]}`,
+			want: true,
+		},
+		{
+			// A source without a repository path mirrors the whole registry.
+			name: "registry-wide mirror set for the Windows image registry",
+			mirrorSets: `{"items":[{"kind":"ImageTagMirrorSet","spec":{"imageTagMirrors":[
+				{"mirrors":["mirror.example.com:5000"],"source":"mcr.microsoft.com"}]}}]}`,
+			want: true,
+		},
+		{
+			name: "registry with a similar name is not the Windows image registry",
+			mirrorSets: `{"items":[{"kind":"ImageTagMirrorSet","spec":{"imageTagMirrors":[
+				{"mirrors":["mirror.example.com:5000/powershell"],"source":"mcr.microsoft.com.evil/powershell"}]}}]}`,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, windowsImagesMirrored(tt.mirrorSets))
+		})
+	}
+}
+
+func TestAzureSKUForOtherBuild(t *testing.T) {
+	tests := []struct {
+		build string
+		want  string
+		ok    bool
+	}{
+		{build: "10.0.20348", want: "2025-datacenter-smalldisk", ok: true},
+		{build: "10.0.26100", want: "2022-datacenter-smalldisk", ok: true},
+		{build: "10.0.17763"},
+		{build: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.build, func(t *testing.T) {
+			got, ok := azureSKUForOtherBuild(tt.build)
+			assert.Equal(t, tt.ok, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestDisconnectedWorkloadSelection(t *testing.T) {
+	// Selection rules of the upstream vsphere-disconnected-e2e-ote job. The suite qualifier is
+	// name.contains("Smokerun"), and TEST_SKIPS must not match the test name.
+	const disconnectedJobSuiteQualifier = "Smokerun"
+	const disconnectedJobTestSkips = `ChkUpgrade|ConnectedOnly|Disruptive|Serial|\[node-proxy\]|\[tls-adherence\]`
+
+	// The name is read from the registered Ginkgo spec rather than a copy of the literal, so
+	// renaming or retagging the test in winc.go fails here instead of silently dropping the test
+	// from the one job that runs it.
+	var disconnectedWorkloadTestName string
+	walkGinkgoSpecNames(t, func(name string) {
+		if strings.Contains(name, "74760") {
+			disconnectedWorkloadTestName = name
+		}
+	})
+	require.NotEmpty(t, disconnectedWorkloadTestName, "no registered spec for OCP-74760")
+
+	assert.Contains(t, disconnectedWorkloadTestName, disconnectedJobSuiteQualifier,
+		"the disconnected job only runs windows-machine-config-operator/smokerun")
+	assert.Contains(t, disconnectedWorkloadTestName, "DisconnectedOnly",
+		"connected jobs rely on this tag to skip the test by name")
+
+	// "DisconnectedOnly" must not trip the "ConnectedOnly" skip of that job, and the skip regex
+	// below is also what rules out [Serial] and [Disruptive]: both match the "Disruptive|Serial"
+	// alternation, and the disconnected job never selects such a test.
+	assert.False(t, regexp.MustCompile(disconnectedJobTestSkips).MatchString(disconnectedWorkloadTestName),
+		"the disconnected job would not run the test: %s", disconnectedWorkloadTestName)
+}
+
+// walkGinkgoSpecNames calls fn with the full name of every spec in the test binary, including the
+// ones the imported Origin packages register, so callers filter by test ID. These are the names the
+// extension binary and the CI job select on, with the Describe prefix included.
+func walkGinkgoSpecNames(t *testing.T, fn func(string)) {
+	t.Helper()
+	suite := g.GetSuite()
+	if !suite.InPhaseBuildTree() {
+		require.NoError(t, suite.BuildTree())
+	}
+	suite.WalkTests(func(name string, _ ginkgotypes.TestSpec) {
+		fn(name)
+	})
+}
+
+func TestPendingBootstrapCSRs(t *testing.T) {
+	const csrJSON = `{"items":[
+	 {"metadata":{"name":"csr-pending","creationTimestamp":"2026-11-15T10:34:08Z"},
+	  "spec":{"username":"system:serviceaccount:openshift-machine-config-operator:node-bootstrapper"}},
+	 {"metadata":{"name":"csr-approved","creationTimestamp":"2026-11-15T10:36:00Z"},
+	  "spec":{"username":"system:serviceaccount:openshift-machine-config-operator:node-bootstrapper"},
+	  "status":{"conditions":[{"type":"Approved","status":"True"}]}},
+	 {"metadata":{"name":"csr-denied","creationTimestamp":"2026-11-15T10:37:00Z"},
+	  "spec":{"username":"system:serviceaccount:openshift-machine-config-operator:node-bootstrapper"},
+	  "status":{"conditions":[{"type":"Denied","status":"True"}]}},
+	 {"metadata":{"name":"csr-other-user","creationTimestamp":"2026-11-15T10:38:00Z"},
+	  "spec":{"username":"system:node:e2e-wm-dv6sv"},
+	  "status":{"conditions":[]}},
+	 {"metadata":{"name":"csr-pending-with-failed-condition","creationTimestamp":"2026-11-15T10:39:00Z"},
+	  "spec":{"username":"system:serviceaccount:openshift-machine-config-operator:node-bootstrapper"},
+	  "status":{"conditions":[{"type":"Approved","status":"False"}]}}
+	]}`
+
+	all, err := time.Parse(time.RFC3339, "2026-11-15T10:30:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, []string{
+		"csr-pending(2026-11-15T10:34:08Z)",
+		"csr-pending-with-failed-condition(2026-11-15T10:39:00Z)",
+	}, pendingBootstrapCSRs(csrJSON, all))
+
+	// Retries from an earlier attempt on the same cluster are not this run's problem.
+	recent, err := time.Parse(time.RFC3339, "2026-11-15T10:38:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, []string{
+		"csr-pending-with-failed-condition(2026-11-15T10:39:00Z)",
+	}, pendingBootstrapCSRs(csrJSON, recent))
+
+	assert.Empty(t, pendingBootstrapCSRs(`{"items":[]}`, all))
+	assert.Len(t, pendingBootstrapCSRs(csrJSON, time.Time{}), 2)
+}
+
+// A Windows node that is Ready but does not belong to the MachineSet under test (a node from the
+// creation test, or a machine left behind by another case) must not count towards that
+// MachineSet's replica readiness.
+func TestReadyMachineSetNodes(t *testing.T) {
+	readiness := map[string]bool{
+		"e2e-wm-rgd8l": true,  // machine of the set
+		"e2e-wm-whh25": true,  // machine of the set
+		"e2e-sb9tj":    true,  // node of another case's MachineSet
+		"winsecond-1":  true,  // node of another case's MachineSet
+		"e2e-wm-new":   false, // machine of the set whose kubelet is not Ready yet
+	}
+
+	t.Run("only machines of the set count", func(t *testing.T) {
+		got := readyMachineSetNodes([]string{"e2e-wm-rgd8l", "e2e-wm-whh25"}, readiness)
+		assert.Equal(t, []string{"e2e-wm-rgd8l", "e2e-wm-whh25"}, got)
+	})
+
+	t.Run("an empty MachineSet yields nothing even with Ready nodes", func(t *testing.T) {
+		// readyMachineSetNodes only sees the names the caller passes, and the caller passes the
+		// Machines of one MachineSet. A snapshot with Ready nodes but no machine of the set
+		// therefore counts nothing, which is the case a cluster-wide node count gets wrong.
+		assert.Empty(t, readyMachineSetNodes(nil, readiness))
+		assert.Empty(t, readyMachineSetNodes([]string{""}, readiness))
+	})
+
+	t.Run("machines without a registered node are skipped", func(t *testing.T) {
+		got := readyMachineSetNodes([]string{"", "<no value>", "e2e-wm-rgd8l"}, readiness)
+		assert.Equal(t, []string{"e2e-wm-rgd8l"}, got)
+	})
+
+	t.Run("not ready and duplicate entries", func(t *testing.T) {
+		got := readyMachineSetNodes([]string{"e2e-wm-new", "e2e-wm-rgd8l", "e2e-wm-rgd8l"}, readiness)
+		assert.Equal(t, []string{"e2e-wm-rgd8l"}, got)
+	})
+}
+
+func TestNodeReadiness(t *testing.T) {
+	output := "ci-op-master-0=True e2e-wm-rgd8l=True e2e-wm-new=Unknown winsecond-1=False malformed "
+	assert.Equal(t, map[string]bool{
+		"ci-op-master-0": true,
+		"e2e-wm-rgd8l":   true,
+		"e2e-wm-new":     false,
+		"winsecond-1":    false,
+	}, nodeReadiness(output))
+
+	assert.Empty(t, nodeReadiness(""))
 }
