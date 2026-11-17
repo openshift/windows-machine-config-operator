@@ -219,15 +219,21 @@ All remote operations on Windows instances.
 
 ```go
 type Windows interface {
+    GetAddress() string
     GetIPv4Address() string
     GetHostname() (string, error)
-    Run(cmd string, psCmd bool) (string, error)
     EnsureFile(*payload.CompressedFileInfo, string) error
     EnsureFileContent([]byte, string, string) error
-    Bootstrap(ctx context.Context, version, namespace, kubeconfig string) error
-    ConfigureWICD(namespace, kubeconfig string) error
+    FileExists(string, string) (bool, error)
+    ReplaceDir(map[string][]byte, string) error
+    Run(string, bool) (string, error)
     RebootAndReinitialize(context.Context) error
-    RunWICDCleanup(namespace, kubeconfig string) error
+    Bootstrap(context.Context, string, string, string) error
+    ConfigureWICD(string, string) error
+    RemoveFilesAndNetworks(context.Context) error
+    RunWICDCleanup(string, string) error
+    RemoveHostKey(context.Context) error
+    Close() error
 }
 ```
 
@@ -236,11 +242,11 @@ Windows service management (Windows-only build tag).
 
 ```go
 type Manager interface {
-    CreateService(name, exepath string, config mgr.Config, args ...string) (Service, error)
+    CreateService(string, string, mgr.Config, ...string) (winsvc.Service, error)
     GetServices() (map[string]struct{}, error)
-    OpenService(name string) (Service, error)
-    DeleteService(name string) error
-    EnsureServiceState(Service, svc.State) error
+    OpenService(string) (winsvc.Service, error)
+    DeleteService(string) error
+    EnsureServiceState(winsvc.Service, svc.State) error
     Disconnect() error
 }
 ```
