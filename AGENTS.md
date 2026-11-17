@@ -292,7 +292,7 @@ func myServiceConfiguration() servicescm.Service {
 }
 ```
 
-2. Add to `GenerateManifest()` return slice
+2. Add the returned service definition to the `services` slice in `GenerateManifest()`
 3. Add unit tests in `pkg/services/services_test.go`
 4. Service auto-reconciled by WICD on Windows nodes
 
