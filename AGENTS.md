@@ -177,10 +177,15 @@ Do NOT use `@here` or `@everyone`
 
 | Controller | File | Watches |
 |------------|------|---------|
-| ConfigMap | `configmap_controller.go` | `windows-instances` ConfigMap |
-| Machine | `machine_controller.go` | Machine objects with Windows OS label |
+| ConfigMap | `configmap_controller.go` | Windows instance and service ConfigMaps, plus related Node and MachineConfig events |
+| Machine | `windowsmachine_controller.go` | Windows-labeled Machine objects |
 | Node | `node_controller.go` | Windows Node objects |
-| Secret | `secret_controller.go` | `cloud-private-key` Secret |
+| Secret | `secret_controller.go` | Private key and TLS Secret changes |
+| Kubelet CSR | `certificatesigningrequests_controller.go` | Pending kubelet CertificateSigningRequests |
+| WICD CSR | `wicd_csr_controller.go` | Pending WICD CertificateSigningRequests |
+| ControllerConfig | `controllerconfig_controller.go` | ControllerConfig changes affecting kubelet CA data |
+| Registry | `registry_controller.go` | Image mirror configuration changes |
+| Metrics | `metric_controller.go` | Operator namespace and ServiceMonitor changes |
 
 ### Daemon (Windows - `pkg/daemon/`)
 
