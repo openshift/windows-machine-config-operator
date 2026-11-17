@@ -560,7 +560,6 @@ oc get cm -n openshift-windows-machine-config-operator \
 # CSR debugging
 oc get csr | grep system:node
 oc describe csr <name>
-oc adm certificate approve <name>  # Manual approval if needed
 ```
 
 ### Windows Node (SSH)
