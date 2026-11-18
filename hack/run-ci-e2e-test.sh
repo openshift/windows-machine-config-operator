@@ -150,8 +150,19 @@ echo "Running tests with arguments: $GO_TEST_ARGS"
 # setup-only exists to prepare Windows nodes for downstream suites; keep it
 # limited to provisioning and skip the broader WMCO validation suites.
 if [[ "$TEST" == "setup-only" ]]; then
-  printf "\n####### Testing creation #######\n" >> "$ARTIFACT_DIR"/wmco.log
-  go test ./test/e2e/... -run=TestWMCO/create/Creation -v -timeout=90m -args $GO_TEST_ARGS
+  # SETUP_ONLY_GINKGO_RUN narrows setup to the Machine controller creation path. The default
+  # Creation run also executes the ConfigMap controller (BYOH) subtest, which disables the
+  # cluster machine approver and marks it unmanaged, breaking any Machine-backed scale that
+  # runs afterwards in the same cluster.
+  setup_run="${SETUP_ONLY_GINKGO_RUN:-TestWMCO/create/Creation}"
+  printf "\n####### Testing creation (%s) #######\n" "$setup_run" >> "$ARTIFACT_DIR"/wmco.log
+  go test ./test/e2e/... -run="$setup_run" -v -timeout=90m -args $GO_TEST_ARGS 2>&1 \
+    | tee "$ARTIFACT_DIR"/setup-only.log
+  # `go test` exits 0 when the selector matches no test, which would report a cluster as
+  # provisioned while it has no Windows nodes.
+  if grep -q "no tests to run" "$ARTIFACT_DIR"/setup-only.log; then
+    error-exit "SETUP_ONLY_GINKGO_RUN '${setup_run}' matched no tests"
+  fi
   printf "\n####### WMCO logs for creation tests #######\n" >> "$ARTIFACT_DIR"/wmco.log
   get_WMCO_logs
   echo "Setup complete with Windows nodes provisioned. Skipping remaining e2e tests (-t setup-only)."
