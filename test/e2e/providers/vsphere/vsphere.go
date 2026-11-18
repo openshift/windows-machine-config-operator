@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"reflect"
+	"time"
 
 	config "github.com/openshift/api/config/v1"
 	mapi "github.com/openshift/api/machine/v1beta1"
@@ -16,6 +17,7 @@ import (
 	k8sapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	client "k8s.io/client-go/kubernetes"
 
 	"github.com/openshift/windows-machine-config-operator/test/e2e/clusterinfo"
@@ -28,6 +30,10 @@ const (
 	storageClassName             = "ntfs"
 	windowsFSSName               = "win-internal-feature-states.csi.vsphere.vmware.com"
 	csiNamespace                 = "openshift-cluster-csi-drivers"
+	// csiDriverName is the vSphere CSI driver name as reported in CSINode objects
+	csiDriverName = "csi.vsphere.vmware.com"
+	// csiNodeRegistrationTimeout is how long the vSphere CSI driver is given to register on the Windows nodes
+	csiNodeRegistrationTimeout = 5 * time.Minute
 )
 
 // Provider is a provider struct for testing vSphere
@@ -195,7 +201,64 @@ func (p *Provider) ensureWindowsCSIDrivers(client client.Interface) error {
 	if err := p.ensureFSSConfigMap(client); err != nil {
 		return err
 	}
-	return p.ensureWindowsCSIDaemonSet(client)
+	if err := p.ensureWindowsCSIDaemonSet(client); err != nil {
+		return err
+	}
+	return p.waitForWindowsCSINodeDriver(client)
+}
+
+// waitForWindowsCSINodeDriver waits until every Windows node reports the vSphere CSI driver in its CSINode object.
+// A volume cannot be attached to a node until kubelet has registered the driver there, and the PVC and the workload
+// using it are created immediately after this call. Waiting here keeps the volume attach from racing the registration
+// of a DaemonSet that was just created.
+func (p *Provider) waitForWindowsCSINodeDriver(client client.Interface) error {
+	return wait.PollUntilContextTimeout(context.TODO(), 5*time.Second, csiNodeRegistrationTimeout, true,
+		func(ctx context.Context) (bool, error) {
+			nodes, err := client.CoreV1().Nodes().List(ctx,
+				meta.ListOptions{LabelSelector: core.LabelOSStable + "=windows"})
+			if err != nil {
+				log.Printf("unable to list Windows nodes, retrying: %v", err)
+				return false, nil
+			}
+			if len(nodes.Items) == 0 {
+				return false, nil
+			}
+			for _, node := range nodes.Items {
+				// Only Ready nodes are checked. A node that is not Ready cannot be scheduled to, and its CSINode
+				// entry can legitimately be stale, so waiting on it would fail a storage test that the healthy
+				// Windows nodes can run on their own.
+				if !isNodeReady(&node) {
+					continue
+				}
+				csiNode, err := client.StorageV1().CSINodes().Get(ctx, node.Name, meta.GetOptions{})
+				if err != nil {
+					log.Printf("unable to get CSINode for node %s, retrying: %v", node.Name, err)
+					return false, nil
+				}
+				registered := false
+				for _, driver := range csiNode.Spec.Drivers {
+					if driver.Name == csiDriverName {
+						registered = true
+						break
+					}
+				}
+				if !registered {
+					log.Printf("waiting for driver %s to be registered on node %s", csiDriverName, node.Name)
+					return false, nil
+				}
+			}
+			return true, nil
+		})
+}
+
+// isNodeReady returns true when the node reports a Ready condition with status True
+func isNodeReady(node *core.Node) bool {
+	for _, condition := range node.Status.Conditions {
+		if condition.Type == core.NodeReady {
+			return condition.Status == core.ConditionTrue
+		}
+	}
+	return false
 }
 
 // ensureFSSConfigMap creates a feature state switch ConfigMap for Windows Nodes. The FSS used by Linux nodes is
