@@ -1726,7 +1726,7 @@ spec:
 			zone := getAvailabilityZone(oc)
 			sourceMSName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
 			// Must always differ from sourceMSName: the deferred cleanup below deletes it.
-			cloneMSName := sourceMSName + "-clone"
+			cloneMSName := cloneMachineSetName("1")
 
 			originalNodeNames := getWindowsHostNames(oc)
 			expectedOriginalNodes := len(originalNodeNames)
@@ -2090,7 +2090,7 @@ spec:
 			g.By("Step 1: Clone Windows MachineSet and scale to 1")
 			zone := getAvailabilityZone(oc)
 			sourceMSName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
-			cloneMSName := sourceMSName + "-clone"
+			cloneMSName := cloneMachineSetName("2")
 			o.Expect(cloneMSName).NotTo(o.Equal(sourceMSName))
 
 			originalWindowsNodeCount := len(getWindowsHostNames(oc))

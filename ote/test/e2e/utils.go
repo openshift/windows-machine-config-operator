@@ -1545,6 +1545,17 @@ func scaleWindowsMachineSet(oc *exutil.CLI, machineSetName string, deadTime, rep
 	}
 }
 
+// cloneMachineSetName returns the name for a disposable clone of the Windows MachineSet.
+//
+// The Machine name is "<machineset name>-<five random characters>", and Azure derives the VM's
+// Windows computer name from the Machine name, rejecting anything longer than 15 characters.
+// Cloning e2e-wm as "e2e-wm-clone" therefore produces e2e-wm-clone-xxxxx (18 characters) and the
+// VM is never created: the Machine fails with InvalidParameter and no node ever joins.
+// "e2e-c<suffix>" keeps the Machine name at 12 characters on every platform.
+func cloneMachineSetName(suffix string) string {
+	return "e2e-c" + suffix
+}
+
 // cloneWindowsMachineSet creates a copy of the existing Windows MachineSet with a different name
 // and zero replicas.
 func cloneWindowsMachineSet(oc *exutil.CLI, sourceName, cloneName string) {
