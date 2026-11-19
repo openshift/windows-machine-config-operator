@@ -914,7 +914,7 @@ spec:
 		createProject(oc, namespace)
 
 		g.By("Creating Windows deployment")
-		manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, false, "200m", "")
+		manifest := generateWindowsWebServerYAML(windowsWebServerConfig{Name: deploymentName, Namespace: namespace, Image: windowsDebugImage, ResourceLimits: "200m"})
 		err := createResourceFromString(oc, namespace, manifest)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
@@ -1030,7 +1030,7 @@ spec:
 		e2e.Logf("RuntimeClass %s is properly configured with handler runhcs-wcow-process", runtimeClass)
 
 		g.By("Step 4: Create Windows deployment with RuntimeClass")
-		manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, true, "", runtimeClass)
+		manifest := generateWindowsWebServerYAML(windowsWebServerConfig{Name: deploymentName, Namespace: namespace, Image: windowsDebugImage, IncludeService: true, RuntimeClassName: runtimeClass})
 		err = createResourceFromString(oc, namespace, manifest)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		err = waitForDeploymentReady(oc, deploymentName, namespace, 10*time.Minute)
@@ -1115,7 +1115,7 @@ spec:
 		createProject(oc, namespace)
 
 		g.By("Deploy Windows and Linux web servers")
-		winManifest := generateWindowsWebServerYAML(winDeployment, namespace, windowsDebugImage, 1, false, "", "")
+		winManifest := generateWindowsWebServerYAML(windowsWebServerConfig{Name: winDeployment, Namespace: namespace, Image: windowsDebugImage})
 		err := createResourceFromString(oc, namespace, winManifest)
 		o.Expect(err).NotTo(o.HaveOccurred())
 
@@ -1171,7 +1171,7 @@ spec:
 		createProject(oc, namespace)
 
 		g.By("Creating Windows web server deployment with LB service")
-		manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, true, "", "")
+		manifest := generateWindowsWebServerYAML(windowsWebServerConfig{Name: deploymentName, Namespace: namespace, Image: windowsDebugImage, IncludeService: true})
 		err := createResourceFromString(oc, namespace, manifest)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
@@ -1832,7 +1832,7 @@ spec:
 			createProject(oc, namespace)
 
 			g.By("Step 1: Deploy Windows and Linux web server workloads with ClusterIP services")
-			winManifest := generateWindowsWebServerYAML(winDeployment, namespace, windowsDebugImage, 1, false, "", "")
+			winManifest := generateWindowsWebServerYAML(windowsWebServerConfig{Name: winDeployment, Namespace: namespace, Image: windowsDebugImage})
 			err := createResourceFromString(oc, namespace, winManifest)
 			o.Expect(err).NotTo(o.HaveOccurred())
 			winSvcManifest := generateClusterIPServiceYAML(winDeployment, namespace, winDeployment, 80)
@@ -2125,7 +2125,7 @@ spec:
 				"machineautoscaler", cloneMSName, "-n", mcoNamespace, "--ignore-not-found").Execute()
 
 			g.By("Step 3: Create Windows workloads with resource limits")
-			manifest := generateWindowsWebServerYAML(windowsWorkloads, namespace, windowsDebugImage, 1, false, "2", "")
+			manifest := generateWindowsWebServerYAML(windowsWebServerConfig{Name: windowsWorkloads, Namespace: namespace, Image: windowsDebugImage, ResourceLimits: "2"})
 			err = createResourceFromString(oc, namespace, manifest)
 			o.Expect(err).NotTo(o.HaveOccurred())
 			err = waitForDeploymentReady(oc, windowsWorkloads, namespace, 5*time.Minute)
@@ -2281,7 +2281,7 @@ spec:
 
 			g.By("Step 2: Deploy Windows web server workload")
 			includeLB := iaasPlatform != "vsphere" && iaasPlatform != "nutanix"
-			manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, includeLB, "", "")
+			manifest := generateWindowsWebServerYAML(windowsWebServerConfig{Name: deploymentName, Namespace: namespace, Image: windowsDebugImage, IncludeService: includeLB})
 			err = createResourceFromString(oc, namespace, manifest)
 			o.Expect(err).NotTo(o.HaveOccurred())
 			err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
@@ -2365,7 +2365,7 @@ spec:
 		createProject(oc, namespace)
 
 		g.By("Step 1: Deploy Windows web server workload")
-		manifest := generateWindowsWebServerYAML(deploymentName, namespace, windowsDebugImage, 1, true, "", "")
+		manifest := generateWindowsWebServerYAML(windowsWebServerConfig{Name: deploymentName, Namespace: namespace, Image: windowsDebugImage, IncludeService: true})
 		err := createResourceFromString(oc, namespace, manifest)
 		o.Expect(err).NotTo(o.HaveOccurred())
 		err = waitForDeploymentReady(oc, deploymentName, namespace, 5*time.Minute)
@@ -2666,5 +2666,252 @@ spec:
 				e2e.Logf("WMCO reported unsupported ciphers (informational)")
 			}
 		})
+	// author rrasouli@redhat.com
+	g.It("Longduration-Author:rrasouli-NonPreRelease-High-37096-Schedule Windows workloads with cluster running multiple Windows OS variants [Slow][Disruptive][platform:aws][platform:azure][Timeout:45m]", func() {
+		if isNone(oc) {
+			g.Skip("platform none does not support scaling up machines")
+		}
+		if iaasPlatform != "azure" && iaasPlatform != "aws" {
+			// vSphere and GCP only publish a single Windows Server image.
+			g.Skip("Only Azure and AWS are supporting multiple operating systems, skipping")
+		}
+		// The secondary OS variant comes from an explicit override when CI provides one, and is
+		// otherwise the other supported Windows Server version of the cluster on Azure.
+		secondaryImage, ok := getConfigMapDataIfPresent(oc, wincTestCM, secondaryWindowsImageKey, defaultNamespace)
+		if !ok {
+			secondaryImage, ok = azureSecondaryWindowsImage(oc, iaasPlatform)
+		}
+		if !ok {
+			g.Skip("no secondary Windows image is available: set " + wincTestCM + "/" + secondaryWindowsImageKey)
+		}
+		// TODO: use mcr.microsoft.com/powershell:lts-nanoserver-ltsc2025 for the secondary OS once it
+		// exists; until then the 2022 image runs on 2025 nodes as well.
+		secondaryContainerImage, ok := getConfigMapDataIfPresent(oc, wincTestCM, secondaryWindowsContainerImageKey, defaultNamespace)
+		if !ok {
+			secondaryContainerImage = windowsDebugImage
+		}
+
+		// A machine-backed Windows node joins only after the cluster machine approver approves its
+		// node-bootstrapper CSR. The approver is scaled to zero on an idle cluster, so a long running
+		// job can find it unavailable and then wait out the MachineSet timeout for nothing.
+		approverErr := wait.Poll(10*time.Second, 3*time.Minute, func() (bool, error) {
+			return machineApproverAvailable(oc), nil
+		})
+		o.Expect(approverErr).NotTo(o.HaveOccurred(),
+			"the machine approver in %s has no ready replica; a new Windows Machine cannot join", machineApproverNamespace)
+
+		g.By("Creating a Windows MachineSet with the secondary Windows OS image")
+		machineSetName := createWindowsMachineSetWithImage(oc, iaasPlatform, "winsecond", secondaryImage)
+		defer func() {
+			if err := deleteResourceAndWait(oc, "machinesets.machine.openshift.io", machineSetName, mcoNamespace); err != nil {
+				e2e.Logf("Warning: failed to delete MachineSet %s: %v", machineSetName, err)
+			}
+		}()
+
+		waitForMachinesetReady(oc, machineSetName, 20, 1)
+		machineIPs := fetchMachineAddresses(oc, "InternalIP", machineSetName)
+		o.Expect(machineIPs).NotTo(o.BeEmpty(), "No InternalIP reported for MachineSet %s", machineSetName)
+		// The Machine is provisioned before the node registers and joins the cluster.
+		var nodeName string
+		nodeErr := wait.Poll(10*time.Second, 10*time.Minute, func() (bool, error) {
+			var lookupErr error
+			nodeName, lookupErr = nodeNameForIP(oc, machineIPs[0])
+			if lookupErr != nil {
+				return false, nil
+			}
+			return nodeName != "", nil
+		})
+		o.Expect(nodeErr).NotTo(o.HaveOccurred(), "No Windows node registered for address %s", machineIPs[0])
+		buildID, err := getWindowsBuildID(oc, nodeName)
+		o.Expect(err).NotTo(o.HaveOccurred())
+
+		namespace := "winc-37096"
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+
+		// The container image is pinned to the secondary OS build so the workload can only be
+		// scheduled on the node provisioned from the secondary Windows image.
+		g.By(fmt.Sprintf("Creating a Windows workload pinned to Windows build %s", buildID))
+		manifest := generateWindowsWebServerYAML(windowsWebServerConfig{
+			Name:         windowsWorkloads,
+			Namespace:    namespace,
+			Image:        secondaryContainerImage,
+			NodeSelector: "node.kubernetes.io/windows-build: " + buildID,
+		})
+		o.Expect(createResourceFromString(oc, namespace, manifest)).NotTo(o.HaveOccurred())
+		o.Expect(waitForDeploymentReady(oc, windowsWorkloads, namespace, 5*time.Minute)).NotTo(o.HaveOccurred())
+
+		g.By("Scaling the workload up to 5 and checking every replica lands on the secondary OS node")
+		o.Expect(scaleDeployment(oc, windowsWorkloads, 5, namespace)).NotTo(o.HaveOccurred())
+		podHostIPs, err := getWorkloadsHostIP(oc, windowsWorkloads, namespace)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(podHostIPs).NotTo(o.BeEmpty(), "No pods found for deployment %s", windowsWorkloads)
+		for _, hostIP := range podHostIPs {
+			e2e.Logf("Pod host IP is %v, node IP is %v", hostIP, machineIPs[0])
+			o.Expect(hostIP).To(o.Equal(machineIPs[0]), "Windows workloads did not bootstrap on the same host")
+		}
+	})
+
+	// author jfrancoa@redhat.com
+	g.It("Longduration-Author:jfrancoa-NonPreRelease-Medium-37086-Install wmco in a namespace other than recommended [Serial][Disruptive][Timeout:60m]", func() {
+		if isNone(oc) {
+			g.Skip("Platform none does not support Machine API")
+		}
+		// The operator is reinstalled in the same namespace the workloads use, named after the test
+		// case like every other migrated test, so the whole case owns one namespace.
+		customNamespace := "winc-37086"
+
+		// The CatalogSource and its index image are read before the uninstall so WMCO can be
+		// reinstalled, and finally restored, from the same source without any FBC input.
+		source, sourceNamespace, channel, installedByOLM, subscriptionErr := wmcoSubscription(oc, wmcoNamespace)
+		o.Expect(subscriptionErr).NotTo(o.HaveOccurred())
+		if !installedByOLM {
+			g.Skip("WMCO is not installed from an OLM Subscription, skipping the namespace reinstall test")
+		}
+		// OLM serves a CatalogSource to Subscriptions in its own namespace, plus the global
+		// openshift-marketplace namespace. WMCO CI installs the operator with
+		// operator-sdk run packagemanifests, whose CatalogSource points at a registry server in the
+		// operator namespace, so the reinstall needs a CatalogSource of its own in the target
+		// namespace that points at that same registry. Without one the Subscription cannot resolve
+		// the package once the original operator has been removed.
+		originalSource, originalSourceNamespace := source, sourceNamespace
+		catalogAddress, catalogImage := "", ""
+		if sourceNamespace != marketplaceNamespace {
+			var backingErr error
+			catalogAddress, catalogImage, backingErr = catalogSourceBacking(oc, source, sourceNamespace)
+			o.Expect(backingErr).NotTo(o.HaveOccurred())
+			source = reinstallCatalogSource
+			sourceNamespace = customNamespace
+		}
+		machineSetName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, getAvailabilityZone(oc))
+		originalReplicas, err := getMachineSetReplicas(oc, machineSetName)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		privateKeyPath := extractPrivateKeyToFile(oc)
+		defer os.Remove(privateKeyPath)
+
+		// Register the restore before mutating the cluster: a failed attempt must not leave the
+		// cluster without an operator.
+		defer func() {
+			g.By("Restoring WMCO in its recommended namespace")
+			// A cleanup failure must not stop the rest of the restore: the cluster would be left
+			// without an operator or with the MachineSet at zero replicas.
+			cleanupErr := uninstallWMCOWithError(oc, customNamespace, true)
+			if cleanupErr != nil {
+				e2e.Logf("Warning: failed to clean up %s: %v", customNamespace, cleanupErr)
+			}
+			installWMCO(oc, wmcoNamespace, originalSource, originalSourceNamespace, channel, privateKeyPath)
+			scaleWindowsMachineSet(oc, machineSetName, 30, originalReplicas, false)
+			waitForMachineSetNodesReady(oc, machineSetName, originalReplicas, 25*time.Minute)
+			if cleanupErr != nil {
+				e2e.Logf("Warning: cleanup of %s failed, the cluster may need manual cleanup: %v", customNamespace, cleanupErr)
+			}
+		}()
+
+		g.By("Scaling down the Windows MachineSet to 0")
+		scaleWindowsMachineSet(oc, machineSetName, 20, 0, false)
+
+		g.By(fmt.Sprintf("Uninstalling WMCO from the recommended namespace %s", wmcoNamespace))
+		uninstallWMCO(oc, wmcoNamespace, false)
+
+		createProject(oc, customNamespace)
+		switch {
+		case catalogAddress != "":
+			g.By(fmt.Sprintf("Creating CatalogSource %s in %s from the CI registry", source, customNamespace))
+			o.Expect(createResourceFromString(oc, customNamespace,
+				generateCatalogSourceYAML(source, customNamespace, catalogAddress, "Windows Machine Config Operator"))).
+				NotTo(o.HaveOccurred())
+			o.Expect(waitForCatalogSourceReady(oc, customNamespace, source, 5*time.Minute)).NotTo(o.HaveOccurred(),
+				"CatalogSource %s did not become ready in namespace %s", source, customNamespace)
+		case catalogImage != "":
+			// A bundle install publishes its packages through an image-backed catalog. The copy keeps
+			// that form: OLM cannot resolve the original, which lives outside openshift-marketplace.
+			g.By(fmt.Sprintf("Creating image-backed CatalogSource %s in %s", source, customNamespace))
+			o.Expect(createResourceFromString(oc, customNamespace,
+				generateCatalogSourceImageYAML(source, customNamespace, catalogImage, "Windows Machine Config Operator"))).
+				NotTo(o.HaveOccurred())
+			o.Expect(waitForCatalogSourceReady(oc, customNamespace, source, 5*time.Minute)).NotTo(o.HaveOccurred(),
+				"CatalogSource %s did not become ready in namespace %s", source, customNamespace)
+		}
+		installWMCO(oc, customNamespace, source, sourceNamespace, channel, privateKeyPath)
+
+		g.By("Force restarting WMCO to verify its RBAC works outside the recommended namespace")
+		o.Expect(scaleDeployment(oc, wmcoDeploymentName, 0, customNamespace)).NotTo(o.HaveOccurred())
+		o.Expect(scaleDeployment(oc, wmcoDeploymentName, 1, customNamespace)).NotTo(o.HaveOccurred())
+
+		g.By("Scaling the Windows MachineSet up with WMCO running in the custom namespace")
+		// The MachineSet's own nodes are counted, not every Windows node: the creation test
+		// leaves its own MachineSet behind, and those nodes are Ready without any Machine of
+		// this set having joined.
+		scaleWindowsMachineSet(oc, machineSetName, 30, 2, false)
+		waitForMachineSetNodesReady(oc, machineSetName, 2, 25*time.Minute)
+
+		g.By("Scheduling Windows workloads with WMCO running in the custom namespace")
+		// installWMCO already created this namespace with the pod security labels WMCO needs, so it is
+		// not created again here.
+		namespace := customNamespace
+		defer deleteProject(oc, namespace)
+		manifest := generateWindowsWebServerYAML(windowsWebServerConfig{
+			Name:      windowsWorkloads,
+			Namespace: namespace,
+			Image:     windowsDebugImage,
+		})
+		o.Expect(createResourceFromString(oc, namespace, manifest)).NotTo(o.HaveOccurred())
+		o.Expect(waitForDeploymentReady(oc, windowsWorkloads, namespace, 10*time.Minute)).NotTo(o.HaveOccurred())
+		o.Expect(scaleDeployment(oc, windowsWorkloads, 10, namespace)).NotTo(o.HaveOccurred())
+	})
+
+	// author rrasouli@redhat.com
+	// The disconnected CI job selects this spec through the Smokerun suite qualifier and a
+	// TEST_SKIPS regex, so the tags have to stay as they are. TestDisconnectedWorkloadSelection
+	// in utils_test.go pins that the name is picked and not skipped by that job.
+	g.It("Author:rrasouli-DisconnectedOnly-Smokerun-Critical-74760-Windows workloads with disconnected registry image [Timeout:20m]", func() {
+		if !isDisconnectedCluster(oc) {
+			g.Skip("Skipping test not a disconnected test")
+		}
+		// The disconnected job mirrors this image through an ImageTagMirrorSet, so the upstream
+		// reference still resolves to the cluster's local registry.
+		image, ok := getConfigMapDataIfPresent(oc, wincTestCM, primaryDisconnectedImageKey, defaultNamespace)
+		if !ok {
+			image = windowsDebugImage
+		}
+
+		namespace := "winc-74760"
+		defer deleteProject(oc, namespace)
+		createProject(oc, namespace)
+
+		g.By("Copying the cluster pull secret into the test namespace")
+		pullSecretData, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("secret", "pull-secret",
+			"-n", "openshift-config", "-o=jsonpath={.data.\\.dockerconfigjson}").Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Unable to retrieve pull-secret from openshift-config")
+		decodedPullSecret, err := base64.StdEncoding.DecodeString(strings.TrimSpace(pullSecretData))
+		o.Expect(err).NotTo(o.HaveOccurred(), "Unable to decode pull-secret data")
+
+		pullSecretFile, err := os.CreateTemp("", "dockerconfigjson-*")
+		o.Expect(err).NotTo(o.HaveOccurred())
+		defer os.Remove(pullSecretFile.Name())
+		_, err = pullSecretFile.Write(decodedPullSecret)
+		o.Expect(err).NotTo(o.HaveOccurred())
+		o.Expect(pullSecretFile.Close()).NotTo(o.HaveOccurred())
+
+		_, err = oc.AsAdmin().NotShowInfo().WithoutNamespace().Run("create").Args("secret", "generic", "pull-secret",
+			"--from-file=.dockerconfigjson="+pullSecretFile.Name(),
+			"--type=kubernetes.io/dockerconfigjson", "-n", namespace).Output()
+		o.Expect(err).NotTo(o.HaveOccurred(), "Unable to create pull-secret in %s", namespace)
+
+		g.By("Creating a Windows workload pulling its image from the disconnected registry")
+		manifest := generateWindowsWebServerYAML(windowsWebServerConfig{
+			Name:             windowsWorkloads,
+			Namespace:        namespace,
+			Image:            image,
+			ImagePullSecret:  "pull-secret",
+			MultilineCommand: true,
+		})
+		o.Expect(createResourceFromString(oc, namespace, manifest)).NotTo(o.HaveOccurred())
+		o.Expect(waitForDeploymentReady(oc, windowsWorkloads, namespace, 5*time.Minute)).NotTo(o.HaveOccurred())
+
+		g.By("Scaling the workload up and back down")
+		o.Expect(scaleDeployment(oc, windowsWorkloads, 5, namespace)).NotTo(o.HaveOccurred(), "Failed to scale up the deployment")
+		o.Expect(scaleDeployment(oc, windowsWorkloads, 1, namespace)).NotTo(o.HaveOccurred(), "Failed to scale down the deployment")
+	})
 
 })
