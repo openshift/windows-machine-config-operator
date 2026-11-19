@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/windows-machine-config-operator/pkg/instance"
 	"github.com/openshift/windows-machine-config-operator/pkg/metadata"
 	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig"
+	"github.com/openshift/windows-machine-config-operator/pkg/nodeconfig/payload"
 	"github.com/openshift/windows-machine-config-operator/pkg/secrets"
 	"github.com/openshift/windows-machine-config-operator/version"
 )
@@ -54,6 +55,11 @@ type instanceReconciler struct {
 	recorder record.EventRecorder
 	// platform indicates the cloud on which the cluster is running
 	platform config.PlatformType
+	// updateWebConfigOverride, when non-nil, replaces updateWebConfig in
+	// ensureWebConfigForNode. This allows unit tests to stub the SSH
+	// file-transfer dependency while still exercising the decision logic,
+	// update invocation, and annotation write.
+	updateWebConfigOverride func(ctx context.Context, node core.Node) error
 }
 
 // ensureInstanceIsUpToDate ensures that the given instance is configured as a node and upgraded to the specifications
@@ -69,6 +75,9 @@ func (r *instanceReconciler) ensureInstanceIsUpToDate(ctx context.Context, insta
 		// Instance being up to date indicates that node object is present with the version annotation
 		r.log.Info("instance is up to date", "node", instanceInfo.Node.GetName(), "version",
 			instanceInfo.Node.GetAnnotations()[metadata.VersionAnnotation])
+		if err := r.ensureWebConfigIsUpToDate(ctx, instanceInfo); err != nil {
+			return fmt.Errorf("error ensuring webconfig is up to date: %w", err)
+		}
 		return nil
 	}
 
@@ -136,6 +145,107 @@ func (r *instanceReconciler) updateKubeletCA(ctx context.Context, node core.Node
 	defer r.nodeConfigCleanup(nodeConfig)
 	r.log.Info("updating kubelet CA client certificates in", "node", node.Name)
 	return nodeConfig.UpdateKubeletClientCA(contents)
+}
+
+// ensureWebConfigIsUpToDate checks the WindowsExporterWebConfigSHAAnnotation
+// on the node and pushes the updated webconfig file if it differs from the
+// current payload SHA (computed by PopulateWindowsExporterWebConfig at
+// operator startup).
+//
+// This is a lightweight, no-drain update path — it does NOT drain,
+// deconfigure, or restart the node. The exporter-toolkit in windows-exporter
+// re-reads the webconfig on every TLS handshake (GetConfigForClient
+// callback), so the new TLS settings take effect on the next client
+// connection without service interruption.
+//
+// When instanceInfo.Address is non-empty (BYOH path), the configured address
+// is preserved for SSH connectivity rather than re-discovering an address
+// from node.Status.Addresses, which could pick a different address than the
+// one the admin configured in the windows-instances ConfigMap.
+func (r *instanceReconciler) ensureWebConfigIsUpToDate(ctx context.Context, instanceInfo *instance.Info) error {
+	if instanceInfo.Node == nil {
+		return fmt.Errorf("instance node is nil, cannot check webconfig")
+	}
+	expectedSHA := payload.GetWebConfigSHA()
+	if instanceInfo.WebConfigUpToDate(expectedSHA) {
+		return nil
+	}
+	r.log.Info("webconfig change detected, pushing updated file",
+		"expectedSHA", expectedSHA)
+	if r.updateWebConfigOverride != nil {
+		if err := r.updateWebConfigOverride(ctx, *instanceInfo.Node); err != nil {
+			return err
+		}
+	} else if instanceInfo.Address != "" {
+		// BYOH path: use the configured address from the instance info
+		// rather than re-discovering from node.Status.Addresses, which may
+		// pick a different address than the admin configured.
+		nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR,
+			r.watchNamespace, instanceInfo, r.signer, nil, nil, r.platform)
+		if err != nil {
+			return fmt.Errorf("error creating nodeConfig: %w", err)
+		}
+		defer r.nodeConfigCleanup(nc)
+		r.log.Info("pushing updated webconfig to node")
+		if err := nc.UpdateWebConfig(ctx); err != nil {
+			return err
+		}
+	} else {
+		// Machine-API path: discover address from node status
+		if err := r.updateWebConfig(ctx, *instanceInfo.Node); err != nil {
+			return err
+		}
+	}
+	return metadata.ApplyLabelsAndAnnotations(ctx, r.client, *instanceInfo.Node, nil,
+		map[string]string{metadata.WindowsExporterWebConfigSHAAnnotation: expectedSHA})
+}
+
+// ensureWebConfigForNode compares the WindowsExporterWebConfigSHAAnnotation
+// on the given node with the current payload SHA from GetWebConfigSHA. If
+// they differ, it pushes the updated webconfig via updateWebConfig, then
+// patches the node annotation to record the new SHA. Returns nil immediately
+// when the webconfig is already up to date or when no webconfig SHA is
+// available (i.e. PopulateWindowsExporterWebConfig has not been called yet).
+//
+// Cache staleness: the SHA annotation is read from and written through the
+// cache client, so a subsequent reconcile could see a stale value. This is
+// safe because WMCO controllers use MaxConcurrentReconciles:1, serializing
+// reconciles so that the annotation write completes before the next check.
+func (r *instanceReconciler) ensureWebConfigForNode(ctx context.Context, node core.Node) error {
+	expectedSHA := payload.GetWebConfigSHA()
+	nodeInfo := &instance.Info{Node: &node}
+	if nodeInfo.WebConfigUpToDate(expectedSHA) {
+		return nil
+	}
+	r.log.Info("webconfig change detected, pushing updated file",
+		"expectedSHA", expectedSHA)
+	updateFn := r.updateWebConfig
+	if r.updateWebConfigOverride != nil {
+		updateFn = r.updateWebConfigOverride
+	}
+	if err := updateFn(ctx, node); err != nil {
+		return err
+	}
+	return metadata.ApplyLabelsAndAnnotations(ctx, r.client, node, nil,
+		map[string]string{metadata.WindowsExporterWebConfigSHAAnnotation: expectedSHA})
+}
+
+// updateWebConfig pushes the current webconfig file to the Windows node,
+// following the same pattern as updateKubeletCA: create a nodeconfig from the
+// node, transfer the file, and close the connection.
+func (r *instanceReconciler) updateWebConfig(ctx context.Context, node core.Node) error {
+	winInstance, err := r.instanceFromNode(ctx, &node)
+	if err != nil {
+		return fmt.Errorf("error creating instance: %w", err)
+	}
+	nc, err := nodeconfig.NewNodeConfig(ctx, r.client, r.k8sclientset, r.clusterServiceCIDR,
+		r.watchNamespace, winInstance, r.signer, nil, nil, r.platform)
+	if err != nil {
+		return fmt.Errorf("error creating nodeConfig: %w", err)
+	}
+	defer r.nodeConfigCleanup(nc)
+	r.log.Info("pushing updated webconfig to node")
+	return nc.UpdateWebConfig(ctx)
 }
 
 // GetAddress returns a non-ipv6 address that can be used to reach a Windows node. This can be either an ipv4
@@ -217,7 +327,7 @@ func windowsNodeVersionChangePredicate() predicate.Funcs {
 }
 
 // outdatedWindowsNodePredicate returns a predicate which filters out all node objects that are not up-to-date Windows
-// nodes. Up-to-date refers to the version annotation and public key hash annotations.
+// nodes. Up-to-date refers to the version annotation, public key hash annotation, and webconfig SHA annotation.
 // If BYOH is true, only BYOH nodes will be allowed through, else no BYOH nodes will be allowed.
 func outdatedWindowsNodePredicate(byoh bool) predicate.Funcs {
 	return predicate.Funcs{
@@ -232,6 +342,13 @@ func outdatedWindowsNodePredicate(byoh bool) predicate.Funcs {
 			if e.ObjectNew.GetAnnotations()[metadata.VersionAnnotation] != version.Get() ||
 				e.ObjectNew.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] !=
 					e.ObjectOld.GetAnnotations()[nodeconfig.PubKeyHashAnnotation] {
+				return true
+			}
+			// Detect webconfig SHA changes — triggers reconciliation when
+			// the webconfig is externally updated or cleared.
+			expectedSHA := payload.GetWebConfigSHA()
+			if expectedSHA != "" &&
+				e.ObjectNew.GetAnnotations()[metadata.WindowsExporterWebConfigSHAAnnotation] != expectedSHA {
 				return true
 			}
 			return false
