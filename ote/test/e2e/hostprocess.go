@@ -634,6 +634,10 @@ type hostProcessPodDeleter func(context.Context, string, metav1.DeleteOptions) e
 // newHostProcessPod builds the one-shot Windows HostProcess PowerShell pod specification.
 // It preserves host networking, SYSTEM identity, node selection, and Windows toleration without adding annotations.
 func newHostProcessPod(podName, nodeName, image, psCommand string) *corev1.Pod {
+	return newHostProcessCommandPod(podName, nodeName, image, []string{"powershell.exe", "-Command", psCommand})
+}
+
+func newHostProcessCommandPod(podName, nodeName, image string, command []string) *corev1.Pod {
 	hostProcess := true
 	runAsUser := "NT AUTHORITY\\SYSTEM"
 	windowsOptions := &corev1.WindowsSecurityContextOptions{
@@ -650,7 +654,7 @@ func newHostProcessPod(podName, nodeName, image, psCommand string) *corev1.Pod {
 			Containers: []corev1.Container{{
 				Name:      podName,
 				Image:     image,
-				Command:   []string{"powershell.exe", "-Command", psCommand},
+				Command:   command,
 				Resources: corev1.ResourceRequirements{},
 				SecurityContext: &corev1.SecurityContext{
 					WindowsOptions: windowsOptions.DeepCopy(),
