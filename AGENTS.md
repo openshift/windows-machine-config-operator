@@ -30,113 +30,14 @@ The Windows Machine Config Operator (WMCO) configures Windows Server instances a
 
 **Tech Stack:** Go (see `go.mod` for current version), Kubernetes Operator (controller-runtime), OpenShift APIs, Windows Server 2019/2022
 
----
+## Authoritative Documentation
 
-## Product Overview
+Use the repository's source files and maintained documentation as the source of truth for detailed product, support, and contribution workflows:
 
-Red Hat OpenShift support for Windows Containers is a layered component of OpenShift that allows the integration of Windows Nodes for running Windows Containers on an OpenShift 4 Cluster.
-
-This is achieved by installing the Windows Machine Config Operator (WMCO), which runs on Linux based control-plane nodes. The WMCO bootstraps Windows nodes to join the cluster as Windows worker nodes.
-
-### Subscription Requirements
-
-Windows Containers requires a specific subscription, in addition to an OpenShift Container Platform subscription:
-- **Worker nodes only** - Control plane and infrastructure nodes don't need a paid subscription for Windows Containers
-- When working cases, verify entitlement mapping to ensure compliance
-
-### Entitlement Validation
-
-Look for the **"for Windows"** phrase in the entitlement name.
-
-**Example Entitlements:**
-- `MW01465`: Red Hat OpenShift Container Platform, Standard (2 Cores or 4 vCPUs, for Windows)
-- `MW01615`: Red Hat OpenShift Container Platform, Premium (2 Cores or 4 vCPUs, for Windows)
-
----
-
-## Requesting Engineering Assistance
-
-### Jira Projects
-
-| Project | Purpose | Link |
-|---------|---------|------|
-| OpenShift Bugs (OCPBUGS) | Bug reports | [Red Hat Issue Router](https://access.redhat.com/labs/rhir/) → "Windows Containers" component |
-| Windows Containers (WINC) | Engineering tracking | [issues.redhat.com/projects/WINC](https://issues.redhat.com/projects/WINC/issues/) |
-| RFE | Feature requests | [issues.redhat.com/project/RFE](https://issues.redhat.com/project/RFE) → "Windows Containers" component |
-| Portfolio Backlog | Roadmap/planning | [Portfolio Plan View](https://issues.redhat.com/secure/PortfolioPlanView.jspa?id=1226&sid=1226&vid=4843#plan/backlog) |
-
-### Creating a Bug Report
-
-Search for the **"Windows Containers"** component on the [Red Hat Issue Router](https://access.redhat.com/labs/rhir/), then create a bug with:
-
-1. **Detailed explanation** of the issue including:
-   - Troubleshooting steps already taken
-   - Any recent changes to the cluster
-   - Relevant contextual information
-2. **Link to customer case** (if one exists)
-3. **Must-gather archive** recently generated on the cluster
-4. **Command outputs** (not present in older must-gather archives):
-
-```bash
-oc get network.operator cluster -o yaml
-oc logs -f deployment/windows-machine-config-operator -n openshift-windows-machine-config-operator
-```
-
-5. **MachineSet object** describing Windows instances (if using Machine API/IPI)
-6. **windows-instances ConfigMap** (if using BYOH method)
-
-### Bug Report Template
-
-Use this template when filing bugs in **OpenShift Bugs (OCPBUGS)** with **Component: Windows Containers**:
-
-```
-Description of problem:
-{code:none}
-    
-{code}
-
-Version-Release number of selected component (if applicable):
-{code:none}
-    
-{code}
-
-How reproducible:
-{code:none}
-    
-{code}
-
-Steps to Reproduce:
-{code:none}
-    1.
-    2.
-    3.
-{code}
-
-Actual results:
-{code:none}
-    
-{code}
-
-Expected results:
-{code:none}
-    
-{code}
-
-Additional info:
-{code:none}
-    
-{code}
-```
-
-### Reaching Out on Slack
-
-Slack is a **supplement** to bug reports in Jira. Only reach out if:
-- A bug is already filed
-- The issue hasn't received a prompt response
-
-**Channel:** `#forum-ocp-winc` (CoreOS Slack)
-**Tag:** Use only `@winc-watcher` to get the team's attention
-Do NOT use `@here` or `@everyone`
+- Product and support guidance: [README.md](README.md)
+- Development setup and e2e workflows: [docs/HACKING.md](docs/HACKING.md)
+- Contribution, commit, PR, and backport policy: [CONTRIBUTION.md](CONTRIBUTION.md)
+- Submodule updates: run `hack/update_submodules.sh -h`
 
 ---
 
@@ -177,10 +78,15 @@ Do NOT use `@here` or `@everyone`
 
 | Controller | File | Watches |
 |------------|------|---------|
-| ConfigMap | `configmap_controller.go` | `windows-instances` ConfigMap |
-| Machine | `machine_controller.go` | Machine objects with Windows OS label |
+| ConfigMap | `configmap_controller.go` | Windows instance and service ConfigMaps, plus related Node and MachineConfig events |
+| Machine | `windowsmachine_controller.go` | Windows-labeled Machine objects |
 | Node | `node_controller.go` | Windows Node objects |
-| Secret | `secret_controller.go` | `cloud-private-key` Secret |
+| Secret | `secret_controller.go` | Private key and TLS Secret changes |
+| Kubelet CSR | `certificatesigningrequests_controller.go` | Pending kubelet CertificateSigningRequests |
+| WICD CSR | `wicd_csr_controller.go` | Pending WICD CertificateSigningRequests |
+| ControllerConfig | `controllerconfig_controller.go` | ControllerConfig changes affecting kubelet CA data |
+| Registry | `registry_controller.go` | Image mirror configuration changes |
+| Metrics | `metric_controller.go` | Operator namespace and ServiceMonitor changes |
 
 ### Daemon (Windows - `pkg/daemon/`)
 
@@ -209,51 +115,11 @@ Do NOT use `@here` or `@everyone`
 
 ## Key Interfaces
 
-### Windows (`pkg/windows/windows.go`)
-All remote operations on Windows instances.
+Read the current signatures directly from their source files:
 
-```go
-type Windows interface {
-    GetIPv4Address() string
-    GetHostname() (string, error)
-    Run(cmd string, psCmd bool) (string, error)
-    EnsureFile(*payload.CompressedFileInfo, string) error
-    EnsureFileContent([]byte, string, string) error
-    Bootstrap(ctx context.Context, version, namespace, kubeconfig string) error
-    ConfigureWICD(namespace, kubeconfig string) error
-    RebootAndReinitialize(context.Context) error
-    RunWICDCleanup(namespace, kubeconfig string) error
-}
-```
-
-### Manager (`pkg/daemon/manager/manager.go`)
-Windows service management (Windows-only build tag).
-
-```go
-type Manager interface {
-    CreateService(name, exepath string, config mgr.Config, args ...string) (Service, error)
-    GetServices() (map[string]struct{}, error)
-    OpenService(name string) (Service, error)
-    DeleteService(name string) error
-    EnsureServiceState(Service, svc.State) error
-    Disconnect() error
-}
-```
-
-### Service (`pkg/servicescm/servicescm.go`)
-Service definition in ConfigMap.
-
-```go
-type Service struct {
-    Name                   string              `json:"name"`
-    Command                string              `json:"path"`
-    NodeVariablesInCommand []NodeCmdArg        `json:"nodeVariablesInCommand,omitempty"`
-    PowershellPreScripts   []PowershellPreScript `json:"powershellPreScripts,omitempty"`
-    Dependencies           []string            `json:"dependencies,omitempty"`
-    Bootstrap              bool                `json:"bootstrap"`
-    Priority               uint                `json:"priority"`
-}
-```
+- `Windows`: [pkg/windows/windows.go](pkg/windows/windows.go)
+- `Manager`: [pkg/daemon/manager/manager.go](pkg/daemon/manager/manager.go)
+- `Service`: [pkg/servicescm/servicescm.go](pkg/servicescm/servicescm.go)
 
 ### Controllers
 All implement `reconcile.Reconciler`:
@@ -281,7 +147,7 @@ func myServiceConfiguration() servicescm.Service {
 }
 ```
 
-2. Add to `GenerateManifest()` return slice
+2. Add the returned service definition to the `services` slice in `GenerateManifest()`
 3. Add unit tests in `pkg/services/services_test.go`
 4. Service auto-reconciled by WICD on Windows nodes
 
@@ -502,7 +368,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 - Run `go mod tidy && go mod vendor` after any `go.mod` changes; verify with `hack/verify-vendor.sh`
 - Run `make generate` after adding or changing CRD types; run `make manifests` after changing webhook, RBAC, or CRD markers
 - The `ote/` directory is a **separate Go module** (`ote/go.mod`) with its own Go version, `replace` directives, and dependencies. Use `make build-tests-ext` to build it and `cd ote && go test ./...` to run its tests. Root-module dependency commands (`go mod tidy`, `go mod vendor`) do not apply to `ote/`.
-- Git submodules (kubelet, containerd, ovn-kubernetes, etc.) are managed via `hack/update_submodules.sh` — see [Submodule Maintenance](#submodule-maintenance).
+- Git submodules (kubelet, containerd, ovn-kubernetes, etc.) are managed via `hack/update_submodules.sh`.
 
 ### Platform-Specific
 - **vSphere**: Machine name max 15 chars, MachineSet name max 9
@@ -510,271 +376,9 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 - **Azure**: cloud-node-manager service required
 - **GCP**: Custom hostname script in `pkg/internal/`
 
----
+## Reference Documentation
 
-## Commands Reference
+Cluster operations, Windows node paths, and product limitations belong in the user-facing documentation rather than agent instructions. See [README.md](README.md) and [docs/HACKING.md](docs/HACKING.md).
 
-### Build & Test
-
-```bash
-make build                          # Operator binary (fmt + vet + build/build.sh)
-make build-daemon                   # Windows daemon (WICD) — cross-compiles automatically
-make build-tests-ext                # OTE binary from ote/ nested module
-make unit                           # Unit tests (pkg, controllers, cmd)
-make lint                           # Format checks + vendor verification
-make imports                        # Auto-fix import ordering (goio)
-make manifests                      # Generate webhook/RBAC/CRD manifests (controller-gen)
-make generate                       # Generate DeepCopy methods (controller-gen)
-make all                            # lint + build + unit
-```
-
-### Cluster Operations
-
-```bash
-# Generate MachineSet for platform
-./hack/machineset.sh
-./hack/machineset.sh apply
-
-# Watch Windows nodes
-oc get nodes -l kubernetes.io/os=windows -w
-
-# Operator logs
-oc logs -n openshift-windows-machine-config-operator \
-  deployment/windows-machine-config-operator -f
-
-# Check services ConfigMap
-oc get cm -n openshift-windows-machine-config-operator \
-  -l windowsmachineconfig.openshift.io/services
-
-# CSR debugging
-oc get csr | grep system:node
-oc describe csr <name>
-oc adm certificate approve <name>  # Manual approval if needed
-```
-
-### Windows Node (SSH)
-
-```powershell
-# WICD status and logs
-Get-Service windows-instance-config-daemon
-Get-Content C:\k\logs\wicd.log -Tail 50 -Wait
-
-# Kubelet status and logs
-Get-Service kubelet
-Get-Content C:\k\logs\kubelet.log -Tail 50
-
-# All WMCO-managed services
-Get-Service | Where-Object {$_.Description -like "*OpenShift Managed*"}
-
-# Container runtime
-Get-Service containerd
-ctr -n k8s.io containers list
-
-# Network
-Get-HnsNetwork
-Get-HnsEndpoint
-```
-
----
-
-## Windows Node Paths
-
-| Path | Purpose |
-|------|---------|
-| `C:\k\` | Main directory (binaries, configs) |
-| `C:\k\logs\` | Service logs (kubelet, wicd, containerd) |
-| `C:\k\cni\` | CNI plugins and configs |
-| `C:\k\cni\config\` | CNI configuration files |
-| `C:\k\containerd\` | Containerd config and state |
-| `C:\k\kubeconfig` | Kubelet kubeconfig |
-| `C:\k\wicd-kubeconfig` | WICD service account token |
-| `C:\k\kubelet.conf` | Kubelet configuration |
-| `C:\k\ca.crt` | Cluster CA certificate |
-| `C:\var\lib\kubelet\` | Kubelet working directory |
-| `C:\var\lib\kubelet\pki\` | Kubelet certificates |
-
----
-
-## Limitations
-
-**Unsupported Features:**
-- DeploymentConfigs (use Deployments instead)
-- Vertical Pod Autoscaling for Windows workloads
-- OpenShift Builds, Pipelines, Service Mesh
-- Trunk port networking (access port only)
-
-**Requires Manual Setup:**
-- Windows CSI drivers (not deployed by WMCO)
-- Custom storage classes for Windows
-
-**Network:**
-- OVN-Kubernetes hybrid networking only
-- OpenShiftSDN not supported
-
----
-
-## Contributing
-
-See [CONTRIBUTION.md](CONTRIBUTION.md) for full details.
-
-### Commit Message Format
-
-```
-[subsystem] <what changed>
-<BLANK LINE>
-<why this change was made>
-<BLANK LINE>
-<Footer>
-```
-
-**Example:**
-
-```
-[nodeconfig] Add custom DNS configuration support
-
-The node configuration did not support custom DNS settings for Windows
-nodes. This adds the ability to specify DNS servers during bootstrap.
-
-Follow-up to Id5e7cbb1.
-```
-
-- Subject: max 50 characters
-- Body: max 80 characters per line
-- Subsystem examples: `docs`, `nodeconfig`, `csr`, `daemon/controller`, `services`
-
-The bracketed `[subsystem]` prefix in a commit subject must identify a
-subsystem, never the target release branch name.
-
-### PR Title Format
-
-```
-WINC|OCPBUGS-<number>: [<subsystem>] <title>
-```
-
-**Examples:**
-- `WINC-959: [docs] reorganizes readme`
-- `OCPBUGS-1234: [csr] Fix validation for serving certificates`
-- `[nodeconfig] Add custom DNS support` (if no Jira issue or not a Red Hat employee)
-
-Note: the PR title prefix links to Jira tracking. The **commit message** subject uses `[subsystem]` only (no Jira prefix) — see [Commit Message Format](#commit-message-format) above.
-
-### Before Opening a PR
-
-```bash
-# Required checks
-make lint                    # Format checks + vendor verification
-make imports                 # Fix import ordering
-make unit                    # Unit tests
-make build                   # Verify operator builds
-```
-
-**Checklist:**
-- Fetched and rebased against upstream master
-- Linted with `make lint`
-- Fixed imports with `make imports`
-- Unit tests pass (`make unit`)
-- Error messages are single line
-- Documentation updated if user-facing change
-- `go mod tidy && go mod vendor` if dependencies changed
-- `make generate` if CRD types changed; `make manifests` if webhook, RBAC, or CRD markers changed
-
-### PR Workflow
-
-1. **Open as Draft** - Always open PRs as drafts first to prevent CI tests from running immediately
-2. **Get Reviews** - Need at least one `/lgtm` and one `/approve`
-3. **Mark Ready** - Click "Ready for review" to trigger CI tests
-4. **Auto-Merge** - PR merges automatically when CI tests pass
-
-### Handling Test Failures
-
-If a test fails due to a flake, retest with this format:
-
-```
-/retest-required
-
-<explanation of the error>
-<reason for retest>
-<prow.ci.openshift.org link>
-
-<log snippet of the failure>
-```
-
-### Backports
-
-Use the cherry-pick robot for backports to [supported versions](https://access.redhat.com/support/policy/updates/openshift#windows):
-
-```
-/cherry-pick <release>
-```
-
-For multiple versions, chain the backports (master → 4.11 → 4.10 → 4.9) to preserve Jira associations.
-
-If cherry-pick bot fails, create manual PR and run:
-
-```
-/jira cherry-pick OCPBUGS-<number>
-```
-
-### Reporting Issues
-
-Open a [GitHub issue](https://github.com/openshift/windows-machine-config-operator/issues) for bugs or documentation problems.
-
----
-
-## Submodule Maintenance
-
-WMCO includes Git submodules for components that are built into the operator image. These are defined in `.gitmodules`:
-
-| Submodule | Upstream | Purpose |
-|-----------|----------|---------|
-| `kubelet` | openshift/kubernetes | Windows kubelet and kube-proxy binaries |
-| `containerd` | openshift/containerd | Windows container runtime |
-| `ovn-kubernetes` | openshift/ovn-kubernetes | OVN-Kubernetes hybrid networking |
-| `containernetworking-plugins` | openshift/containernetworking-plugins | CNI plugins |
-| `hcsshim` | openshift/hcsshim | Windows container shim |
-| `cloud-provider-aws` | openshift/cloud-provider-aws | AWS cloud provider |
-| `cloud-provider-azure` | openshift/cloud-provider-azure | Azure cloud provider |
-| `csi-proxy` | openshift/csi-proxy | Windows CSI proxy |
-| `windows_exporter` | openshift/prometheus-community-windows\_exporter | Prometheus metrics |
-| `promu` | openshift/prometheus-promu | Prometheus build tool |
-
-### Updating Submodules
-
-Use `hack/update_submodules.sh` to update submodule HEADs to their remote branch tips. The positional argument is the base branch to create a new working branch from. Options: `-m` selects specific submodules (space-separated, quoted); `-r` overrides a single submodule's remote tracking branch (requires `-m` with exactly one module). See `hack/update_submodules.sh -h` for full usage.
-
-```bash
-# Update all submodules, branching from master
-hack/update_submodules.sh master
-
-# Update only kubelet and containerd
-hack/update_submodules.sh -m "kubelet containerd" master
-
-# Point kubelet at a different remote branch (e.g. a release branch listed in .gitmodules)
-hack/update_submodules.sh -m kubelet -r <remote-branch> master
-```
-
-The script creates a new local branch with commits for each submodule update. For `kubelet` and `containerd`, it also generates a Makefile version commit (updating `*_GIT_VERSION` variables). For `kubelet` (unless `-r` is used), it additionally updates Go/OpenShift library dependencies and runs `go mod vendor`.
-
-After creating the branch, push to your fork and open a PR per the usual workflow.
-
----
-
-## Resources
-
-### Documentation
-- [Enhancement Proposal](https://github.com/openshift/enhancements/blob/master/enhancements/windows-containers/windows-machine-config-operator.md)
-- [Development Guide](docs/HACKING.md)
-- [Prerequisites](docs/wmco-prerequisites.md)
-- [BYOH Requirements](docs/byoh-instance-pre-requisites.md)
-
-### OpenShift Docs
-- [Windows Containers Guide](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/index)
-- [Windows Node Upgrades](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/windows_container_support_for_openshift/windows-node-upgrades)
-
-### Platform-Specific
-- [AWS MachineSet](docs/machineset-aws.md)
-- [Azure MachineSet](docs/machineset-azure.md)
-- [GCP MachineSet](docs/machineset-gcp.md)
-- [vSphere Prerequisites](docs/vsphere-prerequisites.md)
-- [Nutanix Prerequisites](docs/nutanix-prerequisites.md)
+Follow [CONTRIBUTION.md](CONTRIBUTION.md) for commit, PR, review, retest, and backport policy. Run `hack/update_submodules.sh -h` before changing submodule revisions.
 
