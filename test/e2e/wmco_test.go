@@ -53,6 +53,7 @@ func TestWMCO(t *testing.T) {
 	// individual test suites after the operator is running
 	t.Run("operator deployed without private key secret", testOperatorDeployed)
 	t.Run("create", creationTestSuite)
+	t.Run("userdata tamper", userDataTamperTestSuite)
 	t.Run("image mirroring", testImageMirroring)
 	t.Run("network", testNetwork)
 	t.Run("storage", testStorage)
@@ -63,6 +64,7 @@ func TestWMCO(t *testing.T) {
 	// added/moved in between these two suites may fail.
 	// This limitation will be removed with https://issues.redhat.com/browse/WINC-655
 	t.Run("reconfigure", reconfigurationTestSuite)
+	t.Run("parallel upgrades checker", tc.testParallelUpgradesChecker)
 	t.Run("destroy", deletionTestSuite)
 }
 
