@@ -1,0 +1,154 @@
+# Coverage aliases for on-demand WMCO runs.
+#
+# An alias names a coverage intent, not a job. The resolver turns it into
+# existing jobs discovered from a reviewed openshift/release SHA, and refuses to
+# continue when the result is empty, ambiguous, or cannot prove its suite.
+#
+# The platform scope follows what openshift/release actually defines: an alias
+# with `platforms: any` can target any discovered OTE job that proves the suite
+# and the OS. Caps, not lists, are the quota guardrail.
+#
+# Aliases are reviewed content. Adding one is a code change, not a config knob.
+version: 1
+
+discovery:
+  # The OTE job family. The legacy openshift-tests-private periodics are being
+  # archived and are not valid targets.
+  repository: openshift/windows-machine-config-operator
+  config_variant: ote
+  config: ci-operator/config/openshift/windows-machine-config-operator/openshift-windows-machine-config-operator-master__ote.yaml
+  periodics: ci-operator/jobs/openshift/windows-machine-config-operator/openshift-windows-machine-config-operator-master-periodics.yaml
+  presubmits: ci-operator/jobs/openshift/windows-machine-config-operator/openshift-windows-machine-config-operator-master-presubmits.yaml
+  fbc_config: ci-operator/config/openshift/windows-machine-config-operator-fbc
+
+# Suite names are the OTE suites in ote/cmd/wmco-tests-ext/main.go. A job
+# qualifies only when its TEST_SUITE env equals `suite` exactly.
+aliases:
+  release-verification:
+    default_platforms: [aws-ipi, aws-upi, vsphere-disconnected]
+    default_os: "2025"
+    suite: windows-machine-config-operator/release-verification
+    os: ["2022", "2025"]
+    platforms: any
+    kinds: [postsubmit, presubmit]
+    intent: Same suite as the FBC merge set. Compare a platform against the merge gate.
+
+  smokerun:
+    default_platforms: [aws-ipi]
+    default_os: "2025"
+    suite: windows-machine-config-operator/smokerun
+    os: ["2022", "2025"]
+    platforms: any
+    max_platforms: 3
+    requires_skips: ["[node-proxy]", "[tls-adherence]"]
+    kinds: [periodic, presubmit]
+    intent: Broader smoke depth. 36 of 43 tests; three platforms at most.
+
+  non-disruptive:
+    default_platforms: [azure-ipi, gcp-ipi, vsphere-ipi, nutanix-ipi]
+    default_os: "2025"
+    suite: windows-machine-config-operator/non-disruptive
+    os: ["2022", "2025"]
+    platforms: any
+    max_platforms: 4
+    requires_skips: ["[node-proxy]"]
+    kinds: [periodic, presubmit]
+    intent: Everything except disruptive cases. 18 of 43 after the proxy skip.
+
+  disruptive:
+    default_platforms: [aws-ipi]
+    default_os: "2025"
+    suite: windows-machine-config-operator/disruptive
+    os: ["2022", "2025"]
+    platforms: any
+    max_platforms: 1
+    kinds: [periodic, presubmit]
+    intent: Serial, disruptive cases. 24 tests, multi-hour. One platform at a time.
+
+  tls:
+    default_platforms: [aws-ipi]
+    default_os: "2025"
+    suite: windows-machine-config-operator/tls-adherence
+    os: ["2022", "2025"]
+    platforms: [aws-ipi]
+    max_platforms: 1
+    requires_steps: [enable-tls-adherence]
+    kinds: [presubmit, periodic]
+    intent: OCP-90117..90120 under TLS adherence. Only the AWS IPI job that enables TLS adherence.
+
+  byoh-lifecycle:
+    default_os: "2025"
+    suite: windows-machine-config-operator/byoh-pool
+    os: ["2022", "2025"]
+    platforms: [aws-upi-byoh]
+    requires_steps: [set-wmco-byoh-ote-environment]
+    kinds: [presubmit, periodic]
+    intent: Reusable-host register, deconfigure, register. Own host-pool contract.
+
+  proxy:
+    default_os: "2025"
+    suite: windows-machine-config-operator/proxy
+    os: ["2022", "2025"]
+    platforms: [vsphere-proxy]
+    kinds: [periodic, presubmit]
+    intent: Node proxy workflow. Needs a proxy cluster, not a connected one.
+
+  disconnected:
+    default_platforms: [vsphere-disconnected]
+    default_os: "2025"
+    suite: windows-machine-config-operator/smokerun
+    os: ["2022", "2025"]
+    platforms: [vsphere-disconnected]
+    max_platforms: 1
+    kinds: [periodic, presubmit]
+    not_for: [postsubmit]
+    intent: smokerun on a disconnected cluster. 16 tests, including OCP-74760 DisconnectedOnly and the mirrored extension image path. The workflow, not a tag, guarantees the disconnected coverage.
+
+  platform-matrix:
+    default_platforms: [gcp-ipi, azure-ipi, vsphere-ipi, nutanix-ipi]
+    default_os: "2025"
+    suite: windows-machine-config-operator/non-disruptive
+    os: ["2022", "2025"]
+    platforms: any
+    max_platforms: 4
+    kinds: [periodic, presubmit]
+    intent: Breadth without depth on the platforms the merge set does not cover.
+
+  csi-storage:
+    default_platforms: [vsphere-ipi, azure-ipi]
+    default_os: "2025"
+    tags: ["platform:vsphere", "platform:azure"]
+    platforms: [vsphere-ipi, azure-ipi]
+    os: ["2022", "2025"]
+    kinds: [presubmit, periodic]
+    intent: OCP-66352 CSI persistent storage, only on vSphere IPI and Azure IPI.
+
+  multi-os:
+    default_platforms: [aws-ipi, azure-ipi]
+    default_os: "mixed"
+    tags: ["platform:aws", "platform:azure"]
+    platforms: [aws-ipi, azure-ipi]
+    os: mixed
+    kinds: [presubmit, periodic]
+    intent: OCP-37096 two Windows OS builds on one cluster, AWS IPI and Azure IPI only.
+
+  full-regression:
+    default_platforms: [aws-ipi, vsphere-ipi]
+    default_os: "2025"
+    suite: windows-machine-config-operator/all
+    os: ["2022", "2025"]
+    platforms: any
+    max_platforms: 2
+    kinds: [presubmit]
+    not_for: [postsubmit, periodic]
+    intent: Y-stream anchors only. 43 tests. Never scheduled, never a merge gate.
+
+# Resolution rules enforced by the planner, printed with every plan:
+rules:
+  - Resolve only against a reviewed full commit SHA of openshift/release.
+  - Fail when zero jobs match, and fail when a platform matches more than one job unless --job names it.
+  - Require the job TEST_SUITE env to equal the alias suite; fail when the job declares no suite.
+  - Require the job to pin the requested OS (WINDOWS_SERVER_VERSION or BYOH_WINDOWS_VERSION); fail otherwise.
+  - Refuse more than max_platforms for capped aliases.
+  - Reject any alias used with a kind listed in not_for.
+  - Include the alias, its selector, the resolved jobs, suites, OS, source SHA and refs in the approval digest.
