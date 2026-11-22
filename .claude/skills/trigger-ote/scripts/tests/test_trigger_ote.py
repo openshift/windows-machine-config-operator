@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import stat
 import tempfile
 import unittest
 import urllib.error
@@ -1081,6 +1082,8 @@ class AliasTests(unittest.TestCase):
                     ("aws-ipi-ote", "windows-machine-config-operator/all", "2025")
                 ),
                 "release-verification",
+                targets=("aws-ipi-ote",),
+                os_name="2025",
             )
 
     def test_unpinned_os_is_rejected(self):
@@ -1094,6 +1097,8 @@ class AliasTests(unittest.TestCase):
                     )
                 ),
                 "release-verification",
+                targets=("aws-ipi-ote",),
+                os_name="2025",
             )
 
     def test_wrong_os_is_rejected(self):
@@ -1107,6 +1112,8 @@ class AliasTests(unittest.TestCase):
                     )
                 ),
                 "release-verification",
+                targets=("aws-ipi-ote",),
+                os_name="2025",
             )
 
     def test_platform_cap_is_enforced(self):
@@ -1114,8 +1121,20 @@ class AliasTests(unittest.TestCase):
             ("aws-ipi-ote", "windows-machine-config-operator/disruptive", "2025"),
             ("azure-e2e-ote", "windows-machine-config-operator/disruptive", "2025"),
         )
-        with self.assertRaises(wmco.SafetyError):
-            self.resolve(config, "disruptive")
+        targets = ("aws-ipi-ote", "azure-e2e-ote")
+        control = self.resolve(
+            config, "disruptive", targets=targets, platforms=["aws-ipi"], os_name="2025"
+        )
+        self.assertEqual(len(control["jobs"]), 1)
+        with self.assertRaises(wmco.SafetyError) as raised:
+            self.resolve(
+                config,
+                "disruptive",
+                targets=targets,
+                platforms=["aws-ipi", "azure-ipi"],
+                os_name="2025",
+            )
+        self.assertIn("capped at 1 platform", str(raised.exception))
 
     def test_alias_not_allowed_for_kind_is_rejected(self):
         config = ote_config(
@@ -1193,17 +1212,16 @@ class EvidenceTests(OfflineTest):
 
 
 class SubmitPersistenceTests(OfflineTest):
-    def test_accepted_id_survives_a_persistence_failure(self):
+    def test_intent_write_failure_prevents_the_post(self):
         original = wmco.save
         failed = []
 
         def flaky(path, state):
             if not failed and any(
-                row["phase"] == "submitted" and row["id"]
-                for row in state["jobs"].values()
+                row["phase"] == "submitting" for row in state["jobs"].values()
             ):
                 failed.append(True)
-                raise OSError("fsync failed")
+                raise OSError("intent write failed")
             return original(path, state)
 
         with (
@@ -1211,33 +1229,38 @@ class SubmitPersistenceTests(OfflineTest):
             self.assertRaises(OSError),
         ):
             self.submit()
-        accepted = list(self.posts)
-        self.assertEqual(len(accepted), 1)
-        # The durable row must never be rewritten as "uncertain" with no ID.
-        on_disk = wmco.load(self.path)["jobs"][accepted[0]]
-        self.assertNotEqual(on_disk["phase"], "uncertain")
-        self.assertIn(on_disk["phase"], {"submitting", "submitted"})
+        self.assertEqual(self.posts, [])
+        on_disk = wmco.load(self.path)
+        self.assertEqual(
+            {row["phase"] for row in on_disk["jobs"].values()}, {"not_submitted"}
+        )
 
 
 class ReplacementFailureTests(OfflineTest):
-    def test_failure_after_atomic_replacement_keeps_the_accepted_id(self):
-        original = wmco.save
+    def test_directory_fsync_failure_after_replacement_keeps_the_id(self):
+        original_fsync = wmco.os.fsync
         injected = []
 
-        def flaky(path, state):
-            original(path, state)
-            if not injected and any(
-                row["phase"] == "submitted" and row["id"]
-                for row in state["jobs"].values()
-            ):
-                injected.append(True)
-                raise OSError("directory fsync failed")
+        def flaky_fsync(descriptor):
+            if not injected and stat.S_ISDIR(wmco.os.fstat(descriptor).st_mode):
+                try:
+                    on_disk = wmco.load(self.path)
+                except (OSError, ValueError):
+                    on_disk = {"jobs": {}}
+                if any(
+                    row["phase"] == "submitted" and row["id"]
+                    for row in on_disk.get("jobs", {}).values()
+                ):
+                    injected.append(True)
+                    raise OSError("directory fsync failed")
+            return original_fsync(descriptor)
 
         with (
-            mock.patch.object(wmco, "save", side_effect=flaky),
+            mock.patch.object(wmco.os, "fsync", side_effect=flaky_fsync),
             self.assertRaises(OSError),
         ):
             self.submit()
+        self.assertTrue(injected)
         posted = list(self.posts)
         self.assertEqual(len(posted), 1)
         on_disk = wmco.load(self.path)["jobs"][posted[0]]
@@ -1251,18 +1274,23 @@ class AliasPolicyTests(unittest.TestCase):
             alias, "a" * 40, source=SourceStub(config, targets), **kwargs
         )
 
-    def test_platform_widening_is_rejected(self):
+    def test_platform_widening_is_rejected_for_a_restricted_alias(self):
         config = ote_config(
-            ("aws-ipi-ote", "windows-machine-config-operator/smokerun", "2025"),
-            ("gcp-ipi-ote", "windows-machine-config-operator/smokerun", "2025"),
+            ("vsphere-proxy-e2e-ote", "windows-machine-config-operator/proxy", "2025"),
+            ("gcp-ipi-ote", "windows-machine-config-operator/proxy", "2025"),
         )
-        with self.assertRaises(wmco.SafetyError):
+        targets = ("vsphere-proxy-e2e-ote", "gcp-ipi-ote")
+        plan = self.resolve(config, targets, "proxy", os_name="2025")
+        self.assertEqual(len(plan["jobs"]), 1)
+        with self.assertRaises(wmco.SafetyError) as raised:
             self.resolve(
                 config,
-                ("aws-ipi-ote", "gcp-ipi-ote"),
-                "smokerun",
-                platforms=["aws-ipi", "gcp-ipi"],
+                targets,
+                "proxy",
+                platforms=["vsphere-proxy", "gcp-ipi"],
+                os_name="2025",
             )
+        self.assertIn("cannot be widened", str(raised.exception))
 
     def _with_skips(self, value):
         config = ote_config(
@@ -1431,6 +1459,9 @@ class CatalogueTests(unittest.TestCase):
             aliases["csi-storage"]["platforms"], ["vsphere-ipi", "azure-ipi"]
         )
         self.assertEqual(aliases["proxy"]["platforms"], ["vsphere-proxy"])
+        self.assertEqual(aliases["proxy"]["areas"], ["proxy", "network"])
+        self.assertIn("storage", aliases["csi-storage"]["areas"])
+        self.assertIn("release-path", aliases["release-verification"]["areas"])
 
 
 class MachineOutputTests(OfflineTest):
@@ -1525,6 +1556,255 @@ class RequiredStepTests(unittest.TestCase):
                 platforms=["gcp-ipi"],
                 os_name="2025",
             )
+
+
+class PinnedJobTests(unittest.TestCase):
+    def source(self, targets):
+        tests = [
+            {
+                "as": target,
+                "steps": {
+                    "env": {
+                        "TEST_SUITE": "windows-machine-config-operator/tls-adherence",
+                        "WINDOWS_SERVER_VERSION": "2025",
+                    },
+                    "test": [{"as": "enable-tls-adherence"}],
+                },
+            }
+            for target in targets
+        ]
+        return SourceStub(yaml.safe_dump({"tests": tests}), tuple(targets))
+
+    def test_only_the_reviewed_job_is_selected(self):
+        plan = wmco.resolve_alias(
+            "tls", "a" * 40, source=self.source(["aws-e2e-ote-tls"]), os_name="2025"
+        )
+        self.assertEqual(
+            plan["jobs"],
+            [
+                "pull-ci-openshift-windows-machine-config-operator-master-ote-aws-e2e-ote-tls"
+            ],
+        )
+
+    def test_another_tls_job_is_not_selected(self):
+        with self.assertRaises(wmco.SafetyError):
+            wmco.resolve_alias(
+                "tls",
+                "a" * 40,
+                source=self.source(["aws-other-e2e-ote-tls"]),
+                os_name="2025",
+            )
+
+
+class AdviseTests(unittest.TestCase):
+    def test_proxy_path_maps_to_proxy_alias(self):
+        advice = wmco.advise(["pkg/services/services.go"])
+        self.assertIn("proxy", advice["areas"])
+        aliases = [item["alias"] for item in advice["routine"]]
+        self.assertIn("proxy", aliases)
+        self.assertNotIn("disruptive", aliases)
+        self.assertIn("disruptive", [item["alias"] for item in advice["escalation"]])
+
+    def test_byoh_path_maps_to_byoh_alias(self):
+        advice = wmco.advise(
+            ["pkg/wiparser/wiparser.go", "controllers/configmap_controller.go"]
+        )
+        self.assertIn("byoh", advice["areas"])
+        self.assertIn("byoh-lifecycle", [item["alias"] for item in advice["routine"]])
+
+    def test_csi_path_maps_to_csi_alias(self):
+        advice = wmco.advise(["pkg/storage/storage.go"])
+        # csi-storage selects by tag, so it is reported as manual, not runnable.
+        self.assertIn("csi-storage", [item["alias"] for item in advice["manual"]])
+        self.assertNotIn("csi-storage", [item["alias"] for item in advice["routine"]])
+
+    def test_unmatched_path_warns(self):
+        advice = wmco.advise(["docs/readme.md"])
+        self.assertEqual(advice["areas"], [])
+        self.assertTrue(advice["warnings"])
+        self.assertIn("docs/readme.md", advice["unmatched_paths"])
+        self.assertEqual(advice["candidates"], [])
+
+    def test_explicit_selection_ranks_before_broad_suite(self):
+        aliases = [
+            item["alias"]
+            for item in wmco.advise(["pkg/services/services.go"])["routine"]
+        ]
+        self.assertLess(aliases.index("proxy"), aliases.index("smokerun"))
+
+
+class AdviseTaggedAliasTests(OfflineTest):
+    def advise_json(self, path):
+        code, output, _ = self.run_cli(["advise", "--path", path, "--json"])
+        self.assertEqual(code, 0)
+        return json.loads(output)
+
+    def advise_text(self, path):
+        code, output, _ = self.run_cli(["advise", "--path", path])
+        self.assertEqual(code, 0)
+        return output
+
+    def test_tag_selected_candidate_is_manual_not_runnable(self):
+        payload = self.advise_json("pkg/storage/storage.go")
+        manual = {item["alias"]: item for item in payload["manual"]}
+        self.assertIn("csi-storage", manual)
+        self.assertFalse(manual["csi-storage"]["runnable"])
+        self.assertIn("selects by tag", manual["csi-storage"]["blocked_reason"])
+        self.assertNotIn("csi-storage", [item["alias"] for item in payload["routine"]])
+
+    def test_text_output_omits_a_plan_command_for_tag_selected_aliases(self):
+        output = self.advise_text("pkg/storage/storage.go")
+        self.assertIn("csi-storage", output)
+        self.assertIn("no runnable plan yet", output)
+        self.assertNotIn("alias-plan csi-storage", output)
+
+    def test_runnable_candidates_still_get_a_plan_command(self):
+        payload = self.advise_json("pkg/services/services.go")
+        routine = {item["alias"]: item for item in payload["routine"]}
+        self.assertTrue(routine["proxy"]["runnable"])
+        self.assertIsNone(routine["proxy"]["blocked_reason"])
+        self.assertIn("alias-plan proxy", self.advise_text("pkg/services/services.go"))
+
+
+class AdvisePathSafetyTests(OfflineTest):
+    def advise_json(self, *paths):
+        args = ["advise", "--json"]
+        for path in paths:
+            args += ["--path", path]
+        code, output, _ = self.run_cli(args)
+        self.assertEqual(code, 0)
+        return json.loads(output)
+
+    def test_dot_directories_are_preserved(self):
+        payload = self.advise_json("./.claude/skills/trigger-ote/SKILL.md")
+        self.assertEqual(payload["paths"], [".claude/skills/trigger-ote/SKILL.md"])
+        self.assertEqual(payload["invalid_paths"], [])
+
+    def test_parent_relative_path_is_flagged_not_reclassified(self):
+        payload = self.advise_json("../pkg/csr/outside.go")
+        self.assertEqual(payload["areas"], [])
+        self.assertEqual(payload["invalid_paths"][0]["reason"], "parent-relative")
+        matched = [
+            area for item in payload["candidates"] for area in item["matched_areas"]
+        ]
+        self.assertNotIn("csr", matched)
+
+    def test_absolute_path_is_flagged(self):
+        payload = self.advise_json("/pkg/services/services.go")
+        self.assertEqual(payload["areas"], [])
+        self.assertEqual(payload["invalid_paths"][0]["reason"], "absolute")
+
+    def test_invalid_source_sha_is_refused(self):
+        code, output, errors = self.run_cli(
+            [
+                "advise",
+                "--path",
+                "pkg/services/services.go",
+                "--source-sha",
+                "abc; rm -rf /",
+            ]
+        )
+        self.assertEqual(code, 2)
+        self.assertNotIn("alias-plan", output)
+        self.assertIn("reviewed full openshift/release commit SHA", errors)
+
+    def test_valid_source_sha_is_used_in_the_command(self):
+        code, output, _ = self.run_cli(
+            ["advise", "--path", "pkg/services/services.go", "--source-sha", "a" * 40]
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("--source-sha " + "a" * 40, output)
+
+
+class CodeRabbitRegressionTests(OfflineTest):
+    def advise_json(self, *paths):
+        args = ["advise", "--json"]
+        for path in paths:
+            args += ["--path", path]
+        code, output, _ = self.run_cli(args)
+        self.assertEqual(code, 0)
+        return json.loads(output)
+
+    def test_two_release_years_in_one_selector_are_ambiguous(self):
+        for value in ("2022/2025", "2022, 2025", "2022 2025"):
+            with self.assertRaises(wmco.SafetyError):
+                wmco.normalize_os(value)
+        self.assertEqual(wmco.normalize_os("ws2022"), "2022")
+
+    def test_trailing_parent_component_is_rejected(self):
+        payload = self.advise_json("pkg/services/..")
+        self.assertEqual(payload["areas"], [])
+        self.assertEqual(payload["invalid_paths"][0]["reason"], "parent-relative")
+        self.assertEqual(
+            self.advise_json("pkg/services/services.go")["invalid_paths"], []
+        )
+
+    def test_bracket_expression_is_rejected(self):
+        self.assertIsNone(wmco.basic_regex("[x-z]proxy\\|\\[tls-adherence\\]"))
+        self.assertIsNotNone(wmco.basic_regex("\\[node-proxy\\]\\|\\[tls-adherence\\]"))
+
+    def test_postsubmit_kind_is_refused(self):
+        with self.assertRaises(wmco.SafetyError) as raised:
+            wmco.resolve_alias(
+                "release-verification",
+                "a" * 40,
+                kind="postsubmit",
+                source=SourceStub(ote_config()),
+            )
+        self.assertIn("Postsubmit discovery is not implemented", str(raised.exception))
+
+
+class RetainedStartTests(OfflineTest):
+    def test_retained_completion_is_checked_against_later_start_evidence(self):
+        state = self.submit()
+        job, row = next(iter(state["jobs"].items()))
+        result = self.results[job]
+        result.update(job_status="SUCCESS", completion_time=FINISHED, job_url="")
+        self.observe(state)
+        self.assertEqual(row["terminal_status"], "SUCCESS")
+        # A later GET supplies a start time after the known completion.
+        result["create_time"] = "2026-11-03T13:00:00Z"
+        result["job_url"] = (
+            "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/"
+            f"{job}/123456"
+        )
+        errors = self.observe(state)
+        self.assertIn("precedes", errors)
+        self.assertNotEqual(row["status"], "SUCCESS")
+
+
+class DuplicateTargetTests(unittest.TestCase):
+    def test_duplicate_ote_targets_are_rejected(self):
+        config = yaml.safe_dump(
+            {
+                "tests": [
+                    {
+                        "as": "aws-ipi-ote",
+                        "steps": {
+                            "env": {
+                                "TEST_SUITE": "windows-machine-config-operator/release-verification",
+                                "WINDOWS_SERVER_VERSION": "2025",
+                            }
+                        },
+                    },
+                    {
+                        "as": "aws-ipi-ote",
+                        "steps": {
+                            "env": {
+                                "TEST_SUITE": "windows-machine-config-operator/release-verification",
+                                "WINDOWS_SERVER_VERSION": "2025",
+                            }
+                        },
+                    },
+                ]
+            }
+        )
+        source = SourceStub(config, ("aws-ipi-ote",))
+        with self.assertRaises(wmco.SafetyError) as raised:
+            wmco.resolve_alias(
+                "release-verification", "a" * 40, source=source, os_name="2025"
+            )
+        self.assertIn("Duplicate OTE job target", str(raised.exception))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 ---
 name: trigger-ote
-description: Resolve a reviewed WMCO OTE coverage alias (release-verification, non-disruptive, smokerun, tls, byoh-lifecycle, proxy, ...) into existing openshift/release jobs, require approval of the exact plan and digest, submit once through the OpenShift Gangway REST API, and monitor the returned execution IDs. Use for /trigger-ote requests such as "trigger non-disruptive on gcp-ipi" or "plan full-regression", or to resume polling recorded executions. Never accept job names, image or payload overrides invented by the caller.
+description: Resolve a reviewed WMCO OTE coverage alias (release-verification, non-disruptive, smokerun, tls, byoh-lifecycle, proxy, ...) into existing openshift/release jobs, require approval of the exact plan and digest, and submit once through the OpenShift Gangway REST API only for ordinary periodic plans. Alias requests stop at the plan and digest until refs support lands. Use for /trigger-ote requests such as "trigger non-disruptive on gcp-ipi" or "plan full-regression", or to resume polling recorded executions. Never accept job names, image or payload overrides invented by the caller.
 ---
 
 # Trigger WMCO QE
@@ -121,6 +121,10 @@ Rules the resolver enforces, and refuses loudly otherwise:
   an explicit alias list is rejected, never widened silently.
 - `--os` accepts `2019`, `2022`, `2025` or human spellings such as
   `Windows Server 2022`; omitting it uses `default_os`. The job must pin it.
+- `jobs` pins an alias to reviewed job targets (`tls` -> `aws-e2e-ote-tls`), so a
+  suite match on a different job is not accepted.
+- `requires_steps` proves the job declares the setup step the suite depends on
+  (`enable-tls-adherence`, `set-wmco-byoh-ote-environment`).
 - `max_platforms` caps the plan (`smokerun` 3, `non-disruptive` 4, `tls` 1,
   `disruptive` 1, `full-regression` 2); `not_for` rejects a trigger kind.
 - `--json` prints only JSON, including `digest` and `warnings`; exit status is 0
@@ -132,6 +136,49 @@ alternatives must be provable from the job's `TEST_SKIPS` expression; the plan
 prints the resulting skip set for approval. Tag-selected aliases (`csi-storage`,
 `multi-os`) resolve only when the job exposes a matching selector; until then the
 plan fails instead of approximating the selection.
+
+## Bug-fix coverage advice
+
+Choosing tests for a bug fix is a reasoning task, not a planning task: read the
+fix diff, map it to WMCO areas, list the existing tests and their tags, then ask
+this skill to prove that a candidate alias actually selects the jobs that run
+them. `references/bug-fix-coverage.md` records the division of labour, the
+area-to-alias index that `aliases --json` exposes through `areas`, and the rule
+that per-bug validation is **not** `release-verification` - that alias is the
+release-path canary for promoted FBC catalogs.
+
+`advise` turns a bug-fix diff into candidates without guessing:
+
+```bash
+python3 "$SKILL_DIR/scripts/trigger_ote.py" advise --json \
+  --path pkg/services/services.go --path pkg/csr/csr.go
+# or a saved list of changed files
+git diff --name-only origin/master... > /tmp/changed.txt
+python3 "$SKILL_DIR/scripts/trigger_ote.py" advise --paths-from /tmp/changed.txt --json
+```
+
+It maps paths to areas through `path_patterns` in the registry, returns the
+aliases whose `areas` overlap, ranks narrow selections before broad suites, lists
+`disruptive`/`full-regression` separately as requiring justification, and prints
+a ready `alias-plan` command per candidate with the alias defaults. Paths that
+match nothing are reported, never guessed; absolute and parent-relative paths are
+flagged as invalid instead of being reinterpreted, and only a literal leading
+`./` is stripped so dot-directories keep their real name. A supplied
+`--source-sha` is validated as a full 40-character SHA before any command text is
+printed. Aliases that cannot be proven from the
+job configuration - currently the tag-selected `csi-storage` and `multi-os` - are
+reported as `manual` with their reason and get no plan command, because printing
+a command that is guaranteed to be refused would be misleading. Feed the chosen command back through
+`alias-plan` for the real digest.
+
+Two consequences worth stating plainly:
+
+- If no existing test can fail on the bug, say that first. A green run of an
+  unrelated suite is worse than an admitted gap, and the proposal for new
+  coverage is the useful output.
+- Planning is implemented; submitting a plan against a fix PR is not. Presubmit
+  execution needs `refs` support, so the workflow currently ends at a recommended
+  alias, a plan-only command and a digest.
 
 ## Submit once and monitor
 

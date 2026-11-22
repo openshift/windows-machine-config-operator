@@ -5,6 +5,7 @@ import argparse
 import contextlib
 import datetime as dt
 import fcntl
+import fnmatch
 import hashlib
 import http.client
 import json
@@ -488,6 +489,7 @@ def new_state(plan):
                 "status": "MISSING",
                 "job_url": "",
                 "completion_time": "",
+                "start_time": "",
                 "terminal_status": "",
             }
             for job in plan["jobs"]
@@ -542,6 +544,7 @@ def load(path):
             "status",
             "job_url",
             "completion_time",
+            "start_time",
             "terminal_status",
         }:
             raise SafetyError("Unsupported job state schema")
@@ -568,12 +571,21 @@ def load(path):
             or row["terminal_status"]
             or row["job_url"]
             or row["completion_time"]
+            or row["start_time"]
         ):
             raise SafetyError("Unsubmitted job has execution evidence")
         if row["job_url"]:
             prow_url(row["job_url"], job)
         if row["completion_time"]:
             timestamp(row["completion_time"])
+        if row["start_time"]:
+            timestamp(row["start_time"])
+        if (
+            row["start_time"]
+            and row["completion_time"]
+            and timestamp(row["completion_time"]) < timestamp(row["start_time"])
+        ):
+            raise SafetyError("Completion precedes execution start in state")
         if row["terminal_status"] not in TERMINAL | {""}:
             raise SafetyError("Unknown terminal evidence")
         if row["status"] == "SUCCESS" and (
@@ -635,6 +647,15 @@ def observe(state, path, client):
             status, url = result["job_status"], result.get("job_url", "")
             completion = result.get("completion_time", "")
             finished = timestamp(completion) if completion else None
+            started = (
+                timestamp(result["create_time"]) if result.get("create_time") else None
+            )
+            if started is None and row["start_time"]:
+                started = timestamp(row["start_time"])
+            if finished is None and row["completion_time"]:
+                finished = timestamp(row["completion_time"])
+            if finished is not None and started is not None and finished < started:
+                raise SafetyError("Completion precedes execution start")
             if row["job_url"] and url and url != row["job_url"]:
                 raise EvidenceConflict("conflicting Prow run identity")
             if row["terminal_status"] and status != row["terminal_status"]:
@@ -645,16 +666,12 @@ def observe(state, path, client):
                 and completion != row["completion_time"]
             ):
                 raise EvidenceConflict("Conflicting completion timestamp")
-            if (
-                finished is not None
-                and result.get("create_time")
-                and finished < timestamp(result["create_time"])
-            ):
-                raise SafetyError("Completion precedes execution start")
             if status not in TERMINAL and completion:
                 raise SafetyError("Nonterminal execution has a completion timestamp")
             # Evidence is applied only after the whole response validates, and
             # absent refresh evidence never erases previously proven evidence.
+            if started is not None:
+                row["start_time"] = result.get("create_time") or row["start_time"]
             row["job_url"] = url or row["job_url"]
             if status in TERMINAL:
                 # Terminal identity is pinned immediately; missing completion
@@ -782,6 +799,19 @@ def main(argv=None):
         choices=["presubmit", "periodic", "postsubmit"],
         help="trigger kind the alias must be valid for",
     )
+    advise_command = commands.add_parser(
+        "advise", help="map changed files to candidate aliases and plan commands"
+    )
+    advise_command.add_argument(
+        "--path", action="append", default=[], help="repo-relative changed file"
+    )
+    advise_command.add_argument(
+        "--paths-from",
+        default=None,
+        help="file with one changed path per line, or - for stdin",
+    )
+    advise_command.add_argument("--source-sha", default=None)
+    advise_command.add_argument("--json", action="store_true")
     catalogue_command = commands.add_parser(
         "aliases", help="print the reviewed alias catalogue"
     )
@@ -790,6 +820,63 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     try:
+        if args.action == "advise":
+            paths = list(args.path)
+            if args.paths_from:
+                if args.paths_from == "-":
+                    paths += sys.stdin.read().splitlines()
+                else:
+                    paths += Path(args.paths_from).read_text().splitlines()
+            advice = advise(paths)
+            if args.json:
+                print(json.dumps(advice, indent=2, sort_keys=True))
+                return 0
+            print(f"areas: {', '.join(advice['areas']) or 'none'}")
+            for warning in advice["warnings"]:
+                print(f"warning: {warning}", file=sys.stderr)
+            if advice["invalid_paths"]:
+                for item in advice["invalid_paths"]:
+                    print(
+                        f"invalid: {item['path']} ({item['reason']}; "
+                        "pass a repository-relative path)",
+                        file=sys.stderr,
+                    )
+            if advice["unmatched_paths"]:
+                print(
+                    "unmatched: " + ", ".join(advice["unmatched_paths"]),
+                    file=sys.stderr,
+                )
+            if args.source_sha is not None and not re.fullmatch(
+                r"[0-9a-f]{40}", args.source_sha
+            ):
+                raise SafetyError(
+                    "Source must be a reviewed full openshift/release commit SHA"
+                )
+            sha = args.source_sha or "<reviewed-release-sha>"
+            for candidate in advice["routine"]:
+                platforms = " ".join(
+                    f"--platform {value}" for value in candidate["default_platforms"]
+                )
+                print(
+                    f"\n{candidate['alias']}: {candidate['intent']}\n"
+                    f"  matched: {', '.join(candidate['matched_areas'])}\n"
+                    f"  plan:    python3 trigger_ote.py alias-plan "
+                    f"{candidate['alias']} --source-sha {sha} "
+                    f"--os {candidate['default_os'] or '2025'} {platforms} --json"
+                )
+            for candidate in advice["manual"]:
+                print(
+                    f"\n{candidate['alias']}: {candidate['intent']}\n"
+                    f"  matched: {', '.join(candidate['matched_areas'])}\n"
+                    f"  manual:  {candidate['blocked_reason']}; no runnable plan yet"
+                )
+            if advice["escalation"]:
+                print(
+                    "\nneeds a written justification before use: "
+                    + ", ".join(item["alias"] for item in advice["escalation"])
+                )
+            print(f"\n{advice['reminder']}")
+            return 0
         if args.action == "aliases":
             catalogue = alias_catalogue()
             print(json.dumps(catalogue, indent=2, sort_keys=True))
@@ -885,7 +972,7 @@ def normalize_os(value):
     text = str(value).strip().lower()
     if text == "mixed":
         return "mixed"
-    years = re.findall(r"(?:^|[^0-9])(2019|2022|2025)(?:[^0-9]|$)", text)
+    years = re.findall(r"(?<![0-9])(2019|2022|2025)(?![0-9])", text)
     if len(set(years)) != 1:
         raise SafetyError(
             f"Unsupported Windows Server version {value!r}; use 2019, 2022 or 2025"
@@ -942,9 +1029,138 @@ def alias_catalogue():
             "max_platforms": entry.get("max_platforms"),
             "requires_skips": entry.get("requires_skips") or [],
             "requires_steps": entry.get("requires_steps") or [],
+            "jobs": entry.get("jobs") or [],
+            "areas": entry.get("areas") or [],
             "intent": entry.get("intent"),
         }
     return {"version": registry["version"], "aliases": catalogue}
+
+
+def normalize_repo_path(value):
+    """Repository-relative path, preserving dot-directories.
+
+    Only a literal leading "./" is removed. Absolute and parent-relative input is
+    reported instead of being silently reinterpreted.
+    """
+    text = value.strip()
+    if not text:
+        return None, "empty"
+    if text.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", text):
+        return text, "absolute"
+    while text.startswith("./"):
+        text = text[2:]
+    if any(part == ".." for part in text.split("/")):
+        return text, "parent-relative"
+    return text, None
+
+
+def diff_areas(paths):
+    """Areas touched by repo-relative paths, plus paths nothing matched."""
+    registry = load_aliases()
+    patterns = registry.get("path_patterns") or {}
+    areas, unmatched = set(), []
+    for path in paths:
+        normalized, problem = normalize_repo_path(path)
+        if problem or normalized is None:
+            continue
+        hits = {
+            area
+            for area, globs in patterns.items()
+            if any(
+                fnmatch.fnmatch(normalized, pattern)
+                or fnmatch.fnmatch("/" + normalized, pattern)
+                for pattern in globs
+            )
+        }
+        if hits:
+            areas.update(hits)
+        else:
+            unmatched.append(normalized)
+    return areas, unmatched
+
+
+def advise(paths, alias_source=None):
+    """Candidate aliases for a bug-fix diff, with the questions to ask a human."""
+    registry = load_aliases()
+    normalized_paths, invalid_paths = [], []
+    for path in paths:
+        normalized, problem = normalize_repo_path(path)
+        if normalized is None:
+            continue
+        if problem:
+            invalid_paths.append({"path": path.strip(), "reason": problem})
+        else:
+            normalized_paths.append(normalized)
+    areas, unmatched = diff_areas(normalized_paths)
+    candidates = []
+    for name, entry in sorted(registry["aliases"].items()):
+        overlap = sorted(areas.intersection(entry.get("areas") or []))
+        if not overlap:
+            continue
+        tags = entry.get("tags") or []
+        candidates.append(
+            {
+                "alias": name,
+                "runnable": not tags,
+                "blocked_reason": (
+                    "selects by tag, which the pinned job configuration cannot prove"
+                    if tags
+                    else None
+                ),
+                "matched_areas": overlap,
+                "suite": entry.get("suite"),
+                "tags": entry.get("tags") or [],
+                "jobs": entry.get("jobs") or [],
+                "platforms": entry.get("platforms") or [],
+                "default_platforms": entry.get("default_platforms") or [],
+                "os": entry.get("os") or [],
+                "default_os": entry.get("default_os"),
+                "max_platforms": entry.get("max_platforms"),
+                "kinds": entry.get("kinds") or [],
+                "not_for": entry.get("not_for") or [],
+                "requires_skips": entry.get("requires_skips") or [],
+                "requires_steps": entry.get("requires_steps") or [],
+                "intent": entry.get("intent"),
+            }
+        )
+    escalation = {"disruptive", "full-regression"}
+    manual = [
+        c for c in candidates if not c["runnable"] and c["alias"] not in escalation
+    ]
+    routine = [c for c in candidates if c["runnable"] and c["alias"] not in escalation]
+    heavy = [c for c in candidates if c["alias"] in escalation]
+
+    def rank(candidate):
+        # Prefer narrow, explicit selections over broad "any platform" suites.
+        explicit_platforms = isinstance(candidate["platforms"], list)
+        return (
+            0 if candidate["jobs"] else 1,
+            0 if explicit_platforms else 1,
+            len(candidate["matched_areas"]),
+            candidate["alias"],
+        )
+
+    routine.sort(key=rank)
+    return {
+        "paths": normalized_paths,
+        "invalid_paths": invalid_paths,
+        "areas": sorted(areas),
+        "unmatched_paths": unmatched,
+        "candidates": routine + heavy,
+        "routine": routine,
+        "manual": manual,
+        "escalation": heavy,
+        "warnings": (
+            ["no area matched these paths; ask which module the fix touches"]
+            if paths and not areas
+            else []
+        ),
+        "reminder": (
+            "Per-bug validation is not release-verification: that alias is the "
+            "release-path canary for promoted FBC catalogs. Planning is "
+            "implemented; submitting a plan against a fix PR still needs refs support."
+        ),
+    }
 
 
 def alias_platform(name):
@@ -1001,10 +1217,14 @@ def ote_jobs(source):
     names, prefixes = existing_job_names(source, discovery)
     repo = discovery["repository"].replace("/", "-")
     jobs = {}
+    seen_targets = set()
     for test in config.get("tests") or []:
         target = test.get("as")
         if not isinstance(target, str):
             raise SafetyError("Malformed OTE job name")
+        if target in seen_targets:
+            raise SafetyError(f"Duplicate OTE job target {target} in configuration")
+        seen_targets.add(target)
         steps = test.get("steps") or {}
         env = steps.get("env") or {}
         declared_steps = [
@@ -1019,6 +1239,9 @@ def ote_jobs(source):
             matches = [name for name in names[kind] if name == job_name]
             if len(matches) != 1:
                 continue
+            platform = alias_platform(job_name)
+            if platform is None:
+                continue
             jobs[matches[0]] = {
                 "name": matches[0],
                 "kind": kind,
@@ -1026,7 +1249,7 @@ def ote_jobs(source):
                 "suite": env.get("TEST_SUITE"),
                 "os": next((env[key] for key in OS_ENV if key in env), None),
                 "skips": env.get("TEST_SKIPS") or "",
-                "platform": alias_platform(job_name),
+                "platform": platform,
                 "steps": declared_steps,
             }
     return jobs
@@ -1056,9 +1279,7 @@ def basic_regex(expression):
                 pattern.append(re.escape(escaped))
             else:
                 return None
-        elif char in "[]":
-            pattern.append(char)
-        elif char in ".^$*+?(){}":
+        elif char in "[]" or char in ".^$*+?(){}":
             return None
         else:
             pattern.append(re.escape(char))
@@ -1089,6 +1310,10 @@ def resolve_alias(
     entry = registry["aliases"].get(name)
     if entry is None:
         raise SafetyError(f"Unknown alias {name}; add it to the reviewed registry")
+    if kind == "postsubmit":
+        raise SafetyError(
+            "Postsubmit discovery is not implemented; use kind presubmit or periodic"
+        )
     if kind in (entry.get("not_for") or []):
         raise SafetyError(f"Alias {name} is not allowed for {kind} triggers")
     if kind not in (entry.get("kinds") or [kind]):
@@ -1107,6 +1332,7 @@ def resolve_alias(
     wanted_os = normalize_os(os_name or entry.get("default_os") or allowed_os[0])
     if str(wanted_os) not in allowed_os:
         raise SafetyError(f"Alias {name} supports OS {allowed_os}, not {wanted_os}")
+    pinned_jobs = entry.get("jobs") or []
     allowed = entry.get("platforms")
     if allowed == "any":
         allowed = None
@@ -1122,6 +1348,8 @@ def resolve_alias(
     for job in ote_jobs(source).values():
         if job["kind"] != kind or job["suite"] != entry["suite"]:
             continue
+        if pinned_jobs and job["target"] not in pinned_jobs:
+            continue
         if isinstance(allowed, list) and job["platform"] not in allowed:
             continue
         if platforms and job["platform"] not in platforms:
@@ -1130,9 +1358,10 @@ def resolve_alias(
             continue
         selected.append(job)
     if not selected:
+        pinned = f" and target {pinned_jobs}" if pinned_jobs else ""
         raise SafetyError(
             f"Alias {name} resolved no existing {kind} job that pins suite "
-            f"{entry['suite']} and OS {wanted_os}"
+            f"{entry['suite']} and OS {wanted_os}{pinned}"
         )
     required_steps = entry.get("requires_steps") or []
     for job in selected:
