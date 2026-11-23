@@ -29,6 +29,9 @@ import (
 
 const tlsAdherenceResourcePool = "wmco-tls-adherence"
 
+// platformTagPattern matches the [platform:<name>] tags that limit a test to one or more clouds.
+var platformTagPattern = regexp.MustCompile(`\[platform:([a-z]+)\]`)
+
 func main() {
 	util.InitStandardFlags()
 	framework.AfterReadingAllFlags(&framework.TestContext)
@@ -67,14 +70,18 @@ func main() {
 	componentSpecs.Walk(func(spec *et.ExtensionTestSpec) {
 		for label := range spec.Labels {
 			if strings.HasPrefix(label, "Platform:") {
-				platformName := strings.TrimPrefix(label, "Platform:")
-				spec.Include(et.PlatformEquals(platformName))
+				spec.Include(et.PlatformEquals(strings.TrimPrefix(label, "Platform:")))
 			}
 		}
-		re := regexp.MustCompile(`\[platform:([a-z]+)\]`)
-		if match := re.FindStringSubmatch(spec.Name); match != nil {
+		// A test may name several [platform:x] tags to run on any of them, so every match is
+		// added as an alternative instead of narrowing the test to the last tag.
+		for _, match := range platformTagPattern.FindAllStringSubmatch(spec.Name, -1) {
 			spec.Include(et.PlatformEquals(match[1]))
 		}
+		// Disconnected-only tests carry the OTP "DisconnectedOnly" name tag and are selected the
+		// same way as "ConnectedOnly" tests: by the jobs' suite and TEST_SKIPS. No WMCO job passes
+		// --external-connectivity, so an environment selector here would silently drop the test
+		// from the one job that should run it.
 		spec.Lifecycle = et.LifecycleBlocking
 		if strings.Contains(spec.Name, "[tls-adherence]") {
 			if spec.Resources.ResourcePools == nil {
