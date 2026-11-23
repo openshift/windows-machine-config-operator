@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	ignCfg "github.com/coreos/ignition/v2/config/v3_5"
-	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_5/types"
+	ignCfg "github.com/coreos/ignition/v2/config/v3_6"
+	ignCfgTypes "github.com/coreos/ignition/v2/config/v3_6/types"
 	mcfg "github.com/openshift/api/machineconfiguration/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
