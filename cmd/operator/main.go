@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftconfig "github.com/openshift/api/config/v1"
@@ -19,12 +20,16 @@ import (
 	monv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/spf13/pflag"
 	"go.uber.org/zap/zapcore"
+	certificatesv1 "k8s.io/api/certificates/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -67,6 +72,23 @@ func init() {
 	utilruntime.Must(openshiftconfig.AddToScheme(scheme))
 	utilruntime.Must(monv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
+}
+
+// csrResyncPeriod is the interval at which the caches re-deliver CertificateSigningRequests to the controllers,
+// regardless of watch events. WICD renews its certificate at 80% of its lifetime (windows.WICDCertDuration is 1h),
+// so a CSR whose event never reached the controller must be re-evaluated well within the remaining 12 minutes,
+// otherwise the certificate expires and the node loses access to the API server. See OCPBUGS-133462.
+const csrResyncPeriod = 5 * time.Minute
+
+// newCacheOptions returns the cache configuration for the manager. Only CertificateSigningRequests are given a
+// resync period shorter than the controller-runtime default of 10 hours, as the CSR controllers are purely
+// event-driven and a pending CSR is otherwise not reconciled again until the operator restarts.
+func newCacheOptions() cache.Options {
+	return cache.Options{
+		ByObject: map[client.Object]cache.ByObject{
+			&certificatesv1.CertificateSigningRequest{}: {SyncPeriod: ptr.To(csrResyncPeriod)},
+		},
+	}
 }
 
 func main() {
@@ -214,6 +236,7 @@ func main() {
 	//       cache type.
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
+		Cache:  newCacheOptions(),
 		Metrics: metricsserver.Options{
 			BindAddress:    metricsAddr,
 			SecureServing:  true,
