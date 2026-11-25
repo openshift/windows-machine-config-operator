@@ -84,7 +84,10 @@ func newSshConnectivity(ctx context.Context, c client.Client, nodeName, username
 	return conn, nil
 }
 
-// init initialises the key based SSH client
+// init initialises the key based SSH client.
+// The provided context bounds all connection attempts: if the context is
+// cancelled or its deadline expires, the current TCP dial is interrupted and
+// no further retries are made.
 func (c *sshConnectivity) init(ctx context.Context) error {
 	var missingFields []string
 	if c.username == "" {
@@ -119,33 +122,83 @@ func (c *sshConnectivity) init(ctx context.Context) error {
 	// user-data scripts to complete SSH configuration on newly provisioned VMs
 	authRetryTimeout := 5 * time.Minute
 
-	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data
-	err = wait.PollImmediate(time.Minute, retry.Timeout, func() (bool, error) {
-		sshClient, err = ssh.Dial("tcp", c.ipAddress+":"+sshPort, config)
-		if err == nil {
-			return true, nil
-		}
-		c.log.V(1).Info("SSH dial", "IP Address", c.ipAddress, "error", err)
-		if strings.Contains(err.Error(), "unable to authenticate") {
-			// Retry authentication failure as the VM's user-data script may still be configuring SSH.
-			elapsed := time.Since(startTime)
-			if elapsed < authRetryTimeout {
-				c.log.V(1).Info("authentication failed, retrying as VM may still be executing user-data script",
-					"elapsed", elapsed, "timeout", authRetryTimeout)
-				return false, nil
+	addr := c.ipAddress + ":" + sshPort
+	// Retry if we are unable to create a client as the VM could still be executing the steps in its user data.
+	// PollUntilContextTimeout respects ctx cancellation so callers can bound connection setup.
+	err = wait.PollUntilContextTimeout(ctx, time.Minute, retry.Timeout, true, func(ctx context.Context) (bool, error) {
+		// Use a context-aware dialer so each TCP dial is cancelled when ctx expires.
+		dialer := &net.Dialer{}
+		netConn, dialErr := dialer.DialContext(ctx, "tcp", addr)
+		if dialErr != nil {
+			c.log.V(1).Info("SSH dial", "IP Address", c.ipAddress, "error", dialErr)
+			// When the context has expired the dial error wraps the context
+			// error; surface it so the caller sees the cancellation reason.
+			if ctx.Err() != nil {
+				return false, ctx.Err()
 			}
-			return false, newAuthErr(err)
+			return false, nil
 		}
-		return false, nil
+		// Perform the SSH handshake over the already-connected TCP socket.
+		// Run in a goroutine so the context can interrupt a stalled handshake
+		// (ssh.NewClientConn blocks on the network and does not accept a context).
+		type handshakeResult struct {
+			conn  ssh.Conn
+			chans <-chan ssh.NewChannel
+			reqs  <-chan *ssh.Request
+			err   error
+		}
+		resultCh := make(chan handshakeResult, 1)
+		go func() {
+			sshConn, chans, reqs, sshErr := ssh.NewClientConn(netConn, addr, config)
+			resultCh <- handshakeResult{sshConn, chans, reqs, sshErr}
+		}()
+
+		var hsResult handshakeResult
+		select {
+		case hsResult = <-resultCh:
+			// Handshake completed (success or failure) before context expired.
+		case <-ctx.Done():
+			// Context expired during handshake — close the TCP connection to
+			// unblock ssh.NewClientConn, then drain the goroutine result.
+			c.log.V(3).Info("closing TCP connection to interrupt SSH handshake due to context cancellation",
+				"address", c.ipAddress, "reason", ctx.Err())
+			_ = netConn.Close()
+			<-resultCh
+			return false, ctx.Err()
+		}
+
+		if hsResult.err != nil {
+			// Close the raw connection on handshake failure.
+			_ = netConn.Close()
+			c.log.V(1).Info("SSH handshake", "IP Address", c.ipAddress, "error", hsResult.err)
+			if strings.Contains(hsResult.err.Error(), "unable to authenticate") {
+				// Retry authentication failure as the VM's user-data script may still be configuring SSH.
+				elapsed := time.Since(startTime)
+				if elapsed < authRetryTimeout {
+					c.log.V(1).Info("authentication failed, retrying as VM may still be executing user-data script",
+						"elapsed", elapsed, "timeout", authRetryTimeout)
+					return false, nil
+				}
+				return false, newAuthErr(hsResult.err)
+			}
+			return false, nil
+		}
+		sshClient = ssh.NewClient(hsResult.conn, hsResult.chans, hsResult.reqs)
+		return true, nil
 	})
 	if err != nil {
+		// Provide actionable context for context-cancellation errors so
+		// operators can distinguish reconciliation timeouts from network issues.
+		if ctx.Err() != nil {
+			return fmt.Errorf("SSH connection to Windows VM %s was interrupted by context cancellation (%w); check operator logs for reconciliation timeout or shutdown", c.ipAddress, err)
+		}
 		return fmt.Errorf("unable to connect to Windows VM %s: %w", c.ipAddress, err)
 	}
 	c.sshClient = sshClient
 
 	if err := c.hostKeyValidator.PersistSeenKey(ctx); err != nil {
 		if closeErr := c.sshClient.Close(); closeErr != nil {
-			return fmt.Errorf("failed to persist SSH host key: %w (SSH close error: %v)", err, closeErr)
+			return fmt.Errorf("failed to persist SSH host key: %w (SSH close error: %w)", err, closeErr)
 		}
 		return fmt.Errorf("failed to persist SSH host key: %w", err)
 	}

@@ -295,7 +295,17 @@ func (r *WindowsMachineReconciler) Reconcile(ctx context.Context,
 				return ctrl.Result{}, r.deleteMachine(ctx, machine)
 			}
 			if node.Annotations[metadata.VersionAnnotation] == version.Get() {
-				// version annotation exists with a valid value, node is fully configured.
+				// Node is version-current; reconcile the webconfig SHA in case
+				// the TLS profile changed since the node was last configured.
+				if err := r.ensureWebConfigForNode(ctx, *node); err != nil {
+					// Webconfig push failure is best-effort: the node remains
+					// fully operational with stale TLS settings on the exporter.
+					// The SHA annotation is only updated on successful push, so
+					// the outdatedWindowsNodePredicate will trigger a retry.
+					r.log.Error(err, "failed to push webconfig update, will retry on next reconcile",
+						"node", node.Name)
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, nil
 			}
 		}

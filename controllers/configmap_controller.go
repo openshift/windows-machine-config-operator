@@ -188,11 +188,29 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context,
 		return ctrl.Result{}, r.reconcileServices(ctx, configMap)
 	case wiparser.InstanceConfigMap:
 		err := r.reconcileNodes(ctx, configMap)
+		if err == nil {
+			return ctrl.Result{}, nil
+		}
 		var upgradeErr *UpgradeLimitExceededError
 		if !errors.As(err, &upgradeErr) {
 			return ctrl.Result{}, err
 		}
+		// When errors.Join combines an UpgradeLimitExceededError with
+		// other failures (e.g. SSH errors), errors.As matches the
+		// upgrade-limit error but the other errors would be silently
+		// swallowed. Extract non-upgrade-limit errors and return them
+		// so the controller surfaces real failures.
 		r.log.Info(upgradeErr.Error())
+		var remainingErrs []error
+		for _, e := range unwrapJoined(err) {
+			var ule *UpgradeLimitExceededError
+			if !errors.As(e, &ule) {
+				remainingErrs = append(remainingErrs, e)
+			}
+		}
+		if len(remainingErrs) > 0 {
+			return ctrl.Result{Requeue: true}, errors.Join(remainingErrs...)
+		}
 		return ctrl.Result{Requeue: true}, nil
 	case certificates.ProxyCertsConfigMap:
 		return ctrl.Result{}, r.reconcileProxyCerts(ctx, configMap)
@@ -292,21 +310,32 @@ func (r *ConfigMapReconciler) reconcileNodes(ctx context.Context, windowsInstanc
 	}
 
 	r.log.Info("processing", "instances in", wiparser.InstanceConfigMap)
-	// For each instance, ensure that it is configured into a node
-	if err := r.ensureInstancesAreUpToDate(ctx, instances); err != nil {
-		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", "%s", err.Error())
-		return err
+	// For each instance, ensure that it is configured into a node.
+	// Per-node failures are collected but do not prevent cleanup of removed instances.
+	updateErr := r.ensureInstancesAreUpToDate(ctx, instances)
+	if updateErr != nil {
+		r.recorder.Eventf(windowsInstances, core.EventTypeWarning, "InstanceSetupFailure", "%s", updateErr.Error())
 	}
 
-	// Ensure that only instances currently specified by the ConfigMap are joined to the cluster as nodes
+	// Ensure that only instances currently specified by the ConfigMap are joined to the cluster as nodes.
+	// This must run even when some instance updates failed, otherwise removed instances will never be
+	// deconfigured if a peer node is unreachable.
+	//
+	// SAFETY: deconfigureInstances only removes nodes whose addresses are NOT in
+	// the instances list (parsed from the ConfigMap). An instance that failed to
+	// update but IS still in the ConfigMap will NOT be deconfigured — the
+	// hasAssociatedInstance check is based on ConfigMap membership, not update success.
 	if err = r.deconfigureInstances(ctx, instances, nodes); err != nil {
-		return fmt.Errorf("error removing undesired nodes from cluster: %w", err)
+		return errors.Join(updateErr, fmt.Errorf("error removing undesired nodes from cluster: %w", err))
 	}
 
-	return nil
+	return updateErr
 }
 
-// ensureInstancesAreUpToDate configures all instances that require configuration
+// ensureInstancesAreUpToDate configures all instances that require configuration.
+// Per-node failures are logged and collected so that remaining instances are still
+// processed. This prevents an unreachable node from blocking the rest of the
+// reconcile loop and subsequent cleanup of removed instances.
 func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(ctx context.Context, instances []*instance.Info) error {
 	// Get private key to encrypt instance usernames
 	privateKeyBytes, err := secrets.GetPrivateKey(ctx, kubeTypes.NamespacedName{Namespace: r.watchNamespace,
@@ -316,41 +345,56 @@ func (r *ConfigMapReconciler) ensureInstancesAreUpToDate(ctx context.Context, in
 	}
 	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
 		Namespace: r.watchNamespace}}
+	var errs []error
 	for _, instanceInfo := range instances {
 		// When platform type is none or Nutanix, kubelet will pick a random interface to use for the Node's IP. In that case we
 		// should override that with the IP that the user is providing via the ConfigMap.
 		instanceInfo.SetNodeIP = r.platform == oconfig.NonePlatformType || r.platform == oconfig.NutanixPlatformType
 		encryptedUsername, err := crypto.EncryptToJSONString(instanceInfo.Username, privateKeyBytes)
 		if err != nil {
-			return fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err)
+			errs = append(errs, fmt.Errorf("unable to encrypt username for instance %s: %w", instanceInfo.Address, err))
+			continue
 		}
 		err = r.ensureInstanceIsUpToDate(ctx, instanceInfo, map[string]string{BYOHLabel: "true", nodeconfig.WorkerLabel: ""},
 			map[string]string{UsernameAnnotation: encryptedUsername})
 		if err != nil {
-			// It is better to return early like this, instead of trying to configure as many instances as possible in a
-			// single reconcile call, as it simplifies error collection. The order the map is read from is
-			// psuedo-random, so the configuration effort for configurable hosts will not be blocked by a specific host
-			// that has issues with configuration.
-			return fmt.Errorf("error configuring host with address %s: %w", instanceInfo.Address, err)
+			r.log.Error(err, "error configuring host, will continue with remaining instances",
+				"address", instanceInfo.Address)
+			errs = append(errs, fmt.Errorf("error configuring host with address %s: %w", instanceInfo.Address, err))
+			continue
 		}
 		r.recorder.Eventf(windowsInstances, core.EventTypeNormal, "InstanceSetup",
 			"Configured instance with address %s as a worker node", instanceInfo.Address)
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
-// deconfigureInstances removes all BYOH nodes that are not specified in the given instances slice, and
-// deconfigures the instances associated with them. The nodes parameter should be a list of all Windows BYOH nodes.
+// deconfigureInstances removes BYOH nodes whose addresses are NOT in the
+// desired instances list (parsed from the windows-instances ConfigMap).
+//
+// SAFETY INVARIANT: An instance that failed to update but IS still listed in
+// the ConfigMap is NOT deconfigured. The hasAssociatedInstance check is based
+// solely on ConfigMap membership (address matching), not on whether the
+// instance was successfully configured or updated. This ensures that a
+// temporary failure (e.g. SSH timeout, unreachable node) does not cause a
+// healthy node to be removed from the cluster.
+//
+// Only instances whose addresses have been removed from the ConfigMap by the
+// administrator are deconfigured here. The nodes parameter should be a list
+// of all Windows BYOH nodes.
 func (r *ConfigMapReconciler) deconfigureInstances(ctx context.Context, instances []*instance.Info, nodes *core.NodeList) error {
 	windowsInstances := &core.ConfigMap{ObjectMeta: meta.ObjectMeta{Name: wiparser.InstanceConfigMap,
 		Namespace: r.watchNamespace}}
 	for _, node := range nodes.Items {
-		// Check for instances associated with this node
+		// Check for instances associated with this node based on ConfigMap membership.
+		// Nodes that are still in the ConfigMap are always preserved, regardless of
+		// whether their most recent update succeeded or failed.
 		if hasAssociatedInstance(node.Status.Addresses, instances) {
 			continue
 		}
 
-		// no instance found in the provided list, remove the node from the cluster
+		// No instance found in the ConfigMap for this node — the administrator
+		// removed it, so deconfigure and delete the node from the cluster.
 		if err := r.deconfigureInstance(ctx, &node); err != nil {
 			return fmt.Errorf("unable to deconfigure instance with node %s: %w", node.GetName(), err)
 		}
@@ -743,4 +787,23 @@ func generateServicesManifest(ctx context.Context, client client.Client, port st
 		return nil, fmt.Errorf("error generating expected Windows service state: %w", err)
 	}
 	return svcData, nil
+}
+
+// unwrapJoined recursively extracts individual errors from a joined error
+// (errors.Join). Nested joins are flattened so that every leaf error is
+// returned, preventing errors.As from matching an UpgradeLimitExceededError
+// buried inside an inner join and discarding sibling real failures.
+func unwrapJoined(err error) []error {
+	type joinedError interface {
+		Unwrap() []error
+	}
+	je, ok := err.(joinedError)
+	if !ok {
+		return []error{err}
+	}
+	var result []error
+	for _, inner := range je.Unwrap() {
+		result = append(result, unwrapJoined(inner)...)
+	}
+	return result
 }

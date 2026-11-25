@@ -233,7 +233,7 @@ func getFilesToTransfer(platform *config.PlatformType) map[string]string {
 		payload.ContainerdPath:                 ContainerdDir,
 		payload.HcsshimPath:                    ContainerdDir,
 		payload.ContainerdConfPath:             ContainerdDir,
-		payload.TLSConfPath:                    TLSDir,
+		payload.WindowsExporterWebConfigPath:   TLSDir,
 		payload.NetworkConfigurationScript:     remoteDir,
 	}
 
@@ -270,6 +270,8 @@ type Windows interface {
 	// to the Windows VM if it is not present or if it has the incorrect contents. The remote directory is created if it
 	// does not exist.
 	EnsureFile(*payload.CompressedFileInfo, string) error
+	// EnsureFileWithContext closes this instance's connection if the context expires during EnsureFile.
+	EnsureFileWithContext(context.Context, *payload.CompressedFileInfo, string) error
 	// EnsureFileContent ensures the given filename and content exists within the specified directory on the Windows VM.
 	// The content will be copied to the Windows VM if the file is not present or has incorrect contents. The remote
 	// directory is created if it does not exist.
@@ -432,6 +434,29 @@ func (vm *windows) EnsureFileContent(contents []byte, filename string, remoteDir
 	return nil
 }
 
+func (vm *windows) EnsureFileWithContext(ctx context.Context, file *payload.CompressedFileInfo, remoteDir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	closed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		defer close(closed)
+		if err := vm.Close(); err != nil {
+			vm.log.Error(err, "error closing canceled file transfer connection")
+		}
+	})
+	defer func() {
+		if !stop() {
+			<-closed
+		}
+	}()
+	err := vm.EnsureFile(file, remoteDir)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
+}
+
 func (vm *windows) EnsureFile(file *payload.CompressedFileInfo, remoteDir string) error {
 	// Only copy the file to the Windows VM if it does not already exist wth the desired content
 	compressedFileName := filepath.Base(file.Path)
@@ -503,6 +528,110 @@ func (vm *windows) FileExists(path, checksum string) (bool, error) {
 func (vm *windows) ReplaceDir(files map[string][]byte, remoteDir string) error {
 	vm.log.V(1).Info("overwriting", "remote destination dir", remoteDir, "number of files", len(files))
 
+	// Fast path: skip the overwrite entirely when every file already has the
+	// expected content. This avoids the window where files are temporarily
+	// absent (which can crash services that read them, e.g. the
+	// windows-exporter reading TLS certs via GetConfigForClient).
+	if vm.allFilesMatch(files, remoteDir) {
+		vm.log.V(1).Info("all files already match, skipping overwrite", "remote dir", remoteDir)
+		return nil
+	}
+
+	// Files differ — use an atomic-rename pattern to minimise the window
+	// during which the directory contents are absent. Write new files to a
+	// staging directory, rename the old dir out of the way, rename the
+	// staging dir into place, then remove the old dir. Directory renames on
+	// Windows are not fully atomic but reduce the gap from multiple SSH
+	// round-trips (seconds) to a single rename (microseconds).
+	if err := vm.replaceDirAtomic(files, remoteDir); err != nil {
+		vm.log.V(1).Info("atomic replace failed, falling back to destructive replace",
+			"remote dir", remoteDir, "error", err)
+		return vm.replaceDirDestructive(files, remoteDir)
+	}
+	return nil
+}
+
+// allFilesMatch returns true if every file in the map already exists on the
+// remote VM at remoteDir with matching SHA256 content. Returns false on any
+// error or mismatch so the caller proceeds with the overwrite.
+func (vm *windows) allFilesMatch(files map[string][]byte, remoteDir string) bool {
+	for name, content := range files {
+		remotePath := remoteDir + "\\" + name
+		checksum := fmt.Sprintf("%x", sha256.Sum256(content))
+		exists, err := vm.FileExists(remotePath, checksum)
+		if err != nil || !exists {
+			return false
+		}
+	}
+	return true
+}
+
+// replaceDirAtomic writes files to a staging directory, then renames
+// old → old.bak, staging → target, and removes old.bak. This keeps the
+// target directory present (with either old or new content) at all times,
+// preventing services from seeing a missing cert/key file.
+func (vm *windows) replaceDirAtomic(files map[string][]byte, remoteDir string) error {
+	stagingDir := remoteDir + ".new"
+	backupDir := remoteDir + ".old"
+
+	// Clean up any leftover staging/backup dirs from a prior failed attempt
+	for _, d := range []string{stagingDir, backupDir} {
+		if out, err := vm.Run(rmDirCmd(d), true); err != nil {
+			return fmt.Errorf("unable to remove leftover dir %s, out: %s: %w", d, out, err)
+		}
+	}
+
+	// Create staging dir and write new files into it
+	if out, err := vm.Run(mkdirCmd(stagingDir), false); err != nil {
+		return fmt.Errorf("unable to create staging dir %s, out: %s: %w", stagingDir, out, err)
+	}
+	sftpClient, err := vm.interact.createSFTPClient()
+	if err != nil {
+		return fmt.Errorf("failed to create SFTP client: %w", err)
+	}
+	defer func() {
+		if err := sftpClient.Close(); err != nil {
+			vm.log.Error(err, "error closing SFTP connection")
+		}
+	}()
+	if err := vm.interact.transferFiles(sftpClient, files, stagingDir); err != nil {
+		// Clean up staging dir on failure
+		_, _ = vm.Run(rmDirCmd(stagingDir), true)
+		return fmt.Errorf("unable to transfer files to staging dir: %w", err)
+	}
+
+	// Rename: target → backup (may not exist on first bootstrap)
+	renameCmd := fmt.Sprintf(
+		"if (Test-Path '%s') { Rename-Item -Path '%s' -NewName '%s' -Force }",
+		remoteDir, remoteDir, filepath.Base(backupDir))
+	if out, err := vm.Run(renameCmd, true); err != nil {
+		// Clean up staging dir and return error
+		_, _ = vm.Run(rmDirCmd(stagingDir), true)
+		return fmt.Errorf("unable to rename %s to backup, out: %s: %w", remoteDir, out, err)
+	}
+
+	// Rename: staging → target
+	renameCmd = fmt.Sprintf("Rename-Item -Path '%s' -NewName '%s' -Force",
+		stagingDir, filepath.Base(remoteDir))
+	if out, err := vm.Run(renameCmd, true); err != nil {
+		// Restore from backup
+		restoreCmd := fmt.Sprintf(
+			"if (Test-Path '%s') { Rename-Item -Path '%s' -NewName '%s' -Force }",
+			backupDir, backupDir, filepath.Base(remoteDir))
+		_, _ = vm.Run(restoreCmd, true)
+		_, _ = vm.Run(rmDirCmd(stagingDir), true)
+		return fmt.Errorf("unable to rename staging to %s, out: %s: %w", remoteDir, out, err)
+	}
+
+	// Clean up backup dir (best-effort)
+	_, _ = vm.Run(rmDirCmd(backupDir), true)
+	return nil
+}
+
+// replaceDirDestructive is the original destructive replace: remove the
+// directory, recreate it, and transfer files. Used as a fallback when the
+// atomic rename approach fails.
+func (vm *windows) replaceDirDestructive(files map[string][]byte, remoteDir string) error {
 	if out, err := vm.Run(rmDirCmd(remoteDir), true); err != nil {
 		return fmt.Errorf("unable to remove directory %s, out: %s, err: %s", remoteDir, out, err)
 	}

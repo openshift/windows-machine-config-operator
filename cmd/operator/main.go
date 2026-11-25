@@ -143,8 +143,9 @@ func main() {
 	// Gate TLS profile enforcement on the adherence policy. WMCO was not previously honoring the
 	// cluster TLS profile, so per the centralized TLS config enhancement (StrictAllComponents mode)
 	// it should only enforce when ShouldHonorClusterTLSProfile returns true.
+	honorTLSProfile := libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence)
 	var metricsServerTLSOpts []func(*tls.Config)
-	if libgocrypto.ShouldHonorClusterTLSProfile(tlsAdherence) {
+	if honorTLSProfile {
 		tlsConfigFn, unsupportedCiphers, err := tlspkg.NewTLSConfigFromProfile(tlsProfile)
 		if err != nil {
 			setupLog.Error(err, "failed to create TLS configuration from profile")
@@ -197,6 +198,27 @@ func main() {
 		windows.HNSPSModule, windows.CniConfDir+"\\cni.conf"); err != nil {
 		setupLog.Error(err, "unable to generate CNI config script")
 		os.Exit(1)
+	}
+	unsupportedWebConfigCiphers, err := payload.PopulateWindowsExporterWebConfig(tlsProfile, honorTLSProfile)
+	if err != nil {
+		// Fall back to a base webconfig (cert + key only, no TLS profile
+		// enforcement on the exporter) so the operator does not crash-loop
+		// when the cluster TLS profile has no supported ciphers or curves.
+		// The TLS profile watcher will trigger a pod restart when the admin
+		// corrects the profile.
+		setupLog.Error(err, "unable to generate windows-exporter webconfig from TLS profile, falling back to base config")
+		unsupportedWebConfigCiphers, err = payload.PopulateWindowsExporterWebConfig(tlsProfile, false)
+		if err != nil {
+			setupLog.Error(err, "unable to generate base windows-exporter webconfig")
+			os.Exit(1)
+		}
+	}
+	setupLog.Info("windows-exporter webconfig generated",
+		"honorTLSProfile", honorTLSProfile,
+		"webConfigSHA", payload.GetWebConfigSHA())
+	if len(unsupportedWebConfigCiphers) > 0 {
+		setupLog.Info("some cipher suites or curve preferences are not supported for the windows-exporter webconfig and will be ignored",
+			"unsupportedSettings", unsupportedWebConfigCiphers)
 	}
 
 	// Become the leader before proceeding
