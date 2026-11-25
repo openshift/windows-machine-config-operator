@@ -3,6 +3,7 @@ module github.com/openshift/windows-machine-config-operator/ote
 go 1.25.0
 
 require (
+	github.com/aws/aws-sdk-go v1.55.8
 	github.com/onsi/ginkgo/v2 v2.25.1
 	github.com/onsi/gomega v1.38.2
 	github.com/openshift-eng/openshift-tests-extension v0.0.0-20260707142426-572a3e9deb7a
@@ -69,7 +70,6 @@ require (
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/aws/aws-sdk-go v1.55.8 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect

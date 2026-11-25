@@ -682,19 +682,23 @@ spec:
 	g.It("Author:rrasouli-Smokerun-Critical-84267-Verify hybrid-overlay-node client certificate rotation [Timeout:45m][Disruptive][Serial]",
 		g.SpecTimeout(40*time.Minute),
 		func(ctx g.SpecContext) {
+			// Wait out any machine churn left by the previous disruptive spec before choosing
+			// targets: this spec asserts on every captured node for its whole runtime, and WMCO
+			// replaces Machines by deleting them.
+			zone := getAvailabilityZone(oc)
+			msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			waitForWindowsMachineSetSettled(ctx, oc, msName, 20*time.Minute, 2*time.Minute)
 
-			winInternalIPs := getWindowsInternalIPs(oc)
-			o.Expect(len(winInternalIPs)).To(o.BeNumerically(">", 0), "Test requires at least one Windows node")
+			nodeNames, err := machineSetNodeNames(oc, msName)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to list the nodes of MachineSet %s", msName)
+			o.Expect(nodeNames).NotTo(o.BeEmpty(), "Test requires at least one Windows node")
 
-			expectedNodes := len(winInternalIPs)
-			defer waitWindowsNodesReady(oc, expectedNodes, 15*time.Minute)
+			expectedNodes := len(nodeNames)
+			defer waitForMachineSetNodesReady(oc, msName, expectedNodes, 15*time.Minute)
 
-			for _, winhost := range winInternalIPs {
-				nodeName := getNodeNameFromIP(oc, winhost)
-				o.Expect(nodeName).NotTo(o.BeEmpty(), "Failed to get node name for IP %s", winhost)
-
+			for _, nodeName := range nodeNames {
 				g.By(fmt.Sprintf("Verifying node %s is Ready before testing", nodeName))
-				waitWindowsNodeReady(oc, nodeName, 5*time.Minute)
+				waitWindowsNodeReady(oc, nodeName, 15*time.Minute)
 
 				g.By("Verifying hybrid-overlay-node binary and CA certificate on host filesystem")
 				binaryCheck, err := runDebugNodePS(oc, nodeName, windowsDebugImage,
@@ -771,16 +775,55 @@ spec:
 				o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to create fake cert files")
 				e2e.Logf("Total cert files after creating fakes: %s", strings.TrimSpace(countAfterCreate))
 
-				e2e.Logf("Waiting 3 minutes for WICD to reconcile and clean up old certs...")
-				time.Sleep(3 * time.Minute)
+				// A reconcile returns before the cleanup while the node is awaiting a reboot, and
+				// creating files on the host generates no watch event. Verify the precondition and
+				// force a reconcile instead of relying on the periodic tick; otherwise a red result
+				// cannot be attributed to the cleanup itself (WINC-2206).
+				g.By(fmt.Sprintf("Verifying node %s is not awaiting a reboot", nodeName))
+				rebootAnnotation := func() (string, error) {
+					return oc.AsAdmin().WithoutNamespace().Run("get").Args("node", nodeName,
+						"-o=jsonpath={.metadata.annotations.windowsmachineconfig\\.openshift\\.io\\/reboot-required}").Output()
+				}
+				rebootValue, rebootErr := rebootAnnotation()
+				o.Expect(rebootErr).NotTo(o.HaveOccurred(), "Failed to read the reboot annotation on %s", nodeName)
+				if strings.TrimSpace(rebootValue) != "" {
+					waitErr := wait.Poll(10*time.Second, 5*time.Minute, func() (bool, error) {
+						value, err := rebootAnnotation()
+						if err != nil {
+							return false, nil
+						}
+						return strings.TrimSpace(value) == "", nil
+					})
+					if waitErr != nil {
+						g.Skip(fmt.Sprintf("node %s is awaiting a reboot, where WICD returns before the "+
+							"certificate cleanup; the cleanup path is unreachable by design (WINC-2206)", nodeName))
+					}
+				}
 
-				countAfterCleanup, debugErr := runDebugNodePS(oc, nodeName, windowsDebugImage, countCmd)
-				o.Expect(debugErr).NotTo(o.HaveOccurred(), "Failed to count cert files after cleanup")
-				remaining := strings.TrimSpace(countAfterCleanup)
-				e2e.Logf("Cert files remaining after WICD cleanup: %s", remaining)
-				remainingCount, convErr := strconv.Atoi(remaining)
-				o.Expect(convErr).NotTo(o.HaveOccurred(), "Failed to parse cert count")
-				o.Expect(remainingCount).To(o.Equal(2),
+				g.By("Forcing a WICD reconcile through the services ConfigMap")
+				servicesCM, cmErr := getLatestServicesCMName(oc)
+				o.Expect(cmErr).NotTo(o.HaveOccurred(), "Failed to find the windows-services ConfigMap")
+				o.Expect(servicesCM).NotTo(o.BeEmpty(), "Expected a windows-services ConfigMap")
+				_, annotateErr := oc.AsAdmin().WithoutNamespace().Run("annotate").Args("configmap", servicesCM,
+					"-n", wmcoNamespace, fmt.Sprintf("test.winc/reconcile=%d", time.Now().Unix()), "--overwrite").Output()
+				o.Expect(annotateErr).NotTo(o.HaveOccurred(), "Failed to trigger a WICD reconcile")
+
+				remainingCount := -1
+				pollErr := wait.Poll(15*time.Second, 5*time.Minute, func() (bool, error) {
+					out, err := runDebugNodePS(oc, nodeName, windowsDebugImage, countCmd)
+					if err != nil {
+						e2e.Logf("Failed to count cert files after cleanup: %v", err)
+						return false, nil
+					}
+					count, convErr := strconv.Atoi(strings.TrimSpace(out))
+					if convErr != nil {
+						return false, nil
+					}
+					remainingCount = count
+					e2e.Logf("Cert files remaining after WICD cleanup: %d", count)
+					return count == 2, nil
+				})
+				o.Expect(pollErr).NotTo(o.HaveOccurred(),
 					"WICD should keep only 2 most recent ovnkube-client cert files, found %d", remainingCount)
 
 				e2e.Logf("Successfully verified certificate rotation and cert cleanup on %s", nodeName)
@@ -1360,6 +1403,13 @@ spec:
 			wmcoLogVersion, err := getWMCOVersionFromLogs(oc)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
+			// The node set must be stable before it is captured: a Windows node replaced by
+			// WMCO between Step 3 and the service checks makes every check on it fail with
+			// "pod ... not found" while the rest of the cluster is healthy.
+			zone := getAvailabilityZone(oc)
+			msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			waitForWindowsMachineSetSettled(ctx, oc, msName, 20*time.Minute, 2*time.Minute)
+
 			g.By("Step 1: Fetch the WICD ConfigMap and verify its existence")
 			windowsServicesCM, err := getLatestServicesCMName(oc)
 			o.Expect(err).NotTo(o.HaveOccurred())
@@ -1381,6 +1431,10 @@ spec:
 
 			g.By("Step 4: Verify that each service is running on the Windows worker nodes")
 			for _, nodeName := range winHostNames {
+				if !windowsNodeExists(oc, nodeName) {
+					e2e.Logf("Node %s disappeared before the service check; skipping it", nodeName)
+					continue
+				}
 				for _, svc := range configMapServices {
 					g.By(fmt.Sprintf("Checking service %s on host %s", svc.Name, nodeName))
 					pollErr := wait.Poll(5*time.Second, 2*time.Minute, func() (bool, error) {
@@ -1551,14 +1605,44 @@ spec:
 					"Failed to launch kubelet/containerd stop on %s", nodeName)
 			}
 
-			g.By("Step 12: Wait for nodes to recover and verify critical services")
+			g.By("Step 12: Wait for nodes to recover and restore every service from the ConfigMap")
 			waitWindowsNodesReady(oc, len(winHostNames), 15*time.Minute)
+			// WICD applies the services ConfigMap but does not start a service that was
+			// stopped out of band. Without an explicit start, kube-proxy and csi-proxy stay
+			// Stopped and the next serial spec inherits a node where ClusterIP traffic fails
+			// even though endpoints and pods are healthy (seen in 66352).
+			restoreServices := func() {
+				for _, nodeName := range winHostNames {
+					for _, svc := range configMapServices {
+						cmd := fmt.Sprintf(
+							"Start-Service '%s' -ErrorAction SilentlyContinue; (Get-Service '%s').Status",
+							svc.Name, svc.Name)
+						status, err := runHostProcessPS(oc, nodeName, windowsDebugImage, cmd)
+						if err != nil {
+							e2e.Logf("Error starting service %s on %s: %v", svc.Name, nodeName, err)
+							continue
+						}
+						e2e.Logf("Service %s on %s after restore: %s", svc.Name, nodeName, strings.TrimSpace(status))
+					}
+				}
+			}
+			defer restoreServices()
+			restoreServices()
+			// Only the services that must be back for the cluster to work are asserted. csi-proxy
+			// exits immediately when started out of band once its payload was removed by WICD, and
+			// it is not needed by the serial specs that follow; kube-proxy is what breaks ClusterIP
+			// for 66352 when left stopped.
 			for _, nodeName := range winHostNames {
-				for _, svcName := range []string{"kubelet", "containerd"} {
-					ok, err := checkWindowsServiceRunning(oc, nodeName, windowsDebugImage, svcName)
-					o.Expect(err).NotTo(o.HaveOccurred(),
-						"Failed to check %s on %s", svcName, nodeName)
-					o.Expect(ok).To(o.BeTrue(),
+				for _, svcName := range []string{"kubelet", "containerd", "kube-proxy"} {
+					pollErr := wait.Poll(10*time.Second, 2*time.Minute, func() (bool, error) {
+						ok, err := checkWindowsServiceRunning(oc, nodeName, windowsDebugImage, svcName)
+						if err != nil {
+							e2e.Logf("Error checking %s on %s: %v", svcName, nodeName, err)
+							return false, nil
+						}
+						return ok, nil
+					})
+					o.Expect(pollErr).NotTo(o.HaveOccurred(),
 						"Service %s should be running on %s after node recovery", svcName, nodeName)
 				}
 			}
@@ -1737,6 +1821,12 @@ spec:
 					"machinesets.machine.openshift.io", cloneMSName, "-n", mcoNamespace,
 					"--ignore-not-found").Execute()
 				waitWindowsNodesReady(oc, expectedOriginalNodes, 15*time.Minute)
+				// The clone removal and the key rotation leave provider work behind; the next
+				// serial spec must start from a MachineSet that has stopped replacing nodes.
+				// The spec context may already be cancelled at this point, so use a fresh one.
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+				defer cancel()
+				waitForWindowsMachineSetSettled(cleanupCtx, oc, sourceMSName, 20*time.Minute, 2*time.Minute)
 			}()
 
 			g.By("Step 2: Scale WMCO to 0 and delete secrets")
@@ -1973,6 +2063,12 @@ spec:
 			daemonSetName := "test-windows-daemonset"
 			appLabel := "test-windows-daemon"
 
+			// The previous serial spec can leave WMCO replacing Machines; this spec caches node
+			// names and drains one of them, so it must start from a converged MachineSet.
+			zone := getAvailabilityZone(oc)
+			msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+			waitForWindowsMachineSetSettled(ctx, oc, msName, 20*time.Minute, 2*time.Minute)
+
 			createProject(oc, namespace)
 
 			g.By("Step 1: Deploy DaemonSet targeting Windows nodes")
@@ -1981,9 +2077,13 @@ spec:
 			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to create DaemonSet")
 
 			g.By("Step 2: Wait for DaemonSet to be ready on all Windows nodes")
-			windowsNodes := getWindowsHostNames(oc)
-			expectedCount := len(windowsNodes)
-			defer waitWindowsNodesReady(oc, expectedCount, 15*time.Minute)
+			// Drain targets come from this MachineSet, but the DaemonSet schedules on every
+			// Windows node in the cluster, so the two counts must not be mixed.
+			windowsNodes, err := machineSetNodeNames(oc, msName)
+			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to list the nodes of MachineSet %s", msName)
+			o.Expect(windowsNodes).NotTo(o.BeEmpty(), "No Windows nodes found")
+			expectedCount := len(getWindowsHostNames(oc))
+			defer waitForMachineSetNodesReady(oc, msName, len(windowsNodes), 15*time.Minute)
 			defer func() {
 				oc.AsAdmin().WithoutNamespace().Run("delete").Args("daemonset", daemonSetName, "-n", namespace, "--ignore-not-found").Execute()
 			}()
@@ -2002,15 +2102,16 @@ spec:
 					return false, nil
 				}
 				e2e.Logf("DaemonSet ready: %d/%d pods", numberReady, expectedCount)
-				return numberReady == expectedCount, nil
+				return numberReady >= expectedCount, nil
 			})
 			o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not become ready in time")
 
-			windowsNode := windowsNodes[0]
+			windowsNode := chooseDrainTarget(oc, msName, windowsNodes[0])
 			// Step 7 puts this node into a WMCO reconfiguration that outlives Step 9: the DaemonSet
 			// can report recovered during a healthy window while WMCO still has another pass to do.
-			// Deferred so it runs last and covers a failure in any later step too.
-			defer waitWMCOReconfigurationComplete(oc, windowsNode, 10*time.Minute)
+			// Deferred so it runs last and covers a failure in any later step too. windowsNode is
+			// captured by reference: Step 7 may have to substitute a replacement node.
+			defer func() { waitWMCOReconfigurationComplete(oc, windowsNode, 10*time.Minute) }()
 
 			g.By(fmt.Sprintf("Step 3: Manually drain node %s with --ignore-daemonsets", windowsNode))
 			_, err = oc.AsAdmin().WithoutNamespace().Run("adm").Args(
@@ -2045,18 +2146,13 @@ spec:
 					return false, nil
 				}
 				e2e.Logf("DaemonSet recovery after manual drain: %d/%d pods ready", numberReady, expectedCount)
-				return numberReady == expectedCount, nil
+				return numberReady >= expectedCount, nil
 			})
 			o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after manual drain")
 
-			g.By(fmt.Sprintf("Step 7: Trigger WMCO reconciliation by setting invalidVersion on %s", windowsNode))
-			_, err = oc.AsAdmin().WithoutNamespace().Run("annotate").Args(
-				"node", windowsNode, "--overwrite",
-				"windowsmachineconfig.openshift.io/version=invalidVersion").Output()
-			o.Expect(err).NotTo(o.HaveOccurred(), "Failed to set invalidVersion annotation")
-
-			g.By("Step 8: Wait for WMCO to reconcile the node")
-			waitVersionAnnotationReady(oc, windowsNode, 30*time.Second, 600*time.Second)
+			g.By(fmt.Sprintf("Step 7: Trigger WMCO reconciliation on a Windows node (preferred %s)", windowsNode))
+			windowsNode = annotateNodeForReconfiguration(oc, msName, windowsNode, 30*time.Second, 10*time.Minute)
+			g.By(fmt.Sprintf("Step 8: WMCO reconciled node %s", windowsNode))
 
 			g.By("Step 9: Verify DaemonSet recovers after WMCO reconciliation")
 			pollErr = wait.Poll(30*time.Second, 10*time.Minute, func() (bool, error) {
@@ -2070,14 +2166,14 @@ spec:
 					return false, nil
 				}
 				e2e.Logf("DaemonSet recovery after WMCO reconciliation: %d/%d pods ready", numberReady, expectedCount)
-				return numberReady == expectedCount, nil
+				return numberReady >= expectedCount, nil
 			})
 			o.Expect(pollErr).NotTo(o.HaveOccurred(), "DaemonSet did not recover after WMCO reconciliation")
 		})
 
 	// author: rrasouli@redhat.com
-	g.It("OCP-42047 Cluster autoscaling with Windows nodes [Serial][Disruptive][Timeout:45m]",
-		g.SpecTimeout(40*time.Minute),
+	g.It("OCP-42047 Cluster autoscaling with Windows nodes [Serial][Disruptive][Timeout:55m]",
+		g.SpecTimeout(50*time.Minute),
 		func(ctx g.SpecContext) {
 			if isNone(oc) {
 				g.Skip("platform none does not support changing namespace and scaling up machines")
@@ -2100,6 +2196,11 @@ spec:
 					"machinesets.machine.openshift.io", cloneMSName, "-n", mcoNamespace,
 					"--ignore-not-found").Execute()
 				waitWindowsNodesReady(oc, originalWindowsNodeCount, 15*time.Minute)
+				// Deleting a clone leaves the provider finishing VM removals; do not hand that
+				// churn to the next serial spec. The spec context may already be cancelled here.
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
+				defer cancel()
+				waitForWindowsMachineSetSettled(cleanupCtx, oc, sourceMSName, 20*time.Minute, 2*time.Minute)
 			})
 			scaleWindowsMachineSet(oc, cloneMSName, 25, 1, false)
 
@@ -2133,14 +2234,26 @@ spec:
 
 			baselineReplicas, err := getMachineSetReplicas(oc, cloneMSName)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			desiredReplicas := len(getWindowsHostNames(oc)) + 1
+			// Size the pressure from per-node capacity: a 2-CPU pod fits once on a 3.5 vCPU
+			// vSphere node and three times on an Azure 8 vCPU node, so neither a flat node count
+			// (too small on Azure) nor a flat total (too large on vSphere) leaves exactly one pod
+			// Pending.
+			const podCPURequestMilli = 2 * 1000 // matches ResourceLimits "2" above
+			desiredReplicas := autoscalerWorkloadReplicas(
+				windowsNodeAllocatableCPU(oc), podCPURequestMilli)
 
 			g.By(fmt.Sprintf("Step 4: Scale up the Windows workload to %d to create autoscaler pressure", desiredReplicas))
-			err = scaleDeployment(oc, windowsWorkloads, desiredReplicas, namespace)
+			// The extra replicas are meant to stay Pending until the autoscaler adds a node, so
+			// do not wait for readiness here; Step 5 waits for the Machine instead.
+			err = scaleDeploymentReplicasOnly(oc, windowsWorkloads, desiredReplicas, namespace)
 			o.Expect(err).NotTo(o.HaveOccurred())
 
 			g.By(fmt.Sprintf("Step 5: Wait for clone MachineSet to auto scale from %d to %d", baselineReplicas, baselineReplicas+1))
-			waitForMachinesetReady(oc, cloneMSName, 20, baselineReplicas+1)
+			// Windows provisioning on Azure has been observed to take well over 20 minutes for a
+			// cloned Machine; the budget has to cover the provider, not the autoscaler decision.
+			// Keep it inside the spec deadline: 50m covers the initial clone, this wait and the
+			// scale-down, so the budget cannot outlive the test that uses it.
+			waitForMachinesetReady(oc, cloneMSName, 30, baselineReplicas+1)
 
 			g.By("Step 6: Scale down the Windows workload to 1 and verify autoscaler scales down the clone MachineSet")
 			err = scaleDeployment(oc, windowsWorkloads, 1, namespace)
@@ -2182,14 +2295,15 @@ spec:
 			msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
 			initialReplicas, err := getMachineSetReplicas(oc, msName)
 			o.Expect(err).NotTo(o.HaveOccurred())
-			expectedNodes := len(getWindowsHostNames(oc))
 			privateKeyFile := extractPrivateKeyToFile(oc)
 			g.DeferCleanup(func() { os.Remove(privateKeyFile) })
 
 			g.By("Step 2: Scale down the machineset to 1")
 			g.DeferCleanup(func() {
 				scaleWindowsMachineSet(oc, msName, 45, initialReplicas, false)
-				waitWindowsNodesReady(oc, expectedNodes, 40*time.Minute)
+				// Count only the Machines of this MachineSet: a clone node left behind by an
+				// earlier serial spec made a cluster-wide count unreachable.
+				waitForMachineSetNodesReady(oc, msName, initialReplicas, 40*time.Minute)
 			})
 			scaleWindowsMachineSet(oc, msName, 18, 1, false)
 
@@ -2256,7 +2370,7 @@ spec:
 				})
 			o.Expect(pollErr).NotTo(o.HaveOccurred(),
 				"target MachineSet nodes did not become Ready with the replacement public key within 35 minutes")
-			waitWindowsNodesReady(oc, expectedNodes, 40*time.Minute)
+			waitForMachineSetNodesReady(oc, msName, initialReplicas, 40*time.Minute)
 		})
 
 	// author: rrasouli@redhat.com
@@ -2299,8 +2413,19 @@ spec:
 			}
 
 			g.By("Step 3: Scale machines to initialReplicas+1")
-			defer waitWindowsNodesReady(oc, expectedNodes, time.Second*1000)
-			defer scaleWindowsMachineSet(oc, msName, 18, initialReplicas, false)
+			// This spec deliberately forces WMCO to remediate every Windows Machine, so the
+			// cluster keeps replacing nodes after the spec returns. Restore the replica count and
+			// wait for the MachineSet to stop changing before the next serial spec starts; a
+			// cluster-wide node count would also be satisfied by a node the next spec must not see.
+			defer func() {
+				// Wait for the converged MachineSet below instead of a separate readiness wait: the
+				// settle checks membership and readiness within its own deadline, and the spec
+				// context may already be cancelled when this runs.
+				scaleWindowsMachineSet(oc, msName, 18, initialReplicas, true)
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 35*time.Minute)
+				defer cancel()
+				waitForWindowsMachineSetSettled(cleanupCtx, oc, msName, 30*time.Minute, 3*time.Minute)
+			}()
 			scaleWindowsMachineSet(oc, msName, 18, initialReplicas+1, false)
 			// Wait for the added node to be in Ready state, otherwise workloads
 			// won't get scheduled into it.
@@ -2682,10 +2807,18 @@ spec:
 			secondaryImage, ok = azureSecondaryWindowsImage(oc, iaasPlatform)
 		}
 		if !ok {
-			g.Skip("no secondary Windows image is available: set " + wincTestCM + "/" + secondaryWindowsImageKey)
+			secondaryImage, ok = awsSecondaryWindowsImage(oc, iaasPlatform)
 		}
-		// TODO: use mcr.microsoft.com/powershell:lts-nanoserver-ltsc2025 for the secondary OS once it
-		// exists; until then the 2022 image runs on 2025 nodes as well.
+		if !ok {
+			// The override above stays available for manual runs. OTE provides no secondary AMI,
+			// and only Windows Server 2022 and 2025 are supported, so AWS cannot run this spec
+			// without one; the Azure path derives the other supported SKU automatically.
+			g.Skip("no secondary Windows image is available: the AWS AMI lookup found none and " +
+				"Azure has no second SKU; set " + wincTestCM + "/" + secondaryWindowsImageKey + " to override")
+		}
+		// The container image is always the Windows Server 2022 one (windowsDebugImage): there is no
+		// mcr.microsoft.com/powershell nanoserver-ltsc2025 tag, and the 2022 image runs on a 2025
+		// node. The ConfigMap override remains for manual runs.
 		secondaryContainerImage, ok := getConfigMapDataIfPresent(oc, wincTestCM, secondaryWindowsContainerImageKey, defaultNamespace)
 		if !ok {
 			secondaryContainerImage = windowsDebugImage
@@ -2708,7 +2841,10 @@ spec:
 			}
 		}()
 
-		waitForMachinesetReady(oc, machineSetName, 20, 1)
+		// Azure clones the secondary-OS VM as slowly as the primary one; the node can become
+		// Ready right at 20 minutes, so give the MachineSet the same headroom the other
+		// machine-backed specs use.
+		waitForMachinesetReady(oc, machineSetName, 30, 1)
 		machineIPs := fetchMachineAddresses(oc, "InternalIP", machineSetName)
 		o.Expect(machineIPs).NotTo(o.BeEmpty(), "No InternalIP reported for MachineSet %s", machineSetName)
 		// The Machine is provisioned before the node registers and joins the cluster.

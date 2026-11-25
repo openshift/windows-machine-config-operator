@@ -120,7 +120,9 @@ func uninstallWindowsCSIDriver(oc *exutil.CLI, platform string) error {
 
 // waitForWebContent polls url from podName until the response contains expected content.
 func waitForWebContent(oc *exutil.CLI, namespace, podName, url, expected, desc string) error {
-	return wait.Poll(15*time.Second, 3*time.Minute, func() (bool, error) {
+	// Three minutes is not enough on a busy vSphere cluster: the Windows pod has to reach the
+	// ClusterIP through kube-proxy while the node may still be settling after reconfiguration.
+	return wait.Poll(15*time.Second, 6*time.Minute, func() (bool, error) {
 		out, err := oc.AsAdmin().WithoutNamespace().Run("exec").Args(
 			"-n", namespace, podName, "--", "pwsh.exe", "-Command", buildInvokeWebRequestCommand(url)).Output()
 		if err != nil || !strings.Contains(out, expected) {

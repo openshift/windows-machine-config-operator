@@ -27,7 +27,7 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 	})
 
 	// author jfrancoa@redhat.com
-	g.It("Author:jfrancoa-Smokerun-Critical-66352-Windows workloads support CSI persistent storage [Serial][platform:vsphere][platform:azure][Timeout:45m]", func() {
+	g.It("Author:jfrancoa-Smokerun-Critical-66352-Windows workloads support CSI persistent storage [Serial][platform:vsphere][platform:azure][Timeout:45m]", func(ctx g.SpecContext) {
 		// Only vSphere and Azure have a Windows CSI node driver in the WMCO repository.
 		if iaasPlatform != "vsphere" && iaasPlatform != "azure" {
 			g.Skip(iaasPlatform + " is not implemented yet, skipping")
@@ -36,6 +36,12 @@ var _ = g.Describe("[OTP][sig-windows] Windows_Containers", func() {
 		namespace := "winc-66352"
 		pvcs := []string{"pvc1", "pvc2"}
 		installedCSIDriver := false
+
+		// This spec pins claims to specific Windows nodes and must keep them for its whole
+		// runtime; wait out the churn left by the previous disruptive spec first.
+		zone := getAvailabilityZone(oc)
+		msName := getWindowsMachineSetName(oc, defaultWindowsMS, iaasPlatform, zone)
+		waitForWindowsMachineSetSettled(ctx, oc, msName, 20*time.Minute, 2*time.Minute)
 		// The workloads have to be gone before the CSI node driver is removed: uninstalling the
 		// driver first leaves Windows pods that cannot terminate, and their namespace then stays
 		// Terminating for hours because the pods are never deleted.

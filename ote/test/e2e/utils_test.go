@@ -759,7 +759,8 @@ func TestGenerateOLMYAMLs(t *testing.T) {
 func TestGenerateWindowsMachineSetYAML(t *testing.T) {
 	t.Run("aws uses the secondary AMI", func(t *testing.T) {
 		manifest := generateAWSWindowsMachineSetYAML(
-			"cluster-winsecond-worker-us-east-2a", "cluster", "us-east-2a", "us-east-2", "subnet-1234", "ami-5678")
+			"cluster-winsecond-worker-us-east-2a", "cluster", "us-east-2a", "us-east-2", "subnet-1234", "ami-5678",
+			"m5a.large")
 		for _, want := range []string{
 			"kind: MachineSet",
 			"  name: cluster-winsecond-worker-us-east-2a\n",

@@ -14,13 +14,20 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	aws "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 	exutil "github.com/openshift/origin/test/extended/util"
@@ -28,6 +35,7 @@ import (
 	"github.com/tidwall/gjson"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -113,6 +121,49 @@ func waitVersionAnnotationReady(oc *exutil.CLI, windowsNodeName string, interval
 	o.Expect(err).NotTo(o.HaveOccurred(), "Timed out waiting for version annotation on node %s", windowsNodeName)
 }
 
+// versionAnnotationReady reports whether the node still exists and carries the WMCO version
+// annotation, without failing the spec. WMCO deletes the Machine behind a node it remediates, so a
+// node can disappear while a caller is waiting on it.
+func versionAnnotationReady(oc *exutil.CLI, windowsNodeName string, interval, timeout time.Duration) bool {
+	err := wait.Poll(interval, timeout, func() (bool, error) {
+		return checkVersionAnnotationReady(oc, windowsNodeName)
+	})
+	return err == nil
+}
+
+// annotateNodeForReconfiguration asks WMCO to reconfigure a Windows node by setting invalidVersion
+// on it and waits for the annotation to be restored. If the node is replaced while the spec runs,
+// another current node of the same MachineSet is selected and annotated instead of failing on a
+// stale name. When the replacement has not registered yet, the helper waits for it within timeout
+// instead of burning the attempts immediately.
+func annotateNodeForReconfiguration(oc *exutil.CLI, machineSetName, preferred string, interval, timeout time.Duration) string {
+	node := preferred
+	for attempt := 0; attempt < 3; attempt++ {
+		node = chooseDrainTarget(oc, machineSetName, node)
+		if !windowsNodeExists(oc, node) {
+			replacement, found := waitForMachineSetNode(oc, machineSetName, timeout)
+			if !found {
+				e2e.Logf("No node of MachineSet %s registered within %v", machineSetName, timeout)
+				break
+			}
+			node = replacement
+		}
+		_, err := oc.AsAdmin().WithoutNamespace().Run("annotate").Args(
+			"node", node, "--overwrite",
+			"windowsmachineconfig.openshift.io/version=invalidVersion").Output()
+		if err != nil {
+			e2e.Logf("Failed to annotate node %s, re-selecting: %v", node, err)
+			continue
+		}
+		if versionAnnotationReady(oc, node, interval, timeout) {
+			return node
+		}
+		e2e.Logf("Node %s was replaced while waiting for the version annotation, re-selecting", node)
+	}
+	e2e.Failf("could not trigger a WMCO reconfiguration on a stable Windows node after 3 attempts")
+	return ""
+}
+
 // reconfigurationStableChecks is how many consecutive clean polls waitWMCOReconfigurationComplete
 // requires. WMCO does not cordon the node the instant it is asked to reconfigure: a node observed
 // converged can start a fresh pass seconds later, so the absence of in-progress markers on a
@@ -192,6 +243,54 @@ func getWindowsInternalIPs(oc *exutil.CLI) []string {
 		return []string{}
 	}
 	return strings.Split(winInternalIPs, " ")
+}
+
+// windowsNodeAllocatableCPU returns the allocatable CPU of every Windows node, in milliCPU.
+func windowsNodeAllocatableCPU(oc *exutil.CLI) []int64 {
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"nodes", "-l", windowsNodeLabel, "-o=jsonpath={.items[*].status.allocatable.cpu}").Output()
+	o.Expect(err).NotTo(o.HaveOccurred())
+	cpus := []int64{}
+	for _, raw := range strings.Fields(out) {
+		quantity, parseErr := resource.ParseQuantity(raw)
+		o.Expect(parseErr).NotTo(o.HaveOccurred(), "Failed to parse allocatable CPU %q", raw)
+		cpus = append(cpus, quantity.MilliValue())
+	}
+	return cpus
+}
+
+// autoscalerWorkloadReplicas returns the workload replica count that leaves exactly one pod
+// Pending, so the cluster autoscaler has a reason to add a node. Capacity is computed per node:
+// pods are not evenly divisible across nodes, and on vSphere a 3.5 CPU node fits only one 2-CPU
+// pod while an Azure 8 vCPU node fits three. A flat node count is therefore too small on Azure
+// and a flat total-CPU division is too large on vSphere.
+func autoscalerWorkloadReplicas(nodeCPU []int64, podCPU int64) int {
+	replicas := len(nodeCPU) + 1
+	if podCPU <= 0 {
+		return replicas
+	}
+	capacity := 0
+	for _, cpu := range nodeCPU {
+		if cpu > 0 {
+			capacity += int(cpu / podCPU)
+		}
+	}
+	if capacity+1 > replicas {
+		replicas = capacity + 1
+	}
+	return replicas
+}
+
+// scaleDeploymentReplicasOnly changes a deployment's replica count without waiting for the pods to
+// become ready. Used when the extra replicas are meant to stay Pending so the cluster autoscaler
+// reacts; waiting for them here would block before the autoscaler can add a node.
+func scaleDeploymentReplicasOnly(oc *exutil.CLI, deploymentName string, replicas int, namespace string) error {
+	_, err := oc.AsAdmin().WithoutNamespace().Run("scale").
+		Args("--replicas="+strconv.Itoa(replicas), "deployment", deploymentName, "-n", namespace).Output()
+	if err != nil {
+		return fmt.Errorf("failed to scale deployment %s to %d replicas: %w", deploymentName, replicas, err)
+	}
+	return nil
 }
 
 // truncatedVersion extracts the major.minor version (e.g. "go1.22") from a possibly quoted string.
@@ -788,6 +887,164 @@ func waitForMachineSetNodesReady(oc *exutil.CLI, machineSetName string, expected
 	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf(
 		"MachineSet %s did not have %d Ready machine nodes within %v (%s)",
 		machineSetName, expectedCount, timeout, machinesetTimeoutDiagnostics(oc, machineSetName)))
+}
+
+// machineSetSnapshot is a point-in-time view of a MachineSet and of the nodes registered by its
+// Machines. Disruptive specs leave WMCO remediating Machines for a while after they return, and a
+// spec that caches node names then fails when a node is replaced under it.
+type machineSetSnapshot struct {
+	Replicas int
+	Machines []string // Machines owned by the MachineSet that are not being deleted, sorted
+	Deleting int      // Machines owned by the MachineSet that carry a deletion timestamp
+	Ready    int      // registered nodes of those Machines that report Ready
+}
+
+// settledAfter reports whether the MachineSet has converged and stopped changing: it owns exactly
+// replicas Machines, none of them is being deleted, every Machine has a Ready node, the Machine
+// list matches the previous observation, and that list has been unchanged for at least settle.
+func (s machineSetSnapshot) settledAfter(prev machineSetSnapshot, unchangedFor, settle time.Duration) bool {
+	return s.Deleting == 0 &&
+		len(s.Machines) == s.Replicas &&
+		s.Ready >= s.Replicas &&
+		slices.Equal(s.Machines, prev.Machines) &&
+		unchangedFor >= settle
+}
+
+// observeWindowsMachineSet reads the current state of machineSetName, including the Machines that
+// are already being deleted, so that a replacement in flight is not mistaken for a converged set.
+func observeWindowsMachineSet(oc *exutil.CLI, machineSetName string) (machineSetSnapshot, error) {
+	replicas, err := getMachineSetReplicas(oc, machineSetName)
+	if err != nil {
+		return machineSetSnapshot{}, err
+	}
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"machines.machine.openshift.io", "-n", mcoNamespace,
+		"-l", "machine.openshift.io/cluster-api-machineset="+machineSetName,
+		"-o=go-template={{range .items}}{{.metadata.name}}|{{if .metadata.deletionTimestamp}}deleting{{else}}active{{end}}|{{.status.nodeRef.name}} {{end}}",
+	).Output()
+	if err != nil {
+		return machineSetSnapshot{}, err
+	}
+	snapshot := machineSetSnapshot{Replicas: replicas}
+	nodeNames := []string{}
+	for _, field := range strings.Fields(out) {
+		parts := strings.SplitN(field, "|", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		if parts[1] == "deleting" {
+			snapshot.Deleting++
+			continue
+		}
+		snapshot.Machines = append(snapshot.Machines, parts[0])
+		if parts[2] != "" && parts[2] != "<no value>" {
+			nodeNames = append(nodeNames, parts[2])
+		}
+	}
+	sort.Strings(snapshot.Machines)
+
+	readinessOut, err := oc.AsAdmin().WithoutNamespace().Run("get").Args("nodes", nodeReadinessQuery).Output()
+	if err != nil {
+		return machineSetSnapshot{}, err
+	}
+	snapshot.Ready = len(readyMachineSetNodes(nodeNames, nodeReadiness(readinessOut)))
+	return snapshot, nil
+}
+
+// waitForWindowsMachineSetSettled waits until the Windows MachineSet has converged and its
+// Machines have been unchanged for settle. Call it at the end of specs that delete or recreate
+// Machines, and at the start of specs that cache node names: WMCO remediates Machines by deleting
+// them and the MachineSet then replaces them, so a node can disappear minutes after the spec that
+// caused the churn returned.
+func waitForWindowsMachineSetSettled(ctx context.Context, oc *exutil.CLI, machineSetName string, timeout, settle time.Duration) {
+	var (
+		prev       machineSetSnapshot
+		havePrev   bool
+		lastChange = time.Now()
+	)
+	pollErr := wait.PollUntilContextTimeout(ctx, 15*time.Second, timeout, true, func(context.Context) (bool, error) {
+		snapshot, err := observeWindowsMachineSet(oc, machineSetName)
+		if err != nil {
+			e2e.Logf("Error observing MachineSet %s: %v", machineSetName, err)
+			return false, nil
+		}
+		if !havePrev || !slices.Equal(prev.Machines, snapshot.Machines) {
+			lastChange = time.Now()
+			havePrev = true
+		}
+		unchangedFor := time.Since(lastChange)
+		settled := snapshot.settledAfter(prev, unchangedFor, settle)
+		e2e.Logf("MachineSet %s settling: replicas=%d machines=%v deleting=%d ready=%d unchangedFor=%v",
+			machineSetName, snapshot.Replicas, snapshot.Machines, snapshot.Deleting, snapshot.Ready,
+			unchangedFor.Round(time.Second))
+		prev = snapshot
+		return settled, nil
+	})
+	compat_otp.AssertWaitPollNoErr(pollErr, fmt.Sprintf(
+		"MachineSet %s did not settle within %v (%s)",
+		machineSetName, timeout, machinesetTimeoutDiagnostics(oc, machineSetName)))
+}
+
+// windowsNodeExists reports whether the named node is still registered in the cluster.
+func windowsNodeExists(oc *exutil.CLI, nodeName string) bool {
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"node", nodeName, "-o=jsonpath={.metadata.name}").Output()
+	return err == nil && strings.TrimSpace(out) == nodeName
+}
+
+// chooseDrainTarget returns preferred when its node still exists and otherwise the first node
+// registered by the Machines of machineSetName that does. Disruptive specs run while WMCO may still
+// replace Machines, so a node captured at the start of a spec can be gone by the time it is used;
+// restricting the fallback to the MachineSet also keeps unmanaged Windows nodes out of the test.
+func chooseDrainTarget(oc *exutil.CLI, machineSetName, preferred string) string {
+	if windowsNodeExists(oc, preferred) {
+		return preferred
+	}
+	nodes, err := machineSetNodeNames(oc, machineSetName)
+	if err != nil {
+		e2e.Logf("Could not list the machines of %s: %v", machineSetName, err)
+		return preferred
+	}
+	for _, host := range nodes {
+		if host != preferred && windowsNodeExists(oc, host) {
+			e2e.Logf("Node %s no longer exists; using %s instead", preferred, host)
+			return host
+		}
+	}
+	return preferred
+}
+
+// waitForMachineSetNode waits until machineSetName has at least one registered node and returns it.
+// Used when the replacement for a deleted node is still being provisioned.
+// firstExistingNode returns the first candidate for which exists reports true. Machine node
+// references can be stale: a Machine that is not being deleted keeps the name of a Node that has
+// already been removed, so a candidate list alone does not prove a usable node.
+func firstExistingNode(candidates []string, exists func(string) bool) (string, bool) {
+	for _, name := range candidates {
+		if name != "" && exists(name) {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func waitForMachineSetNode(oc *exutil.CLI, machineSetName string, timeout time.Duration) (string, bool) {
+	var node string
+	err := wait.PollUntilContextTimeout(context.Background(), 10*time.Second, timeout, true, func(context.Context) (bool, error) {
+		nodes, err := machineSetNodeNames(oc, machineSetName)
+		if err != nil || len(nodes) == 0 {
+			return false, nil
+		}
+		found, ok := firstExistingNode(nodes, func(name string) bool {
+			return windowsNodeExists(oc, name)
+		})
+		if !ok {
+			return false, nil
+		}
+		node = found
+		return true, nil
+	})
+	return node, err == nil
 }
 
 // getLatestServicesCMData returns the services JSON data from the most recently created windows-services ConfigMap
@@ -1752,7 +2009,10 @@ func fetchMachineAddresses(oc *exutil.CLI, addressType, machineSetName string) [
 // generateAWSWindowsMachineSetYAML returns a Windows MachineSet that provisions one machine from
 // the given AMI. It mirrors the AWS Windows MachineSet created by hack/machineset.sh so the
 // secondary OS variant joins the cluster the same way as the primary one.
-func generateAWSWindowsMachineSetYAML(name, infrastructureID, zone, region, subnetID, imageID string) string {
+func generateAWSWindowsMachineSetYAML(name, infrastructureID, zone, region, subnetID, imageID, instanceType string) string {
+	if strings.TrimSpace(instanceType) == "" {
+		instanceType = "m5a.large"
+	}
 	return fmt.Sprintf(`apiVersion: machine.openshift.io/v1beta1
 kind: MachineSet
 metadata:
@@ -1794,7 +2054,7 @@ spec:
           deviceIndex: 0
           iamInstanceProfile:
             id: %[2]s-worker-profile
-          instanceType: m5a.large
+          instanceType: %[8]s
           kind: AWSMachineProviderConfig
           placement:
             availabilityZone: %[3]s
@@ -1820,7 +2080,7 @@ spec:
           userDataSecret:
             name: windows-user-data
             namespace: %[7]s
-`, name, infrastructureID, zone, region, subnetID, imageID, mcoNamespace)
+`, name, infrastructureID, zone, region, subnetID, imageID, mcoNamespace, instanceType)
 }
 
 // generateAzureWindowsMachineSetYAML returns a Windows MachineSet that provisions one machine from
@@ -1885,6 +2145,229 @@ spec:
 `, name, infrastructureID, location, sku, mcoNamespace)
 }
 
+// awsVersionForOtherBuild returns the supported Windows Server version that differs from the
+// node's build. Only 2022 and 2025 are supported.
+func awsVersionForOtherBuild(currentBuild string) (string, bool) {
+	switch strings.TrimSpace(currentBuild) {
+	case "10.0.20348":
+		return "2025", true
+	case "10.0.26100":
+		return "2022", true
+	}
+	return "", false
+}
+
+// awsCredentialsProvider mirrors the credential source of the aws-windows-ami-discover step: the
+// e2e pod carries the cluster profile file, and the cluster's machine credentials are the fallback
+// when the profile is not mounted.
+func awsCredentialsProvider(oc *exutil.CLI) (credentials.Provider, bool) {
+	if path := os.Getenv("AWS_SHARED_CREDENTIALS_FILE"); path != "" {
+		return &credentials.SharedCredentialsProvider{Filename: path, Profile: "default"}, true
+	}
+	if dir := os.Getenv("CLUSTER_PROFILE_DIR"); dir != "" {
+		path := filepath.Join(dir, ".awscred")
+		if _, err := os.Stat(path); err == nil {
+			return &credentials.SharedCredentialsProvider{Filename: path, Profile: "default"}, true
+		}
+	}
+	accessKey, secretKey, ok := awsCredentialsFromSecret(oc)
+	if !ok {
+		return nil, false
+	}
+	return &credentials.StaticProvider{Value: credentials.Value{
+		AccessKeyID:     accessKey,
+		SecretAccessKey: secretKey,
+	}}, true
+}
+
+// awsCredentialsFromSecret reads aws_access_key_id and aws_secret_access_key from the cluster's
+// machine credentials secret.
+func awsCredentialsFromSecret(oc *exutil.CLI) (string, string, bool) {
+	out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"secret", "aws-cloud-credentials", "-n", mcoNamespace, "-o", "json").Output()
+	if err != nil {
+		e2e.Logf("Could not read aws-cloud-credentials: %v", err)
+		return "", "", false
+	}
+	var secret struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &secret); err != nil {
+		e2e.Logf("Could not parse aws-cloud-credentials: %v", err)
+		return "", "", false
+	}
+	decode := func(key string) string {
+		encoded, ok := secret.Data[key]
+		if !ok {
+			return ""
+		}
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return ""
+		}
+		return string(decoded)
+	}
+	accessKey := decode("aws_access_key_id")
+	secretKey := decode("aws_secret_access_key")
+	if accessKey == "" || secretKey == "" {
+		return "", "", false
+	}
+	return accessKey, secretKey, true
+}
+
+// awsPrimaryMachineSetInstanceType returns the instance type used by the cluster's Windows
+// MachineSet. The secondary OS variant has to boot on the same instance type that is known to work
+// in this account and region; an empty result makes the generator fall back to m5a.large.
+func awsPrimaryMachineSetInstanceType(oc *exutil.CLI) string {
+	for _, selector := range []string{"-l=" + machineLabel, ""} {
+		args := []string{"machinesets.machine.openshift.io", "-n", mcoNamespace}
+		if selector != "" {
+			args = append(args, selector)
+		}
+		args = append(args, "-o=jsonpath={.items[0].spec.template.spec.providerSpec.value.instanceType}")
+		out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Output()
+		if err == nil && strings.TrimSpace(out) != "" {
+			return strings.TrimSpace(out)
+		}
+	}
+	return ""
+}
+
+// awsPrimaryMachineSetAMI returns the AMI id of the cluster's Windows MachineSet.
+func awsPrimaryMachineSetAMI(oc *exutil.CLI) string {
+	for _, selector := range []string{"-l=" + machineLabel, ""} {
+		args := []string{"machinesets.machine.openshift.io", "-n", mcoNamespace}
+		if selector != "" {
+			args = append(args, selector)
+		}
+		args = append(args, "-o=jsonpath={.items[0].spec.template.spec.providerSpec.value.ami.id}")
+		out, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(args...).Output()
+		if err == nil && strings.TrimSpace(out) != "" {
+			return strings.TrimSpace(out)
+		}
+	}
+	return ""
+}
+
+// awsDeriveSecondaryImageFilter builds the name filter for the other supported Windows Server
+// version from the primary AMI's name, keeping the same variant and date scheme. hardcoding
+// "-English-Core-Base-" can pick an image whose variant differs from the one the cluster actually
+// booted, and such an image may not run the WMCO user data.
+//
+// Windows_Server-2022-English-Core-Base-2025.01.15 + 2025
+//
+//	-> Windows_Server-2025-English-Core-Base-*
+func awsDeriveSecondaryImageFilter(primaryName, targetVersion string) (string, bool) {
+	name := strings.TrimSpace(primaryName)
+	if targetVersion == "" || !strings.HasPrefix(name, "Windows_Server-") {
+		return "", false
+	}
+	rest := strings.TrimPrefix(name, "Windows_Server-")
+	if len(rest) < 5 || !strings.HasPrefix(rest[:4], "20") || rest[4] != '-' {
+		return "", false
+	}
+	currentVersion := rest[:4]
+	if currentVersion == targetVersion {
+		return "", false
+	}
+	rest = rest[5:]
+	// Drop the trailing release date (YYYY.MM.DD) and wildcard it.
+	if idx := strings.LastIndex(rest, "-"); idx != -1 {
+		rest = rest[:idx+1]
+	}
+	return "Windows_Server-" + targetVersion + "-" + rest + "*", true
+}
+
+// awsImageName returns the name of an AMI.
+func awsImageName(client *ec2.EC2, imageID string) (string, bool) {
+	out, err := client.DescribeImages(&ec2.DescribeImagesInput{ImageIds: []*string{aws.String(imageID)}})
+	if err != nil || len(out.Images) == 0 || out.Images[0].Name == nil {
+		return "", false
+	}
+	return *out.Images[0].Name, true
+}
+
+// awsSecondaryWindowsImage resolves the latest Amazon AMI of the other supported Windows Server
+// version in the cluster's region, the same way aws-windows-ami-discover does for BYOH hosts.
+func awsSecondaryWindowsImage(oc *exutil.CLI, platform string) (string, bool) {
+	if platform != "aws" {
+		return "", false
+	}
+	region, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
+		"infrastructure", "cluster", "-o=jsonpath={.status.platformStatus.aws.region}").Output()
+	if err != nil || strings.TrimSpace(region) == "" {
+		e2e.Logf("Could not determine the AWS region: %v", err)
+		return "", false
+	}
+	region = strings.TrimSpace(region)
+
+	targetVersion := ""
+	for _, node := range getWindowsHostNames(oc) {
+		build, err := getWindowsBuildID(oc, node)
+		if err != nil {
+			continue
+		}
+		if version, ok := awsVersionForOtherBuild(build); ok {
+			targetVersion = version
+			break
+		}
+	}
+	if targetVersion == "" {
+		return "", false
+	}
+
+	provider, ok := awsCredentialsProvider(oc)
+	if !ok {
+		e2e.Logf("No AWS credentials available to resolve a secondary Windows AMI")
+		return "", false
+	}
+	sess, err := session.NewSession(&aws.Config{
+		Credentials: credentials.NewCredentials(provider),
+		Region:      aws.String(region),
+	})
+	if err != nil {
+		e2e.Logf("Could not create an AWS session: %v", err)
+		return "", false
+	}
+
+	client := ec2.New(sess)
+	nameFilter := fmt.Sprintf("Windows_Server-%s-English-Core-Base-????.??.??", targetVersion)
+	if primaryAMI := awsPrimaryMachineSetAMI(oc); primaryAMI != "" {
+		if primaryName, ok := awsImageName(client, primaryAMI); ok {
+			if derived, ok := awsDeriveSecondaryImageFilter(primaryName, targetVersion); ok {
+				e2e.Logf("Deriving the secondary AMI filter from the primary AMI %s: %s", primaryName, derived)
+				nameFilter = derived
+			}
+		}
+	}
+	out, err := client.DescribeImages(&ec2.DescribeImagesInput{
+		Filters: []*ec2.Filter{{
+			Name:   aws.String("name"),
+			Values: []*string{aws.String(nameFilter)},
+		}},
+		Owners: []*string{aws.String("amazon")},
+	})
+	if err != nil {
+		e2e.Logf("Could not describe Windows %s AMIs in %s: %v", targetVersion, region, err)
+		return "", false
+	}
+	if len(out.Images) == 0 {
+		e2e.Logf("No Amazon AMI matched %s in %s", nameFilter, region)
+		return "", false
+	}
+	latest := out.Images[0]
+	for _, image := range out.Images[1:] {
+		if image.CreationDate != nil && latest.CreationDate != nil && *image.CreationDate > *latest.CreationDate {
+			latest = image
+		}
+	}
+	if latest.ImageId == nil || *latest.ImageId == "" {
+		return "", false
+	}
+	e2e.Logf("Resolved secondary Windows AMI %s (%s) for %s", *latest.ImageId, targetVersion, region)
+	return *latest.ImageId, true
+}
+
 // createWindowsMachineSetWithImage creates a Windows MachineSet that provisions one machine from
 // imageID and returns its name. Only AWS and Azure offer a second Windows OS variant, where the
 // image is an AMI ID and an Azure image SKU respectively. The caller deletes the MachineSet.
@@ -1914,8 +2397,11 @@ func createWindowsMachineSetWithImage(oc *exutil.CLI, platform, name, imageID st
 		// that silently provisions into the default subnet.
 		o.Expect(subnetErr).NotTo(o.HaveOccurred(), "Could not fetch the AWS subnet from the existing MachineSet")
 		machineSetName = getWindowsMachineSetName(oc, name, platform, zone)
+		// Reuse the primary MachineSet's instance type: the secondary AMI has to boot on the
+		// same instance type that is known to work in this account and region.
+		instanceType := awsPrimaryMachineSetInstanceType(oc)
 		manifest = generateAWSWindowsMachineSetYAML(machineSetName, infrastructureID, zone,
-			strings.TrimSpace(region), strings.TrimSpace(subnetID), imageID)
+			strings.TrimSpace(region), strings.TrimSpace(subnetID), imageID, instanceType)
 	case "azure":
 		location, err := oc.AsAdmin().WithoutNamespace().Run("get").Args(
 			"nodes", "-o=jsonpath={.items[0].metadata.labels.topology\\.kubernetes\\.io/region}").Output()
