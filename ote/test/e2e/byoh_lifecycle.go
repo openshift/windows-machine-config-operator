@@ -469,6 +469,14 @@ func (f *suppliedBYOHLifecycle) register(ctx context.Context) error {
 	if _, err := f.checkHost(ctx, lifecycleConfiguredCommand); err != nil {
 		return err
 	}
+	node, err := f.core.Nodes().Get(ctx, f.node.Name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("re-read selected Node after the configured-state probe: %w", err)
+	}
+	if node.UID != f.node.UID || !suppliedNodeReady(node) {
+		return fmt.Errorf("selected Node changed or is no longer Ready after the configured-state probe")
+	}
+	f.node = node
 	e2e.Logf("BYOH lifecycle: host %s is configured with new Ready Node UID %s", f.address, f.node.UID)
 	return nil
 }
