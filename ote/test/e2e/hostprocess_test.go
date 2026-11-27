@@ -1062,6 +1062,7 @@ func TestNewHostProcessPodMatchesOcRunShape(t *testing.T) {
 	assert.Equal(t, corev1.RestartPolicyNever, pod.Spec.RestartPolicy)
 	assert.Equal(t, corev1.DNSClusterFirst, pod.Spec.DNSPolicy)
 	assert.True(t, pod.Spec.HostNetwork)
+	assert.Equal(t, "windows-node", pod.Spec.NodeName)
 	assert.Equal(t, map[string]string{"kubernetes.io/hostname": "windows-node"}, pod.Spec.NodeSelector)
 	require.NotNil(t, pod.Spec.OS)
 	assert.Equal(t, corev1.Windows, pod.Spec.OS.Name)

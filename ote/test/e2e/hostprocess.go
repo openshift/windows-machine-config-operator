@@ -662,8 +662,12 @@ func newHostProcessCommandPod(podName, nodeName, image string, command []string)
 			}},
 			RestartPolicy: corev1.RestartPolicyNever,
 			DNSPolicy:     corev1.DNSClusterFirst,
-			NodeSelector:  map[string]string{"kubernetes.io/hostname": nodeName},
-			HostNetwork:   true,
+			// Bind the pod to the node directly: the service checks have to run while WMCO
+			// has the node cordoned for reconfiguration, and a nodeSelector-only pod then
+			// stays Pending with FailedScheduling until the node is schedulable again.
+			NodeName:     nodeName,
+			NodeSelector: map[string]string{"kubernetes.io/hostname": nodeName},
+			HostNetwork:  true,
 			SecurityContext: &corev1.PodSecurityContext{
 				WindowsOptions: windowsOptions,
 			},
